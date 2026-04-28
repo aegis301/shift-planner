@@ -1,0 +1,17 @@
+{
+  "name": "Shift Planner",
+  "short_name": "ShiftPlanner",
+  "description": "AI-first shift planning for doctors",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f8fb",
+  "theme_color": "#3dd6a5",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+

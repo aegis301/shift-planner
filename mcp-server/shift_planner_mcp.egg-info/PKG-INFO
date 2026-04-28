@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: shift-planner-mcp
+Version: 0.1.0
+Summary: FastMCP server for AI-first shift planner control.
+Requires-Python: >=3.11
+Requires-Dist: fastmcp>=2.0.0
+Requires-Dist: email-validator>=2.1.0
+Requires-Dist: passlib[bcrypt]>=1.7.4
+Requires-Dist: psycopg[binary]>=3.2.0
+Requires-Dist: pydantic-settings>=2.5.0
+Requires-Dist: sqlalchemy>=2.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.0; extra == "dev"

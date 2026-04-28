@@ -1,0 +1,2 @@
+"""FastMCP server package."""
+

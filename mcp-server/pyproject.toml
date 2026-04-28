@@ -1,0 +1,24 @@
+[project]
+name = "shift-planner-mcp"
+version = "0.1.0"
+description = "FastMCP server for AI-first shift planner control."
+requires-python = ">=3.11"
+dependencies = [
+  "fastmcp>=2.0.0",
+  "email-validator>=2.1.0",
+  "passlib>=1.7.4",
+  "psycopg>=3.2.0,<3.4",
+  "pydantic-settings>=2.5.0",
+  "sqlalchemy>=2.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["mcp_app*"]

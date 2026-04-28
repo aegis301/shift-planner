@@ -1,0 +1,9 @@
+pyproject.toml
+mcp_app/__init__.py
+mcp_app/server.py
+shift_planner_mcp.egg-info/PKG-INFO
+shift_planner_mcp.egg-info/SOURCES.txt
+shift_planner_mcp.egg-info/dependency_links.txt
+shift_planner_mcp.egg-info/requires.txt
+shift_planner_mcp.egg-info/top_level.txt
+tests/test_server.py
