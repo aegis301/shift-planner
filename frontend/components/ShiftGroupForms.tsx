@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { t, type Locale } from "@/lib/i18n";
@@ -24,6 +25,119 @@ type TemplateOption = { id: number; code: string; name_de: string; name_en: stri
 
 function groupLabel(locale: Locale, group: ShiftGroupRecord) {
   return locale === "de" ? group.name_de : group.name_en;
+}
+
+function ShiftGroupDoctorPicker({
+  doctors,
+  doctorIds,
+  setDoctorIds,
+  locale
+}: {
+  doctors: DoctorOption[];
+  doctorIds: Set<number>;
+  setDoctorIds: Dispatch<SetStateAction<Set<number>>>;
+  locale: Locale;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const pool = doctors.filter((doctor) => !doctorIds.has(doctor.id));
+    if (!q) {
+      return [];
+    }
+    return pool.filter((doctor) => doctor.name.toLowerCase().includes(q)).slice(0, 25);
+  }, [doctors, doctorIds, query]);
+
+  const selectedDoctors = useMemo(() => doctors.filter((doctor) => doctorIds.has(doctor.id)).sort((a, b) => a.name.localeCompare(b.name)), [doctors, doctorIds]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
+
+  function addDoctor(id: number) {
+    setDoctorIds((prev) => new Set([...prev, id]));
+    setQuery("");
+    setOpen(false);
+  }
+
+  function removeDoctor(id: number) {
+    setDoctorIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  const showList = open && query.trim().length > 0;
+
+  return (
+    <div ref={rootRef} className="grid gap-2">
+      <p className="text-xs text-slate-600">{t(locale, "searchDoctorsHint")}</p>
+      <div className="relative">
+        <input
+          type="search"
+          autoComplete="off"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={t(locale, "searchDoctorsPlaceholder")}
+          className={inputClass}
+        />
+        {showList ? (
+          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-200/80">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-slate-500">{t(locale, "noDoctorMatches")}</li>
+            ) : (
+              filtered.map((doctor) => (
+                <li key={doctor.id}>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm text-ink hover:bg-slate-50"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => addDoctor(doctor.id)}
+                  >
+                    {doctor.name}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        ) : null}
+      </div>
+      {selectedDoctors.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedDoctors.map((doctor) => (
+            <span
+              key={doctor.id}
+              className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 py-1 pl-2.5 pr-1 text-xs font-medium text-slate-800 ring-1 ring-slate-200"
+            >
+              <span className="truncate">{doctor.name}</span>
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                onClick={() => removeDoctor(doctor.id)}
+                aria-label={`${t(locale, "removeFromSelection")}: ${doctor.name}`}
+              >
+                <X size={14} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ShiftGroupEditorModal({
@@ -105,27 +219,8 @@ function ShiftGroupEditorModal({
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <div className="rounded-lg border border-slate-200 p-3">
             <p className="text-sm font-semibold text-ink">{t(locale, "shiftGroupDoctors")}</p>
-            <div className="mt-2 max-h-48 space-y-2 overflow-y-auto text-sm">
-              {doctors.map((doctor) => (
-                <label key={doctor.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={doctorIds.has(doctor.id)}
-                    onChange={() => {
-                      setDoctorIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(doctor.id)) {
-                          next.delete(doctor.id);
-                        } else {
-                          next.add(doctor.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  />
-                  {doctor.name}
-                </label>
-              ))}
+            <div className="mt-2">
+              <ShiftGroupDoctorPicker doctors={doctors} doctorIds={doctorIds} setDoctorIds={setDoctorIds} locale={locale} />
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 p-3">

@@ -196,7 +196,11 @@ export const dictionaries = {
     doctorShiftGroups: "Dienstgruppen",
     selectPlanningShiftGroup: "Dienstgruppe",
     allShiftGroupsLabel: "Alle",
-    planningShiftGroupHelp: "Filtert Wünsche, finalen Dienstplan und Prüfung nach Dienstgruppe. Vorlagen ohne Gruppe erscheinen nur unter „Alle“."
+    planningShiftGroupHelp: "Filtert Wünsche, finalen Dienstplan und Prüfung nach Dienstgruppe. Vorlagen ohne Gruppe erscheinen nur unter „Alle“.",
+    searchDoctorsPlaceholder: "Namen eingeben …",
+    searchDoctorsHint: "Namen tippen, aus der Liste wählen. Mehrere Personen möglich; ausgewählte erscheinen als Kacheln.",
+    noDoctorMatches: "Keine Treffer",
+    removeFromSelection: "Entfernen"
   },
   en: {
     appName: "Shift Planner",
@@ -393,7 +397,11 @@ export const dictionaries = {
     doctorShiftGroups: "Shift groups",
     selectPlanningShiftGroup: "Shift group",
     allShiftGroupsLabel: "All",
-    planningShiftGroupHelp: "Filters wishes, final roster, and validation by shift group. Templates not in any group appear only under All."
+    planningShiftGroupHelp: "Filters wishes, final roster, and validation by shift group. Templates not in any group appear only under All.",
+    searchDoctorsPlaceholder: "Type a name…",
+    searchDoctorsHint: "Type to filter doctors, pick from the list. You can add several; selected people appear as chips.",
+    noDoctorMatches: "No matches",
+    removeFromSelection: "Remove"
   }
 } as const;
 
