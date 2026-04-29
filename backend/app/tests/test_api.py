@@ -240,6 +240,31 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     assert clear_response.json()["deleted"] is True
 
 
+def test_create_shift_template_rejects_duplicate_code(client: TestClient):
+    login(client)
+    body = {"code": "DUPX", "name_de": "Eins", "name_en": "One", "category": "other"}
+    assert client.post("/api/v1/shift-templates", json=body).status_code == 200
+    conflict = client.post("/api/v1/shift-templates", json={**body, "name_de": "Zwei"})
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "SHIFT_TEMPLATE_CODE_TAKEN"
+    assert conflict.json()["detail"]["value"] == "DUPX"
+
+
+def test_patch_shift_template_rejects_duplicate_code(client: TestClient):
+    login(client)
+    first = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "P1", "name_de": "a", "name_en": "a", "category": "other"},
+    ).json()
+    client.post(
+        "/api/v1/shift-templates",
+        json={"code": "P2", "name_de": "b", "name_en": "b", "category": "other"},
+    )
+    conflict = client.patch(f"/api/v1/shift-templates/{first['id']}", json={"code": "P2"})
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "SHIFT_TEMPLATE_CODE_TAKEN"
+
+
 def test_shift_template_variants_holidays_and_generated_slots(client: TestClient):
     login(client)
     template = client.post(

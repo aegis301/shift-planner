@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -15,6 +15,7 @@ from app.schemas import (
     ShiftVariantUpdate,
 )
 from app.services.shift_templates import (
+    ShiftTemplateCodeConflictError,
     create_shift_template,
     create_shift_variant,
     delete_shift_template,
@@ -39,7 +40,13 @@ def post_shift_template(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return create_shift_template(db, payload, actor=user.email, source="rest")
+    try:
+        return create_shift_template(db, payload, actor=user.email, source="rest")
+    except ShiftTemplateCodeConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "SHIFT_TEMPLATE_CODE_TAKEN", "field": "code", "value": exc.code},
+        ) from exc
 
 
 @router.patch("/{template_id}", response_model=ShiftTemplateRead)
@@ -49,7 +56,13 @@ def patch_shift_template(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    template = update_shift_template(db, template_id, payload, actor=user.email, source="rest")
+    try:
+        template = update_shift_template(db, template_id, payload, actor=user.email, source="rest")
+    except ShiftTemplateCodeConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "SHIFT_TEMPLATE_CODE_TAKEN", "field": "code", "value": exc.code},
+        ) from exc
     if template is None:
         raise HTTPException(status_code=404, detail="Shift template not found")
     return template

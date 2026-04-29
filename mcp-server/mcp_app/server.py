@@ -39,6 +39,7 @@ from app.services.roster_matrix import (
     upsert_roster_slot_assignment,
 )
 from app.services.shift_templates import (
+    ShiftTemplateCodeConflictError,
     create_shift_template,
     create_shift_variant,
     delete_shift_template,
@@ -176,18 +177,21 @@ def create_shift_template_tool(
     """Create a shift template. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        template = create_shift_template(
-            db,
-            ShiftTemplateCreate(
-                code=code,
-                name_de=name_de,
-                name_en=name_en,
-                category=category,  # type: ignore[arg-type]
-                display_order=display_order,
-            ),
-            actor="mcp",
-            source="mcp",
-        )
+        try:
+            template = create_shift_template(
+                db,
+                ShiftTemplateCreate(
+                    code=code,
+                    name_de=name_de,
+                    name_en=name_en,
+                    category=category,  # type: ignore[arg-type]
+                    display_order=display_order,
+                ),
+                actor="mcp",
+                source="mcp",
+            )
+        except ShiftTemplateCodeConflictError as exc:
+            raise ValueError(f"Shift template code already exists: {exc.code}") from exc
         return serialize_model(template)
 
 

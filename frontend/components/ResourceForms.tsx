@@ -2,12 +2,40 @@
 
 import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
 import { AlertTriangle, MoreVertical, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 
 type AnyRecord = Record<string, unknown>;
+
+function shiftTemplateConflictMessage(locale: Locale, error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return null;
+  }
+  const detail = error.detail;
+  if (
+    detail &&
+    typeof detail === "object" &&
+    !Array.isArray(detail) &&
+    (detail as { code?: string }).code === "SHIFT_TEMPLATE_CODE_TAKEN"
+  ) {
+    const code = String((detail as { value?: string }).value ?? "");
+    return t(locale, "shiftTemplateCodeTaken", { code });
+  }
+  return null;
+}
+
+function apiFailureUserMessage(locale: Locale, error: unknown): string {
+  const conflict = shiftTemplateConflictMessage(locale, error);
+  if (conflict) {
+    return conflict;
+  }
+  if (error instanceof ApiError) {
+    return t(locale, "apiRequestFailed", { status: String(error.status) });
+  }
+  return t(locale, "apiUnavailable");
+}
 type ShiftTemplateCategory = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
 type DayClass = "any" | "weekday" | "weekend" | "holiday";
 type ShiftVariantRecord = {
@@ -500,6 +528,11 @@ function ShiftTemplateEditorModal({
   const [removedVariantIds, setRemovedVariantIds] = useState<number[]>([]);
   const [pendingVariants, setPendingVariants] = useState<PendingVariantDraft[]>([]);
   const [variantDeleteCandidate, setVariantDeleteCandidate] = useState<ShiftVariantRecord | null>(null);
+  const [editorSaveError, setEditorSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditorSaveError(null);
+  }, [template.id]);
 
   function addPendingVariant() {
     setPendingVariants((current) => [
@@ -546,17 +579,23 @@ function ShiftTemplateEditorModal({
 
   async function submitEditor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setEditorSaveError(null);
     const form = new FormData(event.currentTarget);
-    await apiFetch(`/api/v1/shift-templates/${template.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        code: form.get("code"),
-        name_de: form.get("name_de"),
-        name_en: form.get("name_en"),
-        category: form.get("category"),
-        is_active: form.get("is_active") === "on"
-      })
-    });
+    try {
+      await apiFetch(`/api/v1/shift-templates/${template.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          code: form.get("code"),
+          name_de: form.get("name_de"),
+          name_en: form.get("name_en"),
+          category: form.get("category"),
+          is_active: form.get("is_active") === "on"
+        })
+      });
+    } catch (error) {
+      setEditorSaveError(apiFailureUserMessage(locale, error));
+      return;
+    }
     for (const variant of template.variants ?? []) {
       if (removedVariantIds.includes(variant.id)) {
         continue;
@@ -611,6 +650,11 @@ function ShiftTemplateEditorModal({
           <div>
             <h2 id={`shift-template-edit-${template.id}`} className="text-lg font-semibold text-ink">{t(locale, "editShiftTemplate")}</h2>
             <p className="mt-1 text-sm text-slate-500">{template.code} · {title}</p>
+            {editorSaveError ? (
+              <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert">
+                {editorSaveError}
+              </p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1100,6 +1144,7 @@ export function ShiftTemplateForm() {
   const currentDate = new Date();
   const [previewYear, setPreviewYear] = useState(String(currentDate.getFullYear()));
   const [previewMonth, setPreviewMonth] = useState(String(currentDate.getMonth() + 1));
+  const [createTemplateError, setCreateTemplateError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setRows(await apiFetch<AnyRecord[]>("/api/v1/shift-templates"));
@@ -1111,18 +1156,25 @@ export function ShiftTemplateForm() {
 
   async function submitTemplate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setCreateTemplateError(null);
     const form = new FormData(event.currentTarget);
-    await apiFetch<AnyRecord>("/api/v1/shift-templates", {
-      method: "POST",
-      body: JSON.stringify({
-        code: form.get("code"),
-        name_de: form.get("name_de"),
-        name_en: form.get("name_en"),
-        category: form.get("category")
-      })
-    });
+    try {
+      await apiFetch<AnyRecord>("/api/v1/shift-templates", {
+        method: "POST",
+        body: JSON.stringify({
+          code: form.get("code"),
+          name_de: form.get("name_de"),
+          name_en: form.get("name_en"),
+          category: form.get("category")
+        })
+      });
+    } catch (error) {
+      setCreateTemplateError(apiFailureUserMessage(locale, error));
+      return;
+    }
     event.currentTarget.reset();
     setIsCreateTemplateModalOpen(false);
+    setCreateTemplateError(null);
     await refresh();
   }
 
@@ -1144,7 +1196,10 @@ export function ShiftTemplateForm() {
               <p className="mt-1 text-sm text-slate-600">{t(locale, "shiftTemplateBuilderDescription")}</p>
               <button
                 type="button"
-                onClick={() => setIsCreateTemplateModalOpen(true)}
+                onClick={() => {
+                  setCreateTemplateError(null);
+                  setIsCreateTemplateModalOpen(true);
+                }}
                 className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"
               >
                 <Plus size={16} />
@@ -1182,7 +1237,10 @@ export function ShiftTemplateForm() {
               <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftTemplateBuilder")}</h2>
               <button
                 type="button"
-                onClick={() => setIsCreateTemplateModalOpen(false)}
+                onClick={() => {
+                  setCreateTemplateError(null);
+                  setIsCreateTemplateModalOpen(false);
+                }}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
                 aria-label={t(locale, "close")}
                 title={t(locale, "close")}
@@ -1190,6 +1248,11 @@ export function ShiftTemplateForm() {
                 <X size={17} />
               </button>
             </div>
+            {createTemplateError ? (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert">
+                {createTemplateError}
+              </div>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label={t(locale, "code")}><input className={inputClass} name="code" required /></Field>
               <Field label={t(locale, "category")}>
@@ -1205,7 +1268,10 @@ export function ShiftTemplateForm() {
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setIsCreateTemplateModalOpen(false)}
+                onClick={() => {
+                  setCreateTemplateError(null);
+                  setIsCreateTemplateModalOpen(false);
+                }}
                 className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
               >
                 {t(locale, "close")}

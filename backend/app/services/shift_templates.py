@@ -16,6 +16,20 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.holidays import classify_day
 
+
+class ShiftTemplateCodeConflictError(Exception):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+def _shift_template_code_in_use(db: Session, code: str, *, exclude_template_id: int | None = None) -> bool:
+    stmt = select(ShiftTemplate.id).where(ShiftTemplate.code == code)
+    if exclude_template_id is not None:
+        stmt = stmt.where(ShiftTemplate.id != exclude_template_id)
+    return db.scalar(stmt) is not None
+
+
 @dataclass(frozen=True)
 class GeneratedSlot:
     slot_date: date
@@ -45,6 +59,8 @@ def list_shift_templates(db: Session, *, active_only: bool = False) -> list[Shif
 
 
 def create_shift_template(db: Session, payload: ShiftTemplateCreate, *, actor: str, source: str) -> ShiftTemplate:
+    if _shift_template_code_in_use(db, payload.code):
+        raise ShiftTemplateCodeConflictError(payload.code)
     template = ShiftTemplate(**payload.model_dump())
     db.add(template)
     db.flush()
@@ -60,7 +76,12 @@ def update_shift_template(
     template = db.get(ShiftTemplate, template_id)
     if template is None:
         return None
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    new_code = data.get("code")
+    if new_code is not None and new_code != template.code:
+        if _shift_template_code_in_use(db, new_code, exclude_template_id=template.id):
+            raise ShiftTemplateCodeConflictError(new_code)
+    for key, value in data.items():
         setattr(template, key, value)
     record_audit(db, actor=actor, source=source, action="update", entity_type="shift_template", entity_id=template.id)
     db.commit()

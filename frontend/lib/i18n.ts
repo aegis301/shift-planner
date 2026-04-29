@@ -59,6 +59,8 @@ export const dictionaries = {
     loginFailed: "Anmeldung fehlgeschlagen",
     created: "Gespeichert",
     apiUnavailable: "API nicht erreichbar",
+    apiRequestFailed: "Die Anfrage ist fehlgeschlagen (HTTP {{status}}).",
+    shiftTemplateCodeTaken: "Der Kurzcode „{{code}}“ ist bereits vergeben. Bitte einen anderen Code wählen.",
     id: "ID",
     createPeriod: "Planungsmonat anlegen",
     createAndLoadPeriod: "Monat anlegen und laden",
@@ -243,6 +245,8 @@ export const dictionaries = {
     loginFailed: "Login failed",
     created: "Saved",
     apiUnavailable: "API unavailable",
+    apiRequestFailed: "The request failed (HTTP {{status}}).",
+    shiftTemplateCodeTaken: "The short code \"{{code}}\" is already in use. Please choose a different code.",
     id: "ID",
     createPeriod: "Create planning month",
     createAndLoadPeriod: "Create and load month",
@@ -373,6 +377,12 @@ export const dictionaries = {
 
 export type TranslationKey = keyof typeof dictionaries.de;
 
-export function t(locale: Locale, key: TranslationKey): string {
-  return dictionaries[locale][key];
+export function t(locale: Locale, key: TranslationKey, vars?: Record<string, string>): string {
+  let out: string = dictionaries[locale][key];
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      out = out.replaceAll(`{{${k}}}`, v);
+    }
+  }
+  return out;
 }
