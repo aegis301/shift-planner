@@ -111,6 +111,22 @@ function formatTimeRange(slot: RosterSlot) {
   if (!slot.starts_at || !slot.ends_at) {
     return "";
   }
+  const parseDateAndTime = (value: string): { date: string; time: string } | null => {
+    const match = value.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+    if (!match) {
+      return null;
+    }
+    return { date: match[1], time: match[2] };
+  };
+
+  const startParts = parseDateAndTime(slot.starts_at);
+  const endParts = parseDateAndTime(slot.ends_at);
+
+  if (startParts && endParts) {
+    const nextDay = startParts.date !== endParts.date ? " +1" : "";
+    return `${startParts.time}-${endParts.time}${nextDay}`;
+  }
+
   const start = new Date(slot.starts_at);
   const end = new Date(slot.ends_at);
   const startText = start.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });

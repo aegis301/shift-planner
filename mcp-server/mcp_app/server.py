@@ -19,7 +19,7 @@ from app.schemas import (
     ShiftTemplateCreate,
     ShiftVariantCreate,
 )
-from app.services.doctors import create_doctor, list_doctors
+from app.services.doctors import create_doctor, delete_doctor, list_doctors
 from app.services.matrix import (
     bulk_upsert_planning_cells,
     get_planning_matrix,
@@ -42,6 +42,7 @@ from app.services.shift_templates import (
     create_shift_template,
     create_shift_variant,
     delete_shift_template,
+    delete_shift_variant,
     list_shift_templates,
     preview_slots_for_month,
 )
@@ -153,6 +154,14 @@ def create_doctor_tool(
             source="mcp",
         )
         return serialize_model(doctor)
+
+
+@mcp.tool
+def delete_doctor_tool(token: str, doctor_id: int) -> dict[str, bool]:
+    """Delete a doctor and clear related wishes/notes/assignments. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        return {"deleted": delete_doctor(db, doctor_id, actor="mcp", source="mcp")}
 
 
 @mcp.tool
@@ -369,6 +378,14 @@ def clear_roster_slot_assignment_tool(token: str, roster_slot_id: int) -> dict[s
             source="mcp",
         )
         return {"deleted": deleted}
+
+
+@mcp.tool
+def delete_shift_variant_tool(token: str, shift_variant_id: int) -> dict[str, bool]:
+    """Delete a shift variant and clear generated slots/assignments for it. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        return {"deleted": delete_shift_variant(db, shift_variant_id, actor="mcp", source="mcp")}
 
 
 if __name__ == "__main__":

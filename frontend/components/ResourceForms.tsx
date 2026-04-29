@@ -22,6 +22,17 @@ type ShiftVariantRecord = {
   is_active: boolean;
 };
 
+type PendingVariantDraft = {
+  uid: string;
+  label: string;
+  start_day_class: DayClass;
+  end_day_class: "" | DayClass;
+  starts_at: string;
+  ends_at: string;
+  required_count: number;
+  is_active: boolean;
+};
+
 type ShiftTemplateRecord = {
   id: number;
   code: string;
@@ -31,6 +42,16 @@ type ShiftTemplateRecord = {
   display_order: number;
   is_active: boolean;
   variants?: ShiftVariantRecord[];
+};
+
+type DoctorRecord = {
+  id: number;
+  name: string;
+  email: string;
+  employment_percentage: number;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
 };
 
 const SHIFT_TEMPLATE_CATEGORIES: { value: ShiftTemplateCategory; label: TranslationKey }[] = [
@@ -222,6 +243,15 @@ function isShiftTemplateRecord(row: AnyRecord): row is ShiftTemplateRecord {
   );
 }
 
+function isDoctorRecord(row: AnyRecord): row is DoctorRecord {
+  return (
+    typeof row.id === "number" &&
+    typeof row.name === "string" &&
+    typeof row.email === "string" &&
+    typeof row.employment_percentage === "number"
+  );
+}
+
 function categoryLabel(locale: Locale, category: string): string {
   const match = SHIFT_TEMPLATE_CATEGORIES.find((entry) => entry.value === category);
   return match ? t(locale, match.label) : category;
@@ -290,11 +320,11 @@ function categoryOptions(locale: Locale) {
   ));
 }
 
-function VariantEditFields({ variant }: { variant: ShiftVariantRecord }) {
+function VariantEditFields({ variant, onRemove }: { variant: ShiftVariantRecord; onRemove: () => void }) {
   const { locale } = useLocale();
 
   return (
-    <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_8rem]">
+    <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_auto]">
       <Field label={t(locale, "name")}><input className={inputClass} name={`variant_${variant.id}_label`} defaultValue={variant.label} required /></Field>
       <Field label={t(locale, "startDayClass")}><select className={`${inputClass} w-full`} name={`variant_${variant.id}_start_day_class`} defaultValue={variant.start_day_class}>{dayClassOptions(locale)}</select></Field>
       <Field label={t(locale, "endDayClass")}>
@@ -310,6 +340,106 @@ function VariantEditFields({ variant }: { variant: ShiftVariantRecord }) {
         <input name={`variant_${variant.id}_is_active`} type="checkbox" defaultChecked={variant.is_active} />
         {t(locale, "isActive")}
       </label>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="inline-flex h-11 w-11 items-center justify-center self-end rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
+        aria-label={t(locale, "removeVariant")}
+        title={t(locale, "removeVariant")}
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
+}
+
+function PendingVariantFields({
+  variant,
+  onChange,
+  onRemove
+}: {
+  variant: PendingVariantDraft;
+  onChange: (next: PendingVariantDraft) => void;
+  onRemove: () => void;
+}) {
+  const { locale } = useLocale();
+
+  return (
+    <div className="grid gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_auto]">
+      <Field label={t(locale, "name")}>
+        <input
+          className={inputClass}
+          value={variant.label}
+          onChange={(event) => onChange({ ...variant, label: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label={t(locale, "startDayClass")}>
+        <select
+          className={`${inputClass} w-full`}
+          value={variant.start_day_class}
+          onChange={(event) => onChange({ ...variant, start_day_class: event.target.value as DayClass })}
+        >
+          {dayClassOptions(locale)}
+        </select>
+      </Field>
+      <Field label={t(locale, "endDayClass")}>
+        <select
+          className={`${inputClass} w-full`}
+          value={variant.end_day_class}
+          onChange={(event) => onChange({ ...variant, end_day_class: event.target.value as "" | DayClass })}
+        >
+          <option value="">{t(locale, "emptyValue")}</option>
+          {dayClassOptions(locale)}
+        </select>
+      </Field>
+      <Field label={t(locale, "start")}>
+        <input
+          className={`${inputClass} w-full`}
+          type="time"
+          value={variant.starts_at}
+          onChange={(event) => onChange({ ...variant, starts_at: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label={t(locale, "end")}>
+        <input
+          className={`${inputClass} w-full`}
+          type="time"
+          value={variant.ends_at}
+          onChange={(event) => onChange({ ...variant, ends_at: event.target.value })}
+          required
+        />
+      </Field>
+      <Field label={t(locale, "requiredCount")}>
+        <input
+          className={`${inputClass} w-full`}
+          type="number"
+          min="1"
+          max="20"
+          value={variant.required_count}
+          onChange={(event) => onChange({ ...variant, required_count: Number(event.target.value) || 1 })}
+        />
+      </Field>
+      <div className="flex h-11 items-center justify-end gap-2 self-end">
+        <label className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+          <input
+            type="checkbox"
+            checked={variant.is_active}
+            onChange={(event) => onChange({ ...variant, is_active: event.target.checked })}
+          />
+          {t(locale, "isActive")}
+        </label>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
+          aria-label={t(locale, "removeVariant")}
+          title={t(locale, "removeVariant")}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -367,6 +497,45 @@ function ShiftTemplateEditorModal({
   const { locale } = useLocale();
   const title = locale === "de" ? template.name_de : template.name_en;
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [removedVariantIds, setRemovedVariantIds] = useState<number[]>([]);
+  const [pendingVariants, setPendingVariants] = useState<PendingVariantDraft[]>([]);
+  const [variantDeleteCandidate, setVariantDeleteCandidate] = useState<ShiftVariantRecord | null>(null);
+
+  function addPendingVariant() {
+    setPendingVariants((current) => [
+      ...current,
+      {
+        uid: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        label: "",
+        start_day_class: "any",
+        end_day_class: "",
+        starts_at: "",
+        ends_at: "",
+        required_count: 1,
+        is_active: true
+      }
+    ]);
+  }
+
+  function updatePendingVariant(uid: string, next: PendingVariantDraft) {
+    setPendingVariants((current) => current.map((variant) => (variant.uid === uid ? next : variant)));
+  }
+
+  function removePendingVariant(uid: string) {
+    setPendingVariants((current) => current.filter((variant) => variant.uid !== uid));
+  }
+
+  function removeExistingVariant(variantId: number) {
+    setRemovedVariantIds((current) => (current.includes(variantId) ? current : [...current, variantId]));
+  }
+
+  function confirmDeleteVariant() {
+    if (!variantDeleteCandidate) {
+      return;
+    }
+    removeExistingVariant(variantDeleteCandidate.id);
+    setVariantDeleteCandidate(null);
+  }
 
   async function deleteTemplate() {
     await apiFetch(`/api/v1/shift-templates/${template.id}`, { method: "DELETE" });
@@ -389,6 +558,9 @@ function ShiftTemplateEditorModal({
       })
     });
     for (const variant of template.variants ?? []) {
+      if (removedVariantIds.includes(variant.id)) {
+        continue;
+      }
       const startsAt = form.get(`variant_${variant.id}_starts_at`);
       const endsAt = form.get(`variant_${variant.id}_ends_at`);
       await apiFetch(`/api/v1/shift-templates/variants/${variant.id}`, {
@@ -405,8 +577,32 @@ function ShiftTemplateEditorModal({
         })
       });
     }
+    for (const variantId of removedVariantIds) {
+      await apiFetch(`/api/v1/shift-templates/variants/${variantId}`, {
+        method: "DELETE"
+      });
+    }
+    for (const variant of pendingVariants) {
+      await apiFetch(`/api/v1/shift-templates/${template.id}/variants`, {
+        method: "POST",
+        body: JSON.stringify({
+          label: variant.label,
+          start_day_class: variant.start_day_class,
+          end_day_class: variant.end_day_class || null,
+          starts_at: variant.starts_at,
+          ends_at: variant.ends_at,
+          end_day_offset: inferEndDayOffset(variant.starts_at, variant.ends_at),
+          required_count: variant.required_count,
+          is_active: variant.is_active
+        })
+      });
+    }
+    setRemovedVariantIds([]);
+    setPendingVariants([]);
     await onChanged();
   }
+
+  const visibleVariants = (template.variants ?? []).filter((variant) => !removedVariantIds.includes(variant.id));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={`shift-template-edit-${template.id}`}>
@@ -425,6 +621,15 @@ function ShiftTemplateEditorModal({
               type="button"
             >
               <Trash2 size={17} />
+            </button>
+            <button
+              aria-label={t(locale, "addVariant")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+              onClick={addPendingVariant}
+              title={t(locale, "addVariant")}
+              type="button"
+            >
+              <Plus size={17} />
             </button>
             <button
               aria-label={t(locale, "save")}
@@ -456,14 +661,59 @@ function ShiftTemplateEditorModal({
         </div>
         <div className="mt-5 grid gap-3">
           <h3 className="text-sm font-semibold text-ink">{t(locale, "editVariants")}</h3>
-          {template.variants?.length ? (
-            template.variants.map((variant) => (
-              <VariantEditFields key={variant.id} variant={variant} />
+          {visibleVariants.length ? (
+            visibleVariants.map((variant) => (
+              <VariantEditFields key={variant.id} variant={variant} onRemove={() => setVariantDeleteCandidate(variant)} />
             ))
           ) : (
             <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500 ring-1 ring-slate-100">{t(locale, "noVariants")}</p>
           )}
         </div>
+        {pendingVariants.length ? (
+          <div className="mt-5 grid gap-3">
+            <h3 className="text-sm font-semibold text-ink">{t(locale, "newVariants")}</h3>
+            {pendingVariants.map((variant) => (
+              <PendingVariantFields
+                key={variant.uid}
+                variant={variant}
+                onChange={(next) => updatePendingVariant(variant.uid, next)}
+                onRemove={() => removePendingVariant(variant.uid)}
+              />
+            ))}
+          </div>
+        ) : null}
+        {variantDeleteCandidate ? (
+          <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
+            <div className="flex gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-rose-700 ring-1 ring-rose-200">
+                <AlertTriangle size={19} />
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold text-rose-950">{t(locale, "deleteVariant")}</h3>
+                <p className="mt-1 text-sm text-rose-900">
+                  {variantDeleteCandidate.label} · {t(locale, "deleteVariantWarning")}
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                onClick={() => setVariantDeleteCandidate(null)}
+                type="button"
+              >
+                {t(locale, "close")}
+              </button>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
+                onClick={confirmDeleteVariant}
+                type="button"
+              >
+                <Trash2 size={16} />
+                {t(locale, "confirm")}
+              </button>
+            </div>
+          </div>
+        ) : null}
         {isDeleteConfirmOpen ? (
           <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
             <div className="flex gap-3">
@@ -564,10 +814,186 @@ function ShiftTemplateList({ rows, onChanged }: { rows: AnyRecord[]; onChanged: 
   );
 }
 
+function DoctorEditorModal({
+  doctor,
+  onChanged,
+  onClose
+}: {
+  doctor: DoctorRecord;
+  onChanged: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const { locale } = useLocale();
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
+  async function submitEditor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await apiFetch(`/api/v1/doctors/${doctor.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: form.get("name"),
+        email: form.get("email"),
+        employment_percentage: Number(form.get("employment_percentage")),
+        notes: form.get("notes"),
+        is_active: form.get("is_active") === "on"
+      })
+    });
+    await onChanged();
+    onClose();
+  }
+
+  async function deleteDoctorEntry() {
+    await apiFetch(`/api/v1/doctors/${doctor.id}`, { method: "DELETE" });
+    setIsDeleteConfirmOpen(false);
+    await onChanged();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={`doctor-edit-${doctor.id}`}>
+      <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submitEditor}>
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <h2 id={`doctor-edit-${doctor.id}`} className="text-lg font-semibold text-ink">{t(locale, "editDoctor")}</h2>
+            <p className="mt-1 truncate text-sm text-slate-500">{doctor.name} · {doctor.email}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={t(locale, "deleteDoctor")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
+              onClick={() => setIsDeleteConfirmOpen(true)}
+              title={t(locale, "deleteDoctor")}
+              type="button"
+            >
+              <Trash2 size={17} />
+            </button>
+            <button
+              aria-label={t(locale, "save")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-ink text-white"
+              title={t(locale, "save")}
+              type="submit"
+            >
+              <Save size={17} />
+            </button>
+            <button
+              aria-label={t(locale, "close")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+              onClick={onClose}
+              type="button"
+            >
+              <X size={17} />
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label={t(locale, "name")}><input className={inputClass} name="name" defaultValue={doctor.name} required /></Field>
+          <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" defaultValue={doctor.email} required /></Field>
+          <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue={doctor.employment_percentage} /></Field>
+          <Field label={t(locale, "notes")}><input className={inputClass} name="notes" defaultValue={doctor.notes ?? ""} /></Field>
+          <label className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+            <input name="is_active" type="checkbox" defaultChecked={doctor.is_active} />
+            {t(locale, "isActive")}
+          </label>
+        </div>
+        {isDeleteConfirmOpen ? (
+          <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
+            <div className="flex gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-rose-700 ring-1 ring-rose-200">
+                <AlertTriangle size={19} />
+              </span>
+              <div>
+                <h3 className="text-sm font-semibold text-rose-950">{t(locale, "deleteDoctor")}</h3>
+                <p className="mt-1 text-sm text-rose-900">{t(locale, "deleteDoctorWarning")}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                onClick={() => setIsDeleteConfirmOpen(false)}
+                type="button"
+              >
+                {t(locale, "close")}
+              </button>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
+                onClick={deleteDoctorEntry}
+                type="button"
+              >
+                <Trash2 size={16} />
+                {t(locale, "confirm")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </form>
+    </div>
+  );
+}
+
+function DoctorCard({ doctor, onChanged }: { doctor: DoctorRecord; onChanged: () => Promise<void> }) {
+  const { locale } = useLocale();
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+
+  return (
+    <>
+      <article className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-soft ring-1 ring-slate-100/80">
+        <div className="border-b border-mint/25 bg-gradient-to-r from-mint/10 via-white to-sky-50/40 px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-semibold text-ink">{doctor.name}</h2>
+              <p className="mt-1 truncate text-xs text-slate-500">{doctor.email}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsEditorOpen(true)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
+              aria-label={t(locale, "edit")}
+              title={t(locale, "edit")}
+            >
+              <MoreVertical size={17} />
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-3 p-4 text-sm text-slate-700">
+          <p><span className="font-semibold">{t(locale, "employment")}:</span> {doctor.employment_percentage}</p>
+          <p>
+            <span className="font-semibold">{t(locale, "isActive")}:</span>{" "}
+            {doctor.is_active ? t(locale, "yes") : t(locale, "no")}
+          </p>
+          <p className="line-clamp-2">
+            <span className="font-semibold">{t(locale, "notes")}:</span>{" "}
+            {doctor.notes && doctor.notes.trim() ? doctor.notes : t(locale, "emptyValue")}
+          </p>
+        </div>
+      </article>
+      {isEditorOpen ? <DoctorEditorModal doctor={doctor} onChanged={onChanged} onClose={() => setIsEditorOpen(false)} /> : null}
+    </>
+  );
+}
+
+function DoctorList({ rows, onChanged }: { rows: AnyRecord[]; onChanged: () => Promise<void> }) {
+  const doctors = rows.filter(isDoctorRecord);
+  if (doctors.length !== rows.length) {
+    return <DataList rows={rows} />;
+  }
+  if (!doctors.length) {
+    return <DataList rows={[]} />;
+  }
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {doctors.map((doctor) => (
+        <DoctorCard key={doctor.id} doctor={doctor} onChanged={onChanged} />
+      ))}
+    </div>
+  );
+}
+
 export function DoctorForm() {
   const { locale } = useLocale();
   const [rows, setRows] = useState<AnyRecord[]>([]);
   const [message, setMessage] = useState("");
+  const [isCreateDoctorModalOpen, setIsCreateDoctorModalOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setRows(await apiFetch<AnyRecord[]>("/api/v1/doctors"));
@@ -590,42 +1016,94 @@ export function DoctorForm() {
       })
     });
     setMessage(t(locale, "created"));
+    setIsCreateDoctorModalOpen(false);
     await refresh();
   }
 
   return (
-    <Card>
-      <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
-        <h1 className="md:col-span-2 text-2xl font-semibold text-ink">{t(locale, "addDoctor")}</h1>
-        <Field label={t(locale, "name")}><input className={inputClass} name="name" required /></Field>
-        <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" required /></Field>
-        <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" /></Field>
-        <Field label={t(locale, "notes")}><input className={inputClass} name="notes" /></Field>
-        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"><Plus size={17} />{t(locale, "save")}</button>
-        <button type="button" onClick={refresh} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold"><RefreshCw size={17} />{t(locale, "refresh")}</button>
-      </form>
-      {message ? <p className="mt-4 text-sm text-emerald-700">{message}</p> : null}
-      <div className="mt-5"><DataList rows={rows} /></div>
-    </Card>
+    <div className="grid gap-5">
+      <Card>
+        <div className="grid gap-4">
+          <h1 className="text-2xl font-semibold text-ink">{t(locale, "doctors")}</h1>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 ring-1 ring-slate-100">
+            <h2 className="text-base font-semibold text-ink">{t(locale, "addDoctor")}</h2>
+            <p className="mt-1 text-sm text-slate-600">{t(locale, "addDoctorDescription")}</p>
+            <button
+              type="button"
+              onClick={() => setIsCreateDoctorModalOpen(true)}
+              className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"
+            >
+              <Plus size={16} />
+              {t(locale, "addDoctor")}
+            </button>
+          </div>
+          <div>
+            <button type="button" onClick={refresh} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">
+              <RefreshCw size={16} />
+              {t(locale, "refresh")}
+            </button>
+          </div>
+          {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
+        </div>
+      </Card>
+      {isCreateDoctorModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submit}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold text-ink">{t(locale, "addDoctor")}</h2>
+              <button
+                type="button"
+                onClick={() => setIsCreateDoctorModalOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                aria-label={t(locale, "close")}
+                title={t(locale, "close")}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label={t(locale, "name")}><input className={inputClass} name="name" required /></Field>
+              <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" required /></Field>
+              <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" /></Field>
+              <Field label={t(locale, "notes")}><input className={inputClass} name="notes" /></Field>
+            </div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCreateDoctorModalOpen(false)}
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+              >
+                {t(locale, "close")}
+              </button>
+              <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white">
+                <Plus size={16} />
+                {t(locale, "save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      <Card>
+        <h2 className="text-lg font-semibold text-ink">{t(locale, "doctors")}</h2>
+        <div className="mt-5"><DoctorList rows={rows} onChanged={refresh} /></div>
+      </Card>
+    </div>
   );
 }
 
 export function ShiftTemplateForm() {
   const { locale } = useLocale();
   const [rows, setRows] = useState<AnyRecord[]>([]);
-  const [activeTemplateId, setActiveTemplateId] = useState<number | null>(null);
   const [previewRows, setPreviewRows] = useState<AnyRecord[]>([]);
+  const [isCreateTemplateModalOpen, setIsCreateTemplateModalOpen] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const currentDate = new Date();
   const [previewYear, setPreviewYear] = useState(String(currentDate.getFullYear()));
   const [previewMonth, setPreviewMonth] = useState(String(currentDate.getMonth() + 1));
 
   const refresh = useCallback(async () => {
-    const nextRows = await apiFetch<AnyRecord[]>("/api/v1/shift-templates");
-    setRows(nextRows);
-    if (!activeTemplateId && nextRows[0]?.id) {
-      setActiveTemplateId(Number(nextRows[0].id));
-    }
-  }, [activeTemplateId]);
+    setRows(await apiFetch<AnyRecord[]>("/api/v1/shift-templates"));
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -634,7 +1112,7 @@ export function ShiftTemplateForm() {
   async function submitTemplate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const template = await apiFetch<AnyRecord>("/api/v1/shift-templates", {
+    await apiFetch<AnyRecord>("/api/v1/shift-templates", {
       method: "POST",
       body: JSON.stringify({
         code: form.get("code"),
@@ -643,59 +1121,8 @@ export function ShiftTemplateForm() {
         category: form.get("category")
       })
     });
-    if (template.id) {
-      setActiveTemplateId(Number(template.id));
-    }
     event.currentTarget.reset();
-    await refresh();
-  }
-
-  async function submitVariant(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!activeTemplateId) return;
-    const form = new FormData(event.currentTarget);
-    const startsAt = form.get("starts_at");
-    const endsAt = form.get("ends_at");
-    await apiFetch(`/api/v1/shift-templates/${activeTemplateId}/variants`, {
-      method: "POST",
-      body: JSON.stringify({
-        label: form.get("label"),
-        start_day_class: form.get("start_day_class"),
-        end_day_class: form.get("end_day_class") || null,
-        starts_at: startsAt,
-        ends_at: endsAt,
-        end_day_offset: inferEndDayOffset(startsAt, endsAt),
-        required_count: Number(form.get("required_count"))
-      })
-    });
-    event.currentTarget.reset();
-    await refresh();
-  }
-
-  async function addPreset(preset: "weekday_on_call" | "weekend_day" | "weekend_night" | "full_day") {
-    if (!activeTemplateId) return;
-    const payloads = {
-      weekday_on_call: [
-        { label: "Wochentag Bereitschaftsdienst", start_day_class: "weekday", end_day_class: null, starts_at: "15:45", ends_at: "07:30", end_day_offset: 1, required_count: 1 }
-      ],
-      weekend_day: [
-        { label: "Wochenende/Feiertag Tag", start_day_class: "weekend", end_day_class: null, starts_at: "09:00", ends_at: "20:00", end_day_offset: 0, required_count: 1 },
-        { label: "Feiertag Tag", start_day_class: "holiday", end_day_class: null, starts_at: "09:00", ends_at: "20:00", end_day_offset: 0, required_count: 1 }
-      ],
-      weekend_night: [
-        { label: "Wochenende/Feiertag Nacht", start_day_class: "weekend", end_day_class: null, starts_at: "20:00", ends_at: "09:00", end_day_offset: 1, required_count: 1 },
-        { label: "Feiertag Nacht", start_day_class: "holiday", end_day_class: null, starts_at: "20:00", ends_at: "09:00", end_day_offset: 1, required_count: 1 }
-      ],
-      full_day: [
-        { label: "24 Stunden", start_day_class: "any", end_day_class: null, starts_at: "09:00", ends_at: "09:00", end_day_offset: 1, required_count: 1 }
-      ]
-    }[preset];
-    for (const payload of payloads) {
-      await apiFetch(`/api/v1/shift-templates/${activeTemplateId}/variants`, {
-        method: "POST",
-        body: JSON.stringify(payload)
-      });
-    }
+    setIsCreateTemplateModalOpen(false);
     await refresh();
   }
 
@@ -706,66 +1133,119 @@ export function ShiftTemplateForm() {
     }));
   }
 
-  const activeTemplate = rows.find((row) => Number(row.id) === activeTemplateId);
-  const activeShiftTemplate = activeTemplate && isShiftTemplateRecord(activeTemplate) ? activeTemplate : null;
-
   return (
     <div className="grid gap-5">
-    <Card>
-      <form className="grid gap-4 md:grid-cols-2" onSubmit={submitTemplate}>
-        <h1 className="md:col-span-2 text-2xl font-semibold text-ink">{t(locale, "shiftTemplateBuilder")}</h1>
-        <Field label={t(locale, "code")}><input className={inputClass} name="code" required /></Field>
-        <Field label={t(locale, "category")}>
-          <select className={inputClass} name="category" defaultValue="bereitschaftsdienst">
-            {SHIFT_TEMPLATE_CATEGORIES.map((category) => (
-              <option key={category.value} value={category.value}>{t(locale, category.label)}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label={t(locale, "germanName")}><input className={inputClass} name="name_de" required /></Field>
-        <Field label={t(locale, "englishName")}><input className={inputClass} name="name_en" required /></Field>
-        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"><Plus size={17} />{t(locale, "save")}</button>
-        <button type="button" onClick={refresh} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold"><RefreshCw size={17} />{t(locale, "refresh")}</button>
-      </form>
-    </Card>
-    <Card>
-      <form className="grid gap-4 md:grid-cols-3" onSubmit={submitVariant}>
-        <h2 className="md:col-span-3 text-lg font-semibold text-ink">{t(locale, "shiftVariants")}</h2>
-        <Field label={t(locale, "shiftTemplate")}>
-          <select className={inputClass} value={activeTemplateId ?? ""} onChange={(event) => setActiveTemplateId(Number(event.target.value))}>
-            {rows.map((row) => <option key={String(row.id)} value={String(row.id)}>{String(row.code)} · {String(row.name_de)}</option>)}
-          </select>
-        </Field>
-        <Field label={t(locale, "name")}><input className={inputClass} name="label" required /></Field>
-        <Field label={t(locale, "startDayClass")}><select className={inputClass} name="start_day_class">{dayClassOptions(locale)}</select></Field>
-        <Field label={t(locale, "endDayClass")}><select className={inputClass} name="end_day_class"><option value="">{t(locale, "emptyValue")}</option>{dayClassOptions(locale)}</select></Field>
-        <Field label={t(locale, "start")}><input className={inputClass} name="starts_at" type="time" required /></Field>
-        <Field label={t(locale, "end")}><input className={inputClass} name="ends_at" type="time" required /></Field>
-        <Field label={t(locale, "requiredCount")}><input className={inputClass} name="required_count" type="number" min="1" max="20" defaultValue="1" /></Field>
-        <button className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"><Plus size={17} />{t(locale, "save")}</button>
-      </form>
-      <div className="mt-4 flex flex-wrap gap-2">
-        {(["weekday_on_call", "weekend_day", "weekend_night", "full_day"] as const).map((preset) => (
-          <button key={preset} type="button" onClick={() => addPreset(preset)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
-            {t(locale, preset)}
-          </button>
-        ))}
-      </div>
-      {activeShiftTemplate ? <div className="mt-5"><ShiftTemplateCard template={activeShiftTemplate} onChanged={refresh} /></div> : null}
-    </Card>
-    <Card>
-      <div className="grid gap-4 md:grid-cols-3">
-        <h2 className="md:col-span-3 text-lg font-semibold text-ink">{t(locale, "slotPreview")}</h2>
-        <Field label={t(locale, "year")}><input className={inputClass} value={previewYear} onChange={(event) => setPreviewYear(event.target.value)} type="number" /></Field>
-        <Field label={t(locale, "month")}><input className={inputClass} value={previewMonth} onChange={(event) => setPreviewMonth(event.target.value)} type="number" min="1" max="12" /></Field>
-        <button type="button" onClick={loadPreview} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"><RefreshCw size={17} />{t(locale, "refresh")}</button>
-      </div>
-      <div className="mt-5"><DataList rows={previewRows.slice(0, 24)} /></div>
-    </Card>
-    <Card>
-      <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftTemplates")}</h2>
-      <div className="mt-5"><ShiftTemplateList rows={rows} onChanged={refresh} /></div>
-    </Card>
+      <Card>
+        <div className="grid gap-4">
+          <h1 className="text-2xl font-semibold text-ink">{t(locale, "shiftTemplates")}</h1>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 ring-1 ring-slate-100">
+              <h2 className="text-base font-semibold text-ink">{t(locale, "shiftTemplateBuilder")}</h2>
+              <p className="mt-1 text-sm text-slate-600">{t(locale, "shiftTemplateBuilderDescription")}</p>
+              <button
+                type="button"
+                onClick={() => setIsCreateTemplateModalOpen(true)}
+                className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"
+              >
+                <Plus size={16} />
+                {t(locale, "shiftTemplateBuilder")}
+              </button>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 ring-1 ring-slate-100">
+              <h2 className="text-base font-semibold text-ink">{t(locale, "slotPreview")}</h2>
+              <p className="mt-1 text-sm text-slate-600">{t(locale, "slotPreviewDescription")}</p>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsPreviewModalOpen(true);
+                  await loadPreview();
+                }}
+                className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+              >
+                <RefreshCw size={16} />
+                {t(locale, "slotPreview")}
+              </button>
+            </div>
+          </div>
+          <div>
+            <button type="button" onClick={refresh} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">
+              <RefreshCw size={16} />
+              {t(locale, "refresh")}
+            </button>
+          </div>
+        </div>
+      </Card>
+      {isCreateTemplateModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submitTemplate}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftTemplateBuilder")}</h2>
+              <button
+                type="button"
+                onClick={() => setIsCreateTemplateModalOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                aria-label={t(locale, "close")}
+                title={t(locale, "close")}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label={t(locale, "code")}><input className={inputClass} name="code" required /></Field>
+              <Field label={t(locale, "category")}>
+                <select className={inputClass} name="category" defaultValue="bereitschaftsdienst">
+                  {SHIFT_TEMPLATE_CATEGORIES.map((category) => (
+                    <option key={category.value} value={category.value}>{t(locale, category.label)}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={t(locale, "germanName")}><input className={inputClass} name="name_de" required /></Field>
+              <Field label={t(locale, "englishName")}><input className={inputClass} name="name_en" required /></Field>
+            </div>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCreateTemplateModalOpen(false)}
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+              >
+                {t(locale, "close")}
+              </button>
+              <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white">
+                <Plus size={16} />
+                {t(locale, "save")}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {isPreviewModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <h2 className="text-lg font-semibold text-ink">{t(locale, "slotPreview")}</h2>
+              <button
+                type="button"
+                onClick={() => setIsPreviewModalOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                aria-label={t(locale, "close")}
+                title={t(locale, "close")}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label={t(locale, "year")}><input className={inputClass} value={previewYear} onChange={(event) => setPreviewYear(event.target.value)} type="number" /></Field>
+              <Field label={t(locale, "month")}><input className={inputClass} value={previewMonth} onChange={(event) => setPreviewMonth(event.target.value)} type="number" min="1" max="12" /></Field>
+              <button type="button" onClick={loadPreview} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"><RefreshCw size={17} />{t(locale, "refresh")}</button>
+            </div>
+            <div className="mt-5"><DataList rows={previewRows.slice(0, 24)} /></div>
+          </div>
+        </div>
+      ) : null}
+      <Card>
+        <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftTemplates")}</h2>
+        <div className="mt-5"><ShiftTemplateList rows={rows} onChanged={refresh} /></div>
+      </Card>
     </div>
   );
 }

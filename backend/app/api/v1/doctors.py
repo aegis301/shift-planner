@@ -5,7 +5,7 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import DoctorCreate, DoctorRead, DoctorUpdate
-from app.services.doctors import create_doctor, list_doctors, update_doctor
+from app.services.doctors import create_doctor, delete_doctor, list_doctors, update_doctor
 
 router = APIRouter(prefix="/doctors", tags=["doctors"])
 
@@ -31,4 +31,13 @@ def patch_doctor(
     if doctor is None:
         raise HTTPException(status_code=404, detail="Doctor not found")
     return doctor
+
+
+@router.delete("/{doctor_id}")
+def delete_doctor_endpoint(
+    doctor_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return {"deleted": delete_doctor(db, doctor_id, actor=user.email, source="rest")}
 

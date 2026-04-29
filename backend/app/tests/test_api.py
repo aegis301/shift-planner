@@ -346,6 +346,50 @@ def test_regenerate_roster_slots_clears_assignments_and_updates_slots(client: Te
     assert regenerated_json["assignments"] == []
 
 
+def test_delete_shift_variant_clears_generated_slots_and_assignments(client: TestClient):
+    login(client)
+    doctor_id = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. Variant Delete", "email": "variant-delete@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "VD",
+            "name_de": "Variantendienst",
+            "name_en": "Variant duty",
+            "category": "other",
+        },
+    ).json()
+    variant = client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Täglich",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = roster_matrix["slots"][0]
+    client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doctor_id})
+
+    delete_response = client.delete(f"/api/v1/shift-templates/variants/{variant['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+
+    templates = client.get("/api/v1/shift-templates").json()
+    updated_template = next(item for item in templates if item["id"] == template["id"])
+    assert updated_template["variants"] == []
+
+    next_roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    assert next_roster_matrix["slots"] == []
+    assert next_roster_matrix["assignments"] == []
+
+
 def test_delete_planning_period_removes_period_and_related_data(client: TestClient):
     login(client)
     doctor_id = client.post(
@@ -407,3 +451,30 @@ def test_delete_shift_template_clears_generated_slots_and_assignments(client: Te
     next_roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     assert next_roster_matrix["slots"] == []
     assert next_roster_matrix["assignments"] == []
+
+
+def test_delete_doctor_clears_related_data(client: TestClient):
+    login(client)
+    doctor = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. Purge", "email": "purge@example.com", "employment_percentage": 80},
+    ).json()
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 12}).json()["id"]
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells",
+        json={"doctor_id": doctor["id"], "cell_date": "2026-12-01", "status": "urlaub"},
+    )
+    client.put(
+        f"/api/v1/matrix/{period_id}/notes",
+        json={"doctor_id": doctor["id"], "source_text": "mail", "summary": "summary"},
+    )
+
+    delete_response = client.delete(f"/api/v1/doctors/{doctor['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    doctors = client.get("/api/v1/doctors").json()
+    assert all(item["id"] != doctor["id"] for item in doctors)
+    matrix = client.get(f"/api/v1/matrix/{period_id}").json()
+    assert matrix["cells"] == []
+    notes = client.get(f"/api/v1/matrix/{period_id}/notes").json()
+    assert notes == []

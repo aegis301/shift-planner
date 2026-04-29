@@ -18,6 +18,7 @@ from app.services.shift_templates import (
     create_shift_template,
     create_shift_variant,
     delete_shift_template,
+    delete_shift_variant,
     list_shift_templates,
     preview_slots_for_month,
     update_shift_template,
@@ -87,6 +88,15 @@ def patch_shift_variant(
     if variant is None:
         raise HTTPException(status_code=404, detail="Shift variant not found")
     return variant
+
+
+@router.delete("/variants/{variant_id}")
+def delete_shift_variant_endpoint(
+    variant_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return {"deleted": delete_shift_variant(db, variant_id, actor=user.email, source="rest")}
 
 
 @router.post("/preview", response_model=list[GeneratedRosterSlotPreview])

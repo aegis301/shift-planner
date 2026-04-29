@@ -2,6 +2,8 @@ import pytest
 
 from mcp_app.server import (
     create_shift_template_tool,
+    delete_doctor_tool,
+    delete_shift_variant_tool,
     delete_planning_period_tool,
     delete_shift_template_tool,
     regenerate_planning_period_roster_tool,
@@ -54,3 +56,7 @@ def test_destructive_planning_tools_reject_invalid_token_before_db_access():
         delete_planning_period_tool(token="wrong-token", planning_period_id=1)
     with pytest.raises(PermissionError):
         delete_shift_template_tool(token="wrong-token", shift_template_id=1)
+    with pytest.raises(PermissionError):
+        delete_shift_variant_tool(token="wrong-token", shift_variant_id=1)
+    with pytest.raises(PermissionError):
+        delete_doctor_tool(token="wrong-token", doctor_id=1)

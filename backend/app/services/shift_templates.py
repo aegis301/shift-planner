@@ -131,6 +131,30 @@ def update_shift_variant(
     return variant
 
 
+def delete_shift_variant(db: Session, variant_id: int, *, actor: str, source: str) -> bool:
+    variant = db.get(ShiftVariant, variant_id)
+    if variant is None:
+        return False
+    slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.shift_variant_id == variant_id)))
+    if slot_ids:
+        for assignment in db.scalars(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id.in_(slot_ids))):
+            db.delete(assignment)
+    for slot in db.scalars(select(RosterSlot).where(RosterSlot.shift_variant_id == variant_id)):
+        db.delete(slot)
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="delete",
+        entity_type="shift_variant",
+        entity_id=variant.id,
+        details={"shift_template_id": variant.shift_template_id, "cleared_slot_count": len(slot_ids)},
+    )
+    db.delete(variant)
+    db.commit()
+    return True
+
+
 def _variant_applies(
     variant: ShiftVariant,
     start_class: str,
