@@ -9,16 +9,15 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.schemas import (
-    AvailabilityRequestCreate,
     DoctorPeriodNoteUpsert,
     DoctorCreate,
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
     PlanningPeriodCreate,
-    RosterAssignmentCreate,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentUpsert,
-    ShiftTypeCreate,
+    ShiftTemplateCreate,
+    ShiftVariantCreate,
 )
 from app.services.doctors import create_doctor, list_doctors
 from app.services.matrix import (
@@ -29,19 +28,23 @@ from app.services.matrix import (
     upsert_planning_cell,
 )
 from app.services.planning import (
-    assign_shift,
     create_planning_period,
+    delete_planning_period,
     list_planning_periods,
-    list_requests,
-    list_roster_assignments,
-    record_availability_request,
 )
 from app.services.roster_matrix import (
     clear_roster_slot_assignment,
     get_roster_matrix,
+    reset_roster_slots_for_period,
     upsert_roster_slot_assignment,
 )
-from app.services.shift_types import create_shift_type, list_shift_types
+from app.services.shift_templates import (
+    create_shift_template,
+    create_shift_variant,
+    delete_shift_template,
+    list_shift_templates,
+    preview_slots_for_month,
+)
 from app.services.validation import validate_roster
 
 mcp = FastMCP("Shift Planner")
@@ -84,11 +87,17 @@ def doctors_resource() -> list[dict[str, Any]]:
         return [serialize_model(doctor) for doctor in list_doctors(db)]
 
 
-@mcp.resource("shift-planner://shift-types")
-def shift_types_resource() -> list[dict[str, Any]]:
-    """List all shift types."""
+@mcp.resource("shift-planner://shift-templates")
+def shift_templates_resource() -> list[dict[str, Any]]:
+    """List all shift templates with variant metadata."""
     with db_session() as db:
-        return [serialize_model(shift_type) for shift_type in list_shift_types(db)]
+        return [
+            {
+                **serialize_model(template),
+                "variants": [serialize_model(variant) for variant in template.variants],
+            }
+            for template in list_shift_templates(db)
+        ]
 
 
 @mcp.resource("shift-planner://planning-periods")
@@ -96,20 +105,6 @@ def planning_periods_resource() -> list[dict[str, Any]]:
     """List monthly planning periods."""
     with db_session() as db:
         return [serialize_model(period) for period in list_planning_periods(db)]
-
-
-@mcp.resource("shift-planner://requests")
-def requests_resource() -> list[dict[str, Any]]:
-    """List availability requests."""
-    with db_session() as db:
-        return [serialize_model(request) for request in list_requests(db)]
-
-
-@mcp.resource("shift-planner://roster")
-def roster_resource() -> list[dict[str, Any]]:
-    """List roster assignments."""
-    with db_session() as db:
-        return [serialize_model(assignment) for assignment in list_roster_assignments(db)]
 
 
 @mcp.resource("shift-planner://matrix/{planning_period_id}")
@@ -161,32 +156,80 @@ def create_doctor_tool(
 
 
 @mcp.tool
-def create_shift_type_tool(
+def create_shift_template_tool(
     token: str,
     code: str,
     name_de: str,
     name_en: str,
-    starts_at: str,
-    ends_at: str,
-    category: str = "day",
+    category: str = "bereitschaftsdienst",
+    display_order: int = 0,
 ) -> dict[str, Any]:
-    """Create a shift type. Time values must be HH:MM or HH:MM:SS. Requires MCP admin token."""
+    """Create a shift template. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        shift_type = create_shift_type(
+        template = create_shift_template(
             db,
-            ShiftTypeCreate(
+            ShiftTemplateCreate(
                 code=code,
                 name_de=name_de,
                 name_en=name_en,
-                starts_at=time.fromisoformat(starts_at),
-                ends_at=time.fromisoformat(ends_at),
                 category=category,  # type: ignore[arg-type]
+                display_order=display_order,
             ),
             actor="mcp",
             source="mcp",
         )
-        return serialize_model(shift_type)
+        return serialize_model(template)
+
+
+@mcp.tool
+def delete_shift_template_tool(token: str, shift_template_id: int) -> dict[str, bool]:
+    """Delete a shift template, its variants, generated slots, and assignments. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        return {"deleted": delete_shift_template(db, shift_template_id, actor="mcp", source="mcp")}
+
+
+@mcp.tool
+def create_shift_variant_tool(
+    token: str,
+    shift_template_id: int,
+    label: str,
+    start_day_class: str,
+    starts_at: str,
+    ends_at: str,
+    end_day_class: str | None = None,
+    end_day_offset: int = 0,
+    required_count: int = 1,
+) -> dict[str, Any]:
+    """Create a shift template variant. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        variant = create_shift_variant(
+            db,
+            shift_template_id,
+            ShiftVariantCreate(
+                label=label,
+                start_day_class=start_day_class,  # type: ignore[arg-type]
+                end_day_class=end_day_class,  # type: ignore[arg-type]
+                starts_at=time.fromisoformat(starts_at),
+                ends_at=time.fromisoformat(ends_at),
+                end_day_offset=end_day_offset,
+                required_count=required_count,
+            ),
+            actor="mcp",
+            source="mcp",
+        )
+        if variant is None:
+            raise ValueError("Shift template not found")
+        return serialize_model(variant)
+
+
+@mcp.tool
+def preview_shift_slots_tool(year: int, month: int) -> list[dict[str, Any]]:
+    """Preview generated concrete roster slots for a month."""
+    with db_session() as db:
+        return [slot.model_dump(mode="json") for slot in preview_slots_for_month(db, year=year, month=month)]
 
 
 @mcp.tool
@@ -199,59 +242,20 @@ def create_planning_period_tool(token: str, year: int, month: int) -> dict[str, 
 
 
 @mcp.tool
-def record_availability_request_tool(
-    token: str,
-    doctor_id: int,
-    planning_period_id: int,
-    request_date: str,
-    request_type: str,
-    note: str | None = None,
-) -> dict[str, Any]:
-    """Record a wish, no-go, or preference. Requires MCP admin token."""
+def regenerate_planning_period_roster_tool(token: str, planning_period_id: int) -> dict[str, Any]:
+    """Delete roster slots and assignments for a period, then regenerate slots from current templates."""
     require_token(token)
     with db_session() as db:
-        request = record_availability_request(
-            db,
-            AvailabilityRequestCreate(
-                doctor_id=doctor_id,
-                planning_period_id=planning_period_id,
-                request_date=date.fromisoformat(request_date),
-                request_type=request_type,  # type: ignore[arg-type]
-                note=note,
-            ),
-            actor="mcp",
-            source="mcp",
-        )
-        return serialize_model(request)
+        reset_roster_slots_for_period(db, planning_period_id, actor="mcp", source="mcp")
+        return get_roster_matrix(db, planning_period_id).model_dump(mode="json")
 
 
 @mcp.tool
-def assign_shift_tool(
-    token: str,
-    doctor_id: int,
-    planning_period_id: int,
-    shift_type_id: int,
-    assignment_date: str,
-    note: str | None = None,
-    manual_override: bool = False,
-) -> dict[str, Any]:
-    """Assign a doctor to a shift. Requires MCP admin token."""
+def delete_planning_period_tool(token: str, planning_period_id: int) -> dict[str, bool]:
+    """Delete a planning period and all related wishes, notes, roster slots, and assignments."""
     require_token(token)
     with db_session() as db:
-        assignment = assign_shift(
-            db,
-            RosterAssignmentCreate(
-                doctor_id=doctor_id,
-                planning_period_id=planning_period_id,
-                shift_type_id=shift_type_id,
-                assignment_date=date.fromisoformat(assignment_date),
-                note=note,
-                manual_override=manual_override,
-            ),
-            actor="mcp",
-            source="mcp",
-        )
-        return serialize_model(assignment)
+        return {"deleted": delete_planning_period(db, planning_period_id, actor="mcp", source="mcp")}
 
 
 @mcp.tool

@@ -42,27 +42,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("planning_period_id", "doctor_id", name="uq_doctor_period_note"),
     )
 
-    op.execute(
-        """
-        INSERT INTO planning_cells (planning_period_id, doctor_id, cell_date, status, comment, source)
-        SELECT planning_period_id,
-               doctor_id,
-               request_date,
-               CASE request_type
-                   WHEN 'wish' THEN 'dienstwunsch'
-                   WHEN 'no_go' THEN 'kein_dienst'
-                   WHEN 'preference' THEN 'dienstwunsch'
-                   ELSE 'dienstwunsch'
-               END,
-               note,
-               'legacy_request'
-        FROM availability_requests
-        ON CONFLICT ON CONSTRAINT uq_planning_cell DO NOTHING
-        """
-    )
-
-
 def downgrade() -> None:
     op.drop_table("doctor_period_notes")
     op.drop_table("planning_cells")
-

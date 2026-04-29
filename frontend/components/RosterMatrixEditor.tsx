@@ -38,24 +38,25 @@ type PlanningPeriod = {
   status: string;
 };
 
-type ShiftType = {
-  id: number;
-  code: string;
-  name_de: string;
-  name_en: string;
-  starts_at: string;
-  ends_at: string;
-  category: "day" | "night" | "on_call" | "other";
-  is_active: boolean;
-};
+type SlotCategory = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
+type DayClass = "weekday" | "weekend" | "holiday" | "any";
 
 type RosterSlot = {
   id: number;
   planning_period_id: number;
-  shift_type_id: number;
+  shift_template_id: number | null;
+  shift_variant_id: number | null;
   slot_date: string;
   position: number;
   label: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  day_class: string | null;
+  template_code: string | null;
+  template_name_de: string | null;
+  template_name_en: string | null;
+  variant_label: string | null;
+  category: SlotCategory | null;
 };
 
 type RosterSlotAssignment = {
@@ -78,7 +79,6 @@ export type RosterMatrix = {
   planning_period: PlanningPeriod;
   doctors: Doctor[];
   days: MatrixDay[];
-  shift_types: ShiftType[];
   slots: RosterSlot[];
   assignments: RosterSlotAssignment[];
   planning_cells: PlanningCell[];
@@ -107,8 +107,39 @@ function formatDate(locale: Locale, value: string) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
-function shiftLabel(locale: Locale, shiftType: ShiftType) {
-  return locale === "de" ? shiftType.name_de : shiftType.name_en;
+function formatTimeRange(slot: RosterSlot) {
+  if (!slot.starts_at || !slot.ends_at) {
+    return "";
+  }
+  const start = new Date(slot.starts_at);
+  const end = new Date(slot.ends_at);
+  const startText = start.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const endText = end.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const nextDay = start.toDateString() !== end.toDateString() ? " +1" : "";
+  return `${startText}-${endText}${nextDay}`;
+}
+
+function dayClassPillClass(dayClass: string | null): string {
+  if (dayClass === "weekday") {
+    return "bg-sky-50 text-sky-800 ring-sky-200";
+  }
+  if (dayClass === "weekend") {
+    return "bg-violet-50 text-violet-800 ring-violet-200";
+  }
+  if (dayClass === "holiday") {
+    return "bg-rose-50 text-rose-800 ring-rose-200";
+  }
+  return "bg-slate-50 text-slate-700 ring-slate-200";
+}
+
+function dayClassLabel(locale: Locale, dayClass: string): string {
+  const labels: Record<DayClass, TranslationKey> = {
+    any: "anyDay",
+    weekday: "weekday",
+    weekend: "weekend",
+    holiday: "holiday"
+  };
+  return dayClass in labels ? t(locale, labels[dayClass as DayClass]) : dayClass;
 }
 
 export function RosterMatrixEditor({
@@ -131,9 +162,14 @@ export function RosterMatrixEditor({
   const [message, setMessage] = useState("");
   const [savingAssignments, setSavingAssignments] = useState(0);
 
-  const slotMap = useMemo(() => {
-    const map = new Map<string, RosterSlot>();
-    matrix?.slots.forEach((slot) => map.set(`${slot.slot_date}:${slot.shift_type_id}:${slot.position}`, slot));
+  const slotsByDay = useMemo(() => {
+    const map = new Map<string, RosterSlot[]>();
+    matrix?.slots.forEach((slot) => {
+      const daySlots = map.get(slot.slot_date) ?? [];
+      daySlots.push(slot);
+      daySlots.sort((a, b) => (a.starts_at ?? "").localeCompare(b.starts_at ?? "") || a.position - b.position);
+      map.set(slot.slot_date, daySlots);
+    });
     return map;
   }, [matrix]);
 
@@ -310,11 +346,11 @@ export function RosterMatrixEditor({
       )}
 
       {matrix ? (
-        matrix.shift_types.length > 0 ? (
+        matrix.slots.length > 0 ? (
           <>
             <DesktopRosterMatrix
               matrix={matrix}
-              slotMap={slotMap}
+              slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
               planningCellMap={planningCellMap}
               onSave={saveAssignment}
@@ -322,7 +358,7 @@ export function RosterMatrixEditor({
             />
             <MobileRosterMatrix
               matrix={matrix}
-              slotMap={slotMap}
+              slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
               planningCellMap={planningCellMap}
               onSave={saveAssignment}
@@ -331,7 +367,7 @@ export function RosterMatrixEditor({
           </>
         ) : (
           <Card>
-            <p className="text-sm text-slate-500">{t(locale, "noShiftTypesForRoster")}</p>
+            <p className="text-sm text-slate-500">{t(locale, "noShiftTemplatesForRoster")}</p>
           </Card>
         )
       ) : (
@@ -345,14 +381,14 @@ export function RosterMatrixEditor({
 
 function DesktopRosterMatrix({
   matrix,
-  slotMap,
+  slotsByDay,
   assignmentMap,
   planningCellMap,
   onSave,
   locale
 }: {
   matrix: RosterMatrix;
-  slotMap: Map<string, RosterSlot>;
+  slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
   onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
@@ -366,12 +402,9 @@ function DesktopRosterMatrix({
             <th className="sticky left-0 top-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-left font-semibold text-slate-700">
               {t(locale, "date")}
             </th>
-            {matrix.shift_types.map((shiftType) => (
-              <th key={shiftType.id} className="sticky top-0 z-10 min-w-56 border-b border-slate-200 bg-white p-3 text-left font-semibold text-slate-700">
-                <span className="block text-slate-800">{shiftLabel(locale, shiftType)}</span>
-                <span className="block text-xs font-normal text-slate-500">{shiftType.starts_at.slice(0, 5)}-{shiftType.ends_at.slice(0, 5)}</span>
-              </th>
-            ))}
+            <th className="sticky top-0 z-10 min-w-[44rem] border-b border-slate-200 bg-white p-3 text-left font-semibold text-slate-700">
+              {t(locale, "generatedSlots")}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -380,11 +413,11 @@ function DesktopRosterMatrix({
               <td className="sticky left-0 z-10 border-r border-slate-200 bg-white p-3 font-medium text-slate-700">
                 {formatDate(locale, day.date)}
               </td>
-              {matrix.shift_types.map((shiftType) => {
-                const slot = slotMap.get(`${day.date}:${shiftType.id}:1`);
-                return (
-                  <td key={shiftType.id} className="border-b border-slate-100 p-2 align-top">
-                    {slot ? (
+              <td className="border-b border-slate-100 p-2 align-top">
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {(slotsByDay.get(day.date) ?? []).map((slot) => (
+                    <div key={slot.id} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                      <SlotHeader slot={slot} locale={locale} />
                       <RosterCell
                         slot={slot}
                         doctors={matrix.doctors}
@@ -393,10 +426,10 @@ function DesktopRosterMatrix({
                         onSave={onSave}
                         locale={locale}
                       />
-                    ) : null}
-                  </td>
-                );
-              })}
+                    </div>
+                  ))}
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -407,14 +440,14 @@ function DesktopRosterMatrix({
 
 function MobileRosterMatrix({
   matrix,
-  slotMap,
+  slotsByDay,
   assignmentMap,
   planningCellMap,
   onSave,
   locale
 }: {
   matrix: RosterMatrix;
-  slotMap: Map<string, RosterSlot>;
+  slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
   onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
@@ -426,12 +459,9 @@ function MobileRosterMatrix({
         <Card key={day.date}>
           <h2 className="mb-3 text-base font-semibold text-ink">{formatDate(locale, day.date)}</h2>
           <div className="grid gap-3">
-            {matrix.shift_types.map((shiftType) => {
-              const slot = slotMap.get(`${day.date}:${shiftType.id}:1`);
-              return (
-                <div key={shiftType.id} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-                  <p className="text-sm font-semibold text-slate-700">{shiftLabel(locale, shiftType)}</p>
-                  {slot ? (
+            {(slotsByDay.get(day.date) ?? []).map((slot) => (
+                <div key={slot.id} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+                  <SlotHeader slot={slot} locale={locale} />
                     <RosterCell
                       slot={slot}
                       doctors={matrix.doctors}
@@ -440,13 +470,28 @@ function MobileRosterMatrix({
                       onSave={onSave}
                       locale={locale}
                     />
-                  ) : null}
                 </div>
-              );
-            })}
+            ))}
           </div>
         </Card>
       ))}
+    </div>
+  );
+}
+
+function SlotHeader({ slot, locale }: { slot: RosterSlot; locale: Locale }) {
+  const label = locale === "de" ? slot.template_name_de : slot.template_name_en;
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <p className="text-sm font-semibold text-slate-800">{label || slot.label || t(locale, "generatedSlots")}</p>
+        <p className="text-xs text-slate-500">{formatTimeRange(slot)}{slot.variant_label ? ` · ${slot.variant_label}` : ""}</p>
+      </div>
+      {slot.day_class ? (
+        <span className={`rounded-full px-2 py-1 text-[0.65rem] font-semibold uppercase ring-1 ${dayClassPillClass(slot.day_class)}`}>
+          {dayClassLabel(locale, slot.day_class)}
+        </span>
+      ) : null}
     </div>
   );
 }

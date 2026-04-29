@@ -58,30 +58,85 @@ class DoctorRead(DoctorCreate):
     created_at: datetime
 
 
-class ShiftTypeCreate(BaseModel):
-    code: str = Field(min_length=1, max_length=50)
-    name_de: str
-    name_en: str
+DayClass = Literal["any", "weekday", "weekend", "holiday"]
+ShiftTemplateCategory = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
+
+
+class ShiftVariantCreate(BaseModel):
+    label: str = Field(min_length=1, max_length=255)
+    start_day_class: DayClass = "any"
+    end_day_class: DayClass | None = None
     starts_at: time
     ends_at: time
-    category: Literal["day", "night", "on_call", "other"] = "day"
+    end_day_offset: int = Field(default=0, ge=0, le=1)
+    required_count: int = Field(default=1, ge=1, le=20)
 
 
-class ShiftTypeUpdate(BaseModel):
-    code: str | None = Field(default=None, min_length=1, max_length=50)
-    name_de: str | None = None
-    name_en: str | None = None
+class ShiftVariantUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=255)
+    start_day_class: DayClass | None = None
+    end_day_class: DayClass | None = None
     starts_at: time | None = None
     ends_at: time | None = None
-    category: Literal["day", "night", "on_call", "other"] | None = None
+    end_day_offset: int | None = Field(default=None, ge=0, le=1)
+    required_count: int | None = Field(default=None, ge=1, le=20)
     is_active: bool | None = None
 
 
-class ShiftTypeRead(ShiftTypeCreate):
+class ShiftVariantRead(ShiftVariantCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    shift_template_id: int
+    is_active: bool
+    created_at: datetime
+
+
+class ShiftTemplateCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=50)
+    name_de: str
+    name_en: str
+    category: ShiftTemplateCategory = "bereitschaftsdienst"
+    display_order: int = 0
+
+
+class ShiftTemplateUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=50)
+    name_de: str | None = None
+    name_en: str | None = None
+    category: ShiftTemplateCategory | None = None
+    display_order: int | None = None
+    is_active: bool | None = None
+
+
+class ShiftTemplateRead(ShiftTemplateCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     is_active: bool
+    created_at: datetime
+    variants: list[ShiftVariantRead] = Field(default_factory=list)
+
+
+class GeneratedRosterSlotPreview(BaseModel):
+    slot_date: date_type
+    label: str
+    starts_at: datetime
+    ends_at: datetime
+    day_class: str
+    template_id: int
+    template_code: str
+    template_name_de: str
+    template_name_en: str
+    variant_id: int
+    variant_label: str
+    category: str
+    position: int
+
+
+class ShiftTemplatePreviewRequest(BaseModel):
+    year: int = Field(ge=2020, le=2100)
+    month: int = Field(ge=1, le=12)
 
 
 class PlanningPeriodCreate(BaseModel):
@@ -97,46 +152,24 @@ class PlanningPeriodRead(PlanningPeriodCreate):
     created_at: datetime
 
 
-class AvailabilityRequestCreate(BaseModel):
-    doctor_id: int
-    planning_period_id: int
-    request_date: date_type
-    request_type: Literal["wish", "no_go", "preference"]
-    note: str | None = None
-
-
-class AvailabilityRequestRead(AvailabilityRequestCreate):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime
-
-
-class RosterAssignmentCreate(BaseModel):
-    doctor_id: int
-    planning_period_id: int
-    shift_type_id: int
-    assignment_date: date_type
-    note: str | None = None
-    manual_override: bool = False
-
-
-class RosterAssignmentRead(RosterAssignmentCreate):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime
-
-
 class RosterSlotRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     planning_period_id: int
-    shift_type_id: int
+    shift_template_id: int | None = None
+    shift_variant_id: int | None = None
     slot_date: date_type
     position: int
     label: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    day_class: str | None = None
+    template_code: str | None = None
+    template_name_de: str | None = None
+    template_name_en: str | None = None
+    variant_label: str | None = None
+    category: str | None = None
     source: str
     created_at: datetime
     updated_at: datetime
@@ -218,7 +251,7 @@ class RosterMatrixRead(BaseModel):
     planning_period: PlanningPeriodRead
     doctors: list[MatrixDoctor]
     days: list[MatrixDay]
-    shift_types: list[ShiftTypeRead]
+    shift_templates: list[ShiftTemplateRead] = Field(default_factory=list)
     slots: list[RosterSlotRead]
     assignments: list[RosterSlotAssignmentRead]
     planning_cells: list[PlanningCellRead]

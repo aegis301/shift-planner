@@ -1,6 +1,14 @@
 import pytest
 
-from mcp_app.server import require_token, upsert_planning_cell_tool, upsert_roster_slot_assignment_tool
+from mcp_app.server import (
+    create_shift_template_tool,
+    delete_planning_period_tool,
+    delete_shift_template_tool,
+    regenerate_planning_period_roster_tool,
+    require_token,
+    upsert_planning_cell_tool,
+    upsert_roster_slot_assignment_tool,
+)
 
 
 def test_require_token_rejects_invalid_token():
@@ -26,3 +34,23 @@ def test_roster_slot_assignment_tool_rejects_invalid_token_before_db_access():
             roster_slot_id=1,
             doctor_id=1,
         )
+
+
+def test_shift_template_tool_rejects_invalid_token_before_db_access():
+    with pytest.raises(PermissionError):
+        create_shift_template_tool(
+            token="wrong-token",
+            code="RD",
+            name_de="Rufdienst",
+            name_en="Stand-by duty",
+            category="rufdienst",
+        )
+
+
+def test_destructive_planning_tools_reject_invalid_token_before_db_access():
+    with pytest.raises(PermissionError):
+        regenerate_planning_period_roster_tool(token="wrong-token", planning_period_id=1)
+    with pytest.raises(PermissionError):
+        delete_planning_period_tool(token="wrong-token", planning_period_id=1)
+    with pytest.raises(PermissionError):
+        delete_shift_template_tool(token="wrong-token", shift_template_id=1)

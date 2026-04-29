@@ -4,7 +4,6 @@ from io import StringIO
 from sqlalchemy.orm import Session
 
 from app.services.matrix import get_planning_matrix
-from app.services.planning import list_roster_assignments
 from app.services.roster_matrix import get_roster_matrix
 
 
@@ -29,41 +28,31 @@ def export_matrix_csv(db: Session, planning_period_id: int) -> str:
     return buffer.getvalue()
 
 
-def export_roster_csv(db: Session, planning_period_id: int) -> str:
-    buffer = StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["date", "doctor", "doctor_email", "shift_code", "shift_de", "shift_en", "note"])
-    for assignment in list_roster_assignments(db, planning_period_id=planning_period_id):
-        writer.writerow(
-            [
-                assignment.assignment_date.isoformat(),
-                assignment.doctor.name,
-                assignment.doctor.email,
-                assignment.shift_type.code,
-                assignment.shift_type.name_de,
-                assignment.shift_type.name_en,
-                assignment.note or "",
-            ]
-        )
-    return buffer.getvalue()
-
-
 def export_roster_matrix_csv(db: Session, planning_period_id: int) -> str:
     matrix = get_roster_matrix(db, planning_period_id)
-    slots = {(slot.slot_date, slot.shift_type_id, slot.position): slot for slot in matrix.slots}
+    slots_by_day = {}
+    for slot in matrix.slots:
+        slots_by_day.setdefault(slot.slot_date, []).append(slot)
     assignments = {assignment.roster_slot_id: assignment for assignment in matrix.assignments}
     doctors = {doctor.id: doctor for doctor in matrix.doctors}
 
     buffer = StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["date", *[shift_type.name_de for shift_type in matrix.shift_types]])
+    writer.writerow(["date", "slot", "start", "end", "doctor", "template_code", "variant", "category"])
     for day in matrix.days:
-        row = [day.date.isoformat()]
-        for shift_type in matrix.shift_types:
-            slot = slots.get((day.date, shift_type.id, 1))
+        for slot in slots_by_day.get(day.date, []):
             assignment = assignments.get(slot.id) if slot else None
             doctor = doctors.get(assignment.doctor_id) if assignment else None
-            value = doctor.name if doctor else ""
-            row.append(value)
-        writer.writerow(row)
+            writer.writerow(
+                [
+                    day.date.isoformat(),
+                    slot.label or "",
+                    slot.starts_at.isoformat() if slot.starts_at else "",
+                    slot.ends_at.isoformat() if slot.ends_at else "",
+                    doctor.name if doctor else "",
+                    slot.template_code or "",
+                    slot.variant_label or "",
+                    slot.category or "",
+                ]
+            )
     return buffer.getvalue()

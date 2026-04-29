@@ -10,15 +10,30 @@
 - Changed the host Postgres port default to `5433` to avoid conflicts with local Postgres installations.
 - Added matrix-first planning with `PlanningCell`, `DoctorPeriodNote`, REST endpoints, FastMCP resources/tools, validation, CSV export, and frontend matrix editing.
 - Added planning-month creation directly to the matrix editor so new matrices can be created and loaded without using API docs.
-- Made doctor and shift type lists load automatically when their routes are opened.
+- Made doctor and shift-template lists load automatically when their routes are opened.
 - Made the matrix/wishlist screen load the latest planning period automatically and documented Docker hot-reload behavior.
 - Removed per-cell matrix save buttons; matrix status changes now save immediately and comments autosave after editing, with a top-level manual save/reload action.
-- Added a separate final roster matrix backed by `RosterSlot` and `RosterSlotAssignment`, with rows as days and columns as active shift types.
+- Added a separate final roster matrix backed by `RosterSlot` and `RosterSlotAssignment`, with rows as days and generated shift slots.
 - Added REST endpoints, CSV export, validation, and FastMCP resource/tools for the final roster matrix.
-- Changed `/roster` to use the new shift-by-day final roster editor while `/requests` remains the doctor-by-day wishes matrix.
+- Changed the planning UI toward a shift-by-day final roster editor and a doctor-by-day wishes matrix.
 - Removed final roster comment editing from the UI and CSV export.
 - Added wishes/status pills to final roster cells so assigned doctors' conflicts are visible inline.
 - Added a unified `/planning` workspace with shared month selection, wishes, final roster, inline conflict summary, CSV exports, and workload stats.
 - Simplified the navbar to Dashboard, Planning, Doctors, Shift Types, and Settings.
-- Removed standalone frontend pages for wishes, roster, validation, and export while keeping backend validation/API compatibility.
+- Removed standalone frontend pages for wishes, roster, validation, and export while keeping backend validation available for inline planning checks.
 - Moved doctor/month notes into per-doctor buttons in the wishes matrix header with modal editing.
+- Added a Planning view toggle for the full stacked workflow or tabbed Wishes, Roster, and Analysis sections.
+- Added shift templates and variants for weekday/weekend/holiday-aware slot generation with North Rhine-Westphalia holiday support.
+- Replaced fixed shift-type roster columns with concrete generated roster slots per day.
+- Added shift-template REST and FastMCP surfaces plus a guided frontend template builder and monthly slot preview.
+- Limited shift-template categories to Bereitschaftsdienst/on-call duty, Rufdienst/stand-by duty, and Andere/other.
+- Improved shift-template cards so variants display as compact structured rows instead of raw nested data.
+- Added Spätdienst/late duty as a shift-template category and inline three-dot editing for template and variant cards.
+- Made the planning workspace default to the tabbed view and replaced tab/view toggle text buttons with icon buttons.
+- Condensed the planning workspace header into a compact toolbar with modal create-month and export actions.
+- Added destructive planning-month actions to delete a month or regenerate its roster slots from current shift templates, clearing assigned shifts after confirmation.
+- Colored weekday, weekend, and holiday day-class pills distinctly in shift-template and roster-slot displays.
+- Moved shift-template editing into a dedicated modal with field widths matched to names, codes, times, counts, and status controls.
+- Simplified the shift-template editor by inferring overnight offsets from times, removing manual sorting, and using one modal-level save action.
+- Added guarded shift-template deletion from the editor modal, clearing variants, generated slots, and related assignments.
+- Removed old simple shift type, availability request, and direct roster assignment compatibility code and added a cleanup migration for existing local databases.

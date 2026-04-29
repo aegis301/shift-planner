@@ -1,29 +1,27 @@
 from app.models.entities import (
     AuditLog,
-    AvailabilityRequest,
     DoctorPeriodNote,
     Doctor,
     PlanningPeriod,
     PlanningCell,
-    RosterAssignment,
     RosterSlot,
     RosterSlotAssignment,
     RuleConfig,
-    ShiftType,
+    ShiftTemplate,
+    ShiftVariant,
     User,
 )
 
 __all__ = [
     "AuditLog",
-    "AvailabilityRequest",
     "DoctorPeriodNote",
     "Doctor",
     "PlanningPeriod",
     "PlanningCell",
-    "RosterAssignment",
     "RosterSlot",
     "RosterSlotAssignment",
     "RuleConfig",
-    "ShiftType",
+    "ShiftTemplate",
+    "ShiftVariant",
     "User",
 ]

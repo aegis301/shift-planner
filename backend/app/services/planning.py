@@ -1,8 +1,14 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AvailabilityRequest, PlanningPeriod, RosterAssignment
-from app.schemas import AvailabilityRequestCreate, PlanningPeriodCreate, RosterAssignmentCreate
+from app.models import (
+    DoctorPeriodNote,
+    PlanningCell,
+    PlanningPeriod,
+    RosterSlot,
+    RosterSlotAssignment,
+)
+from app.schemas import PlanningPeriodCreate
 from app.services.audit import record_audit
 
 
@@ -25,52 +31,30 @@ def create_planning_period(db: Session, payload: PlanningPeriodCreate, *, actor:
     return period
 
 
-def list_requests(db: Session, *, planning_period_id: int | None = None) -> list[AvailabilityRequest]:
-    stmt = select(AvailabilityRequest).order_by(AvailabilityRequest.request_date)
-    if planning_period_id is not None:
-        stmt = stmt.where(AvailabilityRequest.planning_period_id == planning_period_id)
-    return list(db.scalars(stmt))
+def delete_planning_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> bool:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None:
+        return False
 
+    slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.planning_period_id == planning_period_id)))
+    if slot_ids:
+        for assignment in db.scalars(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id.in_(slot_ids))):
+            db.delete(assignment)
+    for slot in db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)):
+        db.delete(slot)
+    for model in (PlanningCell, DoctorPeriodNote):
+        for item in db.scalars(select(model).where(model.planning_period_id == planning_period_id)):
+            db.delete(item)
 
-def record_availability_request(
-    db: Session, payload: AvailabilityRequestCreate, *, actor: str, source: str
-) -> AvailabilityRequest:
-    request = AvailabilityRequest(**payload.model_dump())
-    db.add(request)
-    db.flush()
     record_audit(
         db,
         actor=actor,
         source=source,
-        action="create",
-        entity_type="availability_request",
-        entity_id=request.id,
+        action="delete",
+        entity_type="planning_period",
+        entity_id=planning_period_id,
+        details={"year": period.year, "month": period.month, "cleared_slot_count": len(slot_ids)},
     )
+    db.delete(period)
     db.commit()
-    db.refresh(request)
-    return request
-
-
-def list_roster_assignments(db: Session, *, planning_period_id: int | None = None) -> list[RosterAssignment]:
-    stmt = select(RosterAssignment).order_by(RosterAssignment.assignment_date)
-    if planning_period_id is not None:
-        stmt = stmt.where(RosterAssignment.planning_period_id == planning_period_id)
-    return list(db.scalars(stmt))
-
-
-def assign_shift(db: Session, payload: RosterAssignmentCreate, *, actor: str, source: str) -> RosterAssignment:
-    assignment = RosterAssignment(**payload.model_dump())
-    db.add(assignment)
-    db.flush()
-    record_audit(
-        db,
-        actor=actor,
-        source=source,
-        action="create",
-        entity_type="roster_assignment",
-        entity_id=assignment.id,
-    )
-    db.commit()
-    db.refresh(assignment)
-    return assignment
-
+    return True

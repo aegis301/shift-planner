@@ -21,14 +21,13 @@ def upgrade() -> None:
         "roster_slots",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("planning_period_id", sa.Integer(), sa.ForeignKey("planning_periods.id"), nullable=False),
-        sa.Column("shift_type_id", sa.Integer(), sa.ForeignKey("shift_types.id"), nullable=False),
         sa.Column("slot_date", sa.Date(), nullable=False),
         sa.Column("position", sa.Integer(), nullable=False, server_default="1"),
         sa.Column("label", sa.String(length=255), nullable=True),
         sa.Column("source", sa.String(length=50), nullable=False, server_default="system"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.UniqueConstraint("planning_period_id", "slot_date", "shift_type_id", "position", name="uq_roster_slot"),
+        sa.UniqueConstraint("planning_period_id", "slot_date", "position", name="uq_roster_slot"),
     )
     op.create_table(
         "roster_slot_assignments",

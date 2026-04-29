@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
@@ -67,39 +67,40 @@ def test_roster_validation_no_go_conflict(client: TestClient):
         "/api/v1/doctors",
         json={"name": "Dr. Max Planck", "email": "max@example.com", "employment_percentage": 100},
     ).json()["id"]
-    shift_type_id = client.post(
-        "/api/v1/shift-types",
+    template = client.post(
+        "/api/v1/shift-templates",
         json={
             "code": "N",
             "name_de": "Nachtdienst",
             "name_en": "Night shift",
-            "starts_at": time(20, 0).isoformat(),
-            "ends_at": time(8, 0).isoformat(),
-            "category": "night",
+            "category": "other",
         },
-    ).json()["id"]
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Nacht",
+            "start_day_class": "any",
+            "starts_at": "20:00:00",
+            "ends_at": "08:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+        },
+    )
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 5}).json()["id"]
     request_date = date(2026, 5, 3).isoformat()
-    client.post(
-        "/api/v1/requests",
-        json={
-            "doctor_id": doctor_id,
-            "planning_period_id": period_id,
-            "request_date": request_date,
-            "request_type": "no_go",
-        },
+    roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == request_date)
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells",
+        json={"doctor_id": doctor_id, "cell_date": request_date, "status": "kein_dienst"},
     )
-    client.post(
-        "/api/v1/roster",
-        json={
-            "doctor_id": doctor_id,
-            "planning_period_id": period_id,
-            "shift_type_id": shift_type_id,
-            "assignment_date": request_date,
-        },
+    client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "doctor_id": doctor_id},
     )
     warnings = client.get(f"/api/v1/validation/{period_id}").json()
-    assert warnings[0]["code"] == "NO_GO_CONFLICT"
+    assert warnings[0]["code"] == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT"
 
 
 def test_matrix_cell_note_and_csv_export(client: TestClient):
@@ -186,21 +187,30 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
         "/api/v1/doctors",
         json={"name": "Dr. Roster", "email": "roster@example.com", "employment_percentage": 100},
     ).json()["id"]
-    shift_type_id = client.post(
-        "/api/v1/shift-types",
+    template = client.post(
+        "/api/v1/shift-templates",
         json={
             "code": "T",
             "name_de": "Tagdienst",
             "name_en": "Day shift",
-            "starts_at": time(8, 0).isoformat(),
-            "ends_at": time(16, 0).isoformat(),
-            "category": "day",
+            "category": "other",
         },
-    ).json()["id"]
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tagdienst",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
 
     roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
-    assert roster_matrix["shift_types"][0]["id"] == shift_type_id
+    assert roster_matrix["shift_templates"][0]["code"] == "T"
     assert len(roster_matrix["slots"]) == 31
     slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == "2026-07-11")
 
@@ -221,9 +231,179 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     csv_response = client.get(f"/api/v1/exports/roster-matrix/{period_id}.csv")
     assert csv_response.status_code == 200
     assert "2026-07-11" in csv_response.text
+    assert "Tagdienst" in csv_response.text
     assert "Dr. Roster" in csv_response.text
     assert "final geplant" not in csv_response.text
 
     clear_response = client.post("/api/v1/roster-matrix/assignments/clear", json={"roster_slot_id": slot["id"]})
     assert clear_response.status_code == 200
     assert clear_response.json()["deleted"] is True
+
+
+def test_shift_template_variants_holidays_and_generated_slots(client: TestClient):
+    login(client)
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "BD",
+            "name_de": "Bereitschaftsdienst",
+            "name_en": "On-call duty",
+            "category": "bereitschaftsdienst",
+        },
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Wochentag",
+            "start_day_class": "weekday",
+            "end_day_class": "weekend",
+            "starts_at": "15:45:00",
+            "ends_at": "09:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+        },
+    )
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Wochenende Nacht",
+            "start_day_class": "weekend",
+            "starts_at": "20:00:00",
+            "ends_at": "09:00:00",
+            "end_day_offset": 1,
+            "required_count": 2,
+        },
+    )
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Feiertag Nacht",
+            "start_day_class": "holiday",
+            "starts_at": "20:00:00",
+            "ends_at": "09:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+        },
+    )
+    preview = client.post("/api/v1/shift-templates/preview", json={"year": 2026, "month": 5}).json()
+    holiday_slots = [slot for slot in preview if slot["slot_date"] == "2026-05-01"]
+    assert holiday_slots
+    assert holiday_slots[0]["day_class"] == "holiday"
+    assert [slot["variant_label"] for slot in holiday_slots] == ["Feiertag Nacht"]
+
+    saturday_slots = [
+        slot for slot in preview if slot["slot_date"] == "2026-05-02" and slot["variant_label"] == "Wochenende Nacht"
+    ]
+    assert len(saturday_slots) == 2
+
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 5}).json()["id"]
+    roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    generated = [slot for slot in roster_matrix["slots"] if slot["slot_date"] == "2026-05-01"]
+    assert generated[0]["starts_at"]
+    assert generated[0]["template_code"] == "BD"
+
+
+def test_regenerate_roster_slots_clears_assignments_and_updates_slots(client: TestClient):
+    login(client)
+    doctor_id = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. Reset", "email": "reset@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "RESET",
+            "name_de": "Resetdienst",
+            "name_en": "Reset duty",
+            "category": "other",
+        },
+    ).json()
+    variant = client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Täglich",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    assert len(roster_matrix["slots"]) == 30
+    slot = roster_matrix["slots"][0]
+    client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doctor_id})
+
+    client.patch(
+        f"/api/v1/shift-templates/variants/{variant['id']}",
+        json={"required_count": 2},
+    )
+    regenerated = client.post(f"/api/v1/planning-periods/{period_id}/regenerate-roster")
+    assert regenerated.status_code == 200
+    regenerated_json = regenerated.json()
+    assert len(regenerated_json["slots"]) == 60
+    assert regenerated_json["assignments"] == []
+
+
+def test_delete_planning_period_removes_period_and_related_data(client: TestClient):
+    login(client)
+    doctor_id = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. Delete", "email": "delete@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 10}).json()["id"]
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells",
+        json={"doctor_id": doctor_id, "cell_date": "2026-10-01", "status": "urlaub"},
+    )
+    client.put(
+        f"/api/v1/matrix/{period_id}/notes",
+        json={"doctor_id": doctor_id, "source_text": "Quelle", "summary": "Zusammenfassung"},
+    )
+
+    delete_response = client.delete(f"/api/v1/planning-periods/{period_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    assert all(period["id"] != period_id for period in client.get("/api/v1/planning-periods").json())
+    assert client.get(f"/api/v1/roster-matrix/{period_id}").status_code == 404
+
+
+def test_delete_shift_template_clears_generated_slots_and_assignments(client: TestClient):
+    login(client)
+    doctor_id = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. Template Delete", "email": "template-delete@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "DEL",
+            "name_de": "Löschdienst",
+            "name_en": "Delete duty",
+            "category": "other",
+        },
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Täglich",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 11}).json()["id"]
+    roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = roster_matrix["slots"][0]
+    client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doctor_id})
+
+    delete_response = client.delete(f"/api/v1/shift-templates/{template['id']}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["deleted"] is True
+    assert all(item["id"] != template["id"] for item in client.get("/api/v1/shift-templates").json())
+    next_roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    assert next_roster_matrix["slots"] == []
+    assert next_roster_matrix["assignments"] == []

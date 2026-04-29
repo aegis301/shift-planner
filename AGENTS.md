@@ -26,11 +26,20 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 The active planning workflow uses two monthly matrices:
 
 - Wishes matrix: rows are days, columns are doctors, and each cell has exactly one status plus an optional comment. This is backed by `PlanningCell` and `DoctorPeriodNote`.
-- Final roster matrix: rows are days, columns are active shift types, and each cell assigns one doctor to one roster slot. This is backed by `RosterSlot` and `RosterSlotAssignment`.
+- Final roster matrix: rows are days, and each day shows concrete generated shift slots. Each cell assigns one doctor to one roster slot. This is backed by `RosterSlot` and `RosterSlotAssignment`.
 
-Validation should compare final roster assignments against wishes/unavailable cells. The roster UI should surface assigned doctors' wishes as the same colored status pills used in the wishes matrix, with unavailable statuses highlighted as conflicts. Keep legacy availability request and roster assignment APIs compatible for now, but new planning features should target the matrix models first.
+## Shift Template Rule
+Shift configuration must use `ShiftTemplate` and `ShiftVariant`. Do not add compatibility code for old simple shift-type, availability-request, or direct roster-assignment schemas. Variants define applicability (`any`, `weekday`, `weekend`, `holiday`), start/end time, inferred `end_day_offset`, and required count. Slot generation must use the North Rhine-Westphalia German holiday calendar; holidays behave like weekends unless an explicit holiday variant exists. Template categories are currently limited to `bereitschaftsdienst`, `rufdienst`, `spaetdienst`, and `other`, displayed as `Bereitschaftsdienst` / on-call duty, `Rufdienst` / stand-by duty, `Spätdienst` / late duty, and `Andere` / other.
 
-The primary frontend planning workflow is `/planning`. It owns the selected planning month and renders wishes, final roster assignment, inline validation, CSV export actions, and workload stats together. Do not reintroduce separate frontend pages for wishes, roster, validation, or export unless the product direction changes.
+Validation should compare final roster assignments against wishes/unavailable cells. The roster UI should surface assigned doctors' wishes as the same colored status pills used in the wishes matrix, with unavailable statuses highlighted as conflicts.
+
+The primary frontend planning workflow is `/planning`. It owns the selected planning month and renders wishes, final roster assignment, inline validation, CSV export actions, and workload stats together. It must support both the full stacked view and a tabbed Wishes/Roster/Analysis view. Do not reintroduce separate frontend pages for wishes, roster, validation, or export unless the product direction changes.
+
+Deleting a planning month and regenerating roster slots are destructive month-level actions. They must clear existing roster assignments, require explicit confirmation in the UI, and remain exposed through guarded REST/MCP service-backed functionality.
+
+Deleting a shift template is also destructive because it removes variants, generated roster slots, and assignments tied to those slots. Keep it behind explicit UI confirmation and guarded REST/MCP service-backed functionality.
+
+When a schema changes in a way that makes old local data incompatible, prefer a clear forward migration and tell the developer exactly what data must be recreated instead of carrying long-term compatibility branches.
 
 Doctor/month notes belong in the wishes matrix header as per-doctor modal actions, not as a separate full-width form below the matrix.
 

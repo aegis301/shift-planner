@@ -30,17 +30,37 @@ class Doctor(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ShiftType(Base):
-    __tablename__ = "shift_types"
+class ShiftTemplate(Base):
+    __tablename__ = "shift_templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name_de: Mapped[str] = mapped_column(String(255))
     name_en: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str] = mapped_column(String(50))
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    variants: Mapped[list["ShiftVariant"]] = relationship(back_populates="shift_template", cascade="all, delete-orphan")
+
+
+class ShiftVariant(Base):
+    __tablename__ = "shift_variants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shift_template_id: Mapped[int] = mapped_column(ForeignKey("shift_templates.id"))
+    label: Mapped[str] = mapped_column(String(255))
+    start_day_class: Mapped[str] = mapped_column(String(50))
+    end_day_class: Mapped[str | None] = mapped_column(String(50))
     starts_at: Mapped[time] = mapped_column(Time)
     ends_at: Mapped[time] = mapped_column(Time)
-    category: Mapped[str] = mapped_column(String(50))
+    end_day_offset: Mapped[int] = mapped_column(Integer, default=0)
+    required_count: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    shift_template: Mapped[ShiftTemplate] = relationship(back_populates="variants")
 
 
 class PlanningPeriod(Base):
@@ -65,51 +85,22 @@ class RuleConfig(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class AvailabilityRequest(Base):
-    __tablename__ = "availability_requests"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    doctor_id: Mapped[int] = mapped_column(ForeignKey("doctors.id"))
-    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id"))
-    request_date: Mapped[date] = mapped_column(Date)
-    request_type: Mapped[str] = mapped_column(String(50))
-    note: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    doctor: Mapped[Doctor] = relationship()
-    planning_period: Mapped[PlanningPeriod] = relationship()
-
-
-class RosterAssignment(Base):
-    __tablename__ = "roster_assignments"
-    __table_args__ = (UniqueConstraint("doctor_id", "assignment_date", "shift_type_id", name="uq_assignment"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    doctor_id: Mapped[int] = mapped_column(ForeignKey("doctors.id"))
-    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id"))
-    shift_type_id: Mapped[int] = mapped_column(ForeignKey("shift_types.id"))
-    assignment_date: Mapped[date] = mapped_column(Date)
-    note: Mapped[str | None] = mapped_column(Text)
-    manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    doctor: Mapped[Doctor] = relationship()
-    shift_type: Mapped[ShiftType] = relationship()
-    planning_period: Mapped[PlanningPeriod] = relationship()
-
-
 class RosterSlot(Base):
     __tablename__ = "roster_slots"
     __table_args__ = (
-        UniqueConstraint("planning_period_id", "slot_date", "shift_type_id", "position", name="uq_roster_slot"),
+        UniqueConstraint("planning_period_id", "slot_date", "shift_variant_id", "position", name="uq_roster_slot"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id"))
-    shift_type_id: Mapped[int] = mapped_column(ForeignKey("shift_types.id"))
+    shift_template_id: Mapped[int | None] = mapped_column(ForeignKey("shift_templates.id"))
+    shift_variant_id: Mapped[int | None] = mapped_column(ForeignKey("shift_variants.id"))
     slot_date: Mapped[date] = mapped_column(Date)
     position: Mapped[int] = mapped_column(Integer, default=1)
     label: Mapped[str | None] = mapped_column(String(255))
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    day_class: Mapped[str | None] = mapped_column(String(50))
     source: Mapped[str] = mapped_column(String(50), default="system")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -117,7 +108,8 @@ class RosterSlot(Base):
     )
 
     planning_period: Mapped[PlanningPeriod] = relationship()
-    shift_type: Mapped[ShiftType] = relationship()
+    shift_template: Mapped[ShiftTemplate | None] = relationship()
+    shift_variant: Mapped[ShiftVariant | None] = relationship()
 
 
 class RosterSlotAssignment(Base):
