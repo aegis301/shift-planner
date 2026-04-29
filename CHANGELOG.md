@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-04-29
+- Narrowed wishes matrix day statuses to Urlaub, Forschung, Lehre, and Frei (all block roster assignments that day); legacy statuses migrate to Frei.
+- Added `planning_shift_intents` for per-shift-group wish or no-go per doctor, date, and shift template, with bulk REST and MCP tools and roster validation (`ROSTER_TEMPLATE_NO_GO_CONFLICT`).
+- Enriched filtered planning matrix responses with group templates, generated template-by-day keys, and intents; roster matrix includes intents for the doctor picker.
+- Replaced native roster doctor `<select>` with an accessible dropdown showing day-status dots and wish/no-go hints; assignments default to honoring no-go unless Manual override is checked.
+
 ## 2026-04-26
 - Initialized the AI-first shift planner monorepo plan in code.
 - Added Docker Compose services for Postgres, FastAPI backend, FastMCP server, and Next.js frontend.

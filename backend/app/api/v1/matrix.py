@@ -12,9 +12,12 @@ from app.schemas import (
     PlanningCellRead,
     PlanningCellUpsert,
     PlanningMatrixRead,
+    PlanningShiftIntentBulkUpsert,
+    PlanningShiftIntentRead,
 )
 from app.services.matrix import (
     bulk_upsert_planning_cells,
+    bulk_upsert_planning_shift_intents,
     clear_planning_cell,
     get_planning_matrix,
     list_doctor_period_notes,
@@ -45,7 +48,10 @@ def put_cell(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return upsert_planning_cell(db, planning_period_id, payload, actor=user.email, source="rest")
+    try:
+        return upsert_planning_cell(db, planning_period_id, payload, actor=user.email, source="rest")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.put("/{planning_period_id}/cells/bulk", response_model=list[PlanningCellRead])
@@ -55,7 +61,24 @@ def put_cells_bulk(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return bulk_upsert_planning_cells(db, planning_period_id, payload, actor=user.email, source="rest")
+    try:
+        return bulk_upsert_planning_cells(db, planning_period_id, payload, actor=user.email, source="rest")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/{planning_period_id}/shift-intents/bulk", response_model=list[PlanningShiftIntentRead])
+def put_shift_intents_bulk(
+    planning_period_id: int,
+    payload: PlanningShiftIntentBulkUpsert,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        rows = bulk_upsert_planning_shift_intents(db, planning_period_id, payload, actor=user.email, source="rest")
+        return [PlanningShiftIntentRead.model_validate(row) for row in rows]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{planning_period_id}/cells/clear")

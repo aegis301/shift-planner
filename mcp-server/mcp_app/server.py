@@ -15,6 +15,8 @@ from app.schemas import (
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
     PlanningPeriodCreate,
+    PlanningShiftIntentBulkUpsert,
+    PlanningShiftIntentUpsert,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentUpsert,
     ShiftGroupCreate,
@@ -24,6 +26,7 @@ from app.schemas import (
 from app.services.doctors import create_doctor, delete_doctor, list_doctors
 from app.services.matrix import (
     bulk_upsert_planning_cells,
+    bulk_upsert_planning_shift_intents,
     get_planning_matrix,
     list_doctor_period_notes,
     save_doctor_period_note,
@@ -447,6 +450,35 @@ def bulk_upsert_planning_cells_tool(
         return [
             serialize_model(cell)
             for cell in bulk_upsert_planning_cells(db, planning_period_id, payload, actor="mcp", source="mcp")
+        ]
+
+
+@mcp.tool
+def bulk_upsert_planning_shift_intents_tool(
+    token: str,
+    planning_period_id: int,
+    intents: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Create, update, or clear per-shift-group wish/no-go rows (kind null clears). Requires MCP admin token."""
+    require_token(token)
+    intent_rows: list[PlanningShiftIntentUpsert] = []
+    for row in intents:
+        raw_kind = row.get("kind")
+        kind: str | None = str(raw_kind) if raw_kind is not None else None
+        intent_rows.append(
+            PlanningShiftIntentUpsert(
+                doctor_id=int(row["doctor_id"]),
+                cell_date=date.fromisoformat(str(row["cell_date"])),
+                shift_group_id=int(row["shift_group_id"]),
+                shift_template_id=int(row["shift_template_id"]),
+                kind=kind,  # type: ignore[arg-type]
+            )
+        )
+    payload = PlanningShiftIntentBulkUpsert(intents=intent_rows)
+    with db_session() as db:
+        return [
+            serialize_model(item)
+            for item in bulk_upsert_planning_shift_intents(db, planning_period_id, payload, actor="mcp", source="mcp")
         ]
 
 

@@ -1,6 +1,7 @@
 import pytest
 
 from mcp_app.server import (
+    bulk_upsert_planning_shift_intents_tool,
     create_shift_template_tool,
     delete_doctor_tool,
     delete_shift_variant_tool,
@@ -25,8 +26,13 @@ def test_matrix_tool_rejects_invalid_token_before_db_access():
             planning_period_id=1,
             doctor_id=1,
             cell_date="2026-07-01",
-            status="tagdienst",
+            status="frei",
         )
+
+
+def test_bulk_shift_intents_tool_rejects_invalid_token_before_db_access():
+    with pytest.raises(PermissionError):
+        bulk_upsert_planning_shift_intents_tool(token="wrong-token", planning_period_id=1, intents=[])
 
 
 def test_roster_slot_assignment_tool_rejects_invalid_token_before_db_access():

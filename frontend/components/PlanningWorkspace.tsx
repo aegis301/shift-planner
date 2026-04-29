@@ -5,10 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, BarChart3, CalendarCheck, Columns3, Download, Heart, LayoutList, Plus, RotateCw, Save, Trash2, X } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
+import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
 import { LocaleShell, useLocale } from "@/components/LocaleProvider";
 import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
-import { t } from "@/lib/i18n";
+import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type PlanningPeriod = {
   id: number;
@@ -91,7 +92,9 @@ function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]):
   }
 
   for (const warning of warnings) {
-    if (!warning.code.startsWith("ROSTER_MATRIX") || !warning.doctor_id) {
+    const rosterRelated =
+      warning.code.startsWith("ROSTER_MATRIX") || warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT";
+    if (!rosterRelated || !warning.doctor_id) {
       continue;
     }
     const doctorStats = stats.get(warning.doctor_id);
@@ -277,7 +280,7 @@ function PlanningWorkspaceContent() {
         <h2 className="text-xl font-semibold text-ink">{t(locale, "analysisSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
-      <InlineValidation warnings={warnings} />
+      <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} />
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
     </section>
   );
@@ -379,6 +382,7 @@ function PlanningWorkspaceContent() {
             {activePeriod ? <p className="text-slate-600">{t(locale, "selectedMonth")}: {monthLabel(activePeriod)}</p> : null}
             {message ? <p className="text-emerald-700">{message}</p> : null}
           </div>
+          <PlanningDayStatusLegend locale={locale} />
         </div>
       </Card>
 
@@ -535,9 +539,52 @@ function PlanningWorkspaceContent() {
   );
 }
 
-function InlineValidation({ warnings }: { warnings: ValidationWarning[] }) {
+function summarizeRosterSlot(slot: RosterMatrix["slots"][number], locale: Locale): string {
+  const name = locale === "de" ? slot.template_name_de : slot.template_name_en;
+  const base = name || slot.label || slot.template_code || `#${slot.id}`;
+  return slot.variant_label ? `${base} (${slot.variant_label})` : base;
+}
+
+function validationWarningDetailText(warning: ValidationWarning, matrix: RosterMatrix | null, locale: Locale): string | null {
+  if (!matrix) {
+    return null;
+  }
+  if (warning.code === "ROSTER_MATRIX_DUPLICATE_DAY") {
+    const ids = (warning.details?.roster_slot_ids as number[] | undefined) ?? [];
+    const labels = ids
+      .map((id) => matrix.slots.find((slot) => slot.id === id))
+      .filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))
+      .map((slot) => summarizeRosterSlot(slot, locale));
+    const count = (warning.details?.count as number | undefined) ?? labels.length;
+    const slotsText = labels.length ? labels.join(" · ") : ids.map(String).join(", ");
+    if (!slotsText) {
+      return null;
+    }
+    return t(locale, "validationDetailDuplicateDay", { count: String(count), slots: slotsText });
+  }
+  if (warning.code === "ROSTER_MATRIX_UNAVAILABLE_CONFLICT") {
+    const st = String(warning.details?.unavailable_status ?? "");
+    const wishLabel =
+      st === "urlaub" || st === "forschung" || st === "lehre" || st === "frei" ? t(locale, st as TranslationKey) : st;
+    const slotId = warning.details?.roster_slot_id as number | undefined;
+    const slot = slotId != null ? matrix.slots.find((s) => s.id === slotId) : undefined;
+    const slotLabel = slot ? summarizeRosterSlot(slot, locale) : "—";
+    return t(locale, "validationDetailUnavailable", { wish: wishLabel, slot: slotLabel });
+  }
+  if (warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT") {
+    const slotId = warning.details?.roster_slot_id as number | undefined;
+    const slot = slotId != null ? matrix.slots.find((s) => s.id === slotId) : undefined;
+    const slotLabel = slot ? summarizeRosterSlot(slot, locale) : "—";
+    return t(locale, "validationDetailNoGo", { slot: slotLabel });
+  }
+  return null;
+}
+
+function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatrix | null; warnings: ValidationWarning[] }) {
   const { locale } = useLocale();
-  const rosterWarnings = warnings.filter((warning) => warning.code.startsWith("ROSTER_MATRIX"));
+  const rosterWarnings = warnings.filter(
+    (warning) => warning.code.startsWith("ROSTER_MATRIX") || warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT"
+  );
   return (
     <Card>
       <div className="grid gap-3">
@@ -549,11 +596,33 @@ function InlineValidation({ warnings }: { warnings: ValidationWarning[] }) {
         </div>
         {rosterWarnings.length ? (
           <div className="grid gap-2">
-            {rosterWarnings.slice(0, 6).map((warning, index) => (
-              <div key={`${warning.code}-${warning.doctor_id}-${warning.date}-${index}`} className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200">
-                {warning.date ? `${warning.date}: ` : ""}{warning.message}
-              </div>
-            ))}
+            {rosterWarnings.slice(0, 6).map((warning, index) => {
+              const doctorName =
+                warning.doctor_id != null
+                  ? rosterMatrix?.doctors.find((doctor) => doctor.id === warning.doctor_id)?.name ?? null
+                  : null;
+              const detail = validationWarningDetailText(warning, rosterMatrix, locale);
+              const hasLead = Boolean(warning.date || doctorName || warning.doctor_id != null);
+              return (
+                <div
+                  key={`${warning.code}-${warning.doctor_id}-${warning.date}-${index}`}
+                  className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200"
+                >
+                  {hasLead ? (
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-semibold text-rose-950">
+                      {warning.date ? <span className="tabular-nums">{warning.date}</span> : null}
+                      {warning.date && (doctorName || warning.doctor_id != null) ? <span className="text-rose-800/80">·</span> : null}
+                      {doctorName ? <span>{doctorName}</span> : warning.doctor_id != null ? <span>ID {warning.doctor_id}</span> : null}
+                    </div>
+                  ) : null}
+                  {detail ? (
+                    <p className={`text-xs font-medium leading-snug text-rose-900/95 ${hasLead ? "mt-1" : ""}`}>{detail}</p>
+                  ) : (
+                    <p className={`text-xs leading-snug text-rose-900/90 ${hasLead ? "mt-1" : ""}`}>{warning.message}</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="text-sm text-slate-600">{t(locale, "noConflicts")}</p>

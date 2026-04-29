@@ -28,13 +28,13 @@ Doctors can belong to multiple shift groups; each group links to multiple shift 
 ## Matrix Planning Rule
 The active planning workflow uses two monthly matrices:
 
-- Wishes matrix: rows are days, columns are doctors, and each cell has exactly one status plus an optional comment. This is backed by `PlanningCell` and `DoctorPeriodNote`.
+- Wishes matrix: rows are days, columns are doctors, and each cell has exactly one day-level status (`urlaub`, `forschung`, `lehre`, `frei`) plus an optional comment, backed by `PlanningCell` and `DoctorPeriodNote`. Per shift group, `PlanningShiftIntent` stores a wish or no-go per doctor, date, and shift template; the planning API returns intents when `shift_group_id` filters the matrix.
 - Final roster matrix: rows are days, and each day shows concrete generated shift slots. Each cell assigns one doctor to one roster slot. This is backed by `RosterSlot` and `RosterSlotAssignment`.
 
 ## Shift Template Rule
 Shift configuration must use `ShiftTemplate` and `ShiftVariant`. Do not add compatibility code for old simple shift-type, availability-request, or direct roster-assignment schemas. Variants define applicability (`any`, `weekday`, `weekend`, `holiday`), start/end time, inferred `end_day_offset`, and required count. Slot generation must use the North Rhine-Westphalia German holiday calendar; holidays behave like weekends unless an explicit holiday variant exists. Template categories are currently limited to `bereitschaftsdienst`, `rufdienst`, `spaetdienst`, and `other`, displayed as `Bereitschaftsdienst` / on-call duty, `Rufdienst` / stand-by duty, `Spätdienst` / late duty, and `Andere` / other.
 
-Validation should compare final roster assignments against wishes/unavailable cells. The roster UI should surface assigned doctors' wishes as the same colored status pills used in the wishes matrix, with unavailable statuses highlighted as conflicts.
+Validation compares final roster assignments against day-level wishes (all four statuses block assignment that day) and against template no-gos unless the assignment uses `manual_override`. The roster UI surfaces day status and wish/no-go hints in the doctor picker, with conflicts highlighted.
 
 The primary frontend planning workflow is `/planning`. It owns the selected planning month and renders wishes, final roster assignment, inline validation, CSV export actions, and workload stats together. It must support both the full stacked view and a tabbed Wishes/Roster/Analysis view. Do not reintroduce separate frontend pages for wishes, roster, validation, or export unless the product direction changes.
 

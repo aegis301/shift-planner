@@ -93,7 +93,7 @@ def test_roster_validation_no_go_conflict(client: TestClient):
     slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == request_date)
     client.put(
         f"/api/v1/matrix/{period_id}/cells",
-        json={"doctor_id": doctor_id, "cell_date": request_date, "status": "kein_dienst"},
+        json={"doctor_id": doctor_id, "cell_date": request_date, "status": "frei"},
     )
     client.put(
         "/api/v1/roster-matrix/assignments",
@@ -156,11 +156,11 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
         f"/api/v1/matrix/{period_id}/cells/bulk",
         json={
             "cells": [
-                {"doctor_id": doctor_id, "cell_date": "2026-08-01", "status": "tagdienst"},
+                {"doctor_id": doctor_id, "cell_date": "2026-08-01", "status": "frei"},
                 {
                     "doctor_id": doctor_id,
                     "cell_date": "2026-08-02",
-                    "status": "nachtdienst",
+                    "status": "lehre",
                     "comment": "Wochenendkombination",
                 },
             ]
@@ -178,7 +178,7 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
 
     matrix = client.get(f"/api/v1/matrix/{period_id}").json()
     assert len(matrix["cells"]) == 1
-    assert matrix["cells"][0]["status"] == "nachtdienst"
+    assert matrix["cells"][0]["status"] == "lehre"
 
 
 def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
@@ -543,9 +543,40 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     filtered = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
     assert len(filtered["doctors"]) == 1
     assert filtered["doctors"][0]["id"] == doc_in["id"]
+    assert len(filtered["shift_templates"]) == 1
+    assert filtered["shift_templates"][0]["id"] == template["id"]
+    assert len(filtered["template_slot_days"]) > 0
+    assert filtered["shift_intents"] == []
     roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     slot = next(s for s in roster["slots"] if s["shift_template_id"] == template["id"])
     bad = client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doc_out["id"]})
     assert bad.status_code == 400
     good = client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doc_in["id"]})
     assert good.status_code == 200
+    intent_put = client.put(
+        f"/api/v1/matrix/{period_id}/shift-intents/bulk",
+        json={
+            "intents": [
+                {
+                    "doctor_id": doc_in["id"],
+                    "cell_date": slot["slot_date"],
+                    "shift_group_id": gid,
+                    "shift_template_id": template["id"],
+                    "kind": "no_go",
+                }
+            ]
+        },
+    )
+    assert intent_put.status_code == 200
+    warnings_conflict = client.get(f"/api/v1/validation/{period_id}").json()
+    assert any(warning["code"] == "ROSTER_TEMPLATE_NO_GO_CONFLICT" for warning in warnings_conflict)
+    client.put("/api/v1/roster-matrix/assignments/clear", json={"roster_slot_id": slot["id"]})
+    denied = client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doc_in["id"]})
+    assert denied.status_code == 400
+    override = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "doctor_id": doc_in["id"], "manual_override": True},
+    )
+    assert override.status_code == 200
+    warnings_after = client.get(f"/api/v1/validation/{period_id}").json()
+    assert all(warning["code"] != "ROSTER_TEMPLATE_NO_GO_CONFLICT" for warning in warnings_after)

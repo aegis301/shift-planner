@@ -4,21 +4,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-PlanningCellStatus = Literal[
-    "dienstwunsch",
-    "urlaub",
-    "kein_dienst",
-    "forschung",
-    "lehre",
-    "frei",
-    "tagdienst",
-    "nachtdienst",
-    "spaetdienst",
-    "rufdienst",
-]
+PlanningCellStatus = Literal["urlaub", "forschung", "lehre", "frei"]
 
-PLANNED_DUTY_STATUSES = {"tagdienst", "nachtdienst", "spaetdienst", "rufdienst"}
-UNAVAILABLE_STATUSES = {"urlaub", "kein_dienst", "forschung", "lehre", "frei"}
+PLANNED_DUTY_STATUSES: set[str] = set()
+UNAVAILABLE_STATUSES = {"urlaub", "forschung", "lehre", "frei"}
+
+PlanningShiftIntentKind = Literal["wish", "no_go"]
 
 
 class UserRead(BaseModel):
@@ -268,6 +259,38 @@ class PlanningCellRead(PlanningCellBase):
     updated_at: datetime
 
 
+class MatrixTemplateSlotDay(BaseModel):
+    cell_date: date_type
+    shift_template_id: int
+
+
+class PlanningShiftIntentUpsert(BaseModel):
+    doctor_id: int
+    cell_date: date_type
+    shift_group_id: int
+    shift_template_id: int
+    kind: PlanningShiftIntentKind | None = None
+
+
+class PlanningShiftIntentBulkUpsert(BaseModel):
+    intents: list[PlanningShiftIntentUpsert]
+
+
+class PlanningShiftIntentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    planning_period_id: int
+    doctor_id: int
+    cell_date: date_type
+    shift_group_id: int
+    shift_template_id: int
+    kind: PlanningShiftIntentKind
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class MatrixDoctor(BaseModel):
     id: int
     name: str
@@ -285,6 +308,9 @@ class PlanningMatrixRead(BaseModel):
     doctors: list[MatrixDoctor]
     days: list[MatrixDay]
     cells: list[PlanningCellRead]
+    shift_templates: list[ShiftTemplateRead] = Field(default_factory=list)
+    shift_intents: list[PlanningShiftIntentRead] = Field(default_factory=list)
+    template_slot_days: list[MatrixTemplateSlotDay] = Field(default_factory=list)
 
 
 class RosterMatrixRead(BaseModel):
@@ -295,6 +321,7 @@ class RosterMatrixRead(BaseModel):
     slots: list[RosterSlotRead]
     assignments: list[RosterSlotAssignmentRead]
     planning_cells: list[PlanningCellRead]
+    shift_intents: list[PlanningShiftIntentRead] = Field(default_factory=list)
 
 
 class DoctorPeriodNoteUpsert(BaseModel):

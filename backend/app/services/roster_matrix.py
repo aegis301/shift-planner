@@ -9,6 +9,7 @@ from app.schemas import (
     MatrixDay,
     MatrixDoctor,
     PlanningCellRead,
+    PlanningShiftIntentRead,
     RosterMatrixRead,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentRead,
@@ -16,7 +17,7 @@ from app.schemas import (
     RosterSlotRead,
 )
 from app.services.audit import record_audit
-from app.services.matrix import list_planning_cells
+from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.shift_groups import (
     active_doctor_ids_in_shift_group,
     doctor_may_cover_template,
@@ -129,6 +130,7 @@ def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: i
     slots = list_roster_slots(db, planning_period_id=planning_period_id)
     assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     planning_cells = list_planning_cells(db, planning_period_id=planning_period_id)
+    shift_intents = [PlanningShiftIntentRead.model_validate(row) for row in list_planning_shift_intents(db, planning_period_id=planning_period_id)]
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id)
         allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
@@ -140,6 +142,9 @@ def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: i
         slot_ids = {slot.id for slot in slots}
         assignments = [assignment for assignment in assignments if assignment.roster_slot_id in slot_ids]
         planning_cells = [cell for cell in planning_cells if cell.doctor_id in allowed_doctor_ids]
+        shift_intents = [
+            row for row in shift_intents if row.shift_group_id == shift_group_id and row.doctor_id in allowed_doctor_ids
+        ]
     return RosterMatrixRead(
         planning_period=period,
         doctors=[
@@ -156,6 +161,7 @@ def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: i
         slots=[_read_slot(slot) for slot in slots],
         assignments=[RosterSlotAssignmentRead.model_validate(assignment) for assignment in assignments],
         planning_cells=[PlanningCellRead.model_validate(cell) for cell in planning_cells],
+        shift_intents=shift_intents,
     )
 
 
@@ -184,6 +190,27 @@ def _read_slot(slot: RosterSlot) -> RosterSlotRead:
     )
 
 
+def _doctor_has_template_no_go(
+    db: Session,
+    *,
+    planning_period_id: int,
+    doctor_id: int,
+    slot_date: date,
+    shift_template_id: int | None,
+) -> bool:
+    if shift_template_id is None:
+        return False
+    for intent in list_planning_shift_intents(db, planning_period_id=planning_period_id):
+        if (
+            intent.kind == "no_go"
+            and intent.doctor_id == doctor_id
+            and intent.cell_date == slot_date
+            and intent.shift_template_id == shift_template_id
+        ):
+            return True
+    return False
+
+
 def upsert_roster_slot_assignment(
     db: Session,
     payload: RosterSlotAssignmentUpsert,
@@ -196,6 +223,14 @@ def upsert_roster_slot_assignment(
         raise ValueError("Roster slot not found")
     if not doctor_may_cover_template(db, doctor_id=payload.doctor_id, shift_template_id=slot.shift_template_id):
         raise ValueError("Doctor is not a member of a shift group that covers this template")
+    if not payload.manual_override and _doctor_has_template_no_go(
+        db,
+        planning_period_id=slot.planning_period_id,
+        doctor_id=payload.doctor_id,
+        slot_date=slot.slot_date,
+        shift_template_id=slot.shift_template_id,
+    ):
+        raise ValueError("Doctor marked this shift template as a no-go on that day")
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )

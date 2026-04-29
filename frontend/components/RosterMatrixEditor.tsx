@@ -1,23 +1,16 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Download, RefreshCw, Save } from "lucide-react";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronDown, Download, RefreshCw, Save } from "lucide-react";
+import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 
-type PlanningStatus =
-  | "dienstwunsch"
-  | "urlaub"
-  | "kein_dienst"
-  | "forschung"
-  | "lehre"
-  | "frei"
-  | "tagdienst"
-  | "nachtdienst"
-  | "spaetdienst"
-  | "rufdienst";
+type PlanningStatus = "urlaub" | "forschung" | "lehre" | "frei";
+
+type ShiftIntentKind = "wish" | "no_go";
 
 type Doctor = {
   id: number;
@@ -81,8 +74,15 @@ type PlanningCell = {
   planning_period_id: number;
   doctor_id: number;
   cell_date: string;
-  status: PlanningStatus;
+  status: string;
   comment: string | null;
+};
+
+type RosterShiftIntent = {
+  cell_date: string;
+  doctor_id: number;
+  shift_template_id: number;
+  kind: ShiftIntentKind;
 };
 
 export type RosterMatrix = {
@@ -93,22 +93,28 @@ export type RosterMatrix = {
   slots: RosterSlot[];
   assignments: RosterSlotAssignment[];
   planning_cells: PlanningCell[];
+  shift_intents: RosterShiftIntent[];
+};
+
+const DAY_STATUS_DOT: Record<PlanningStatus, string> = {
+  urlaub: "bg-rose-500",
+  forschung: "bg-violet-500",
+  lehre: "bg-amber-500",
+  frei: "bg-slate-400"
 };
 
 const STATUS_META: Record<PlanningStatus, { label: TranslationKey; color: string }> = {
-  dienstwunsch: { label: "dienstwunsch", color: "bg-sky-100 text-sky-800 ring-sky-200" },
   urlaub: { label: "urlaub", color: "bg-rose-100 text-rose-800 ring-rose-200" },
-  kein_dienst: { label: "keinDienst", color: "bg-orange-100 text-orange-800 ring-orange-200" },
   forschung: { label: "forschung", color: "bg-violet-100 text-violet-800 ring-violet-200" },
   lehre: { label: "lehre", color: "bg-amber-100 text-amber-800 ring-amber-200" },
-  frei: { label: "frei", color: "bg-slate-100 text-slate-700 ring-slate-200" },
-  tagdienst: { label: "tagdienst", color: "bg-emerald-100 text-emerald-800 ring-emerald-200" },
-  nachtdienst: { label: "nachtdienst", color: "bg-indigo-100 text-indigo-800 ring-indigo-200" },
-  spaetdienst: { label: "spaetdienst", color: "bg-teal-100 text-teal-800 ring-teal-200" },
-  rufdienst: { label: "rufdienst", color: "bg-coral/15 text-red-800 ring-coral/30" }
+  frei: { label: "frei", color: "bg-slate-100 text-slate-700 ring-slate-200" }
 };
 
-const UNAVAILABLE_STATUSES = new Set<PlanningStatus>(["urlaub", "kein_dienst", "forschung", "lehre", "frei"]);
+const UNAVAILABLE_STATUSES = new Set<PlanningStatus>(["urlaub", "forschung", "lehre", "frei"]);
+
+function isPlanningStatus(value: string | undefined): value is PlanningStatus {
+  return value === "urlaub" || value === "forschung" || value === "lehre" || value === "frei";
+}
 
 function formatDate(locale: Locale, value: string) {
   return new Intl.DateTimeFormat(locale === "de" ? "de-DE" : "en-GB", {
@@ -306,14 +312,23 @@ export function RosterMatrixEditor({
     return map;
   }, [matrix]);
 
+  const intentMap = useMemo(() => {
+    const map = new Map<string, ShiftIntentKind>();
+    matrix?.shift_intents?.forEach((row) => {
+      map.set(`${row.cell_date}:${row.doctor_id}:${row.shift_template_id}`, row.kind);
+    });
+    return map;
+  }, [matrix]);
+
   const templateColumns = useMemo(() => (matrix ? buildTemplateColumns(matrix) : []), [matrix]);
 
   const activePeriodId = controlledPeriodId ?? periodId;
 
   const publishMatrix = useCallback(
     async (next: RosterMatrix) => {
-      setMatrix(next);
-      await onMatrixChange?.(next);
+      const normalized: RosterMatrix = { ...next, shift_intents: next.shift_intents ?? [] };
+      setMatrix(normalized);
+      await onMatrixChange?.(normalized);
     },
     [onMatrixChange]
   );
@@ -364,7 +379,7 @@ export function RosterMatrixEditor({
     setMessage(t(locale, "saved"));
   }
 
-  async function saveAssignment(rosterSlotId: number, doctorId: number | "") {
+  async function saveAssignment(rosterSlotId: number, doctorId: number | "", manualOverride = false): Promise<boolean> {
     setSavingAssignments((count) => count + 1);
     try {
       if (!doctorId) {
@@ -385,7 +400,7 @@ export function RosterMatrixEditor({
             roster_slot_id: rosterSlotId,
             doctor_id: doctorId,
             comment: null,
-            manual_override: true
+            manual_override: manualOverride
           })
         });
         if (matrix) {
@@ -399,6 +414,12 @@ export function RosterMatrixEditor({
         }
       }
       setMessage(t(locale, "autosaved"));
+      return true;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setMessage(error.message);
+      }
+      return false;
     } finally {
       setSavingAssignments((count) => Math.max(0, count - 1));
     }
@@ -476,6 +497,7 @@ export function RosterMatrixEditor({
               slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
               planningCellMap={planningCellMap}
+              intentMap={intentMap}
               onSave={saveAssignment}
               locale={locale}
               dense={compact}
@@ -486,6 +508,7 @@ export function RosterMatrixEditor({
               slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
               planningCellMap={planningCellMap}
+              intentMap={intentMap}
               onSave={saveAssignment}
               locale={locale}
               dense={compact}
@@ -511,6 +534,7 @@ function DesktopRosterMatrix({
   slotsByDay,
   assignmentMap,
   planningCellMap,
+  intentMap,
   onSave,
   locale,
   dense,
@@ -520,7 +544,8 @@ function DesktopRosterMatrix({
   slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
-  onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
+  intentMap: Map<string, ShiftIntentKind>;
+  onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
@@ -581,6 +606,7 @@ function DesktopRosterMatrix({
                                   doctors={matrix.doctors}
                                   assignment={assignmentMap.get(slot.id)}
                                   planningCellMap={planningCellMap}
+                                  intentMap={intentMap}
                                   onSave={onSave}
                                   locale={locale}
                                 />
@@ -632,6 +658,7 @@ function DesktopRosterMatrix({
                         doctors={matrix.doctors}
                         assignment={assignmentMap.get(slot.id)}
                         planningCellMap={planningCellMap}
+                        intentMap={intentMap}
                         onSave={onSave}
                         locale={locale}
                       />
@@ -652,6 +679,7 @@ function MobileRosterMatrix({
   slotsByDay,
   assignmentMap,
   planningCellMap,
+  intentMap,
   onSave,
   locale,
   dense,
@@ -661,7 +689,8 @@ function MobileRosterMatrix({
   slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
-  onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
+  intentMap: Map<string, ShiftIntentKind>;
+  onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
@@ -719,6 +748,7 @@ function MobileRosterMatrix({
                                       doctors={matrix.doctors}
                                       assignment={assignmentMap.get(slot.id)}
                                       planningCellMap={planningCellMap}
+                                      intentMap={intentMap}
                                       onSave={onSave}
                                       locale={locale}
                                     />
@@ -757,6 +787,7 @@ function MobileRosterMatrix({
                       doctors={matrix.doctors}
                       assignment={assignmentMap.get(slot.id)}
                       planningCellMap={planningCellMap}
+                      intentMap={intentMap}
                       onSave={onSave}
                       locale={locale}
                     />
@@ -789,6 +820,7 @@ function RosterCell({
   doctors,
   assignment,
   planningCellMap,
+  intentMap,
   onSave,
   locale
 }: {
@@ -796,42 +828,209 @@ function RosterCell({
   doctors: Doctor[];
   assignment?: RosterSlotAssignment;
   planningCellMap: Map<string, PlanningCell>;
-  onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
+  intentMap: Map<string, ShiftIntentKind>;
+  onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
 }) {
   const [doctorId, setDoctorId] = useState<number | "">(assignment?.doctor_id ?? "");
+  const [open, setOpen] = useState(false);
+  const [manualOverride, setManualOverride] = useState(() => assignment?.manual_override === true);
+  const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const templateId = slot.shift_template_id;
+
   const planningCell = doctorId ? planningCellMap.get(`${slot.slot_date}:${doctorId}`) : undefined;
   const status = planningCell?.status;
-  const meta = status ? STATUS_META[status] : undefined;
-  const hasConflict = status ? UNAVAILABLE_STATUSES.has(status) : false;
+  const meta = status && isPlanningStatus(status) ? STATUS_META[status] : undefined;
+  const hasUnavailableDay = status && isPlanningStatus(status) ? UNAVAILABLE_STATUSES.has(status) : false;
+  const selectedDoctor = doctors.find((doctor) => doctor.id === doctorId);
+  const selectedNoGo =
+    doctorId && templateId
+      ? intentMap.get(`${slot.slot_date}:${doctorId}:${templateId}`) === "no_go"
+      : false;
+  const highlightNoGo = selectedNoGo && !manualOverride;
+
+  const syncMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) {
+      return;
+    }
+    const rect = trigger.getBoundingClientRect();
+    setMenuBox({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 200)
+    });
+  }, []);
 
   useEffect(() => {
     setDoctorId(assignment?.doctor_id ?? "");
-  }, [assignment?.doctor_id]);
+    setManualOverride(assignment?.manual_override === true);
+  }, [assignment?.doctor_id, assignment?.manual_override]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuBox(null);
+      return;
+    }
+    syncMenuPosition();
+    function onReposition() {
+      syncMenuPosition();
+    }
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [open, syncMenuPosition]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function handlePointer(event: MouseEvent) {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
+      }
+      setOpen(false);
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  const menuPortal =
+    open && menuBox && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[500] flex max-h-[min(50vh,280px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white py-0 shadow-xl ring-1 ring-slate-900/10"
+            style={{ top: menuBox.top, left: menuBox.left, width: menuBox.width }}
+            role="presentation"
+          >
+            <ul className="min-h-0 flex-1 list-none overflow-y-auto py-1" role="listbox">
+              <li role="none">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+                  onClick={async () => {
+                    const previous = doctorId;
+                    setDoctorId("");
+                    setOpen(false);
+                    const ok = await onSave(slot.id, "");
+                    if (!ok) {
+                      setDoctorId(previous);
+                    }
+                  }}
+                >
+                  {t(locale, "emptyValue")}
+                </button>
+              </li>
+              {doctors.map((doctor) => {
+                const cell = planningCellMap.get(`${slot.slot_date}:${doctor.id}`);
+                const st = cell?.status;
+                const dotClass = st && isPlanningStatus(st) ? DAY_STATUS_DOT[st] : "bg-slate-300";
+                const intentKey = templateId ? `${slot.slot_date}:${doctor.id}:${templateId}` : "";
+                const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
+                return (
+                  <li key={doctor.id} role="none">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                      onClick={async () => {
+                        const previous = doctorId;
+                        setDoctorId(doctor.id);
+                        setOpen(false);
+                        const ok = await onSave(slot.id, doctor.id, manualOverride);
+                        if (!ok) {
+                          setDoctorId(previous);
+                        }
+                      }}
+                    >
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+                      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{doctor.name}</span>
+                      {intentKind === "wish" ? (
+                        <span className="shrink-0 rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900">
+                          {t(locale, "wishShort")}
+                        </span>
+                      ) : null}
+                      {intentKind === "no_go" ? (
+                        <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
+                          {t(locale, "noGoShort")}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="shrink-0 border-t border-slate-100 bg-slate-50/95 px-2 py-1.5">
+              <label className="flex cursor-pointer items-center gap-2 text-[0.62rem] leading-tight text-slate-500">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3 shrink-0 rounded border-slate-300"
+                  checked={manualOverride}
+                  onChange={(event) => setManualOverride(event.target.checked)}
+                />
+                <span title={t(locale, "manualOverride")}>{t(locale, "manualOverrideAbbr")}</span>
+              </label>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
-    <div className={`grid gap-2 rounded-lg p-1 ${hasConflict ? "bg-rose-50 ring-2 ring-rose-300" : ""}`}>
-      <select
-        className={`min-w-0 rounded-lg border bg-white px-2 py-2 text-xs font-medium ${
-          hasConflict ? "border-rose-300 text-rose-950" : "border-slate-200"
+    <div
+      ref={rootRef}
+      className={`relative grid gap-1.5 rounded-lg p-1 ${
+        hasUnavailableDay || highlightNoGo ? "bg-rose-50 ring-2 ring-rose-300" : ""
+      }`}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        className={`relative flex min-h-[2.5rem] w-full items-center justify-between gap-2 rounded-lg border bg-white px-2 py-2 pr-7 text-left text-xs font-medium ${
+          hasUnavailableDay || highlightNoGo ? "border-rose-300 text-rose-950" : "border-slate-200"
         }`}
-        value={doctorId}
-        onChange={(event) => {
-          const nextDoctorId = event.target.value ? Number(event.target.value) : "";
-          setDoctorId(nextDoctorId);
-          void onSave(slot.id, nextDoctorId);
-        }}
+        onClick={() => setOpen((value) => !value)}
       >
-        <option value="">{t(locale, "emptyValue")}</option>
-        {doctors.map((doctor) => (
-          <option key={doctor.id} value={doctor.id}>
-            {doctor.name}
-          </option>
-        ))}
-      </select>
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          {doctorId && status && isPlanningStatus(status) ? (
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DAY_STATUS_DOT[status]}`} aria-hidden />
+          ) : (
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" aria-hidden />
+          )}
+          <span className="truncate">{selectedDoctor?.name ?? t(locale, "emptyValue")}</span>
+        </span>
+        {manualOverride ? (
+          <span
+            className="pointer-events-none absolute right-7 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-amber-500 ring-2 ring-white"
+            title={t(locale, "manualOverride")}
+            aria-hidden
+          />
+        ) : null}
+        <ChevronDown className={`pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      {menuPortal}
       {meta ? (
         <div className="flex flex-wrap items-center gap-1">
-          {hasConflict ? <span className="text-xs font-semibold text-rose-700">{t(locale, "conflict")}</span> : null}
+          {hasUnavailableDay ? <span className="text-xs font-semibold text-rose-700">{t(locale, "conflict")}</span> : null}
+          {highlightNoGo ? <span className="text-xs font-semibold text-rose-700">{t(locale, "noGoShort")}</span> : null}
           <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 ${meta.color}`}>
             {t(locale, meta.label)}
           </span>

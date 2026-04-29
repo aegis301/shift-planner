@@ -59,23 +59,15 @@ Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and
 ## Planning Workflow
 Use `/planning` in the frontend for the active workflow. One selected planning month controls wishes, final roster assignment, inline validation, CSV exports, and workload stats. The page supports both a full stacked view and a tabbed view for Wishes, Roster, and Analysis.
 
-Cell statuses:
-- `dienstwunsch`
-- `urlaub`
-- `kein_dienst`
-- `forschung`
-- `lehre`
-- `frei`
-- `tagdienst`
-- `nachtdienst`
-- `spaetdienst`
-- `rufdienst`
+Wishes matrix day statuses (each blocks any roster assignment on that day for the doctor): `urlaub`, `forschung`, `lehre`, `frei`.
+
+When a `shift_group_id` query is present on `GET /api/v1/matrix/{id}`, the response also includes `shift_templates`, `template_slot_days` (which concrete templates occur on which dates that month), and `shift_intents` for that group. Use `PUT /api/v1/matrix/{id}/shift-intents/bulk` with `{ "intents": [ { "doctor_id", "cell_date", "shift_group_id", "shift_template_id", "kind": "wish" | "no_go" | null } ] }` — `kind` null removes that intent row.
 
 Doctor/month notes store source emails and summaries so future LLM parsing can propose matrix updates. In the wishes matrix, each doctor header has a notes button that opens that doctor's month-specific source text and summary.
 
 Shift templates are configured under Shift Types. A template has one or more variants that define applicability (`weekday`, `weekend`, `holiday`, or `any`), start/end times, overnight offsets, and required count. Holidays use the North Rhine-Westphalia German holiday calendar and behave like weekend rules unless explicit holiday variants exist.
 
-The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a doctor to that date/slot, and changes autosave. If the assigned doctor has a wishes matrix status on the same day, the roster cell shows the matching colored status pill; unavailable statuses are highlighted as conflicts.
+The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a doctor to that date/slot, and changes autosave. The doctor picker shows a color dot for that doctor’s day-level wishes status and labels for wish/no-go on the slot’s template. Day-level unavailable statuses and template no-gos (unless Manual override is checked on the cell) are highlighted as conflicts.
 
 The frontend no longer has standalone `/requests`, `/roster`, `/validation`, or `/exports/print` pages. Validation remains available through the backend API and MCP, and `/planning` uses it for inline conflict summaries.
 
@@ -100,6 +92,8 @@ alembic upgrade head
 Current cleanup note: migration `202604290001` removes the old simple shift type, availability request, direct roster assignment tables, and incompatible roster slots from existing databases. If you still need data from those tables in a local database, manually recreate it as shift templates, matrix cells, or generated roster assignments before running `alembic upgrade head`.
 
 Migration `202604300001` adds `shift_groups`, `doctor_shift_groups`, and `shift_group_shift_templates`.
+
+Migration `202604300002` adds `planning_shift_intents` and maps legacy `planning_cells.status` values outside Urlaub/Forschung/Lehre/Frei to `frei`.
 
 ## Documentation Rule
 When behavior, setup, architecture, API shape, MCP capabilities, or roadmap changes, update `README.md`, `AGENTS.md`, `CHANGELOG.md`, `PLAN.md`, or `BRAINSTORM.md` as appropriate.

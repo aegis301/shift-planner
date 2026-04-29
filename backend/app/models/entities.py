@@ -202,6 +202,38 @@ class PlanningCell(Base):
     planning_period: Mapped[PlanningPeriod] = relationship()
 
 
+class PlanningShiftIntent(Base):
+    __tablename__ = "planning_shift_intents"
+    __table_args__ = (
+        UniqueConstraint(
+            "planning_period_id",
+            "doctor_id",
+            "cell_date",
+            "shift_group_id",
+            "shift_template_id",
+            name="uq_planning_shift_intent",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"))
+    doctor_id: Mapped[int] = mapped_column(ForeignKey("doctors.id", ondelete="CASCADE"))
+    cell_date: Mapped[date] = mapped_column(Date)
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+    shift_template_id: Mapped[int] = mapped_column(ForeignKey("shift_templates.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(String(50), default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    planning_period: Mapped[PlanningPeriod] = relationship()
+    doctor: Mapped[Doctor] = relationship()
+    shift_group: Mapped[ShiftGroup] = relationship()
+    shift_template: Mapped[ShiftTemplate] = relationship()
+
+
 class DoctorPeriodNote(Base):
     __tablename__ = "doctor_period_notes"
     __table_args__ = (

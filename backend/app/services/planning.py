@@ -5,6 +5,7 @@ from app.models import (
     DoctorPeriodNote,
     PlanningCell,
     PlanningPeriod,
+    PlanningShiftIntent,
     RosterSlot,
     RosterSlotAssignment,
 )
@@ -42,7 +43,7 @@ def delete_planning_period(db: Session, planning_period_id: int, *, actor: str, 
             db.delete(assignment)
     for slot in db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)):
         db.delete(slot)
-    for model in (PlanningCell, DoctorPeriodNote):
+    for model in (PlanningShiftIntent, PlanningCell, DoctorPeriodNote):
         for item in db.scalars(select(model).where(model.planning_period_id == planning_period_id)):
             db.delete(item)
 
