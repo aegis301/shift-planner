@@ -59,6 +59,16 @@ type RosterSlot = {
   category: SlotCategory | null;
 };
 
+type ShiftTemplateSummary = {
+  id: number;
+  code: string;
+  name_de: string;
+  name_en: string;
+  category: SlotCategory;
+  display_order: number;
+  is_active: boolean;
+};
+
 type RosterSlotAssignment = {
   id: number;
   roster_slot_id: number;
@@ -79,6 +89,7 @@ export type RosterMatrix = {
   planning_period: PlanningPeriod;
   doctors: Doctor[];
   days: MatrixDay[];
+  shift_templates: ShiftTemplateSummary[];
   slots: RosterSlot[];
   assignments: RosterSlotAssignment[];
   planning_cells: PlanningCell[];
@@ -158,6 +169,96 @@ function dayClassLabel(locale: Locale, dayClass: string): string {
   return dayClass in labels ? t(locale, labels[dayClass as DayClass]) : dayClass;
 }
 
+function DayClassPill({ dayClass, locale }: { dayClass: string; locale: Locale }) {
+  return (
+    <span className={`inline-flex rounded-full px-2 py-1 text-[0.65rem] font-semibold uppercase ring-1 ${dayClassPillClass(dayClass)}`}>
+      {dayClassLabel(locale, dayClass)}
+    </span>
+  );
+}
+
+function categoryLabel(locale: Locale, category: SlotCategory): string {
+  if (category === "bereitschaftsdienst") {
+    return t(locale, "onCallDutyCategory");
+  }
+  if (category === "rufdienst") {
+    return t(locale, "standbyDutyCategory");
+  }
+  if (category === "spaetdienst") {
+    return t(locale, "lateDutyCategory");
+  }
+  return t(locale, "other");
+}
+
+function buildTemplateColumns(matrix: RosterMatrix): ShiftTemplateSummary[] {
+  const usedTemplateIds = new Set<number>();
+  for (const slot of matrix.slots) {
+    if (slot.shift_template_id !== null) {
+      usedTemplateIds.add(slot.shift_template_id);
+    }
+  }
+
+  const shiftTemplates = matrix.shift_templates ?? [];
+  const templatesById = new Map(shiftTemplates.map((template) => [template.id, template]));
+  const ordered: ShiftTemplateSummary[] = [...shiftTemplates]
+    .filter((template) => usedTemplateIds.has(template.id))
+    .sort((a, b) => a.display_order - b.display_order || a.name_de.localeCompare(b.name_de) || a.code.localeCompare(b.code));
+
+  const missingIds = [...usedTemplateIds].filter((id) => !templatesById.has(id));
+  for (const id of missingIds.sort((a, b) => a - b)) {
+    const sample = matrix.slots.find((slot) => slot.shift_template_id === id);
+    ordered.push({
+      id,
+      code: sample?.template_code ?? String(id),
+      name_de: sample?.template_name_de ?? String(id),
+      name_en: sample?.template_name_en ?? String(id),
+      category: sample?.category ?? "other",
+      display_order: 0,
+      is_active: true
+    });
+  }
+
+  if (matrix.slots.some((slot) => slot.shift_template_id === null)) {
+    ordered.push({
+      id: -1,
+      code: "?",
+      name_de: t("de", "unknownShiftTemplate"),
+      name_en: t("en", "unknownShiftTemplate"),
+      category: "other",
+      display_order: 9999,
+      is_active: true
+    });
+  }
+
+  return ordered;
+}
+
+function dayClassForDate(slots: RosterSlot[]): string | null {
+  for (const slot of slots) {
+    if (slot.day_class) {
+      return slot.day_class;
+    }
+  }
+  return null;
+}
+
+function slotsForTemplateDay(slotsByDay: Map<string, RosterSlot[]>, dayDate: string, templateId: number): RosterSlot[] {
+  return (slotsByDay.get(dayDate) ?? []).filter((slot) => (slot.shift_template_id ?? -1) === templateId);
+}
+
+function slotDiscriminator(slot: RosterSlot, needsDiscriminator: boolean): string {
+  if (slot.variant_label) {
+    return slot.variant_label;
+  }
+  if (slot.position > 1) {
+    return `#${slot.position}`;
+  }
+  if (needsDiscriminator) {
+    return `#${slot.id}`;
+  }
+  return "";
+}
+
 export function RosterMatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
@@ -200,6 +301,8 @@ export function RosterMatrixEditor({
     matrix?.planning_cells.forEach((cell) => map.set(`${cell.cell_date}:${cell.doctor_id}`, cell));
     return map;
   }, [matrix]);
+
+  const templateColumns = useMemo(() => (matrix ? buildTemplateColumns(matrix) : []), [matrix]);
 
   const activePeriodId = controlledPeriodId ?? periodId;
 
@@ -371,6 +474,8 @@ export function RosterMatrixEditor({
               planningCellMap={planningCellMap}
               onSave={saveAssignment}
               locale={locale}
+              dense={compact}
+              templateColumns={templateColumns}
             />
             <MobileRosterMatrix
               matrix={matrix}
@@ -379,6 +484,8 @@ export function RosterMatrixEditor({
               planningCellMap={planningCellMap}
               onSave={saveAssignment}
               locale={locale}
+              dense={compact}
+              templateColumns={templateColumns}
             />
           </>
         ) : (
@@ -401,7 +508,9 @@ function DesktopRosterMatrix({
   assignmentMap,
   planningCellMap,
   onSave,
-  locale
+  locale,
+  dense,
+  templateColumns
 }: {
   matrix: RosterMatrix;
   slotsByDay: Map<string, RosterSlot[]>;
@@ -409,7 +518,87 @@ function DesktopRosterMatrix({
   planningCellMap: Map<string, PlanningCell>;
   onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
   locale: Locale;
+  dense: boolean;
+  templateColumns: ShiftTemplateSummary[];
 }) {
+  if (dense) {
+    return (
+      <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
+        <table className="min-w-max border-separate border-spacing-0 text-sm">
+          <thead>
+            <tr>
+              <th className="sticky left-0 top-0 z-30 min-w-[10.5rem] border-b border-r border-slate-200 bg-white p-3 text-left font-semibold text-slate-700">
+                {t(locale, "date")}
+              </th>
+              {templateColumns.map((template) => (
+                <th key={template.id} className="sticky top-0 z-20 min-w-[11rem] border-b border-slate-200 bg-white p-2 text-left align-bottom">
+                  <div className="grid gap-1">
+                    <p className="text-xs font-semibold text-ink">
+                      {locale === "de" ? template.name_de : template.name_en}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className="rounded-md bg-ink px-2 py-0.5 font-mono text-[0.65rem] font-semibold text-white">{template.code}</span>
+                      <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[0.65rem] font-semibold text-slate-700 ring-1 ring-slate-200">
+                        {categoryLabel(locale, template.category)}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.days.map((day) => {
+              const daySlots = slotsByDay.get(day.date) ?? [];
+              const dayClass = dayClassForDate(daySlots);
+              return (
+                <tr key={day.date}>
+                  <td className="sticky left-0 z-10 border-r border-slate-200 bg-white p-3 align-top">
+                    <div className="grid gap-2">
+                      <div className="font-medium text-slate-800">{formatDate(locale, day.date)}</div>
+                      {dayClass ? <DayClassPill dayClass={dayClass} locale={locale} /> : null}
+                    </div>
+                  </td>
+                  {templateColumns.map((template) => {
+                    const cellSlots = slotsForTemplateDay(slotsByDay, day.date, template.id);
+                    return (
+                      <td key={`${day.date}-${template.id}`} className="border-b border-slate-100 p-2 align-top">
+                        {cellSlots.length ? (
+                          <div className="grid gap-2">
+                            {cellSlots.map((slot) => {
+                              const discriminator = slotDiscriminator(slot, cellSlots.length > 1);
+                              return (
+                              <div key={slot.id} className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                                {discriminator ? (
+                                  <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{discriminator}</p>
+                                ) : null}
+                                <RosterCell
+                                  slot={slot}
+                                  doctors={matrix.doctors}
+                                  assignment={assignmentMap.get(slot.id)}
+                                  planningCellMap={planningCellMap}
+                                  onSave={onSave}
+                                  locale={locale}
+                                />
+                              </div>
+                            );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="px-1 py-6 text-center text-xs text-slate-400">{t(locale, "emptyValue")}</p>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
   return (
     <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
       <table className="min-w-full border-separate border-spacing-0 text-sm">
@@ -460,7 +649,9 @@ function MobileRosterMatrix({
   assignmentMap,
   planningCellMap,
   onSave,
-  locale
+  locale,
+  dense,
+  templateColumns
 }: {
   matrix: RosterMatrix;
   slotsByDay: Map<string, RosterSlot[]>;
@@ -468,7 +659,86 @@ function MobileRosterMatrix({
   planningCellMap: Map<string, PlanningCell>;
   onSave: (rosterSlotId: number, doctorId: number | "") => Promise<void>;
   locale: Locale;
+  dense: boolean;
+  templateColumns: ShiftTemplateSummary[];
 }) {
+  if (dense) {
+    return (
+      <div className="grid gap-3 lg:hidden">
+        {matrix.days.map((day) => {
+          const daySlots = slotsByDay.get(day.date) ?? [];
+          const dayClass = dayClassForDate(daySlots);
+          return (
+            <Card key={day.date}>
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <h2 className="text-base font-semibold text-ink">{formatDate(locale, day.date)}</h2>
+                {dayClass ? <DayClassPill dayClass={dayClass} locale={locale} /> : null}
+              </div>
+              <div className="-mx-1 overflow-x-auto">
+                <table className="min-w-max w-full border-separate border-spacing-0 text-sm">
+                  <thead>
+                    <tr>
+                      {templateColumns.map((template) => (
+                        <th key={template.id} className="min-w-[10.5rem] border-b border-slate-200 px-2 pb-2 text-left align-bottom">
+                          <div className="grid gap-1">
+                            <p className="text-xs font-semibold text-ink">
+                              {locale === "de" ? template.name_de : template.name_en}
+                            </p>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="rounded-md bg-ink px-2 py-0.5 font-mono text-[0.65rem] font-semibold text-white">{template.code}</span>
+                              <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[0.65rem] font-semibold text-slate-700 ring-1 ring-slate-200">
+                                {categoryLabel(locale, template.category)}
+                              </span>
+                            </div>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      {templateColumns.map((template) => {
+                        const cellSlots = slotsForTemplateDay(slotsByDay, day.date, template.id);
+                        return (
+                          <td key={`${day.date}-${template.id}`} className="border-b border-slate-100 px-2 py-2 align-top">
+                            {cellSlots.length ? (
+                              <div className="grid gap-2">
+                                {cellSlots.map((slot) => {
+                                  const discriminator = slotDiscriminator(slot, cellSlots.length > 1);
+                                  return (
+                                  <div key={slot.id} className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
+                                    {discriminator ? (
+                                      <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{discriminator}</p>
+                                    ) : null}
+                                    <RosterCell
+                                      slot={slot}
+                                      doctors={matrix.doctors}
+                                      assignment={assignmentMap.get(slot.id)}
+                                      planningCellMap={planningCellMap}
+                                      onSave={onSave}
+                                      locale={locale}
+                                    />
+                                  </div>
+                                );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="py-6 text-center text-xs text-slate-400">{t(locale, "emptyValue")}</p>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-4 lg:hidden">
       {matrix.days.map((day) => (
@@ -504,9 +774,7 @@ function SlotHeader({ slot, locale }: { slot: RosterSlot; locale: Locale }) {
         <p className="text-xs text-slate-500">{formatTimeRange(slot)}{slot.variant_label ? ` · ${slot.variant_label}` : ""}</p>
       </div>
       {slot.day_class ? (
-        <span className={`rounded-full px-2 py-1 text-[0.65rem] font-semibold uppercase ring-1 ${dayClassPillClass(slot.day_class)}`}>
-          {dayClassLabel(locale, slot.day_class)}
-        </span>
+        <DayClassPill dayClass={slot.day_class} locale={locale} />
       ) : null}
     </div>
   );

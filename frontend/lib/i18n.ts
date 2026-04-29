@@ -115,7 +115,9 @@ export const dictionaries = {
     matrixCsvExport: "Matrix CSV Export",
     rosterCsvExport: "Dienstplan CSV Export",
     finalRosterMatrix: "Finaler Dienstplan",
-    finalRosterHelp: "Tage als Zeilen, Dienstarten als Spalten. Jede Zelle weist einen Dienst einer Person zu und zeigt Konflikte mit den Wünschen farbig an.",
+    finalRosterHelp:
+      "Tage als Zeilen, Dienstvorlagen als Spalten. Pro Tag und Vorlage siehst du die zugewiesenen Dienste (mehrere konkrete Schichten untereinander). Wochentag, Wochenende und Feiertag stehen einmal pro Datum; Konflikte mit den Wünschen werden farbig hervorgehoben.",
+    unknownShiftTemplate: "Unbekannte Vorlage",
     loadRoster: "Dienstplan laden",
     noShiftTemplatesForRoster: "Noch keine aktiven Dienstarten. Lege zuerst Dienstarten an, damit Spalten im Dienstplan entstehen.",
     conflict: "Konflikt",
@@ -297,7 +299,9 @@ export const dictionaries = {
     matrixCsvExport: "Matrix CSV export",
     rosterCsvExport: "Roster CSV export",
     finalRosterMatrix: "Final roster",
-    finalRosterHelp: "Days are rows, shift types are columns. Each cell assigns one shift to one person and highlights conflicts with requests.",
+    finalRosterHelp:
+      "Days are rows, shift templates are columns. For each day and template you assign doctors to the generated slots (multiple concrete slots stack vertically). Weekday, weekend, and holiday appear once per date; conflicts with requests are highlighted.",
+    unknownShiftTemplate: "Unknown template",
     loadRoster: "Load roster",
     noShiftTemplatesForRoster: "No active shift types yet. Create shift types first so the roster has columns.",
     conflict: "Conflict",
