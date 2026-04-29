@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, BarChart3, CalendarCheck, Columns3, Download, Heart, LayoutList, Plus, RotateCw, Save, Trash2, X } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
@@ -39,6 +40,8 @@ type DoctorStats = {
 type PlanningViewMode = "stacked" | "tabs";
 type PlanningTab = "wishes" | "roster" | "analysis";
 type DestructiveAction = "delete-period" | "regenerate-roster";
+
+type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
 
 function monthLabel(period: PlanningPeriod | undefined) {
   if (!period) {
@@ -105,6 +108,9 @@ function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]):
 
 function PlanningWorkspaceContent() {
   const { locale } = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const currentDate = new Date();
   const [periods, setPeriods] = useState<PlanningPeriod[]>([]);
   const [periodId, setPeriodId] = useState("");
@@ -119,6 +125,21 @@ function PlanningWorkspaceContent() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
+  const [shiftGroupId, setShiftGroupId] = useState("");
+  const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
+
+  const shiftGroupQuery = useMemo(
+    () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
+    [shiftGroupId]
+  );
+
+  useEffect(() => {
+    setShiftGroupId(searchParams.get("shiftGroup") ?? "");
+  }, [searchParams]);
+
+  useEffect(() => {
+    void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
+  }, []);
 
   const activePeriod = periods.find((period) => String(period.id) === periodId);
   const stats = useMemo(() => buildStats(rosterMatrix, warnings), [rosterMatrix, warnings]);
@@ -128,16 +149,28 @@ function PlanningWorkspaceContent() {
       setWarnings([]);
       return;
     }
-    setWarnings(await apiFetch<ValidationWarning[]>(`/api/v1/validation/${nextPeriodId}`));
-  }, []);
+    setWarnings(await apiFetch<ValidationWarning[]>(`/api/v1/validation/${nextPeriodId}${shiftGroupQuery}`));
+  }, [shiftGroupQuery]);
 
   const loadRosterMatrix = useCallback(async (nextPeriodId: string) => {
     if (!nextPeriodId) {
       setRosterMatrix(null);
       return;
     }
-    setRosterMatrix(await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}`));
-  }, []);
+    setRosterMatrix(await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`));
+  }, [shiftGroupQuery]);
+
+  function updateShiftGroup(next: string) {
+    setShiftGroupId(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) {
+      params.set("shiftGroup", next);
+    } else {
+      params.delete("shiftGroup");
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
 
   const refreshPeriods = useCallback(async () => {
     const next = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
@@ -157,7 +190,7 @@ function PlanningWorkspaceContent() {
     }
     void loadWarnings(periodId);
     void loadRosterMatrix(periodId);
-  }, [loadRosterMatrix, loadWarnings, periodId]);
+  }, [loadRosterMatrix, loadWarnings, periodId, shiftGroupQuery]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,11 +212,11 @@ function PlanningWorkspaceContent() {
       return;
     }
     if (destructiveAction === "regenerate-roster") {
-      const nextMatrix = await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster`, {
+      await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster`, {
         method: "POST"
       });
-      setRosterMatrix(nextMatrix);
       setRosterReloadToken((value) => value + 1);
+      await loadRosterMatrix(periodId);
       await loadWarnings(periodId);
       setMessage(`${t(locale, "saved")}: ${t(locale, "regenerateRoster")}`);
     } else {
@@ -218,7 +251,7 @@ function PlanningWorkspaceContent() {
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
       </div>
-      <MatrixEditor periodId={periodId} compact onChanged={handleWishesChanged} />
+      <MatrixEditor periodId={periodId} compact shiftGroupId={shiftGroupId || undefined} onChanged={handleWishesChanged} />
     </section>
   ) : null;
 
@@ -228,7 +261,13 @@ function PlanningWorkspaceContent() {
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
       </div>
-      <RosterMatrixEditor periodId={periodId} compact reloadToken={rosterReloadToken} onMatrixChange={handleRosterChange} />
+      <RosterMatrixEditor
+        periodId={periodId}
+        compact
+        reloadToken={rosterReloadToken}
+        shiftGroupId={shiftGroupId || undefined}
+        onMatrixChange={handleRosterChange}
+      />
     </section>
   ) : null;
 
@@ -256,6 +295,21 @@ function PlanningWorkspaceContent() {
                   {periods.map((period) => (
                     <option key={period.id} value={period.id}>
                       {monthLabel(period)}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label={t(locale, "selectPlanningShiftGroup")}>
+                <select
+                  className={`${inputClass} h-10 min-w-44`}
+                  value={shiftGroupId}
+                  onChange={(event) => updateShiftGroup(event.target.value)}
+                  title={t(locale, "planningShiftGroupHelp")}
+                >
+                  <option value="">{t(locale, "allShiftGroupsLabel")}</option>
+                  {shiftGroups.map((group) => (
+                    <option key={group.id} value={String(group.id)}>
+                      {locale === "de" ? group.name_de : group.name_en} ({group.code})
                     </option>
                   ))}
                 </select>
@@ -375,14 +429,14 @@ function PlanningWorkspaceContent() {
             <div className="grid gap-3">
               <a
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-                href={`${API_BASE_URL}/api/v1/exports/matrix/${periodId}.csv`}
+                href={`${API_BASE_URL}/api/v1/exports/matrix/${periodId}.csv${shiftGroupQuery}`}
               >
                 <Download size={17} />
                 {t(locale, "wishesCsvExport")}
               </a>
               <a
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.csv`}
+                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.csv${shiftGroupQuery}`}
               >
                 <Download size={17} />
                 {t(locale, "rosterCsvExport")}

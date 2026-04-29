@@ -87,13 +87,22 @@ function formatDate(locale: Locale, value: string) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
+function shiftGroupQuery(shiftGroupId?: string) {
+  if (!shiftGroupId) {
+    return "";
+  }
+  return `?shift_group_id=${encodeURIComponent(shiftGroupId)}`;
+}
+
 export function MatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
+  shiftGroupId,
   onChanged
 }: {
   periodId?: string;
   compact?: boolean;
+  shiftGroupId?: string;
   onChanged?: () => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -110,6 +119,8 @@ export function MatrixEditor({
   const [message, setMessage] = useState("");
   const [savingCells, setSavingCells] = useState(0);
 
+  const groupQuery = useMemo(() => shiftGroupQuery(shiftGroupId), [shiftGroupId]);
+
   const cellMap = useMemo(() => {
     const map = new Map<string, PlanningCell>();
     matrix?.cells.forEach((cell) => map.set(`${cell.cell_date}:${cell.doctor_id}`, cell));
@@ -117,12 +128,12 @@ export function MatrixEditor({
   }, [matrix]);
 
   const loadMatrixById = useCallback(async (nextPeriodId: string) => {
-    const next = await apiFetch<PlanningMatrix>(`/api/v1/matrix/${nextPeriodId}`);
-    const nextNotes = await apiFetch<DoctorPeriodNote[]>(`/api/v1/matrix/${nextPeriodId}/notes`);
+    const next = await apiFetch<PlanningMatrix>(`/api/v1/matrix/${nextPeriodId}${groupQuery}`);
+    const nextNotes = await apiFetch<DoctorPeriodNote[]>(`/api/v1/matrix/${nextPeriodId}/notes${groupQuery}`);
     setMatrix(next);
     setNotes(nextNotes);
     setActiveDoctorId(next.doctors[0]?.id ?? null);
-  }, []);
+  }, [groupQuery]);
 
   const activePeriodId = controlledPeriodId ?? periodId;
 
@@ -153,7 +164,7 @@ export function MatrixEditor({
     }
 
     void loadLatestPeriod();
-  }, [controlledPeriodId, loadMatrixById]);
+  }, [controlledPeriodId, loadMatrixById, groupQuery]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -203,7 +214,7 @@ export function MatrixEditor({
       method: "PUT",
       body: JSON.stringify({ doctor_id: doctorId, source_text: sourceText, summary })
     });
-    setNotes(await apiFetch<DoctorPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes`));
+    setNotes(await apiFetch<DoctorPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
     setMessage(t(locale, "saved"));
     await onChanged?.();
   }
@@ -252,7 +263,7 @@ export function MatrixEditor({
               </button>
               <a
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-                href={`${API_BASE_URL}/api/v1/exports/matrix/${activePeriodId}.csv`}
+                href={`${API_BASE_URL}/api/v1/exports/matrix/${activePeriodId}.csv${groupQuery}`}
               >
                 <Download size={17} />
                 {t(locale, "matrixCsvExport")}

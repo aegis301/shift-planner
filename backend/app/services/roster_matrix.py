@@ -8,6 +8,7 @@ from app.models import Doctor, PlanningPeriod, RosterSlot, RosterSlotAssignment
 from app.schemas import (
     MatrixDay,
     MatrixDoctor,
+    PlanningCellRead,
     RosterMatrixRead,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentRead,
@@ -16,6 +17,12 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.matrix import list_planning_cells
+from app.services.shift_groups import (
+    active_doctor_ids_in_shift_group,
+    doctor_may_cover_template,
+    require_shift_group,
+    shift_template_ids_in_shift_group,
+)
 from app.services.shift_templates import generate_slots_for_month, list_shift_templates
 
 
@@ -109,7 +116,7 @@ def reset_roster_slots_for_period(db: Session, planning_period_id: int, *, actor
     return slots
 
 
-def get_roster_matrix(db: Session, planning_period_id: int) -> RosterMatrixRead:
+def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> RosterMatrixRead:
     period = db.get(PlanningPeriod, planning_period_id)
     if period is None:
         raise ValueError("Planning period not found")
@@ -122,6 +129,17 @@ def get_roster_matrix(db: Session, planning_period_id: int) -> RosterMatrixRead:
     slots = list_roster_slots(db, planning_period_id=planning_period_id)
     assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     planning_cells = list_planning_cells(db, planning_period_id=planning_period_id)
+    if shift_group_id is not None:
+        require_shift_group(db, shift_group_id)
+        allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
+        template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
+        doctors = [doctor for doctor in doctors if doctor.id in allowed_doctor_ids]
+        slots = [slot for slot in slots if slot.shift_template_id is not None and slot.shift_template_id in template_ids]
+        visible_template_ids = {slot.shift_template_id for slot in slots}
+        shift_templates = [template for template in shift_templates if template.id in visible_template_ids]
+        slot_ids = {slot.id for slot in slots}
+        assignments = [assignment for assignment in assignments if assignment.roster_slot_id in slot_ids]
+        planning_cells = [cell for cell in planning_cells if cell.doctor_id in allowed_doctor_ids]
     return RosterMatrixRead(
         planning_period=period,
         doctors=[
@@ -137,7 +155,7 @@ def get_roster_matrix(db: Session, planning_period_id: int) -> RosterMatrixRead:
         shift_templates=shift_templates,
         slots=[_read_slot(slot) for slot in slots],
         assignments=[RosterSlotAssignmentRead.model_validate(assignment) for assignment in assignments],
-        planning_cells=planning_cells,
+        planning_cells=[PlanningCellRead.model_validate(cell) for cell in planning_cells],
     )
 
 
@@ -176,6 +194,8 @@ def upsert_roster_slot_assignment(
     slot = db.get(RosterSlot, payload.roster_slot_id)
     if slot is None:
         raise ValueError("Roster slot not found")
+    if not doctor_may_cover_template(db, doctor_id=payload.doctor_id, shift_template_id=slot.shift_template_id):
+        raise ValueError("Doctor is not a member of a shift group that covers this template")
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )

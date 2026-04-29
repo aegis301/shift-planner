@@ -263,11 +263,13 @@ export function RosterMatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
   reloadToken = 0,
+  shiftGroupId,
   onMatrixChange
 }: {
   periodId?: string;
   compact?: boolean;
   reloadToken?: number;
+  shiftGroupId?: string;
   onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -278,6 +280,8 @@ export function RosterMatrixEditor({
   const [matrix, setMatrix] = useState<RosterMatrix | null>(null);
   const [message, setMessage] = useState("");
   const [savingAssignments, setSavingAssignments] = useState(0);
+
+  const groupQuery = useMemo(() => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""), [shiftGroupId]);
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, RosterSlot[]>();
@@ -315,9 +319,9 @@ export function RosterMatrixEditor({
   );
 
   const loadRosterById = useCallback(async (nextPeriodId: string) => {
-    const next = await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}`);
+    const next = await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${groupQuery}`);
     await publishMatrix(next);
-  }, [publishMatrix]);
+  }, [publishMatrix, groupQuery]);
 
   const loadRoster = useCallback(async () => {
     await loadRosterById(activePeriodId);
@@ -341,7 +345,7 @@ export function RosterMatrixEditor({
     }
 
     void loadLatestPeriod();
-  }, [controlledPeriodId, loadRosterById, reloadToken]);
+  }, [controlledPeriodId, loadRosterById, reloadToken, groupQuery]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -445,7 +449,7 @@ export function RosterMatrixEditor({
               </button>
               <a
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${activePeriodId}.csv`}
+                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${activePeriodId}.csv${groupQuery}`}
               >
                 <Download size={17} />
                 {t(locale, "rosterCsvExport")}

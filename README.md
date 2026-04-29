@@ -85,7 +85,9 @@ Relevant CSV exports:
 - Wishes matrix: `/api/v1/exports/matrix/{planning_period_id}.csv`
 - Final roster matrix: `/api/v1/exports/roster-matrix/{planning_period_id}.csv`
 
-The old request/roster form APIs and simple shift-type API have been removed. Current workflow code should target `/api/v1/matrix`, `/api/v1/roster-matrix`, and `/api/v1/shift-templates`.
+Optional query parameter `shift_group_id` on `GET /api/v1/matrix/{id}`, `GET /api/v1/matrix/{id}/notes`, `GET /api/v1/roster-matrix/{id}`, `GET /api/v1/validation/{id}`, and the two CSV export routes above filters doctors, slots, warnings, and export rows to one shift group. Shift groups are managed at `GET|POST|PATCH|DELETE /api/v1/shift-groups` with `PUT /api/v1/shift-groups/{id}/doctors` and `PUT /api/v1/shift-groups/{id}/shift-templates` for memberships. Doctors carry `shift_group_ids`; roster assignments require the doctor to share a group with the slot’s template when that template belongs to at least one group.
+
+The old request/roster form APIs and simple shift-type API have been removed. Current workflow code should target `/api/v1/matrix`, `/api/v1/roster-matrix`, `/api/v1/shift-templates`, and `/api/v1/shift-groups`.
 
 ## Migrations
 Create a migration after changing backend models:
@@ -96,6 +98,8 @@ alembic upgrade head
 ```
 
 Current cleanup note: migration `202604290001` removes the old simple shift type, availability request, direct roster assignment tables, and incompatible roster slots from existing databases. If you still need data from those tables in a local database, manually recreate it as shift templates, matrix cells, or generated roster assignments before running `alembic upgrade head`.
+
+Migration `202604300001` adds `shift_groups`, `doctor_shift_groups`, and `shift_group_shift_templates`.
 
 ## Documentation Rule
 When behavior, setup, architecture, API shape, MCP capabilities, or roadmap changes, update `README.md`, `AGENTS.md`, `CHANGELOG.md`, `PLAN.md`, or `BRAINSTORM.md` as appropriate.

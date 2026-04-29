@@ -185,7 +185,18 @@ export const dictionaries = {
     ,
     editDoctor: "Arzt bearbeiten",
     deleteDoctor: "Arzt löschen",
-    deleteDoctorWarning: "Dieser Arzt wird gelöscht. Zugehörige Wünsche, Monatsnotizen und finale Dienstzuweisungen werden entfernt."
+    deleteDoctorWarning: "Dieser Arzt wird gelöscht. Zugehörige Wünsche, Monatsnotizen und finale Dienstzuweisungen werden entfernt.",
+    shiftGroups: "Dienstgruppen",
+    shiftGroupsPageHelp: "Lege Gruppen an, ordne Ärztinnen und Ärzte sowie Dienstvorlagen zu. In der Planung filterst du Wünsche, Dienstplan und Analyse nach Gruppe.",
+    createShiftGroup: "Dienstgruppe anlegen",
+    editShiftGroup: "Dienstgruppe bearbeiten",
+    shiftGroupDoctors: "Ärztinnen und Ärzte",
+    shiftGroupTemplates: "Dienstvorlagen",
+    deleteShiftGroup: "Dienstgruppe löschen",
+    doctorShiftGroups: "Dienstgruppen",
+    selectPlanningShiftGroup: "Dienstgruppe",
+    allShiftGroupsLabel: "Alle",
+    planningShiftGroupHelp: "Filtert Wünsche, finalen Dienstplan und Prüfung nach Dienstgruppe. Vorlagen ohne Gruppe erscheinen nur unter „Alle“."
   },
   en: {
     appName: "Shift Planner",
@@ -371,7 +382,18 @@ export const dictionaries = {
     ,
     editDoctor: "Edit doctor",
     deleteDoctor: "Delete doctor",
-    deleteDoctorWarning: "This doctor will be deleted. Related wishes, monthly notes, and final roster assignments will be removed."
+    deleteDoctorWarning: "This doctor will be deleted. Related wishes, monthly notes, and final roster assignments will be removed.",
+    shiftGroups: "Shift groups",
+    shiftGroupsPageHelp: "Create groups and assign doctors and shift templates. Planning filters wishes, roster, and analysis by group.",
+    createShiftGroup: "Create shift group",
+    editShiftGroup: "Edit shift group",
+    shiftGroupDoctors: "Doctors",
+    shiftGroupTemplates: "Shift templates",
+    deleteShiftGroup: "Delete shift group",
+    doctorShiftGroups: "Shift groups",
+    selectPlanningShiftGroup: "Shift group",
+    allShiftGroupsLabel: "All",
+    planningShiftGroupHelp: "Filters wishes, final roster, and validation by shift group. Templates not in any group appear only under All."
   }
 } as const;
 

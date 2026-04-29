@@ -22,6 +22,9 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 - Update MCP docs and tests when MCP-visible behavior changes.
 - Mutating MCP tools must require explicit authorization, currently through `MCP_ADMIN_TOKEN`.
 
+## Shift groups (Dienstgruppen)
+Doctors can belong to multiple shift groups; each group links to multiple shift templates. Planning matrix, roster matrix, validation, and CSV exports accept optional `shift_group_id` to filter the view. Roster assignment is rejected when the doctor does not share a group with the slot’s template (templates with no group remain assignable by any active doctor). Admin UI: `/shift-groups`; planning toolbar: shift group selector and optional `?shiftGroup=` URL param.
+
 ## Matrix Planning Rule
 The active planning workflow uses two monthly matrices:
 

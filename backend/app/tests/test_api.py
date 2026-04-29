@@ -503,3 +503,49 @@ def test_delete_doctor_clears_related_data(client: TestClient):
     assert matrix["cells"] == []
     notes = client.get(f"/api/v1/matrix/{period_id}/notes").json()
     assert notes == []
+
+
+def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClient):
+    login(client)
+    doc_in = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. InGroup", "email": "ingroup@example.com", "employment_percentage": 100},
+    ).json()
+    doc_out = client.post(
+        "/api/v1/doctors",
+        json={"name": "Dr. OutGroup", "email": "outgroup@example.com", "employment_percentage": 100},
+    ).json()
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "SGT", "name_de": "Sg Test", "name_en": "Sg Test", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Slot",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    group = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "SG", "name_de": "Gruppe", "name_en": "Group", "display_order": 0},
+    ).json()
+    gid = group["id"]
+    client.put(f"/api/v1/shift-groups/{gid}/doctors", json={"doctor_ids": [doc_in["id"]]})
+    client.put(f"/api/v1/shift-groups/{gid}/shift-templates", json={"shift_template_ids": [template["id"]]})
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
+    full = client.get(f"/api/v1/matrix/{period_id}").json()
+    assert len(full["doctors"]) == 2
+    filtered = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
+    assert len(filtered["doctors"]) == 1
+    assert filtered["doctors"][0]["id"] == doc_in["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(s for s in roster["slots"] if s["shift_template_id"] == template["id"])
+    bad = client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doc_out["id"]})
+    assert bad.status_code == 400
+    good = client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": slot["id"], "doctor_id": doc_in["id"]})
+    assert good.status_code == 200

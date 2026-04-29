@@ -6,6 +6,49 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 
+class ShiftGroup(Base):
+    __tablename__ = "shift_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name_de: Mapped[str] = mapped_column(String(255))
+    name_en: Mapped[str] = mapped_column(String(255))
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    doctor_links: Mapped[list["DoctorShiftGroup"]] = relationship(
+        back_populates="shift_group", cascade="all, delete-orphan"
+    )
+    template_links: Mapped[list["ShiftGroupShiftTemplate"]] = relationship(
+        back_populates="shift_group", cascade="all, delete-orphan"
+    )
+
+
+class DoctorShiftGroup(Base):
+    __tablename__ = "doctor_shift_groups"
+    __table_args__ = (UniqueConstraint("doctor_id", "shift_group_id", name="uq_doctor_shift_group"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    doctor_id: Mapped[int] = mapped_column(ForeignKey("doctors.id", ondelete="CASCADE"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+
+    doctor: Mapped["Doctor"] = relationship(back_populates="shift_group_links")
+    shift_group: Mapped["ShiftGroup"] = relationship(back_populates="doctor_links")
+
+
+class ShiftGroupShiftTemplate(Base):
+    __tablename__ = "shift_group_shift_templates"
+    __table_args__ = (UniqueConstraint("shift_group_id", "shift_template_id", name="uq_shift_group_template"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+    shift_template_id: Mapped[int] = mapped_column(ForeignKey("shift_templates.id", ondelete="CASCADE"))
+
+    shift_group: Mapped["ShiftGroup"] = relationship(back_populates="template_links")
+    shift_template: Mapped["ShiftTemplate"] = relationship(back_populates="shift_group_links")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -29,6 +72,10 @@ class Doctor(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    shift_group_links: Mapped[list["DoctorShiftGroup"]] = relationship(
+        back_populates="doctor", cascade="all, delete-orphan"
+    )
+
 
 class ShiftTemplate(Base):
     __tablename__ = "shift_templates"
@@ -43,6 +90,9 @@ class ShiftTemplate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     variants: Mapped[list["ShiftVariant"]] = relationship(back_populates="shift_template", cascade="all, delete-orphan")
+    shift_group_links: Mapped[list["ShiftGroupShiftTemplate"]] = relationship(
+        back_populates="shift_template", cascade="all, delete-orphan"
+    )
 
 
 class ShiftVariant(Base):

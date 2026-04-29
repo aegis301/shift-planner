@@ -80,7 +80,10 @@ type DoctorRecord = {
   notes: string | null;
   is_active: boolean;
   created_at: string;
+  shift_group_ids?: number[];
 };
+
+type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
 
 const SHIFT_TEMPLATE_CATEGORIES: { value: ShiftTemplateCategory; label: TranslationKey }[] = [
   { value: "bereitschaftsdienst", label: "onCallDutyCategory" },
@@ -869,6 +872,16 @@ function DoctorEditorModal({
 }) {
   const { locale } = useLocale();
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(() => new Set(doctor.shift_group_ids ?? []));
+
+  useEffect(() => {
+    setSelectedGroupIds(new Set(doctor.shift_group_ids ?? []));
+  }, [doctor]);
+
+  useEffect(() => {
+    void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
+  }, []);
 
   async function submitEditor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -880,7 +893,8 @@ function DoctorEditorModal({
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
-        is_active: form.get("is_active") === "on"
+        is_active: form.get("is_active") === "on",
+        shift_group_ids: [...selectedGroupIds]
       })
     });
     await onChanged();
@@ -939,6 +953,32 @@ function DoctorEditorModal({
             <input name="is_active" type="checkbox" defaultChecked={doctor.is_active} />
             {t(locale, "isActive")}
           </label>
+        </div>
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
+          <p className="text-sm font-semibold text-ink">{t(locale, "doctorShiftGroups")}</p>
+          <div className="mt-2 max-h-40 space-y-2 overflow-y-auto text-sm">
+            {shiftGroups.map((group) => (
+              <label key={group.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={selectedGroupIds.has(group.id)}
+                  onChange={() => {
+                    setSelectedGroupIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(group.id)) {
+                        next.delete(group.id);
+                      } else {
+                        next.add(group.id);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+                <span className="font-mono text-xs">{group.code}</span>
+                {locale === "de" ? group.name_de : group.name_en}
+              </label>
+            ))}
+          </div>
         </div>
         {isDeleteConfirmOpen ? (
           <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
@@ -1038,6 +1078,8 @@ export function DoctorForm() {
   const [rows, setRows] = useState<AnyRecord[]>([]);
   const [message, setMessage] = useState("");
   const [isCreateDoctorModalOpen, setIsCreateDoctorModalOpen] = useState(false);
+  const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
+  const [createGroupIds, setCreateGroupIds] = useState<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
     setRows(await apiFetch<AnyRecord[]>("/api/v1/doctors"));
@@ -1046,6 +1088,10 @@ export function DoctorForm() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1056,11 +1102,13 @@ export function DoctorForm() {
         name: form.get("name"),
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
-        notes: form.get("notes")
+        notes: form.get("notes"),
+        shift_group_ids: [...createGroupIds]
       })
     });
     setMessage(t(locale, "created"));
     setIsCreateDoctorModalOpen(false);
+    setCreateGroupIds(new Set());
     await refresh();
   }
 
@@ -1110,6 +1158,32 @@ export function DoctorForm() {
               <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" required /></Field>
               <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" /></Field>
               <Field label={t(locale, "notes")}><input className={inputClass} name="notes" /></Field>
+            </div>
+            <div className="mt-4 rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-semibold text-ink">{t(locale, "doctorShiftGroups")}</p>
+              <div className="mt-2 max-h-36 space-y-2 overflow-y-auto text-sm">
+                {shiftGroups.map((group) => (
+                  <label key={group.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={createGroupIds.has(group.id)}
+                      onChange={() => {
+                        setCreateGroupIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(group.id)) {
+                            next.delete(group.id);
+                          } else {
+                            next.add(group.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <span className="font-mono text-xs">{group.code}</span>
+                    {locale === "de" ? group.name_de : group.name_en}
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button

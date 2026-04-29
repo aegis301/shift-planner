@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.models import PlanningCell, RosterSlotAssignment, RuleConfig
 from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationWarning
 from app.services.matrix import list_planning_cells
-from app.services.roster_matrix import list_roster_slot_assignments
+from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
+from app.services.shift_groups import active_doctor_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
 
 
 def get_default_rule_config(db: Session) -> RuleConfig:
@@ -20,14 +21,40 @@ def get_default_rule_config(db: Session) -> RuleConfig:
     return config
 
 
-def validate_roster(db: Session, planning_period_id: int) -> list[ValidationWarning]:
+def _warning_in_shift_group_scope(
+    warning: ValidationWarning, *, doctor_ids: set[int], slot_ids: set[int]
+) -> bool:
+    if warning.doctor_id is not None and warning.doctor_id not in doctor_ids:
+        return False
+    if warning.code == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT":
+        rid = warning.details.get("roster_slot_id")
+        if rid is not None and rid not in slot_ids:
+            return False
+    if warning.code == "ROSTER_MATRIX_DUPLICATE_DAY":
+        ids = warning.details.get("roster_slot_ids") or []
+        if ids and not set(ids).issubset(slot_ids):
+            return False
+    return True
+
+
+def validate_roster(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> list[ValidationWarning]:
     warnings: list[ValidationWarning] = []
     cells = list_planning_cells(db, planning_period_id=planning_period_id)
     slot_assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     _add_matrix_conflicts(warnings, cells)
     _add_roster_slot_matrix_conflicts(warnings, slot_assignments, cells)
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
-    return warnings
+    if shift_group_id is None:
+        return warnings
+    require_shift_group(db, shift_group_id)
+    doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
+    template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
+    slot_ids = {
+        slot.id
+        for slot in list_roster_slots(db, planning_period_id=planning_period_id)
+        if slot.shift_template_id is not None and slot.shift_template_id in template_ids
+    }
+    return [warning for warning in warnings if _warning_in_shift_group_scope(warning, doctor_ids=doctor_ids, slot_ids=slot_ids)]
 
 
 def _add_matrix_conflicts(warnings: list[ValidationWarning], cells: list[PlanningCell]) -> None:

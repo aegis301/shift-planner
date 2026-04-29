@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
@@ -54,23 +54,49 @@ def regenerate_planning_period_roster(
 
 
 @router.get("/validation/{planning_period_id}", response_model=list[ValidationWarning])
-def get_validation(planning_period_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return validate_roster(db, planning_period_id)
+def get_validation(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    try:
+        return validate_roster(db, planning_period_id, shift_group_id=shift_group_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/exports/roster-matrix/{planning_period_id}.csv", response_class=PlainTextResponse)
-def get_roster_matrix_csv(planning_period_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_roster_matrix_csv(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    try:
+        body = export_roster_matrix_csv(db, planning_period_id, shift_group_id=shift_group_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlainTextResponse(
-        export_roster_matrix_csv(db, planning_period_id),
+        body,
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="roster-matrix-{planning_period_id}.csv"'},
     )
 
 
 @router.get("/exports/matrix/{planning_period_id}.csv", response_class=PlainTextResponse)
-def get_matrix_csv(planning_period_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_matrix_csv(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    try:
+        body = export_matrix_csv(db, planning_period_id, shift_group_id=shift_group_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return PlainTextResponse(
-        export_matrix_csv(db, planning_period_id),
+        body,
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="matrix-{planning_period_id}.csv"'},
     )

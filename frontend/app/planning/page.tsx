@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import { PlanningWorkspace } from "@/components/PlanningWorkspace";
 
 export default function PlanningPage() {
-  return <PlanningWorkspace />;
+  return (
+    <Suspense fallback={null}>
+      <PlanningWorkspace />
+    </Suspense>
+  );
 }

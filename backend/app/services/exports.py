@@ -7,8 +7,8 @@ from app.services.matrix import get_planning_matrix
 from app.services.roster_matrix import get_roster_matrix
 
 
-def export_matrix_csv(db: Session, planning_period_id: int) -> str:
-    matrix = get_planning_matrix(db, planning_period_id)
+def export_matrix_csv(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> str:
+    matrix = get_planning_matrix(db, planning_period_id, shift_group_id=shift_group_id)
     cells = {(cell.cell_date, cell.doctor_id): cell for cell in matrix.cells}
     buffer = StringIO()
     writer = csv.writer(buffer)
@@ -28,8 +28,8 @@ def export_matrix_csv(db: Session, planning_period_id: int) -> str:
     return buffer.getvalue()
 
 
-def export_roster_matrix_csv(db: Session, planning_period_id: int) -> str:
-    matrix = get_roster_matrix(db, planning_period_id)
+def export_roster_matrix_csv(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> str:
+    matrix = get_roster_matrix(db, planning_period_id, shift_group_id=shift_group_id)
     slots_by_day = {}
     for slot in matrix.slots:
         slots_by_day.setdefault(slot.slot_date, []).append(slot)

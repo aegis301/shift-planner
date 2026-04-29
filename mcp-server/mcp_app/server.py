@@ -8,14 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
+from app.models import ShiftGroup
 from app.schemas import (
-    DoctorPeriodNoteUpsert,
     DoctorCreate,
+    DoctorPeriodNoteUpsert,
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
     PlanningPeriodCreate,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentUpsert,
+    ShiftGroupCreate,
     ShiftTemplateCreate,
     ShiftVariantCreate,
 )
@@ -37,6 +39,12 @@ from app.services.roster_matrix import (
     get_roster_matrix,
     reset_roster_slots_for_period,
     upsert_roster_slot_assignment,
+)
+from app.services.shift_groups import (
+    create_shift_group,
+    list_shift_groups,
+    replace_group_doctors,
+    replace_group_shift_templates,
 )
 from app.services.shift_templates import (
     ShiftTemplateCodeConflictError,
@@ -86,7 +94,13 @@ def health() -> dict[str, str]:
 def doctors_resource() -> list[dict[str, Any]]:
     """List all doctors."""
     with db_session() as db:
-        return [serialize_model(doctor) for doctor in list_doctors(db)]
+        return [
+            {
+                **serialize_model(doctor),
+                "shift_group_ids": sorted({link.shift_group_id for link in doctor.shift_group_links}),
+            }
+            for doctor in list_doctors(db)
+        ]
 
 
 @mcp.resource("shift-planner://shift-templates")
@@ -109,11 +123,32 @@ def planning_periods_resource() -> list[dict[str, Any]]:
         return [serialize_model(period) for period in list_planning_periods(db)]
 
 
+@mcp.resource("shift-planner://shift-groups")
+def shift_groups_resource() -> list[dict[str, Any]]:
+    """List shift groups with doctor and shift template membership ids."""
+    with db_session() as db:
+        return [
+            {
+                **serialize_model(group),
+                "doctor_ids": sorted({link.doctor_id for link in group.doctor_links}),
+                "shift_template_ids": sorted({link.shift_template_id for link in group.template_links}),
+            }
+            for group in list_shift_groups(db)
+        ]
+
+
 @mcp.resource("shift-planner://matrix/{planning_period_id}")
 def matrix_resource(planning_period_id: int) -> dict[str, Any]:
     """Return the monthly planning matrix with days, doctors, and cells."""
     with db_session() as db:
         return get_planning_matrix(db, planning_period_id).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://matrix/{planning_period_id}/shift-group/{shift_group_id}")
+def matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Return the planning matrix filtered to one shift group."""
+    with db_session() as db:
+        return get_planning_matrix(db, planning_period_id, shift_group_id=shift_group_id).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://roster-matrix/{planning_period_id}")
@@ -123,6 +158,13 @@ def roster_matrix_resource(planning_period_id: int) -> dict[str, Any]:
         return get_roster_matrix(db, planning_period_id).model_dump(mode="json")
 
 
+@mcp.resource("shift-planner://roster-matrix/{planning_period_id}/shift-group/{shift_group_id}")
+def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Return the final roster matrix filtered to one shift group."""
+    with db_session() as db:
+        return get_roster_matrix(db, planning_period_id, shift_group_id=shift_group_id).model_dump(mode="json")
+
+
 @mcp.resource("shift-planner://doctor-period-notes/{planning_period_id}")
 def doctor_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]]:
     """Return source emails and monthly notes for a planning period."""
@@ -130,11 +172,24 @@ def doctor_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]
         return [serialize_model(note) for note in list_doctor_period_notes(db, planning_period_id=planning_period_id)]
 
 
-@mcp.tool
-def get_validation_warnings(planning_period_id: int) -> list[dict[str, Any]]:
-    """Validate a planning period and return structured warnings."""
+@mcp.resource("shift-planner://doctor-period-notes/{planning_period_id}/shift-group/{shift_group_id}")
+def doctor_period_notes_filtered_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+    """Return doctor period notes filtered to doctors in a shift group."""
     with db_session() as db:
-        return [warning.model_dump(mode="json") for warning in validate_roster(db, planning_period_id)]
+        return [
+            serialize_model(note)
+            for note in list_doctor_period_notes(db, planning_period_id=planning_period_id, shift_group_id=shift_group_id)
+        ]
+
+
+@mcp.tool
+def get_validation_warnings(planning_period_id: int, shift_group_id: int | None = None) -> list[dict[str, Any]]:
+    """Validate a planning period and return structured warnings. Optionally filter to one shift group."""
+    with db_session() as db:
+        return [
+            warning.model_dump(mode="json")
+            for warning in validate_roster(db, planning_period_id, shift_group_id=shift_group_id)
+        ]
 
 
 @mcp.tool
@@ -144,17 +199,88 @@ def create_doctor_tool(
     email: str,
     employment_percentage: int = 100,
     notes: str | None = None,
+    shift_group_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Create a doctor. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         doctor = create_doctor(
             db,
-            DoctorCreate(name=name, email=email, employment_percentage=employment_percentage, notes=notes),
+            DoctorCreate(
+                name=name,
+                email=email,
+                employment_percentage=employment_percentage,
+                notes=notes,
+                shift_group_ids=list(shift_group_ids or []),
+            ),
             actor="mcp",
             source="mcp",
         )
-        return serialize_model(doctor)
+        db.refresh(doctor, attribute_names=["shift_group_links"])
+        return {
+            **serialize_model(doctor),
+            "shift_group_ids": sorted({link.shift_group_id for link in doctor.shift_group_links}),
+        }
+
+
+@mcp.tool
+def create_shift_group_tool(
+    token: str,
+    code: str,
+    name_de: str,
+    name_en: str,
+    display_order: int = 0,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Create a shift group. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        group = create_shift_group(
+            db,
+            ShiftGroupCreate(code=code, name_de=name_de, name_en=name_en, display_order=display_order, is_active=is_active),
+            actor="mcp",
+            source="mcp",
+        )
+        db.refresh(group, attribute_names=["doctor_links", "template_links"])
+        return {
+            **serialize_model(group),
+            "doctor_ids": sorted({link.doctor_id for link in group.doctor_links}),
+            "shift_template_ids": sorted({link.shift_template_id for link in group.template_links}),
+        }
+
+
+@mcp.tool
+def set_shift_group_doctors_tool(token: str, shift_group_id: int, doctor_ids: list[int]) -> dict[str, Any]:
+    """Replace doctors assigned to a shift group. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        replace_group_doctors(db, shift_group_id, doctor_ids, actor="mcp", source="mcp")
+        match = db.get(ShiftGroup, shift_group_id)
+        if match is None:
+            return {"shift_group_id": shift_group_id, "doctor_ids": [], "shift_template_ids": []}
+        db.refresh(match, attribute_names=["doctor_links", "template_links"])
+        return {
+            **serialize_model(match),
+            "doctor_ids": sorted({link.doctor_id for link in match.doctor_links}),
+            "shift_template_ids": sorted({link.shift_template_id for link in match.template_links}),
+        }
+
+
+@mcp.tool
+def set_shift_group_templates_tool(token: str, shift_group_id: int, shift_template_ids: list[int]) -> dict[str, Any]:
+    """Replace shift templates covered by a shift group. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        replace_group_shift_templates(db, shift_group_id, shift_template_ids, actor="mcp", source="mcp")
+        match = db.get(ShiftGroup, shift_group_id)
+        if match is None:
+            return {"shift_group_id": shift_group_id, "doctor_ids": [], "shift_template_ids": []}
+        db.refresh(match, attribute_names=["doctor_links", "template_links"])
+        return {
+            **serialize_model(match),
+            "doctor_ids": sorted({link.doctor_id for link in match.doctor_links}),
+            "shift_template_ids": sorted({link.shift_template_id for link in match.template_links}),
+        }
 
 
 @mcp.tool

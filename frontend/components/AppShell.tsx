@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, Languages, Settings, Sparkles, Stethoscope } from "lucide-react";
+import { CalendarDays, Languages, Settings, Sparkles, Stethoscope, UsersRound } from "lucide-react";
 import { Locale, t } from "@/lib/i18n";
 
 const navItems = [
   { href: "/", key: "dashboard", icon: Sparkles },
   { href: "/planning", key: "planning", icon: CalendarDays },
   { href: "/doctors", key: "doctors", icon: Stethoscope },
+  { href: "/shift-groups", key: "shiftGroups", icon: UsersRound },
   { href: "/shift-types", key: "shiftTypes", icon: CalendarDays },
   { href: "/settings", key: "settings", icon: Settings }
 ] as const;

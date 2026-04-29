@@ -40,6 +40,7 @@ class DoctorCreate(BaseModel):
     email: EmailStr
     employment_percentage: int = Field(default=100, ge=1, le=100)
     notes: str | None = None
+    shift_group_ids: list[int] = Field(default_factory=list)
 
 
 class DoctorUpdate(BaseModel):
@@ -48,6 +49,7 @@ class DoctorUpdate(BaseModel):
     employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
     is_active: bool | None = None
+    shift_group_ids: list[int] | None = None
 
 
 class DoctorRead(DoctorCreate):
@@ -56,6 +58,44 @@ class DoctorRead(DoctorCreate):
     id: int
     is_active: bool
     created_at: datetime
+
+
+class ShiftGroupCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=50)
+    name_de: str = Field(min_length=1, max_length=255)
+    name_en: str = Field(min_length=1, max_length=255)
+    display_order: int = 0
+    is_active: bool = True
+
+
+class ShiftGroupUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=50)
+    name_de: str | None = Field(default=None, min_length=1, max_length=255)
+    name_en: str | None = Field(default=None, min_length=1, max_length=255)
+    display_order: int | None = None
+    is_active: bool | None = None
+
+
+class ShiftGroupRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name_de: str
+    name_en: str
+    display_order: int
+    is_active: bool
+    created_at: datetime
+    doctor_ids: list[int] = Field(default_factory=list)
+    shift_template_ids: list[int] = Field(default_factory=list)
+
+
+class ShiftGroupDoctorIdsPut(BaseModel):
+    doctor_ids: list[int] = Field(default_factory=list)
+
+
+class ShiftGroupTemplateIdsPut(BaseModel):
+    shift_template_ids: list[int] = Field(default_factory=list)
 
 
 DayClass = Literal["any", "weekday", "weekend", "holiday"]

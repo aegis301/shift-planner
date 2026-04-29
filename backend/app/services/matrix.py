@@ -16,6 +16,7 @@ from app.schemas import (
     PlanningMatrixRead,
 )
 from app.services.audit import record_audit
+from app.services.shift_groups import active_doctor_ids_in_shift_group, require_shift_group
 
 
 def list_planning_cells(db: Session, *, planning_period_id: int) -> list[PlanningCell]:
@@ -27,17 +28,25 @@ def list_planning_cells(db: Session, *, planning_period_id: int) -> list[Plannin
     return list(db.scalars(stmt))
 
 
-def get_planning_matrix(db: Session, planning_period_id: int) -> PlanningMatrixRead:
+def get_planning_matrix(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> PlanningMatrixRead:
     period = db.get(PlanningPeriod, planning_period_id)
     if period is None:
         raise ValueError("Planning period not found")
 
     doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.name)))
+    if shift_group_id is not None:
+        require_shift_group(db, shift_group_id)
+        allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
+        doctors = [doctor for doctor in doctors if doctor.id in allowed_doctor_ids]
     days_in_month = calendar.monthrange(period.year, period.month)[1]
     days = [
         MatrixDay(date=date(period.year, period.month, day), weekday=date(period.year, period.month, day).strftime("%A"))
         for day in range(1, days_in_month + 1)
     ]
+    cells = list_planning_cells(db, planning_period_id=planning_period_id)
+    if shift_group_id is not None:
+        allowed_doctor_ids = {doctor.id for doctor in doctors}
+        cells = [cell for cell in cells if cell.doctor_id in allowed_doctor_ids]
     return PlanningMatrixRead(
         planning_period=period,
         doctors=[
@@ -50,7 +59,7 @@ def get_planning_matrix(db: Session, planning_period_id: int) -> PlanningMatrixR
             for doctor in doctors
         ],
         days=days,
-        cells=[PlanningCellRead.model_validate(cell) for cell in list_planning_cells(db, planning_period_id=planning_period_id)],
+        cells=[PlanningCellRead.model_validate(cell) for cell in cells],
     )
 
 
@@ -198,14 +207,16 @@ def clear_planning_cell(
     return True
 
 
-def list_doctor_period_notes(db: Session, *, planning_period_id: int) -> list[DoctorPeriodNote]:
-    return list(
-        db.scalars(
-            select(DoctorPeriodNote)
-            .where(DoctorPeriodNote.planning_period_id == planning_period_id)
-            .order_by(DoctorPeriodNote.doctor_id)
-        )
-    )
+def list_doctor_period_notes(
+    db: Session, *, planning_period_id: int, shift_group_id: int | None = None
+) -> list[DoctorPeriodNote]:
+    stmt = select(DoctorPeriodNote).where(DoctorPeriodNote.planning_period_id == planning_period_id)
+    notes = list(db.scalars(stmt.order_by(DoctorPeriodNote.doctor_id)))
+    if shift_group_id is None:
+        return notes
+    require_shift_group(db, shift_group_id)
+    allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
+    return [note for note in notes if note.doctor_id in allowed_doctor_ids]
 
 
 def get_doctor_period_note(db: Session, *, planning_period_id: int, doctor_id: int) -> DoctorPeriodNote | None:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -26,9 +26,14 @@ router = APIRouter(prefix="/matrix", tags=["matrix"])
 
 
 @router.get("/{planning_period_id}", response_model=PlanningMatrixRead)
-def get_matrix(planning_period_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_matrix(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     try:
-        return get_planning_matrix(db, planning_period_id)
+        return get_planning_matrix(db, planning_period_id, shift_group_id=shift_group_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -65,8 +70,13 @@ def clear_cell(
 
 
 @router.get("/{planning_period_id}/notes", response_model=list[DoctorPeriodNoteRead])
-def get_notes(planning_period_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return list_doctor_period_notes(db, planning_period_id=planning_period_id)
+def get_notes(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    return list_doctor_period_notes(db, planning_period_id=planning_period_id, shift_group_id=shift_group_id)
 
 
 @router.put("/{planning_period_id}/notes", response_model=DoctorPeriodNoteRead)
