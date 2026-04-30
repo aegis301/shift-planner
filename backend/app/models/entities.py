@@ -60,18 +60,27 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    linked_doctor: Mapped["Doctor | None"] = relationship(
+        back_populates="user",
+        uselist=False,
+        foreign_keys="Doctor.user_id",
+    )
+
 
 class Doctor(Base):
     __tablename__ = "doctors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255))
+    first_name: Mapped[str] = mapped_column(String(255))
+    last_name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     employment_percentage: Mapped[int] = mapped_column(Integer, default=100)
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    user: Mapped["User | None"] = relationship(back_populates="linked_doctor", foreign_keys=[user_id])
     shift_group_links: Mapped[list["DoctorShiftGroup"]] = relationship(
         back_populates="doctor", cascade="all, delete-orphan"
     )
@@ -121,6 +130,7 @@ class PlanningPeriod(Base):
     year: Mapped[int] = mapped_column(Integer)
     month: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(50), default="draft")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

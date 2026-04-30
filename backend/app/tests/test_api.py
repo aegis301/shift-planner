@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.core.security import hash_password
 from app.main import app
-from app.models import User
+from app.models import Doctor, DoctorShiftGroup, ShiftGroup, User
 from app.models.base import Base
 
 
@@ -40,8 +40,49 @@ def client():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture()
+def doctor_client():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(User(email="admin@example.com", hashed_password=hash_password("secret"), role="admin", locale="de"))
+        doc_user = User(email="doc@example.com", hashed_password=hash_password("docsecret"), role="doctor", locale="de")
+        db.add(doc_user)
+        db.flush()
+        doctor = Doctor(first_name="Seeded", last_name="Doctor", email="docperson@example.com", employment_percentage=100, user_id=doc_user.id)
+        db.add(doctor)
+        db.flush()
+        sg = ShiftGroup(code="docsg", name_de="Doc G", name_en="Doc G", display_order=0)
+        db.add(sg)
+        db.flush()
+        db.add(DoctorShiftGroup(doctor_id=doctor.id, shift_group_id=sg.id))
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
 def login(client: TestClient) -> None:
     response = client.post("/api/v1/auth/login", json={"email": "admin@example.com", "password": "secret"})
+    assert response.status_code == 200
+
+
+def login_doctor(cl: TestClient) -> None:
+    response = cl.post("/api/v1/auth/login", json={"email": "doc@example.com", "password": "docsecret"})
     assert response.status_code == 200
 
 
@@ -54,7 +95,7 @@ def test_auth_and_doctor_crud(client: TestClient):
     login(client)
     response = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Ada Lovelace", "email": "ada@example.com", "employment_percentage": 80},
+        json={"first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com", "employment_percentage": 80},
     )
     assert response.status_code == 200
     assert response.json()["employment_percentage"] == 80
@@ -65,7 +106,7 @@ def test_roster_validation_no_go_conflict(client: TestClient):
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Max Planck", "email": "max@example.com", "employment_percentage": 100},
+        json={"first_name": "Max", "last_name": "Planck", "email": "max@example.com", "employment_percentage": 100},
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -107,7 +148,7 @@ def test_matrix_cell_note_and_csv_export(client: TestClient):
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Matrix", "email": "matrix@example.com", "employment_percentage": 100},
+        json={"first_name": "Matrix", "last_name": "Doctor", "email": "matrix@example.com", "employment_percentage": 100},
     ).json()["id"]
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
 
@@ -148,7 +189,7 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Bulk", "email": "bulk@example.com", "employment_percentage": 80},
+        json={"first_name": "Bulk", "last_name": "Doctor", "email": "bulk@example.com", "employment_percentage": 80},
     ).json()["id"]
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
 
@@ -185,7 +226,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Roster", "email": "roster@example.com", "employment_percentage": 100},
+        json={"first_name": "Roster", "last_name": "Doctor", "email": "roster@example.com", "employment_percentage": 100},
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -232,7 +273,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     assert csv_response.status_code == 200
     assert "2026-07-11" in csv_response.text
     assert "Tagdienst" in csv_response.text
-    assert "Dr. Roster" in csv_response.text
+    assert "Roster Doctor" in csv_response.text
     assert "final geplant" not in csv_response.text
 
     clear_response = client.post("/api/v1/roster-matrix/assignments/clear", json={"roster_slot_id": slot["id"]})
@@ -332,7 +373,7 @@ def test_regenerate_roster_slots_clears_assignments_and_updates_slots(client: Te
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Reset", "email": "reset@example.com", "employment_percentage": 100},
+        json={"first_name": "Reset", "last_name": "Doctor", "email": "reset@example.com", "employment_percentage": 100},
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -375,7 +416,7 @@ def test_delete_shift_variant_clears_generated_slots_and_assignments(client: Tes
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Variant Delete", "email": "variant-delete@example.com", "employment_percentage": 100},
+        json={"first_name": "Variant", "last_name": "Delete", "email": "variant-delete@example.com", "employment_percentage": 100},
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -419,7 +460,7 @@ def test_delete_planning_period_removes_period_and_related_data(client: TestClie
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Delete", "email": "delete@example.com", "employment_percentage": 100},
+        json={"first_name": "Delete", "last_name": "Doctor", "email": "delete@example.com", "employment_percentage": 100},
     ).json()["id"]
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 10}).json()["id"]
     client.put(
@@ -442,7 +483,7 @@ def test_delete_shift_template_clears_generated_slots_and_assignments(client: Te
     login(client)
     doctor_id = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Template Delete", "email": "template-delete@example.com", "employment_percentage": 100},
+        json={"first_name": "Template", "last_name": "Delete", "email": "template-delete@example.com", "employment_percentage": 100},
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -482,7 +523,7 @@ def test_delete_doctor_clears_related_data(client: TestClient):
     login(client)
     doctor = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. Purge", "email": "purge@example.com", "employment_percentage": 80},
+        json={"first_name": "Purge", "last_name": "Doctor", "email": "purge@example.com", "employment_percentage": 80},
     ).json()
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 12}).json()["id"]
     client.put(
@@ -509,11 +550,11 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     login(client)
     doc_in = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. InGroup", "email": "ingroup@example.com", "employment_percentage": 100},
+        json={"first_name": "In", "last_name": "Group", "email": "ingroup@example.com", "employment_percentage": 100},
     ).json()
     doc_out = client.post(
         "/api/v1/doctors",
-        json={"name": "Dr. OutGroup", "email": "outgroup@example.com", "employment_percentage": 100},
+        json={"first_name": "Out", "last_name": "Group", "email": "outgroup@example.com", "employment_percentage": 100},
     ).json()
     template = client.post(
         "/api/v1/shift-templates",
@@ -580,3 +621,51 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     assert override.status_code == 200
     warnings_after = client.get(f"/api/v1/validation/{period_id}").json()
     assert all(warning["code"] != "ROSTER_TEMPLATE_NO_GO_CONFLICT" for warning in warnings_after)
+
+
+def test_publish_planning_period(client: TestClient):
+    login(client)
+    pid = client.post("/api/v1/planning-periods", json={"year": 2028, "month": 1}).json()["id"]
+    pub = client.post(f"/api/v1/planning-periods/{pid}/publish")
+    assert pub.status_code == 200
+    body = pub.json()
+    assert body["status"] == "published"
+    assert body.get("published_at") is not None
+
+    unpub = client.post(f"/api/v1/planning-periods/{pid}/unpublish")
+    assert unpub.status_code == 200
+    body2 = unpub.json()
+    assert body2["status"] == "draft"
+    assert body2.get("published_at") is None
+
+
+def test_doctor_shift_templates_forbidden(doctor_client: TestClient):
+    login_doctor(doctor_client)
+    assert doctor_client.get("/api/v1/shift-templates").status_code == 403
+
+
+def test_doctor_matrix_requires_shift_group(doctor_client: TestClient):
+    login(doctor_client)
+    pid = doctor_client.post("/api/v1/planning-periods", json={"year": 2030, "month": 1}).json()["id"]
+    login_doctor(doctor_client)
+    assert doctor_client.get(f"/api/v1/matrix/{pid}").status_code == 400
+    matrix = doctor_client.get(f"/api/v1/matrix/{pid}?shift_group_id=1")
+    assert matrix.status_code == 200
+    body = matrix.json()
+    assert len(body["doctors"]) == 1
+    assert body["doctors"][0]["id"] == 1
+
+
+def test_doctor_roster_requires_publish(doctor_client: TestClient):
+    login(doctor_client)
+    pid = doctor_client.post("/api/v1/planning-periods", json={"year": 2031, "month": 1}).json()["id"]
+    login_doctor(doctor_client)
+    assert doctor_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 403
+    login(doctor_client)
+    assert doctor_client.post(f"/api/v1/planning-periods/{pid}/publish").status_code == 200
+    login_doctor(doctor_client)
+    assert doctor_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 200
+    login(doctor_client)
+    assert doctor_client.post(f"/api/v1/planning-periods/{pid}/unpublish").status_code == 200
+    login_doctor(doctor_client)
+    assert doctor_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 403

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_planner
 from app.db.session import get_db
 from app.models import ShiftGroup, User
 from app.schemas import (
@@ -38,13 +38,13 @@ def _shift_group_read(group: ShiftGroup) -> ShiftGroupRead:
 
 
 @router.get("", response_model=list[ShiftGroupRead])
-def get_shift_groups(active_only: bool = False, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_shift_groups(active_only: bool = False, db: Session = Depends(get_db), _: User = Depends(get_current_planner)):
     return [_shift_group_read(g) for g in list_shift_groups(db, active_only=active_only)]
 
 
 @router.post("", response_model=ShiftGroupRead)
 def post_shift_group(
-    payload: ShiftGroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    payload: ShiftGroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_planner)
 ):
     group = create_shift_group(db, payload, actor=user.email, source="rest")
     db.refresh(group, attribute_names=["doctor_links", "template_links"])
@@ -56,7 +56,7 @@ def patch_shift_group(
     shift_group_id: int,
     payload: ShiftGroupUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_planner),
 ):
     group = update_shift_group(db, shift_group_id, payload, actor=user.email, source="rest")
     if group is None:
@@ -67,7 +67,7 @@ def patch_shift_group(
 
 @router.delete("/{shift_group_id}")
 def delete_shift_group_endpoint(
-    shift_group_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    shift_group_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_planner)
 ):
     return {"deleted": delete_shift_group(db, shift_group_id, actor=user.email, source="rest")}
 
@@ -77,7 +77,7 @@ def put_shift_group_doctors(
     shift_group_id: int,
     payload: ShiftGroupDoctorIdsPut,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_planner),
 ):
     try:
         replace_group_doctors(db, shift_group_id, payload.doctor_ids, actor=user.email, source="rest")
@@ -95,7 +95,7 @@ def put_shift_group_templates(
     shift_group_id: int,
     payload: ShiftGroupTemplateIdsPut,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_planner),
 ):
     try:
         replace_group_shift_templates(db, shift_group_id, payload.shift_template_ids, actor=user.email, source="rest")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_planner
 from app.db.session import get_db
 from app.models import User
 from app.schemas import DoctorCreate, DoctorRead, DoctorUpdate
@@ -11,13 +11,16 @@ router = APIRouter(prefix="/doctors", tags=["doctors"])
 
 
 @router.get("", response_model=list[DoctorRead])
-def get_doctors(active_only: bool = False, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_doctors(active_only: bool = False, db: Session = Depends(get_db), _: User = Depends(get_current_planner)):
     return [doctor_to_read(doctor) for doctor in list_doctors(db, active_only=active_only)]
 
 
 @router.post("", response_model=DoctorRead)
-def post_doctor(payload: DoctorCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    doctor = create_doctor(db, payload, actor=user.email, source="rest")
+def post_doctor(payload: DoctorCreate, db: Session = Depends(get_db), user: User = Depends(get_current_planner)):
+    try:
+        doctor = create_doctor(db, payload, actor=user.email, source="rest")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return doctor_to_read(doctor)
 
 
@@ -26,9 +29,12 @@ def patch_doctor(
     doctor_id: int,
     payload: DoctorUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_planner),
 ):
-    doctor = update_doctor(db, doctor_id, payload, actor=user.email, source="rest")
+    try:
+        doctor = update_doctor(db, doctor_id, payload, actor=user.email, source="rest")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if doctor is None:
         raise HTTPException(status_code=404, detail="Doctor not found")
     return doctor_to_read(doctor)
@@ -38,7 +44,7 @@ def patch_doctor(
 def delete_doctor_endpoint(
     doctor_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_planner),
 ):
     return {"deleted": delete_doctor(db, doctor_id, actor=user.email, source="rest")}
 

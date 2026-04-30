@@ -25,7 +25,8 @@ type MatrixShiftTemplate = {
 
 type MatrixDoctor = {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   employment_percentage: number;
 };
@@ -64,6 +65,8 @@ type PlanningMatrix = {
   shift_intents: MatrixShiftIntent[];
   template_slot_days: TemplateSlotDay[];
 };
+
+type DoctorIntentStats = { wish: number; noGo: number };
 
 type PlanningPeriod = {
   id: number;
@@ -127,6 +130,10 @@ function formatDate(locale: Locale, value: string) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
+function doctorLabel(doctor: MatrixDoctor): string {
+  return `${doctor.first_name} ${doctor.last_name}`.trim();
+}
+
 function shiftGroupQuery(shiftGroupId?: string) {
   if (!shiftGroupId) {
     return "";
@@ -138,11 +145,13 @@ export function MatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
   shiftGroupId,
+  editableDoctorId,
   onChanged
 }: {
   periodId?: string;
   compact?: boolean;
   shiftGroupId?: string;
+  editableDoctorId?: number;
   onChanged?: () => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -158,6 +167,7 @@ export function MatrixEditor({
   const [summary, setSummary] = useState("");
   const [message, setMessage] = useState("");
   const [savingCells, setSavingCells] = useState(0);
+  const [isDoctorCommentModalOpen, setIsDoctorCommentModalOpen] = useState(false);
 
   const groupQuery = useMemo(() => shiftGroupQuery(shiftGroupId), [shiftGroupId]);
 
@@ -166,6 +176,25 @@ export function MatrixEditor({
     matrix?.cells.forEach((cell) => map.set(`${cell.cell_date}:${cell.doctor_id}`, cell));
     return map;
   }, [matrix]);
+
+  const intentStatsByDoctor = useMemo(() => {
+    const out = new Map<number, DoctorIntentStats>();
+    for (const doctor of matrix?.doctors ?? []) {
+      out.set(doctor.id, { wish: 0, noGo: 0 });
+    }
+    for (const row of matrix?.shift_intents ?? []) {
+      const entry = out.get(row.doctor_id);
+      if (!entry) {
+        continue;
+      }
+      if (row.kind === "wish") {
+        entry.wish += 1;
+      } else if (row.kind === "no_go") {
+        entry.noGo += 1;
+      }
+    }
+    return out;
+  }, [matrix?.doctors, matrix?.shift_intents]);
 
   const loadMatrixById = useCallback(async (nextPeriodId: string) => {
     const next = await apiFetch<PlanningMatrix>(`/api/v1/matrix/${nextPeriodId}${groupQuery}`);
@@ -230,6 +259,12 @@ export function MatrixEditor({
     setSummary(note?.summary ?? "");
   }, [activeDoctorId, noteDoctor?.id, notes]);
 
+  useEffect(() => {
+    if (editableDoctorId != null) {
+      setActiveDoctorId(editableDoctorId);
+    }
+  }, [editableDoctorId]);
+
   async function saveCell(doctorId: number, cellDate: string, status: PlanningStatus | "", comment?: string | null) {
     setSavingCells((count) => count + 1);
     try {
@@ -282,17 +317,24 @@ export function MatrixEditor({
     [activePeriodId, loadMatrixById, locale, onChanged, shiftGroupId]
   );
 
-  async function saveNote(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const doctorId = noteDoctor?.id ?? activeDoctorId;
+  async function persistNote(doctorId: number, monthlyCommentOnly = false) {
     if (!doctorId) return;
     await apiFetch(`/api/v1/matrix/${activePeriodId}/notes`, {
       method: "PUT",
-      body: JSON.stringify({ doctor_id: doctorId, source_text: sourceText, summary })
+      body: JSON.stringify({ doctor_id: doctorId, source_text: monthlyCommentOnly ? null : sourceText, summary })
     });
     setNotes(await apiFetch<DoctorPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
     setMessage(t(locale, "saved"));
     await onChanged?.();
+  }
+
+  async function saveNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const doctorId = noteDoctor?.id ?? activeDoctorId;
+    if (!doctorId) {
+      return;
+    }
+    await persistNote(doctorId);
   }
 
   return (
@@ -353,6 +395,16 @@ export function MatrixEditor({
         </Card>
       ) : (
         <div className="flex flex-wrap gap-3 text-sm">
+          {editableDoctorId != null ? (
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+              onClick={() => setIsDoctorCommentModalOpen(true)}
+            >
+              <MessageSquareText size={16} />
+              {t(locale, "monthlyComment")}
+            </button>
+          ) : null}
           {savingCells > 0 ? <p className="text-slate-600">{t(locale, "saving")}</p> : null}
           {message ? <p className="text-emerald-700">{message}</p> : null}
         </div>
@@ -369,6 +421,8 @@ export function MatrixEditor({
               onOpenNote={setNoteDoctor}
               shiftGroupId={shiftGroupId}
               onSaveIntent={saveIntent}
+              editableDoctorId={editableDoctorId}
+              intentStatsByDoctor={intentStatsByDoctor}
             />
           ) : (
             <>
@@ -380,6 +434,8 @@ export function MatrixEditor({
                 onOpenNote={setNoteDoctor}
                 shiftGroupId={shiftGroupId}
                 onSaveIntent={saveIntent}
+                editableDoctorId={editableDoctorId}
+                intentStatsByDoctor={intentStatsByDoctor}
               />
               <MobileMatrix
                 matrix={matrix}
@@ -389,6 +445,8 @@ export function MatrixEditor({
                 onOpenNote={setNoteDoctor}
                 shiftGroupId={shiftGroupId}
                 onSaveIntent={saveIntent}
+                editableDoctorId={editableDoctorId}
+                intentStatsByDoctor={intentStatsByDoctor}
               />
             </>
           )}
@@ -402,12 +460,79 @@ export function MatrixEditor({
             onSubmit={saveNote}
             locale={locale}
           />
+          {editableDoctorId != null && isDoctorCommentModalOpen ? (
+            <MonthlyCommentModal
+              value={summary}
+              locale={locale}
+              onClose={() => setIsDoctorCommentModalOpen(false)}
+              onChange={setSummary}
+              onSubmit={async (event) => {
+                event.preventDefault();
+                await persistNote(editableDoctorId, true);
+                setIsDoctorCommentModalOpen(false);
+              }}
+            />
+          ) : null}
         </>
       ) : (
         <Card>
           <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
         </Card>
       )}
+    </div>
+  );
+}
+
+function MonthlyCommentModal({
+  value,
+  onChange,
+  onClose,
+  onSubmit,
+  locale
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+  locale: Locale;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="monthly-comment-title">
+      <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 id="monthly-comment-title" className="text-lg font-semibold text-ink">{t(locale, "monthlyComment")}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+            aria-label={t(locale, "close")}
+          >
+            <X size={17} />
+          </button>
+        </div>
+        <form className="grid gap-4" onSubmit={onSubmit}>
+          <Field label={t(locale, "monthlyComment")}>
+            <textarea
+              className="min-h-40 rounded-lg border border-slate-200 p-3 text-sm"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+            />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+            >
+              {t(locale, "close")}
+            </button>
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white" type="submit">
+              <Save size={16} />
+              {t(locale, "save")}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -419,7 +544,9 @@ function PlanningDenseMatrix({
   onOpenNote,
   locale,
   shiftGroupId,
-  onSaveIntent
+  onSaveIntent,
+  editableDoctorId,
+  intentStatsByDoctor
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -428,21 +555,49 @@ function PlanningDenseMatrix({
   locale: Locale;
   shiftGroupId?: string;
   onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  editableDoctorId?: number;
+  intentStatsByDoctor: Map<number, DoctorIntentStats>;
 }) {
+  const singleDoctor = matrix.doctors.length === 1;
+
   return (
     <div className="overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft">
-      <table className="min-w-max border-separate border-spacing-0 text-sm">
+      <table className={`${singleDoctor ? "min-w-full" : "min-w-max"} border-separate border-spacing-0 text-sm`}>
         <thead>
           <tr>
             <th className="sticky left-0 top-0 z-30 border-b border-r border-slate-200 bg-white p-2 text-left text-xs font-semibold text-slate-700">
               {t(locale, "date")}
             </th>
             {matrix.doctors.map((doctor) => (
-              <th key={doctor.id} className="sticky top-0 z-20 min-w-[10rem] border-b border-slate-200 bg-white p-2 text-left align-bottom">
-                <div className="flex max-w-[12rem] items-start justify-between gap-1">
-                  <span className="truncate text-xs font-semibold text-ink">{doctor.name}</span>
+              <th
+                key={doctor.id}
+                className={`sticky top-0 z-20 border-b border-slate-200 bg-white p-2 text-left align-bottom ${
+                  singleDoctor ? "w-full" : "min-w-[10rem]"
+                }`}
+              >
+                <div className={`flex items-start justify-between gap-1 ${singleDoctor ? "w-full" : "max-w-[12rem]"}`}>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-ink">{doctorLabel(doctor)}</span>
+                    {(() => {
+                      const stats = intentStatsByDoctor.get(doctor.id);
+                      if (!stats || (!stats.wish && !stats.noGo)) {
+                        return null;
+                      }
+                      return (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[0.6rem] font-semibold text-sky-900 ring-1 ring-sky-200">
+                            {t(locale, "wishShort")}: {stats.wish}
+                          </span>
+                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[0.6rem] font-semibold text-rose-900 ring-1 ring-rose-200">
+                            {t(locale, "noGoShort")}: {stats.noGo}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
                   <button
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={editableDoctorId != null && doctor.id !== editableDoctorId}
                     onClick={() => onOpenNote(doctor)}
                     title={t(locale, "doctorPeriodNotes")}
                     type="button"
@@ -472,6 +627,7 @@ function PlanningDenseMatrix({
                     locale={locale}
                     shiftGroupId={shiftGroupId}
                     onSaveIntent={onSaveIntent}
+                    readOnly={editableDoctorId != null && doctor.id !== editableDoctorId}
                   />
                 </td>
               ))}
@@ -490,7 +646,9 @@ function DesktopMatrix({
   onOpenNote,
   locale,
   shiftGroupId,
-  onSaveIntent
+  onSaveIntent,
+  editableDoctorId,
+  intentStatsByDoctor
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -499,7 +657,11 @@ function DesktopMatrix({
   locale: Locale;
   shiftGroupId?: string;
   onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  editableDoctorId?: number;
+  intentStatsByDoctor: Map<number, DoctorIntentStats>;
 }) {
+  const singleDoctor = matrix.doctors.length === 1;
+
   return (
     <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
       <table className="min-w-full border-separate border-spacing-0 text-sm">
@@ -509,11 +671,35 @@ function DesktopMatrix({
               {t(locale, "date")}
             </th>
             {matrix.doctors.map((doctor) => (
-              <th key={doctor.id} className="sticky top-0 z-10 min-w-52 border-b border-slate-200 bg-white p-3 text-left font-semibold text-slate-700">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate">{doctor.name}</span>
+              <th
+                key={doctor.id}
+                className={`sticky top-0 z-10 border-b border-slate-200 bg-white p-3 text-left font-semibold text-slate-700 ${
+                  singleDoctor ? "w-full" : "min-w-52"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="block truncate">{doctorLabel(doctor)}</span>
+                    {(() => {
+                      const stats = intentStatsByDoctor.get(doctor.id);
+                      if (!stats || (!stats.wish && !stats.noGo)) {
+                        return null;
+                      }
+                      return (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900 ring-1 ring-sky-200">
+                            {t(locale, "wishShort")}: {stats.wish}
+                          </span>
+                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900 ring-1 ring-rose-200">
+                            {t(locale, "noGoShort")}: {stats.noGo}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
                   <button
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={editableDoctorId != null && doctor.id !== editableDoctorId}
                     onClick={() => onOpenNote(doctor)}
                     title={t(locale, "doctorPeriodNotes")}
                     type="button"
@@ -544,6 +730,7 @@ function DesktopMatrix({
                       locale={locale}
                       shiftGroupId={shiftGroupId}
                       onSaveIntent={onSaveIntent}
+                      readOnly={editableDoctorId != null && doctor.id !== editableDoctorId}
                     />
                   </td>
                 );
@@ -563,7 +750,9 @@ function MobileMatrix({
   onOpenNote,
   locale,
   shiftGroupId,
-  onSaveIntent
+  onSaveIntent,
+  editableDoctorId,
+  intentStatsByDoctor
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -572,6 +761,8 @@ function MobileMatrix({
   locale: Locale;
   shiftGroupId?: string;
   onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  editableDoctorId?: number;
+  intentStatsByDoctor: Map<number, DoctorIntentStats>;
 }) {
   return (
     <div className="grid gap-4 lg:hidden">
@@ -582,9 +773,28 @@ function MobileMatrix({
             {matrix.doctors.map((doctor) => (
               <div key={doctor.id} className="grid gap-2 rounded-lg border border-slate-200 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-slate-700">{doctor.name}</p>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700">{doctorLabel(doctor)}</p>
+                    {(() => {
+                      const stats = intentStatsByDoctor.get(doctor.id);
+                      if (!stats || (!stats.wish && !stats.noGo)) {
+                        return null;
+                      }
+                      return (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900 ring-1 ring-sky-200">
+                            {t(locale, "wishShort")}: {stats.wish}
+                          </span>
+                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900 ring-1 ring-rose-200">
+                            {t(locale, "noGoShort")}: {stats.noGo}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
                   <button
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={editableDoctorId != null && doctor.id !== editableDoctorId}
                     onClick={() => onOpenNote(doctor)}
                     title={t(locale, "doctorPeriodNotes")}
                     type="button"
@@ -601,6 +811,7 @@ function MobileMatrix({
                   locale={locale}
                   shiftGroupId={shiftGroupId}
                   onSaveIntent={onSaveIntent}
+                  readOnly={editableDoctorId != null && doctor.id !== editableDoctorId}
                 />
               </div>
             ))}
@@ -639,7 +850,7 @@ function DoctorNoteModal({
       <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-xl bg-white shadow-soft ring-1 ring-slate-200">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 id="doctor-note-title" className="text-lg font-semibold text-ink">{doctor.name}</h2>
+            <h2 id="doctor-note-title" className="text-lg font-semibold text-ink">{doctorLabel(doctor)}</h2>
             <p className="mt-1 text-sm text-slate-600">{t(locale, "doctorPeriodNotes")}</p>
           </div>
           <button
@@ -694,7 +905,8 @@ function MatrixCell({
   locale,
   dense = false,
   shiftGroupId,
-  onSaveIntent
+  onSaveIntent,
+  readOnly = false
 }: {
   matrix: PlanningMatrix;
   cell?: PlanningCell;
@@ -705,6 +917,7 @@ function MatrixCell({
   dense?: boolean;
   shiftGroupId?: string;
   onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [status, setStatus] = useState<PlanningStatus | "">(() => normalizePlanningStatus(cell?.status));
   const [comment, setComment] = useState(cell?.comment ?? "");
@@ -730,7 +943,7 @@ function MatrixCell({
   }, [cell?.status, cell?.comment]);
 
   useEffect(() => {
-    if (!isDirty) {
+    if (readOnly || !isDirty) {
       return;
     }
     const timeout = window.setTimeout(() => {
@@ -738,12 +951,13 @@ function MatrixCell({
       setIsDirty(false);
     }, 650);
     return () => window.clearTimeout(timeout);
-  }, [cellDate, comment, doctorId, isDirty, onSave, status]);
+  }, [cellDate, comment, doctorId, isDirty, onSave, readOnly, status]);
 
   return (
-    <div className={`grid ${dense ? "gap-1" : "gap-2"}`}>
+    <div className={`grid ${dense ? "gap-1" : "gap-2"} ${readOnly ? "opacity-80" : ""}`}>
       <select
         className={`min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${dense ? "px-1.5 py-1.5 text-[0.7rem]" : "px-2 py-2 text-xs"}`}
+        disabled={readOnly}
         value={status}
         onChange={(event) => {
           const nextStatus = event.target.value as PlanningStatus | "";
@@ -768,6 +982,7 @@ function MatrixCell({
       ) : null}
       <textarea
         className={`resize-y rounded-lg border border-slate-200 text-xs ${dense ? "min-h-12 p-1.5" : "min-h-16 p-2"}`}
+        disabled={readOnly}
         placeholder={t(locale, "cellComment")}
         value={comment}
         onChange={(event) => {
@@ -775,7 +990,7 @@ function MatrixCell({
           setIsDirty(true);
         }}
         onBlur={() => {
-          if (isDirty) {
+          if (!readOnly && isDirty) {
             void onSave(doctorId, cellDate, status, comment);
             setIsDirty(false);
           }
@@ -793,7 +1008,8 @@ function MatrixCell({
                 <button
                   type="button"
                   title={t(locale, "wish")}
-                  className={`rounded-md font-semibold ring-1 ring-sky-200 ${
+                  disabled={readOnly}
+                  className={`rounded-md font-semibold ring-1 ring-sky-200 disabled:cursor-not-allowed disabled:opacity-40 ${
                     current === "wish" ? "bg-sky-200 text-sky-950" : "bg-sky-50 text-sky-900"
                   } ${dense ? "px-1 py-0.5 text-[0.6rem]" : "px-1.5 py-0.5 text-[0.65rem]"}`}
                   onClick={() => void onSaveIntent(doctorId, cellDate, templateId, current === "wish" ? null : "wish")}
@@ -803,7 +1019,8 @@ function MatrixCell({
                 <button
                   type="button"
                   title={t(locale, "noGo")}
-                  className={`rounded-md font-semibold ring-1 ring-rose-200 ${
+                  disabled={readOnly}
+                  className={`rounded-md font-semibold ring-1 ring-rose-200 disabled:cursor-not-allowed disabled:opacity-40 ${
                     current === "no_go" ? "bg-rose-200 text-rose-950" : "bg-rose-50 text-rose-900"
                   } ${dense ? "px-1 py-0.5 text-[0.6rem]" : "px-1.5 py-0.5 text-[0.65rem]"}`}
                   onClick={() => void onSaveIntent(doctorId, cellDate, templateId, current === "no_go" ? null : "no_go")}

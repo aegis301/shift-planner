@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -59,3 +61,49 @@ def delete_planning_period(db: Session, planning_period_id: int, *, actor: str, 
     db.delete(period)
     db.commit()
     return True
+
+
+def publish_planning_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> PlanningPeriod | None:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None:
+        return None
+    if period.status == "published":
+        return period
+    period.status = "published"
+    period.published_at = datetime.now(timezone.utc)
+    db.flush()
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="publish",
+        entity_type="planning_period",
+        entity_id=period.id,
+        details={"year": period.year, "month": period.month},
+    )
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+def unpublish_planning_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> PlanningPeriod | None:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None:
+        return None
+    if period.status == "draft":
+        return period
+    period.status = "draft"
+    period.published_at = None
+    db.flush()
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="unpublish",
+        entity_type="planning_period",
+        entity_id=period.id,
+        details={"year": period.year, "month": period.month},
+    )
+    db.commit()
+    db.refresh(period)
+    return period

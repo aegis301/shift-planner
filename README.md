@@ -3,7 +3,7 @@
 AI-first shift planning for doctors, built with FastAPI, Next.js, Postgres, Docker Compose, and FastMCP.
 
 ## Current Scope
-The MVP is a single-admin planner for monthly doctor rosters. It has two matrix planning surfaces: a wishes matrix where rows are days and columns are doctors, and a final roster matrix where rows are days and concrete generated shift slots. It also supports doctors, shift templates with weekday/weekend/holiday variants, planning periods, doctor/month notes for source emails, validation warnings, CSV export, printable views, and an MCP interface designed for LLM control. Shift template categories are currently `Bereitschaftsdienst`/on-call duty, `Rufdienst`/stand-by duty, `Spätdienst`/late duty, and `Andere`/other.
+The MVP supports an admin shift planner plus doctor accounts linked to `Doctor` rows. Planners manage doctors, shift groups, templates, planning months, publish workflow, validation, and exports. Linked doctors use `/my-planning` for wishes and no-gos in their shift groups, `/profile` for self-service profile fields, and read-only published roster views. It has two matrix planning surfaces: a wishes matrix where rows are days and columns are doctors, and a final roster matrix where rows are days and concrete generated shift slots. Shift template categories are currently `Bereitschaftsdienst`/on-call duty, `Rufdienst`/stand-by duty, `Spätdienst`/late duty, and `Andere`/other.
 
 ## Quick Start
 ```bash
@@ -29,6 +29,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 alembic upgrade head
 python -m app.scripts.seed_admin
+python -m app.scripts.seed_doctor_users
 uvicorn app.main:app --reload
 pytest
 ```
@@ -57,7 +58,7 @@ pytest
 Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and share backend service behavior. Local CLI runs use FastMCP stdio by default; Docker Compose sets `MCP_TRANSPORT=http`.
 
 ## Planning Workflow
-Use `/planning` in the frontend for the active workflow. One selected planning month controls wishes, final roster assignment, inline validation, CSV exports, and workload stats. The page supports both a full stacked view and a tabbed view for Wishes, Roster, and Analysis.
+Use `/planning` for the planner workflow and `/my-planning` for linked doctors. One selected planning month controls wishes, final roster assignment, inline validation, CSV exports, and workload stats. The planner page supports both a full stacked view and a tabbed view for Wishes, Roster, and Analysis.
 
 Wishes matrix day statuses (each blocks any roster assignment on that day for the doctor): `urlaub`, `forschung`, `lehre`, `frei`.
 
@@ -71,7 +72,7 @@ The final roster matrix has one row per day and shows only the concrete shift sl
 
 The frontend no longer has standalone `/requests`, `/roster`, `/validation`, or `/exports/print` pages. Validation remains available through the backend API and MCP, and `/planning` uses it for inline conflict summaries.
 
-The `/planning` toolbar includes destructive month actions behind confirmation dialogs: deleting a planning month removes its wishes, notes, generated roster slots, and assignments; regenerating a month clears roster assignments and rebuilds roster slots from the current shift templates.
+The `/planning` toolbar includes destructive month actions behind confirmation dialogs: deleting a planning month removes its wishes, notes, generated roster slots, and assignments; regenerating a month clears roster assignments and rebuilds roster slots from the current shift templates. Publish is a separate confirmed action that marks the month published and unlocks roster reads for doctors (per selected shift group). Unpublish reverts that month to draft and immediately blocks doctor roster reads again.
 
 Relevant CSV exports:
 - Wishes matrix: `/api/v1/exports/matrix/{planning_period_id}.csv`
@@ -94,6 +95,15 @@ Current cleanup note: migration `202604290001` removes the old simple shift type
 Migration `202604300001` adds `shift_groups`, `doctor_shift_groups`, and `shift_group_shift_templates`.
 
 Migration `202604300002` adds `planning_shift_intents` and maps legacy `planning_cells.status` values outside Urlaub/Forschung/Lehre/Frei to `frei`.
+
+Migration `202604300003` adds optional `doctors.user_id` (unique, links a doctor login) and `planning_periods.published_at`.
+
+## Users and roles
+- `User.role` is `admin` (shift planner UI and full API) or `doctor` (wishes and self-profile; published roster only for their shift groups). `Doctor.user_id` links a doctor record to a doctor-role user; planners set it when creating or editing a doctor (numeric user id) or leave it empty.
+- `GET /api/v1/auth/me` returns `doctor_id` and `shift_groups` (id and names) for the session. `GET|PATCH /api/v1/auth/me/doctor` load or update the linked doctor profile for doctor sessions.
+- `POST /api/v1/planning-periods/{id}/publish` sets `status` to `published` and `published_at`; `POST /api/v1/planning-periods/{id}/unpublish` reverts back to `draft` and clears `published_at`.
+- Doctors receive `403` on `GET /api/v1/roster-matrix/{id}` while the planning period is draft.
+- Seed doctor logins: set `DOCTOR_SEED_PASSWORD` in `.env` (see `.env.example`), then run `python -m app.scripts.seed_doctor_users` (also runs after migrations in Docker Compose). It creates a `doctor`-role user per active unlinked doctor email and links `Doctor.user_id`. Skip when the email is already a user.
 
 ## Documentation Rule
 When behavior, setup, architecture, API shape, MCP capabilities, or roadmap changes, update `README.md`, `AGENTS.md`, `CHANGELOG.md`, `PLAN.md`, or `BRAINSTORM.md` as appropriate.

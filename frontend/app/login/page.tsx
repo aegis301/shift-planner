@@ -1,25 +1,30 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LogIn } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
-import { LocaleShell, useLocale } from "@/components/LocaleProvider";
+import { LocaleShell, useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 function LoginContent() {
   const { locale } = useLocale();
+  const { refreshMe } = useSession();
+  const router = useRouter();
   const [message, setMessage] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
-      await apiFetch("/api/v1/auth/login", {
+      const user = await apiFetch<MeUser>("/api/v1/auth/login", {
         method: "POST",
         body: JSON.stringify({ email: form.get("email"), password: form.get("password") })
       });
-      setMessage(t(locale, "signedIn"));
+      await refreshMe();
+      router.push(user.role === "doctor" ? "/my-planning" : "/");
+      router.refresh();
     } catch {
       setMessage(t(locale, "loginFailed"));
     }

@@ -27,6 +27,8 @@ export const dictionaries = {
     addRequest: "Wunsch erfassen",
     addAssignment: "Dienst eintragen",
     name: "Name",
+    firstName: "Vorname",
+    lastName: "Nachname",
     employment: "Stellenumfang",
     notes: "Notizen",
     save: "Speichern",
@@ -209,7 +211,26 @@ export const dictionaries = {
     searchDoctorsPlaceholder: "Namen eingeben …",
     searchDoctorsHint: "Namen tippen, aus der Liste wählen. Mehrere Personen möglich; ausgewählte erscheinen als Kacheln.",
     noDoctorMatches: "Keine Treffer",
-    removeFromSelection: "Entfernen"
+    removeFromSelection: "Entfernen",
+    myPlanning: "Meine Planung",
+    profile: "Profil",
+    periodStatusDraft: "Entwurf",
+    periodStatusPublished: "Veröffentlicht",
+    publishPlanningPeriod: "Plan veröffentlichen",
+    publishPlanningPeriodConfirm:
+      "Ärztinnen und Ärzte sehen danach den finalen Dienstplan für diese Dienstgruppe. Fortfahren?",
+    periodPublished: "Planungsmonat veröffentlicht.",
+    unpublishPlanningPeriod: "Veröffentlichung aufheben",
+    unpublishPlanningPeriodConfirm:
+      "Ärztinnen und Ärzte sehen den finalen Dienstplan danach nicht mehr. Fortfahren?",
+    periodUnpublished: "Veröffentlichung des Planungsmonats aufgehoben.",
+    rosterNotPublishedYet: "Der finale Dienstplan erscheint, sobald die Planung veröffentlicht wurde.",
+    linkedUserId: "Benutzer-ID (Arzt-Login)",
+    linkedUserIdHint: "Optional: numerische ID eines Benutzers mit Rolle „Arzt“. Leer lassen zum Entkoppeln.",
+    readOnlyCell: "Nur Lesen",
+    profileTitle: "Mein Profil",
+    profileHelp: "Name, E-Mail und Stellenumfang für Ihre sichtbaren Planungen.",
+    monthlyComment: "Monats-Kommentar"
   },
   en: {
     appName: "Shift Planner",
@@ -237,6 +258,8 @@ export const dictionaries = {
     addRequest: "Record request",
     addAssignment: "Add assignment",
     name: "Name",
+    firstName: "First name",
+    lastName: "Last name",
     employment: "Employment",
     notes: "Notes",
     save: "Save",
@@ -419,7 +442,24 @@ export const dictionaries = {
     searchDoctorsPlaceholder: "Type a name…",
     searchDoctorsHint: "Type to filter doctors, pick from the list. You can add several; selected people appear as chips.",
     noDoctorMatches: "No matches",
-    removeFromSelection: "Remove"
+    removeFromSelection: "Remove",
+    myPlanning: "My planning",
+    profile: "Profile",
+    periodStatusDraft: "Draft",
+    periodStatusPublished: "Published",
+    publishPlanningPeriod: "Publish plan",
+    publishPlanningPeriodConfirm: "Doctors can then view the published roster for this shift group. Continue?",
+    periodPublished: "Planning month published.",
+    unpublishPlanningPeriod: "Unpublish plan",
+    unpublishPlanningPeriodConfirm: "Doctors can no longer view the final roster afterwards. Continue?",
+    periodUnpublished: "Planning month unpublished.",
+    rosterNotPublishedYet: "The final roster appears once planning has been published.",
+    linkedUserId: "User ID (doctor login)",
+    linkedUserIdHint: "Optional: numeric ID of a user with the doctor role. Clear to unlink.",
+    readOnlyCell: "View only",
+    profileTitle: "My profile",
+    profileHelp: "Name, email, and employment for your visible planning.",
+    monthlyComment: "Monthly comment"
   }
 } as const;
 

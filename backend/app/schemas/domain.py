@@ -12,6 +12,15 @@ UNAVAILABLE_STATUSES = {"urlaub", "forschung", "lehre", "frei"}
 PlanningShiftIntentKind = Literal["wish", "no_go"]
 
 
+class UserShiftGroupBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name_de: str
+    name_en: str
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -19,6 +28,8 @@ class UserRead(BaseModel):
     email: EmailStr
     role: str
     locale: str
+    doctor_id: int | None = None
+    shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
 
 
 class LoginInput(BaseModel):
@@ -27,20 +38,32 @@ class LoginInput(BaseModel):
 
 
 class DoctorCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
     email: EmailStr
     employment_percentage: int = Field(default=100, ge=1, le=100)
     notes: str | None = None
     shift_group_ids: list[int] = Field(default_factory=list)
+    user_id: int | None = None
 
 
 class DoctorUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
+    first_name: str | None = Field(default=None, min_length=1, max_length=255)
+    last_name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = None
     employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
     is_active: bool | None = None
     shift_group_ids: list[int] | None = None
+    user_id: int | None = None
+
+
+class DoctorSelfUpdate(BaseModel):
+    first_name: str | None = Field(default=None, min_length=1, max_length=255)
+    last_name: str | None = Field(default=None, min_length=1, max_length=255)
+    email: EmailStr | None = None
+    employment_percentage: int | None = Field(default=None, ge=1, le=100)
+    notes: str | None = None
 
 
 class DoctorRead(DoctorCreate):
@@ -180,6 +203,7 @@ class PlanningPeriodRead(PlanningPeriodCreate):
 
     id: int
     status: str
+    published_at: datetime | None = None
     created_at: datetime
 
 
@@ -293,7 +317,8 @@ class PlanningShiftIntentRead(BaseModel):
 
 class MatrixDoctor(BaseModel):
     id: int
-    name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     employment_percentage: int
 

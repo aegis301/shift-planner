@@ -7,12 +7,16 @@ from app.services.matrix import get_planning_matrix
 from app.services.roster_matrix import get_roster_matrix
 
 
+def _doctor_label(doctor) -> str:
+    return f"{doctor.first_name} {doctor.last_name}".strip()
+
+
 def export_matrix_csv(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> str:
     matrix = get_planning_matrix(db, planning_period_id, shift_group_id=shift_group_id)
     cells = {(cell.cell_date, cell.doctor_id): cell for cell in matrix.cells}
     buffer = StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["date", *[doctor.name for doctor in matrix.doctors]])
+    writer.writerow(["date", *[_doctor_label(doctor) for doctor in matrix.doctors]])
     for day in matrix.days:
         row = [day.date.isoformat()]
         for doctor in matrix.doctors:
@@ -49,7 +53,7 @@ def export_roster_matrix_csv(db: Session, planning_period_id: int, *, shift_grou
                     slot.label or "",
                     slot.starts_at.isoformat() if slot.starts_at else "",
                     slot.ends_at.isoformat() if slot.ends_at else "",
-                    doctor.name if doctor else "",
+                    _doctor_label(doctor) if doctor else "",
                     slot.template_code or "",
                     slot.variant_label or "",
                     slot.category or "",

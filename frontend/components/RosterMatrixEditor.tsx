@@ -14,7 +14,8 @@ type ShiftIntentKind = "wish" | "no_go";
 
 type Doctor = {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   employment_percentage: number;
 };
@@ -122,6 +123,10 @@ function formatDate(locale: Locale, value: string) {
     day: "2-digit",
     month: "2-digit"
   }).format(new Date(`${value}T12:00:00`));
+}
+
+function doctorLabel(doctor: Doctor): string {
+  return `${doctor.first_name} ${doctor.last_name}`.trim();
 }
 
 function formatTimeRange(slot: RosterSlot) {
@@ -270,12 +275,14 @@ export function RosterMatrixEditor({
   compact = false,
   reloadToken = 0,
   shiftGroupId,
+  readOnly = false,
   onMatrixChange
 }: {
   periodId?: string;
   compact?: boolean;
   reloadToken?: number;
   shiftGroupId?: string;
+  readOnly?: boolean;
   onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -380,6 +387,9 @@ export function RosterMatrixEditor({
   }
 
   async function saveAssignment(rosterSlotId: number, doctorId: number | "", manualOverride = false): Promise<boolean> {
+    if (readOnly) {
+      return false;
+    }
     setSavingAssignments((count) => count + 1);
     try {
       if (!doctorId) {
@@ -502,6 +512,7 @@ export function RosterMatrixEditor({
               locale={locale}
               dense={compact}
               templateColumns={templateColumns}
+              readOnly={readOnly}
             />
             <MobileRosterMatrix
               matrix={matrix}
@@ -513,6 +524,7 @@ export function RosterMatrixEditor({
               locale={locale}
               dense={compact}
               templateColumns={templateColumns}
+              readOnly={readOnly}
             />
           </>
         ) : (
@@ -538,7 +550,8 @@ function DesktopRosterMatrix({
   onSave,
   locale,
   dense,
-  templateColumns
+  templateColumns,
+  readOnly
 }: {
   matrix: RosterMatrix;
   slotsByDay: Map<string, RosterSlot[]>;
@@ -549,6 +562,7 @@ function DesktopRosterMatrix({
   locale: Locale;
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
+  readOnly: boolean;
 }) {
   if (dense) {
     return (
@@ -609,6 +623,7 @@ function DesktopRosterMatrix({
                                   intentMap={intentMap}
                                   onSave={onSave}
                                   locale={locale}
+                                  readOnly={readOnly}
                                 />
                               </div>
                             );
@@ -661,6 +676,7 @@ function DesktopRosterMatrix({
                         intentMap={intentMap}
                         onSave={onSave}
                         locale={locale}
+                        readOnly={readOnly}
                       />
                     </div>
                   ))}
@@ -683,7 +699,8 @@ function MobileRosterMatrix({
   onSave,
   locale,
   dense,
-  templateColumns
+  templateColumns,
+  readOnly
 }: {
   matrix: RosterMatrix;
   slotsByDay: Map<string, RosterSlot[]>;
@@ -694,6 +711,7 @@ function MobileRosterMatrix({
   locale: Locale;
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
+  readOnly: boolean;
 }) {
   if (dense) {
     return (
@@ -751,6 +769,7 @@ function MobileRosterMatrix({
                                       intentMap={intentMap}
                                       onSave={onSave}
                                       locale={locale}
+                                      readOnly={readOnly}
                                     />
                                   </div>
                                 );
@@ -790,6 +809,7 @@ function MobileRosterMatrix({
                       intentMap={intentMap}
                       onSave={onSave}
                       locale={locale}
+                      readOnly={readOnly}
                     />
                 </div>
             ))}
@@ -822,7 +842,8 @@ function RosterCell({
   planningCellMap,
   intentMap,
   onSave,
-  locale
+  locale,
+  readOnly = false
 }: {
   slot: RosterSlot;
   doctors: Doctor[];
@@ -831,6 +852,7 @@ function RosterCell({
   intentMap: Map<string, ShiftIntentKind>;
   onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
+  readOnly?: boolean;
 }) {
   const [doctorId, setDoctorId] = useState<number | "">(assignment?.doctor_id ?? "");
   const [open, setOpen] = useState(false);
@@ -960,7 +982,7 @@ function RosterCell({
                       }}
                     >
                       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{doctor.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{doctorLabel(doctor)}</span>
                       {intentKind === "wish" ? (
                         <span className="shrink-0 rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900">
                           {t(locale, "wishShort")}
@@ -1004,10 +1026,15 @@ function RosterCell({
         type="button"
         aria-expanded={open}
         aria-haspopup="listbox"
-        className={`relative flex min-h-[2.5rem] w-full items-center justify-between gap-2 rounded-lg border bg-white px-2 py-2 pr-7 text-left text-xs font-medium ${
+        disabled={readOnly}
+        className={`relative flex min-h-[2.5rem] w-full items-center justify-between gap-2 rounded-lg border bg-white px-2 py-2 pr-7 text-left text-xs font-medium disabled:cursor-default disabled:opacity-90 ${
           hasUnavailableDay || highlightNoGo ? "border-rose-300 text-rose-950" : "border-slate-200"
         }`}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (!readOnly) {
+            setOpen((value) => !value);
+          }
+        }}
       >
         <span className="flex min-w-0 flex-1 items-center gap-2">
           {doctorId && status && isPlanningStatus(status) ? (
@@ -1015,7 +1042,7 @@ function RosterCell({
           ) : (
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" aria-hidden />
           )}
-          <span className="truncate">{selectedDoctor?.name ?? t(locale, "emptyValue")}</span>
+          <span className="truncate">{selectedDoctor ? doctorLabel(selectedDoctor) : t(locale, "emptyValue")}</span>
         </span>
         {manualOverride ? (
           <span

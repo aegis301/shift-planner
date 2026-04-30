@@ -125,7 +125,7 @@ def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: i
     ensure_roster_slots_for_period(db, planning_period_id)
     db.commit()
 
-    doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.name)))
+    doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.last_name, Doctor.first_name)))
     shift_templates = list_shift_templates(db, active_only=True)
     slots = list_roster_slots(db, planning_period_id=planning_period_id)
     assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
@@ -150,7 +150,8 @@ def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: i
         doctors=[
             MatrixDoctor(
                 id=doctor.id,
-                name=doctor.name,
+                first_name=doctor.first_name,
+                last_name=doctor.last_name,
                 email=doctor.email,
                 employment_percentage=doctor.employment_percentage,
             )

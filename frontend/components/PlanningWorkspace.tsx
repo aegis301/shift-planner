@@ -6,9 +6,9 @@ import { AlertTriangle, BarChart3, CalendarCheck, Columns3, Download, Heart, Lay
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
-import { LocaleShell, useLocale } from "@/components/LocaleProvider";
+import { LocaleShell, useLocale, useSession } from "@/components/LocaleProvider";
 import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type PlanningPeriod = {
@@ -16,6 +16,7 @@ type PlanningPeriod = {
   year: number;
   month: number;
   status: string;
+  published_at?: string | null;
 };
 
 type ValidationWarning = {
@@ -40,9 +41,13 @@ type DoctorStats = {
 
 type PlanningViewMode = "stacked" | "tabs";
 type PlanningTab = "wishes" | "roster" | "analysis";
-type DestructiveAction = "delete-period" | "regenerate-roster";
+type DestructiveAction = "delete-period" | "regenerate-roster" | "publish-period" | "unpublish-period";
 
 type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
+
+function doctorLabel(doctor: { first_name: string; last_name: string }): string {
+  return `${doctor.first_name} ${doctor.last_name}`.trim();
+}
 
 function monthLabel(period: PlanningPeriod | undefined) {
   if (!period) {
@@ -61,7 +66,7 @@ function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]):
       doctor.id,
       {
         doctorId: doctor.id,
-        name: doctor.name,
+        name: doctorLabel(doctor),
         total: 0,
         onCallDuty: 0,
         standbyDuty: 0,
@@ -109,8 +114,9 @@ function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]):
   };
 }
 
-function PlanningWorkspaceContent() {
+function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }) {
   const { locale } = useLocale();
+  const { me, loading: sessionLoading } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -131,6 +137,23 @@ function PlanningWorkspaceContent() {
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
 
+  const plannerUi = variant === "planner" && me?.role === "admin";
+  const doctorUi = variant === "doctor" && me?.role === "doctor";
+  const editableDoctorId = doctorUi && me?.doctor_id != null ? me.doctor_id : undefined;
+  const waitingForDoctorSession = variant === "doctor" && (sessionLoading || !doctorUi);
+
+  useEffect(() => {
+    if (sessionLoading || !me) {
+      return;
+    }
+    if (variant === "planner" && me.role === "doctor") {
+      router.replace("/my-planning");
+    }
+    if (variant === "doctor" && me.role !== "doctor") {
+      router.replace("/planning");
+    }
+  }, [me, router, sessionLoading, variant]);
+
   const shiftGroupQuery = useMemo(
     () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
     [shiftGroupId]
@@ -141,27 +164,64 @@ function PlanningWorkspaceContent() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (!plannerUi) {
+      return;
+    }
     void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
-  }, []);
+  }, [plannerUi]);
+
+  useEffect(() => {
+    if (variant !== "doctor" || !me?.shift_groups?.length) {
+      return;
+    }
+    setShiftGroups(
+      me.shift_groups.map((g) => ({
+        id: g.id,
+        code: g.code,
+        name_de: g.name_de,
+        name_en: g.name_en
+      }))
+    );
+  }, [me, variant]);
 
   const activePeriod = periods.find((period) => String(period.id) === periodId);
   const stats = useMemo(() => buildStats(rosterMatrix, warnings), [rosterMatrix, warnings]);
 
-  const loadWarnings = useCallback(async (nextPeriodId: string) => {
-    if (!nextPeriodId) {
-      setWarnings([]);
-      return;
-    }
-    setWarnings(await apiFetch<ValidationWarning[]>(`/api/v1/validation/${nextPeriodId}${shiftGroupQuery}`));
-  }, [shiftGroupQuery]);
+  const loadWarnings = useCallback(
+    async (nextPeriodId: string) => {
+      if (!nextPeriodId || !plannerUi) {
+        setWarnings([]);
+        return;
+      }
+      setWarnings(await apiFetch<ValidationWarning[]>(`/api/v1/validation/${nextPeriodId}${shiftGroupQuery}`));
+    },
+    [plannerUi, shiftGroupQuery]
+  );
 
-  const loadRosterMatrix = useCallback(async (nextPeriodId: string) => {
-    if (!nextPeriodId) {
-      setRosterMatrix(null);
-      return;
-    }
-    setRosterMatrix(await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`));
-  }, [shiftGroupQuery]);
+  const loadRosterMatrix = useCallback(
+    async (nextPeriodId: string) => {
+      if (!nextPeriodId) {
+        setRosterMatrix(null);
+        return;
+      }
+      try {
+        setRosterMatrix(await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`));
+        if (doctorUi) {
+          setMessage("");
+        }
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
+          setRosterMatrix(null);
+          if (doctorUi) {
+            setMessage(t(locale, "rosterNotPublishedYet"));
+          }
+          return;
+        }
+        throw error;
+      }
+    },
+    [doctorUi, locale, shiftGroupQuery]
+  );
 
   function updateShiftGroup(next: string) {
     setShiftGroupId(next);
@@ -175,6 +235,19 @@ function PlanningWorkspaceContent() {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
+  useEffect(() => {
+    if (variant !== "doctor" || !me?.shift_groups?.length || shiftGroupId) {
+      return;
+    }
+    if (me.shift_groups.length === 1) {
+      const id = String(me.shift_groups[0].id);
+      setShiftGroupId(id);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("shiftGroup", id);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [variant, me, shiftGroupId, pathname, router, searchParams]);
+
   const refreshPeriods = useCallback(async () => {
     const next = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
     setPeriods(next);
@@ -184,16 +257,19 @@ function PlanningWorkspaceContent() {
   }, [periodId]);
 
   useEffect(() => {
+    if (waitingForDoctorSession) {
+      return;
+    }
     void refreshPeriods();
-  }, [refreshPeriods]);
+  }, [refreshPeriods, waitingForDoctorSession]);
 
   useEffect(() => {
-    if (!periodId) {
+    if (!periodId || waitingForDoctorSession || (doctorUi && !shiftGroupId)) {
       return;
     }
     void loadWarnings(periodId);
     void loadRosterMatrix(periodId);
-  }, [loadRosterMatrix, loadWarnings, periodId, shiftGroupQuery]);
+  }, [doctorUi, loadRosterMatrix, loadWarnings, periodId, shiftGroupId, waitingForDoctorSession]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -214,7 +290,17 @@ function PlanningWorkspaceContent() {
     if (!periodId || !destructiveAction) {
       return;
     }
-    if (destructiveAction === "regenerate-roster") {
+    if (destructiveAction === "publish-period") {
+      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/publish`, { method: "POST" });
+      await refreshPeriods();
+      await loadRosterMatrix(periodId);
+      setMessage(t(locale, "periodPublished"));
+    } else if (destructiveAction === "unpublish-period") {
+      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/unpublish`, { method: "POST" });
+      await refreshPeriods();
+      await loadRosterMatrix(periodId);
+      setMessage(t(locale, "periodUnpublished"));
+    } else if (destructiveAction === "regenerate-roster") {
       await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster`, {
         method: "POST"
       });
@@ -254,7 +340,17 @@ function PlanningWorkspaceContent() {
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
       </div>
-      <MatrixEditor periodId={periodId} compact shiftGroupId={shiftGroupId || undefined} onChanged={handleWishesChanged} />
+      {doctorUi && !shiftGroupId ? (
+        <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
+      ) : (
+        <MatrixEditor
+          periodId={periodId}
+          compact
+          shiftGroupId={shiftGroupId || undefined}
+          editableDoctorId={editableDoctorId}
+          onChanged={handleWishesChanged}
+        />
+      )}
     </section>
   ) : null;
 
@@ -264,17 +360,22 @@ function PlanningWorkspaceContent() {
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
       </div>
-      <RosterMatrixEditor
-        periodId={periodId}
-        compact
-        reloadToken={rosterReloadToken}
-        shiftGroupId={shiftGroupId || undefined}
-        onMatrixChange={handleRosterChange}
-      />
+      {doctorUi && !shiftGroupId ? (
+        <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
+      ) : (
+        <RosterMatrixEditor
+          periodId={periodId}
+          compact
+          readOnly={Boolean(doctorUi)}
+          reloadToken={rosterReloadToken}
+          shiftGroupId={shiftGroupId || undefined}
+          onMatrixChange={handleRosterChange}
+        />
+      )}
     </section>
   ) : null;
 
-  const analysisSection = (
+  const analysisSection = !doctorUi ? (
     <section className="grid gap-4">
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "analysisSection")}</h2>
@@ -283,14 +384,14 @@ function PlanningWorkspaceContent() {
       <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} />
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
     </section>
-  );
+  ) : null;
 
   return (
     <div className="grid gap-6">
       <Card>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-semibold text-ink">{t(locale, "planning")}</h1>
+            <h1 className="text-2xl font-semibold text-ink">{doctorUi ? t(locale, "myPlanning") : t(locale, "planning")}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <Field label={t(locale, "planningPeriod")}>
                 <select className={`${inputClass} h-10 min-w-40`} value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
@@ -309,7 +410,7 @@ function PlanningWorkspaceContent() {
                   onChange={(event) => updateShiftGroup(event.target.value)}
                   title={t(locale, "planningShiftGroupHelp")}
                 >
-                  <option value="">{t(locale, "allShiftGroupsLabel")}</option>
+                  {!doctorUi ? <option value="">{t(locale, "allShiftGroupsLabel")}</option> : null}
                   {shiftGroups.map((group) => (
                     <option key={group.id} value={String(group.id)}>
                       {locale === "de" ? group.name_de : group.name_en} ({group.code})
@@ -317,69 +418,102 @@ function PlanningWorkspaceContent() {
                   ))}
                 </select>
               </Field>
-              <button
-                aria-label={t(locale, "createPeriod")}
-                className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-mint text-ink ring-1 ring-mint/60"
-                onClick={() => setIsCreateModalOpen(true)}
-                title={t(locale, "createPeriod")}
-                type="button"
-              >
-                <Plus size={19} />
-              </button>
-              <button
-                aria-label={t(locale, "exports")}
-                className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!periodId}
-                onClick={() => setIsExportModalOpen(true)}
-                title={t(locale, "exports")}
-                type="button"
-              >
-                <Download size={18} />
-              </button>
-              <button
-                aria-label={t(locale, "regenerateRoster")}
-                className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!periodId}
-                onClick={() => setDestructiveAction("regenerate-roster")}
-                title={t(locale, "regenerateRoster")}
-                type="button"
-              >
-                <RotateCw size={18} />
-              </button>
-              <button
-                aria-label={t(locale, "deletePlanningPeriod")}
-                className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!periodId}
-                onClick={() => setDestructiveAction("delete-period")}
-                title={t(locale, "deletePlanningPeriod")}
-                type="button"
-              >
-                <Trash2 size={18} />
-              </button>
-              <div className="mt-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-                <button
-                  aria-label={t(locale, "stackedView")}
-                  className={`inline-flex h-8 w-9 items-center justify-center rounded-md text-sm font-semibold ${viewMode === "stacked" ? "bg-ink text-white" : "text-slate-600"}`}
-                  onClick={() => setViewMode("stacked")}
-                  title={t(locale, "stackedView")}
-                  type="button"
-                >
-                  <LayoutList size={17} />
-                </button>
-                <button
-                  aria-label={t(locale, "tabbedView")}
-                  className={`inline-flex h-8 w-9 items-center justify-center rounded-md text-sm font-semibold ${viewMode === "tabs" ? "bg-ink text-white" : "text-slate-600"}`}
-                  onClick={() => setViewMode("tabs")}
-                  title={t(locale, "tabbedView")}
-                  type="button"
-                >
-                  <Columns3 size={17} />
-                </button>
-              </div>
+              {plannerUi ? (
+                <>
+                  <button
+                    aria-label={t(locale, "createPeriod")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-mint text-ink ring-1 ring-mint/60"
+                    onClick={() => setIsCreateModalOpen(true)}
+                    title={t(locale, "createPeriod")}
+                    type="button"
+                  >
+                    <Plus size={19} />
+                  </button>
+                  <button
+                    aria-label={t(locale, "exports")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!periodId}
+                    onClick={() => setIsExportModalOpen(true)}
+                    title={t(locale, "exports")}
+                    type="button"
+                  >
+                    <Download size={18} />
+                  </button>
+                  <button
+                    aria-label={activePeriod?.status === "published" ? t(locale, "unpublishPlanningPeriod") : t(locale, "publishPlanningPeriod")}
+                    className={`mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                      activePeriod?.status === "published"
+                        ? "border-slate-200 bg-slate-50 text-slate-800"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    }`}
+                    disabled={!periodId}
+                    onClick={() => setDestructiveAction(activePeriod?.status === "published" ? "unpublish-period" : "publish-period")}
+                    title={activePeriod?.status === "published" ? t(locale, "unpublishPlanningPeriod") : t(locale, "publishPlanningPeriod")}
+                    type="button"
+                  >
+                    <CalendarCheck size={18} />
+                  </button>
+                  <button
+                    aria-label={t(locale, "regenerateRoster")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!periodId}
+                    onClick={() => setDestructiveAction("regenerate-roster")}
+                    title={t(locale, "regenerateRoster")}
+                    type="button"
+                  >
+                    <RotateCw size={18} />
+                  </button>
+                  <button
+                    aria-label={t(locale, "deletePlanningPeriod")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!periodId}
+                    onClick={() => setDestructiveAction("delete-period")}
+                    title={t(locale, "deletePlanningPeriod")}
+                    type="button"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                  <div className="mt-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                    <button
+                      aria-label={t(locale, "stackedView")}
+                      className={`inline-flex h-8 w-9 items-center justify-center rounded-md text-sm font-semibold ${viewMode === "stacked" ? "bg-ink text-white" : "text-slate-600"}`}
+                      onClick={() => setViewMode("stacked")}
+                      title={t(locale, "stackedView")}
+                      type="button"
+                    >
+                      <LayoutList size={17} />
+                    </button>
+                    <button
+                      aria-label={t(locale, "tabbedView")}
+                      className={`inline-flex h-8 w-9 items-center justify-center rounded-md text-sm font-semibold ${viewMode === "tabs" ? "bg-ink text-white" : "text-slate-600"}`}
+                      onClick={() => setViewMode("tabs")}
+                      title={t(locale, "tabbedView")}
+                      type="button"
+                    >
+                      <Columns3 size={17} />
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap gap-3 text-sm">
-            {activePeriod ? <p className="text-slate-600">{t(locale, "selectedMonth")}: {monthLabel(activePeriod)}</p> : null}
+            {activePeriod ? (
+              <div className="flex flex-wrap items-center gap-2 text-slate-600">
+                <p>
+                  {t(locale, "selectedMonth")}: {monthLabel(activePeriod)}
+                </p>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                    activePeriod.status === "published"
+                      ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
+                      : "bg-amber-50 text-amber-900 ring-amber-200"
+                  }`}
+                >
+                  {activePeriod.status === "published" ? t(locale, "periodStatusPublished") : t(locale, "periodStatusDraft")}
+                </span>
+              </div>
+            ) : null}
             {message ? <p className="text-emerald-700">{message}</p> : null}
           </div>
           <PlanningDayStatusLegend locale={locale} />
@@ -460,7 +594,13 @@ function PlanningWorkspaceContent() {
                 </span>
                 <div>
                   <h2 id="destructive-title" className="text-lg font-semibold text-ink">
-                    {destructiveAction === "delete-period" ? t(locale, "deletePlanningPeriod") : t(locale, "regenerateRoster")}
+                    {destructiveAction === "delete-period"
+                      ? t(locale, "deletePlanningPeriod")
+                      : destructiveAction === "publish-period"
+                        ? t(locale, "publishPlanningPeriod")
+                        : destructiveAction === "unpublish-period"
+                          ? t(locale, "unpublishPlanningPeriod")
+                        : t(locale, "regenerateRoster")}
                   </h2>
                   <p className="mt-1 text-sm text-slate-600">{t(locale, "destructiveAction")}</p>
                 </div>
@@ -474,8 +614,20 @@ function PlanningWorkspaceContent() {
                 <X size={17} />
               </button>
             </div>
-            <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-900 ring-1 ring-rose-100">
-              {destructiveAction === "delete-period" ? t(locale, "deletePlanningPeriodWarning") : t(locale, "regenerateRosterWarning")}
+            <p
+              className={`rounded-lg p-3 text-sm ring-1 ${
+                destructiveAction === "publish-period" || destructiveAction === "unpublish-period"
+                  ? "bg-emerald-50 text-emerald-950 ring-emerald-100"
+                  : "bg-rose-50 text-rose-900 ring-rose-100"
+              }`}
+            >
+              {destructiveAction === "delete-period"
+                ? t(locale, "deletePlanningPeriodWarning")
+                : destructiveAction === "publish-period"
+                  ? t(locale, "publishPlanningPeriodConfirm")
+                  : destructiveAction === "unpublish-period"
+                    ? t(locale, "unpublishPlanningPeriodConfirm")
+                  : t(locale, "regenerateRosterWarning")}
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
@@ -486,11 +638,21 @@ function PlanningWorkspaceContent() {
                 {t(locale, "close")}
               </button>
               <button
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
+                className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white ${
+                  destructiveAction === "publish-period" || destructiveAction === "unpublish-period"
+                    ? "bg-emerald-700"
+                    : "bg-rose-700"
+                }`}
                 onClick={confirmDestructiveAction}
                 type="button"
               >
-                {destructiveAction === "delete-period" ? <Trash2 size={16} /> : <RotateCw size={16} />}
+                {destructiveAction === "delete-period" ? (
+                  <Trash2 size={16} />
+                ) : destructiveAction === "publish-period" || destructiveAction === "unpublish-period" ? (
+                  <CalendarCheck size={16} />
+                ) : (
+                  <RotateCw size={16} />
+                )}
                 {t(locale, "confirm")}
               </button>
             </div>
@@ -498,21 +660,31 @@ function PlanningWorkspaceContent() {
         </div>
       ) : null}
 
-      {periodId ? (
+      {waitingForDoctorSession ? (
+        <Card>
+          <p className="text-sm text-slate-600">{t(locale, "saving")}</p>
+        </Card>
+      ) : periodId ? (
         viewMode === "stacked" ? (
           <>
             {wishesSection}
             {rosterSection}
-            {analysisSection}
+            {!doctorUi ? analysisSection : null}
           </>
         ) : (
           <div className="grid gap-5">
             <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              {([
-                ["wishes", "wishesSection", Heart],
-                ["roster", "rosterSection", CalendarCheck],
-                ["analysis", "analysisSection", BarChart3]
-              ] as const).map(([tab, label, Icon]) => (
+              {(doctorUi
+                ? ([
+                    ["wishes", "wishesSection", Heart],
+                    ["roster", "rosterSection", CalendarCheck]
+                  ] as const)
+                : ([
+                    ["wishes", "wishesSection", Heart],
+                    ["roster", "rosterSection", CalendarCheck],
+                    ["analysis", "analysisSection", BarChart3]
+                  ] as const)
+              ).map(([tab, label, Icon]) => (
                 <button
                   key={tab}
                   aria-label={t(locale, label)}
@@ -597,10 +769,8 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
         {rosterWarnings.length ? (
           <div className="grid gap-2">
             {rosterWarnings.slice(0, 6).map((warning, index) => {
-              const doctorName =
-                warning.doctor_id != null
-                  ? rosterMatrix?.doctors.find((doctor) => doctor.id === warning.doctor_id)?.name ?? null
-                  : null;
+              const doctor = warning.doctor_id != null ? rosterMatrix?.doctors.find((row) => row.id === warning.doctor_id) : null;
+              const doctorName = doctor ? doctorLabel(doctor) : null;
               const detail = validationWarningDetailText(warning, rosterMatrix, locale);
               const hasLead = Boolean(warning.date || doctorName || warning.doctor_id != null);
               return (
@@ -680,10 +850,10 @@ function WorkloadStats({ rows, unassigned }: { rows: DoctorStats[]; unassigned: 
   );
 }
 
-export function PlanningWorkspace() {
+export function PlanningWorkspace({ variant = "planner" }: { variant?: "planner" | "doctor" } = {}) {
   return (
     <LocaleShell>
-      <PlanningWorkspaceContent />
+      <PlanningWorkspaceContent variant={variant} />
     </LocaleShell>
   );
 }

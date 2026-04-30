@@ -60,7 +60,7 @@ def get_planning_matrix(db: Session, planning_period_id: int, *, shift_group_id:
     if period is None:
         raise ValueError("Planning period not found")
 
-    doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.name)))
+    doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.last_name, Doctor.first_name)))
     group_template_ids: set[int] = set()
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id)
@@ -104,7 +104,8 @@ def get_planning_matrix(db: Session, planning_period_id: int, *, shift_group_id:
         doctors=[
             MatrixDoctor(
                 id=doctor.id,
-                name=doctor.name,
+                first_name=doctor.first_name,
+                last_name=doctor.last_name,
                 email=doctor.email,
                 employment_percentage=doctor.employment_percentage,
             )

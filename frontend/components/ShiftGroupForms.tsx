@@ -20,8 +20,12 @@ type ShiftGroupRecord = {
   shift_template_ids: number[];
 };
 
-type DoctorOption = { id: number; name: string };
+type DoctorOption = { id: number; first_name: string; last_name: string };
 type TemplateOption = { id: number; code: string; name_de: string; name_en: string };
+
+function doctorLabel(doctor: DoctorOption): string {
+  return `${doctor.first_name} ${doctor.last_name}`.trim();
+}
 
 function groupLabel(locale: Locale, group: ShiftGroupRecord) {
   return locale === "de" ? group.name_de : group.name_en;
@@ -48,10 +52,16 @@ function ShiftGroupDoctorPicker({
     if (!q) {
       return [];
     }
-    return pool.filter((doctor) => doctor.name.toLowerCase().includes(q)).slice(0, 25);
+    return pool.filter((doctor) => doctorLabel(doctor).toLowerCase().includes(q)).slice(0, 25);
   }, [doctors, doctorIds, query]);
 
-  const selectedDoctors = useMemo(() => doctors.filter((doctor) => doctorIds.has(doctor.id)).sort((a, b) => a.name.localeCompare(b.name)), [doctors, doctorIds]);
+  const selectedDoctors = useMemo(
+    () =>
+      doctors
+        .filter((doctor) => doctorIds.has(doctor.id))
+        .sort((a, b) => doctorLabel(a).localeCompare(doctorLabel(b))),
+    [doctors, doctorIds]
+  );
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -108,7 +118,7 @@ function ShiftGroupDoctorPicker({
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => addDoctor(doctor.id)}
                   >
-                    {doctor.name}
+                    {doctorLabel(doctor)}
                   </button>
                 </li>
               ))
@@ -123,12 +133,12 @@ function ShiftGroupDoctorPicker({
               key={doctor.id}
               className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 py-1 pl-2.5 pr-1 text-xs font-medium text-slate-800 ring-1 ring-slate-200"
             >
-              <span className="truncate">{doctor.name}</span>
+              <span className="truncate">{doctorLabel(doctor)}</span>
               <button
                 type="button"
                 className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-800"
                 onClick={() => removeDoctor(doctor.id)}
-                aria-label={`${t(locale, "removeFromSelection")}: ${doctor.name}`}
+                aria-label={`${t(locale, "removeFromSelection")}: ${doctorLabel(doctor)}`}
               >
                 <X size={14} />
               </button>
@@ -275,11 +285,11 @@ export function ShiftGroupForm() {
   const refresh = useCallback(async () => {
     const [nextGroups, nextDoctors, nextTemplates] = await Promise.all([
       apiFetch<ShiftGroupRecord[]>("/api/v1/shift-groups"),
-      apiFetch<Array<{ id: number; name: string }>>("/api/v1/doctors?active_only=true"),
+      apiFetch<Array<{ id: number; first_name: string; last_name: string }>>("/api/v1/doctors?active_only=true"),
       apiFetch<Array<{ id: number; code: string; name_de: string; name_en: string }>>("/api/v1/shift-templates")
     ]);
     setGroups(nextGroups);
-    setDoctors(nextDoctors.map((d) => ({ id: d.id, name: d.name })));
+    setDoctors(nextDoctors.map((d) => ({ id: d.id, first_name: d.first_name, last_name: d.last_name })));
     setTemplates(nextTemplates.map((row) => ({ id: row.id, code: row.code, name_de: row.name_de, name_en: row.name_en })));
   }, []);
 

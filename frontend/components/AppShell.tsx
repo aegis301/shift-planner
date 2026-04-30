@@ -1,17 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { CalendarDays, Languages, Settings, Sparkles, Stethoscope, UsersRound } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { CalendarDays, Languages, LogOut, Settings, Sparkles, Stethoscope, UserRound, UsersRound } from "lucide-react";
+import { useSession } from "@/components/LocaleProvider";
+import { apiFetch } from "@/lib/api";
 import { Locale, t } from "@/lib/i18n";
 
-const navItems = [
+const plannerNav = [
   { href: "/", key: "dashboard", icon: Sparkles },
   { href: "/planning", key: "planning", icon: CalendarDays },
   { href: "/doctors", key: "doctors", icon: Stethoscope },
   { href: "/shift-groups", key: "shiftGroups", icon: UsersRound },
   { href: "/shift-types", key: "shiftTypes", icon: CalendarDays },
   { href: "/settings", key: "settings", icon: Settings }
+] as const;
+
+const doctorNav = [
+  { href: "/", key: "dashboard", icon: Sparkles },
+  { href: "/my-planning", key: "myPlanning", icon: CalendarDays },
+  { href: "/profile", key: "profile", icon: UserRound }
 ] as const;
 
 export function AppShell({
@@ -24,6 +32,23 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { me, loading, refreshMe } = useSession();
+  const isDoctor = me?.role === "doctor";
+
+  async function logout() {
+    try {
+      await apiFetch("/api/v1/auth/logout", { method: "POST" });
+    } catch {
+      return;
+    }
+    await refreshMe();
+    router.push("/login");
+    router.refresh();
+  }
+
+  const navItems = isDoctor ? doctorNav : plannerNav;
+
   return (
     <div className="min-h-screen">
       <nav className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/85 backdrop-blur">
@@ -35,6 +60,23 @@ export function AppShell({
             <p className="truncate text-sm font-semibold text-ink">{t(locale, "appName")}</p>
             <p className="truncate text-xs text-slate-500">{t(locale, "aiFirst")}</p>
           </div>
+          {!loading && me ? (
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm"
+            >
+              <LogOut aria-hidden size={17} />
+              {t(locale, "logout")}
+            </button>
+          ) : !loading ? (
+            <Link
+              href="/login"
+              className="inline-flex h-10 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm"
+            >
+              {t(locale, "login")}
+            </Link>
+          ) : null}
           <button
             className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium shadow-sm"
             onClick={() => setLocale(locale === "de" ? "en" : "de")}

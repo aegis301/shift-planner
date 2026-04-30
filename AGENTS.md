@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This project is an AI-first shift planning tool for doctors. The MVP supports a single admin planner who manages doctors, monthly planning periods, a day-by-doctor wishes matrix, a day-by-shift final roster matrix, doctor/month source notes, validation warnings, and exports.
+This project is an AI-first shift planning tool for doctors. The MVP supports an admin shift planner (`User.role` `admin`) who manages doctors, monthly planning periods, publish state, wishes and roster matrices, notes, validation, and exports. Doctors (`User.role` `doctor`) are rows in `Doctor` linked by `Doctor.user_id`; they edit only their own wishes and notes for shift groups they belong to, update their profile via `PATCH /api/v1/auth/me/doctor`, and read the roster matrix only after the planner publishes that month (`PlanningPeriod.status` `published`).
 
 ## Architecture
 
@@ -36,7 +36,7 @@ Shift configuration must use `ShiftTemplate` and `ShiftVariant`. Do not add comp
 
 Validation compares final roster assignments against day-level wishes (all four statuses block assignment that day) and against template no-gos unless the assignment uses `manual_override`. The roster UI surfaces day status and wish/no-go hints in the doctor picker, with conflicts highlighted.
 
-The primary frontend planning workflow is `/planning`. It owns the selected planning month and renders wishes, final roster assignment, inline validation, CSV export actions, and workload stats together. It must support both the full stacked view and a tabbed Wishes/Roster/Analysis view. Do not reintroduce separate frontend pages for wishes, roster, validation, or export unless the product direction changes.
+The primary planner workflow is `/planning`; linked doctors use `/my-planning` and `/profile`. Planning owns the selected month and renders wishes, final roster assignment, inline validation, CSV export actions, and workload stats together for planners. It must support both the full stacked view and a tabbed Wishes/Roster/Analysis view. Do not reintroduce separate frontend pages for wishes, roster, validation, or export unless the product direction changes.
 
 Deleting a planning month and regenerating roster slots are destructive month-level actions. They must clear existing roster assignments, require explicit confirmation in the UI, and remain exposed through guarded REST/MCP service-backed functionality.
 

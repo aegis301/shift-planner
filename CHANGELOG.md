@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2026-04-29
+- Added `doctor` users linked via `doctors.user_id`, role-based REST authorization, `PlanningPeriod.published_at` and `POST /planning-periods/{id}/publish`, doctor self profile `GET|PATCH /auth/me/doctor`, enriched `GET /auth/me`, seed script `seed_doctor_users` with `DOCTOR_SEED_PASSWORD`, frontend session-aware nav, `/my-planning`, `/profile`, planner publish UI, and read-only roster for doctors until publish.
+- Added `POST /planning-periods/{id}/unpublish` and planner UI support to revert a published month back to draft, which immediately hides roster access for doctor accounts again.
 - Narrowed wishes matrix day statuses to Urlaub, Forschung, Lehre, and Frei (all block roster assignments that day); legacy statuses migrate to Frei.
 - Added `planning_shift_intents` for per-shift-group wish or no-go per doctor, date, and shift template, with bulk REST and MCP tools and roster validation (`ROSTER_TEMPLATE_NO_GO_CONFLICT`).
 - Enriched filtered planning matrix responses with group templates, generated template-by-day keys, and intents; roster matrix includes intents for the doctor picker.

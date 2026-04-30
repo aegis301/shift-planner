@@ -74,13 +74,15 @@ type ShiftTemplateRecord = {
 
 type DoctorRecord = {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   employment_percentage: number;
   notes: string | null;
   is_active: boolean;
   created_at: string;
   shift_group_ids?: number[];
+  user_id?: number | null;
 };
 
 type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
@@ -94,7 +96,8 @@ const SHIFT_TEMPLATE_CATEGORIES: { value: ShiftTemplateCategory; label: Translat
 
 const FIELD_LABEL_MAP: Partial<Record<string, TranslationKey>> = {
   id: "id",
-  name: "name",
+  first_name: "firstName",
+  last_name: "lastName",
   email: "email",
   employment_percentage: "employment",
   notes: "notes",
@@ -110,6 +113,7 @@ const FIELD_LABEL_MAP: Partial<Record<string, TranslationKey>> = {
   planning_period_id: "planningPeriodId",
   note: "note",
   manual_override: "manualOverride",
+  user_id: "linkedUserId",
   message: "validationMessage",
   severity: "severity",
   date: "date",
@@ -277,10 +281,15 @@ function isShiftTemplateRecord(row: AnyRecord): row is ShiftTemplateRecord {
 function isDoctorRecord(row: AnyRecord): row is DoctorRecord {
   return (
     typeof row.id === "number" &&
-    typeof row.name === "string" &&
+    typeof row.first_name === "string" &&
+    typeof row.last_name === "string" &&
     typeof row.email === "string" &&
     typeof row.employment_percentage === "number"
   );
+}
+
+function doctorLabel(doctor: { first_name: string; last_name: string }): string {
+  return `${doctor.first_name} ${doctor.last_name}`.trim();
 }
 
 function categoryLabel(locale: Locale, category: string): string {
@@ -886,15 +895,20 @@ function DoctorEditorModal({
   async function submitEditor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const rawUserId = form.get("user_id");
+    const user_id =
+      rawUserId === "" || rawUserId == null ? null : Number(rawUserId);
     await apiFetch(`/api/v1/doctors/${doctor.id}`, {
       method: "PATCH",
       body: JSON.stringify({
-        name: form.get("name"),
+        first_name: form.get("first_name"),
+        last_name: form.get("last_name"),
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
         is_active: form.get("is_active") === "on",
-        shift_group_ids: [...selectedGroupIds]
+        shift_group_ids: [...selectedGroupIds],
+        user_id
       })
     });
     await onChanged();
@@ -914,7 +928,7 @@ function DoctorEditorModal({
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
             <h2 id={`doctor-edit-${doctor.id}`} className="text-lg font-semibold text-ink">{t(locale, "editDoctor")}</h2>
-            <p className="mt-1 truncate text-sm text-slate-500">{doctor.name} · {doctor.email}</p>
+            <p className="mt-1 truncate text-sm text-slate-500">{doctorLabel(doctor)} · {doctor.email}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -945,10 +959,22 @@ function DoctorEditorModal({
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label={t(locale, "name")}><input className={inputClass} name="name" defaultValue={doctor.name} required /></Field>
+          <Field label={t(locale, "firstName")}><input className={inputClass} name="first_name" defaultValue={doctor.first_name} required /></Field>
+          <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" defaultValue={doctor.last_name} required /></Field>
           <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" defaultValue={doctor.email} required /></Field>
           <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue={doctor.employment_percentage} /></Field>
           <Field label={t(locale, "notes")}><input className={inputClass} name="notes" defaultValue={doctor.notes ?? ""} /></Field>
+          <Field label={t(locale, "linkedUserId")}>
+            <input
+              className={inputClass}
+              name="user_id"
+              type="number"
+              min={1}
+              defaultValue={doctor.user_id ?? ""}
+              placeholder={t(locale, "emptyValue")}
+              title={t(locale, "linkedUserIdHint")}
+            />
+          </Field>
           <label className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
             <input name="is_active" type="checkbox" defaultChecked={doctor.is_active} />
             {t(locale, "isActive")}
@@ -1025,7 +1051,7 @@ function DoctorCard({ doctor, onChanged }: { doctor: DoctorRecord; onChanged: ()
         <div className="border-b border-mint/25 bg-gradient-to-r from-mint/10 via-white to-sky-50/40 px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-semibold text-ink">{doctor.name}</h2>
+              <h2 className="truncate text-sm font-semibold text-ink">{doctorLabel(doctor)}</h2>
               <p className="mt-1 truncate text-xs text-slate-500">{doctor.email}</p>
             </div>
             <button
@@ -1096,14 +1122,19 @@ export function DoctorForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const rawCreateUserId = form.get("user_id");
+    const createUserId =
+      rawCreateUserId === "" || rawCreateUserId == null ? null : Number(rawCreateUserId);
     await apiFetch("/api/v1/doctors", {
       method: "POST",
       body: JSON.stringify({
-        name: form.get("name"),
+        first_name: form.get("first_name"),
+        last_name: form.get("last_name"),
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
-        shift_group_ids: [...createGroupIds]
+        shift_group_ids: [...createGroupIds],
+        user_id: createUserId
       })
     });
     setMessage(t(locale, "created"));
@@ -1154,10 +1185,14 @@ export function DoctorForm() {
               </button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label={t(locale, "name")}><input className={inputClass} name="name" required /></Field>
+              <Field label={t(locale, "firstName")}><input className={inputClass} name="first_name" required /></Field>
+              <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" required /></Field>
               <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" required /></Field>
               <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" /></Field>
               <Field label={t(locale, "notes")}><input className={inputClass} name="notes" /></Field>
+              <Field label={t(locale, "linkedUserId")}>
+                <input className={inputClass} name="user_id" type="number" min={1} placeholder={t(locale, "emptyValue")} title={t(locale, "linkedUserIdHint")} />
+              </Field>
             </div>
             <div className="mt-4 rounded-lg border border-slate-200 p-3">
               <p className="text-sm font-semibold text-ink">{t(locale, "doctorShiftGroups")}</p>

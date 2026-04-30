@@ -1,19 +1,59 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
-import { Locale } from "@/lib/i18n";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { apiFetch } from "@/lib/api";
+import { Locale } from "@/lib/i18n";
+
+export type MeUser = {
+  id: number;
+  email: string;
+  role: string;
+  locale: string;
+  doctor_id: number | null;
+  shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
+};
+
+type SessionValue = {
+  me: MeUser | null;
+  loading: boolean;
+  refreshMe: () => Promise<void>;
+};
 
 const LocaleContext = createContext<{ locale: Locale; setLocale: (locale: Locale) => void } | null>(null);
+const SessionContext = createContext<SessionValue | null>(null);
 
 export function LocaleShell({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = useState<Locale>("de");
-  const value = useMemo(() => ({ locale, setLocale }), [locale]);
+  const [me, setMe] = useState<MeUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const localeValue = useMemo(() => ({ locale, setLocale }), [locale]);
+
+  const refreshMe = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await apiFetch<MeUser>("/api/v1/auth/me");
+      setMe(next);
+    } catch {
+      setMe(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshMe();
+  }, [refreshMe]);
+
+  const sessionValue = useMemo(() => ({ me, loading, refreshMe }), [me, loading, refreshMe]);
+
   return (
-    <LocaleContext.Provider value={value}>
-      <AppShell locale={locale} setLocale={setLocale}>
-        {children}
-      </AppShell>
+    <LocaleContext.Provider value={localeValue}>
+      <SessionContext.Provider value={sessionValue}>
+        <AppShell locale={locale} setLocale={setLocale}>
+          {children}
+        </AppShell>
+      </SessionContext.Provider>
     </LocaleContext.Provider>
   );
 }
@@ -26,3 +66,10 @@ export function useLocale() {
   return context;
 }
 
+export function useSession() {
+  const context = useContext(SessionContext);
+  if (!context) {
+    throw new Error("Session context missing");
+  }
+  return context;
+}

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.security import verify_session_token
 from app.db.session import get_db
 from app.models import User
+from app.services.authz import is_planner
 from app.services.users import get_user
 
 
@@ -19,5 +20,11 @@ def get_current_user(
     user = get_user(db, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive user")
+    return user
+
+
+def get_current_planner(user: User = Depends(get_current_user)) -> User:
+    if not is_planner(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Planner only")
     return user
 

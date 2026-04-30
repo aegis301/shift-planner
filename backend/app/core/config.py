@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     session_secret: str = Field(default="dev-session-secret", min_length=8)
     admin_email: str = "admin@example.com"
     admin_password: str = "change-me"
+    doctor_seed_password: str = "change-me-doctors"
     mcp_admin_token: str = "change-me-mcp-token"
     backend_cors_origins: str = "http://localhost:3000"
 
