@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.security import verify_session_token
 from app.db.session import get_db
 from app.models import User
-from app.services.authz import is_planner
+from app.services.authz import can_use_planning_ui, is_admin
 from app.services.users import get_user
 
 
@@ -23,8 +23,17 @@ def get_current_user(
     return user
 
 
-def get_current_planner(user: User = Depends(get_current_user)) -> User:
-    if not is_planner(user):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Planner only")
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    if not is_admin(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
     return user
 
+
+def get_current_planning_user(user: User = Depends(get_current_user)) -> User:
+    if not can_use_planning_ui(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Planning access denied")
+    return user
+
+
+def get_current_planner(user: User = Depends(get_current_planning_user)) -> User:
+    return user

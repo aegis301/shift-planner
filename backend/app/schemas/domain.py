@@ -21,6 +21,12 @@ class UserShiftGroupBrief(BaseModel):
     name_en: str
 
 
+class UserCapabilities(BaseModel):
+    admin: bool
+    planning: bool
+    doctor_portal: bool
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -28,8 +34,11 @@ class UserRead(BaseModel):
     email: EmailStr
     role: str
     locale: str
+    organization_id: int
     doctor_id: int | None = None
     shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
+    planner_shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
+    capabilities: UserCapabilities
 
 
 class LoginInput(BaseModel):

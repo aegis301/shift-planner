@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     admin_password: str = "change-me"
     doctor_seed_password: str = "change-me-doctors"
     mcp_admin_token: str = "change-me-mcp-token"
+    default_organization_id: int = 1
     backend_cors_origins: str = "http://localhost:3000"
 
     @property

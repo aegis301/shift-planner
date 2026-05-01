@@ -8,6 +8,7 @@ from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationW
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.shift_groups import active_doctor_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
+from app.services.tenancy import require_planning_period_in_org
 
 
 def get_default_rule_config(db: Session) -> RuleConfig:
@@ -41,7 +42,10 @@ def _warning_in_shift_group_scope(
     return True
 
 
-def validate_roster(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> list[ValidationWarning]:
+def validate_roster(
+    db: Session, planning_period_id: int, *, organization_id: int, shift_group_id: int | None = None
+) -> list[ValidationWarning]:
+    require_planning_period_in_org(db, planning_period_id, organization_id)
     warnings: list[ValidationWarning] = []
     cells = list_planning_cells(db, planning_period_id=planning_period_id)
     slot_assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
@@ -52,7 +56,7 @@ def validate_roster(db: Session, planning_period_id: int, *, shift_group_id: int
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
     if shift_group_id is None:
         return warnings
-    require_shift_group(db, shift_group_id)
+    require_shift_group(db, shift_group_id, organization_id)
     doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
     template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
     slot_ids = {

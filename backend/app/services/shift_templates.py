@@ -23,8 +23,10 @@ class ShiftTemplateCodeConflictError(Exception):
         super().__init__(code)
 
 
-def _shift_template_code_in_use(db: Session, code: str, *, exclude_template_id: int | None = None) -> bool:
-    stmt = select(ShiftTemplate.id).where(ShiftTemplate.code == code)
+def _shift_template_code_in_use(
+    db: Session, code: str, organization_id: int, *, exclude_template_id: int | None = None
+) -> bool:
+    stmt = select(ShiftTemplate.id).where(ShiftTemplate.code == code, ShiftTemplate.organization_id == organization_id)
     if exclude_template_id is not None:
         stmt = stmt.where(ShiftTemplate.id != exclude_template_id)
     return db.scalar(stmt) is not None
@@ -47,10 +49,11 @@ class GeneratedSlot:
     position: int
 
 
-def list_shift_templates(db: Session, *, active_only: bool = False) -> list[ShiftTemplate]:
+def list_shift_templates(db: Session, *, organization_id: int, active_only: bool = False) -> list[ShiftTemplate]:
     stmt = (
         select(ShiftTemplate)
         .options(joinedload(ShiftTemplate.variants))
+        .where(ShiftTemplate.organization_id == organization_id)
         .order_by(ShiftTemplate.name_de, ShiftTemplate.code)
     )
     if active_only:
@@ -58,10 +61,38 @@ def list_shift_templates(db: Session, *, active_only: bool = False) -> list[Shif
     return list(db.scalars(stmt).unique())
 
 
-def create_shift_template(db: Session, payload: ShiftTemplateCreate, *, actor: str, source: str) -> ShiftTemplate:
-    if _shift_template_code_in_use(db, payload.code):
+def list_shift_templates_for_planning_user(db: Session, user) -> list[ShiftTemplate]:
+    from app.models import ShiftGroup, ShiftGroupShiftTemplate
+    from app.services.authz import is_admin, planner_shift_group_ids
+
+    if is_admin(user):
+        return list_shift_templates(db, organization_id=user.organization_id, active_only=True)
+    gids = planner_shift_group_ids(db, user)
+    if not gids:
+        return []
+    all_templates = list_shift_templates(db, organization_id=user.organization_id, active_only=True)
+    rows = db.execute(
+        select(ShiftGroupShiftTemplate.shift_template_id, ShiftGroup.id).join(
+            ShiftGroup, ShiftGroup.id == ShiftGroupShiftTemplate.shift_group_id
+        ).where(ShiftGroup.organization_id == user.organization_id)
+    ).all()
+    template_to_groups: dict[int, set[int]] = {}
+    for tid, gid in rows:
+        template_to_groups.setdefault(int(tid), set()).add(int(gid))
+    out: list[ShiftTemplate] = []
+    for template in all_templates:
+        gset = template_to_groups.get(template.id, set())
+        if not gset or (gset & gids):
+            out.append(template)
+    return out
+
+
+def create_shift_template(
+    db: Session, payload: ShiftTemplateCreate, *, organization_id: int, actor: str, source: str
+) -> ShiftTemplate:
+    if _shift_template_code_in_use(db, payload.code, organization_id):
         raise ShiftTemplateCodeConflictError(payload.code)
-    template = ShiftTemplate(**payload.model_dump())
+    template = ShiftTemplate(**payload.model_dump(), organization_id=organization_id)
     db.add(template)
     db.flush()
     record_audit(db, actor=actor, source=source, action="create", entity_type="shift_template", entity_id=template.id)
@@ -71,15 +102,15 @@ def create_shift_template(db: Session, payload: ShiftTemplateCreate, *, actor: s
 
 
 def update_shift_template(
-    db: Session, template_id: int, payload: ShiftTemplateUpdate, *, actor: str, source: str
+    db: Session, template_id: int, payload: ShiftTemplateUpdate, *, organization_id: int, actor: str, source: str
 ) -> ShiftTemplate | None:
     template = db.get(ShiftTemplate, template_id)
-    if template is None:
+    if template is None or template.organization_id != organization_id:
         return None
     data = payload.model_dump(exclude_unset=True)
     new_code = data.get("code")
     if new_code is not None and new_code != template.code:
-        if _shift_template_code_in_use(db, new_code, exclude_template_id=template.id):
+        if _shift_template_code_in_use(db, new_code, organization_id, exclude_template_id=template.id):
             raise ShiftTemplateCodeConflictError(new_code)
     for key, value in data.items():
         setattr(template, key, value)
@@ -89,9 +120,9 @@ def update_shift_template(
     return template
 
 
-def delete_shift_template(db: Session, template_id: int, *, actor: str, source: str) -> bool:
+def delete_shift_template(db: Session, template_id: int, *, organization_id: int, actor: str, source: str) -> bool:
     template = db.get(ShiftTemplate, template_id)
-    if template is None:
+    if template is None or template.organization_id != organization_id:
         return False
     slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.shift_template_id == template_id)))
     if slot_ids:
@@ -118,11 +149,12 @@ def create_shift_variant(
     template_id: int,
     payload: ShiftVariantCreate,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> ShiftVariant | None:
     template = db.get(ShiftTemplate, template_id)
-    if template is None:
+    if template is None or template.organization_id != organization_id:
         return None
     variant = ShiftVariant(shift_template_id=template_id, **payload.model_dump())
     db.add(variant)
@@ -138,11 +170,15 @@ def update_shift_variant(
     variant_id: int,
     payload: ShiftVariantUpdate,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> ShiftVariant | None:
     variant = db.get(ShiftVariant, variant_id)
     if variant is None:
+        return None
+    template = db.get(ShiftTemplate, variant.shift_template_id)
+    if template is None or template.organization_id != organization_id:
         return None
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(variant, key, value)
@@ -152,9 +188,12 @@ def update_shift_variant(
     return variant
 
 
-def delete_shift_variant(db: Session, variant_id: int, *, actor: str, source: str) -> bool:
+def delete_shift_variant(db: Session, variant_id: int, *, organization_id: int, actor: str, source: str) -> bool:
     variant = db.get(ShiftVariant, variant_id)
     if variant is None:
+        return False
+    template = db.get(ShiftTemplate, variant.shift_template_id)
+    if template is None or template.organization_id != organization_id:
         return False
     slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.shift_variant_id == variant_id)))
     if slot_ids:
@@ -201,8 +240,8 @@ def _combine(day: date, value: time) -> datetime:
     return datetime.combine(day, value)
 
 
-def generate_slots_for_month(db: Session, *, year: int, month: int) -> list[GeneratedSlot]:
-    templates = list_shift_templates(db, active_only=True)
+def generate_slots_for_month(db: Session, *, year: int, month: int, organization_id: int) -> list[GeneratedSlot]:
+    templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
     days_in_month = calendar.monthrange(year, month)[1]
     generated: list[GeneratedSlot] = []
     for day_number in range(1, days_in_month + 1):
@@ -252,5 +291,8 @@ def generate_slots_for_month(db: Session, *, year: int, month: int) -> list[Gene
     return generated
 
 
-def preview_slots_for_month(db: Session, *, year: int, month: int) -> list[GeneratedRosterSlotPreview]:
-    return [GeneratedRosterSlotPreview(**slot.__dict__) for slot in generate_slots_for_month(db, year=year, month=month)]
+def preview_slots_for_month(db: Session, *, year: int, month: int, organization_id: int) -> list[GeneratedRosterSlotPreview]:
+    return [
+        GeneratedRosterSlotPreview(**slot.__dict__)
+        for slot in generate_slots_for_month(db, year=year, month=month, organization_id=organization_id)
+    ]

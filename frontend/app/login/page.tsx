@@ -23,7 +23,9 @@ function LoginContent() {
         body: JSON.stringify({ email: form.get("email"), password: form.get("password") })
       });
       await refreshMe();
-      router.push(user.role === "doctor" ? "/my-planning" : "/");
+      const path =
+        user.capabilities.planning ? "/planning" : user.capabilities.doctor_portal ? "/my-planning" : "/";
+      router.push(path);
       router.refresh();
     } catch {
       setMessage(t(locale, "loginFailed"));

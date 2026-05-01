@@ -7,20 +7,29 @@ from app.models import (
     ShiftGroup,
     ShiftGroupShiftTemplate,
     ShiftTemplate,
+    User,
 )
 from app.schemas import ShiftGroupCreate, ShiftGroupUpdate
 from app.services.audit import record_audit
 
 
-def list_shift_template_ids_with_any_group(db: Session) -> set[int]:
-    rows = db.scalars(select(ShiftGroupShiftTemplate.shift_template_id).distinct()).all()
+def list_shift_template_ids_with_any_group(db: Session, organization_id: int) -> set[int]:
+    rows = db.scalars(
+        select(ShiftGroupShiftTemplate.shift_template_id)
+        .join(ShiftGroup, ShiftGroup.id == ShiftGroupShiftTemplate.shift_group_id)
+        .where(ShiftGroup.organization_id == organization_id)
+        .distinct()
+    ).all()
     return set(rows)
 
 
 def doctor_may_cover_template(db: Session, *, doctor_id: int, shift_template_id: int | None) -> bool:
+    doctor = db.get(Doctor, doctor_id)
+    if doctor is None:
+        return False
     if shift_template_id is None:
         return True
-    if shift_template_id not in list_shift_template_ids_with_any_group(db):
+    if shift_template_id not in list_shift_template_ids_with_any_group(db, doctor.organization_id):
         return True
     stmt = (
         select(DoctorShiftGroup.id)
@@ -38,9 +47,11 @@ def get_shift_group_or_none(db: Session, shift_group_id: int) -> ShiftGroup | No
     return db.get(ShiftGroup, shift_group_id)
 
 
-def require_shift_group(db: Session, shift_group_id: int) -> ShiftGroup:
+def require_shift_group(db: Session, shift_group_id: int, organization_id: int | None = None) -> ShiftGroup:
     group = get_shift_group_or_none(db, shift_group_id)
     if group is None:
+        raise ValueError("Shift group not found")
+    if organization_id is not None and group.organization_id != organization_id:
         raise ValueError("Shift group not found")
     return group
 
@@ -59,16 +70,42 @@ def shift_template_ids_in_shift_group(db: Session, shift_group_id: int) -> set[i
     return set(db.scalars(stmt).all())
 
 
-def list_shift_groups(db: Session, *, active_only: bool = False) -> list[ShiftGroup]:
-    stmt = select(ShiftGroup).options(joinedload(ShiftGroup.doctor_links), joinedload(ShiftGroup.template_links))
+def list_shift_groups(db: Session, *, organization_id: int, active_only: bool = False) -> list[ShiftGroup]:
+    stmt = (
+        select(ShiftGroup)
+        .options(joinedload(ShiftGroup.doctor_links), joinedload(ShiftGroup.template_links))
+        .where(ShiftGroup.organization_id == organization_id)
+    )
     if active_only:
         stmt = stmt.where(ShiftGroup.is_active.is_(True))
     stmt = stmt.order_by(ShiftGroup.display_order, ShiftGroup.code)
     return list(db.scalars(stmt).unique())
 
 
-def create_shift_group(db: Session, payload: ShiftGroupCreate, *, actor: str, source: str) -> ShiftGroup:
+def list_shift_groups_for_planner(db: Session, *, user: User, active_only: bool = False) -> list[ShiftGroup]:
+    from app.services.authz import is_admin, planner_shift_group_ids
+
+    if is_admin(user):
+        return list_shift_groups(db, organization_id=user.organization_id, active_only=active_only)
+    gids = planner_shift_group_ids(db, user)
+    if not gids:
+        return []
+    stmt = (
+        select(ShiftGroup)
+        .options(joinedload(ShiftGroup.doctor_links), joinedload(ShiftGroup.template_links))
+        .where(ShiftGroup.organization_id == user.organization_id, ShiftGroup.id.in_(gids))
+    )
+    if active_only:
+        stmt = stmt.where(ShiftGroup.is_active.is_(True))
+    stmt = stmt.order_by(ShiftGroup.display_order, ShiftGroup.code)
+    return list(db.scalars(stmt).unique())
+
+
+def create_shift_group(
+    db: Session, payload: ShiftGroupCreate, *, organization_id: int, actor: str, source: str
+) -> ShiftGroup:
     group = ShiftGroup(
+        organization_id=organization_id,
         code=payload.code,
         name_de=payload.name_de,
         name_en=payload.name_en,
@@ -84,10 +121,10 @@ def create_shift_group(db: Session, payload: ShiftGroupCreate, *, actor: str, so
 
 
 def update_shift_group(
-    db: Session, shift_group_id: int, payload: ShiftGroupUpdate, *, actor: str, source: str
+    db: Session, shift_group_id: int, payload: ShiftGroupUpdate, *, organization_id: int, actor: str, source: str
 ) -> ShiftGroup | None:
     group = db.get(ShiftGroup, shift_group_id)
-    if group is None:
+    if group is None or group.organization_id != organization_id:
         return None
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(group, key, value)
@@ -97,9 +134,9 @@ def update_shift_group(
     return group
 
 
-def delete_shift_group(db: Session, shift_group_id: int, *, actor: str, source: str) -> bool:
+def delete_shift_group(db: Session, shift_group_id: int, *, organization_id: int, actor: str, source: str) -> bool:
     group = db.get(ShiftGroup, shift_group_id)
-    if group is None:
+    if group is None or group.organization_id != organization_id:
         return False
     record_audit(
         db,
@@ -115,8 +152,10 @@ def delete_shift_group(db: Session, shift_group_id: int, *, actor: str, source: 
     return True
 
 
-def replace_group_doctors(db: Session, shift_group_id: int, doctor_ids: list[int], *, actor: str, source: str) -> None:
-    require_shift_group(db, shift_group_id)
+def replace_group_doctors(
+    db: Session, shift_group_id: int, doctor_ids: list[int], *, organization_id: int, actor: str, source: str
+) -> None:
+    require_shift_group(db, shift_group_id, organization_id)
     db.execute(delete(DoctorShiftGroup).where(DoctorShiftGroup.shift_group_id == shift_group_id))
     for doctor_id in sorted(set(doctor_ids)):
         db.add(DoctorShiftGroup(doctor_id=doctor_id, shift_group_id=shift_group_id))
@@ -134,11 +173,12 @@ def replace_group_doctors(db: Session, shift_group_id: int, doctor_ids: list[int
 
 
 def replace_group_shift_templates(
-    db: Session, shift_group_id: int, shift_template_ids: list[int], *, actor: str, source: str
+    db: Session, shift_group_id: int, shift_template_ids: list[int], *, organization_id: int, actor: str, source: str
 ) -> None:
-    require_shift_group(db, shift_group_id)
+    require_shift_group(db, shift_group_id, organization_id)
     for tid in set(shift_template_ids):
-        if db.get(ShiftTemplate, tid) is None:
+        template = db.get(ShiftTemplate, tid)
+        if template is None or template.organization_id != organization_id:
             raise ValueError(f"Shift template not found: {tid}")
     db.execute(delete(ShiftGroupShiftTemplate).where(ShiftGroupShiftTemplate.shift_group_id == shift_group_id))
     for template_id in sorted(set(shift_template_ids)):
@@ -157,10 +197,11 @@ def replace_group_shift_templates(
 
 
 def replace_doctor_shift_groups(db: Session, doctor_id: int, shift_group_ids: list[int], *, actor: str, source: str) -> None:
-    if db.get(Doctor, doctor_id) is None:
+    doctor = db.get(Doctor, doctor_id)
+    if doctor is None:
         raise ValueError("Doctor not found")
     for gid in set(shift_group_ids):
-        require_shift_group(db, gid)
+        require_shift_group(db, gid, doctor.organization_id)
     db.execute(delete(DoctorShiftGroup).where(DoctorShiftGroup.doctor_id == doctor_id))
     for shift_group_id in sorted(set(shift_group_ids)):
         db.add(DoctorShiftGroup(doctor_id=doctor_id, shift_group_id=shift_group_id))

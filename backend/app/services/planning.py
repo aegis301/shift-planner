@@ -15,17 +15,28 @@ from app.schemas import PlanningPeriodCreate
 from app.services.audit import record_audit
 
 
-def list_planning_periods(db: Session) -> list[PlanningPeriod]:
-    return list(db.scalars(select(PlanningPeriod).order_by(PlanningPeriod.year.desc(), PlanningPeriod.month.desc())))
+def list_planning_periods(db: Session, *, organization_id: int) -> list[PlanningPeriod]:
+    stmt = (
+        select(PlanningPeriod)
+        .where(PlanningPeriod.organization_id == organization_id)
+        .order_by(PlanningPeriod.year.desc(), PlanningPeriod.month.desc())
+    )
+    return list(db.scalars(stmt))
 
 
-def create_planning_period(db: Session, payload: PlanningPeriodCreate, *, actor: str, source: str) -> PlanningPeriod:
+def create_planning_period(
+    db: Session, payload: PlanningPeriodCreate, *, organization_id: int, actor: str, source: str
+) -> PlanningPeriod:
     existing = db.scalar(
-        select(PlanningPeriod).where(PlanningPeriod.year == payload.year, PlanningPeriod.month == payload.month)
+        select(PlanningPeriod).where(
+            PlanningPeriod.organization_id == organization_id,
+            PlanningPeriod.year == payload.year,
+            PlanningPeriod.month == payload.month,
+        )
     )
     if existing:
         return existing
-    period = PlanningPeriod(**payload.model_dump(), status="draft")
+    period = PlanningPeriod(**payload.model_dump(), organization_id=organization_id, status="draft")
     db.add(period)
     db.flush()
     record_audit(db, actor=actor, source=source, action="create", entity_type="planning_period", entity_id=period.id)
@@ -34,9 +45,9 @@ def create_planning_period(db: Session, payload: PlanningPeriodCreate, *, actor:
     return period
 
 
-def delete_planning_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> bool:
+def delete_planning_period(db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str) -> bool:
     period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
+    if period is None or period.organization_id != organization_id:
         return False
 
     slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.planning_period_id == planning_period_id)))
@@ -63,9 +74,11 @@ def delete_planning_period(db: Session, planning_period_id: int, *, actor: str, 
     return True
 
 
-def publish_planning_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> PlanningPeriod | None:
+def publish_planning_period(
+    db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
+) -> PlanningPeriod | None:
     period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
+    if period is None or period.organization_id != organization_id:
         return None
     if period.status == "published":
         return period
@@ -86,9 +99,11 @@ def publish_planning_period(db: Session, planning_period_id: int, *, actor: str,
     return period
 
 
-def unpublish_planning_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> PlanningPeriod | None:
+def unpublish_planning_period(
+    db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
+) -> PlanningPeriod | None:
     period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
+    if period is None or period.organization_id != organization_id:
         return None
     if period.status == "draft":
         return period

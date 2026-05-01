@@ -18,6 +18,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
+from app.services.tenancy import require_planning_period_in_org
 from app.services.shift_groups import (
     active_doctor_ids_in_shift_group,
     doctor_may_cover_template,
@@ -56,12 +57,10 @@ def list_roster_slot_assignments(db: Session, *, planning_period_id: int) -> lis
     return list(db.scalars(stmt))
 
 
-def ensure_roster_slots_for_period(db: Session, planning_period_id: int) -> list[RosterSlot]:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+def ensure_roster_slots_for_period(db: Session, planning_period_id: int, organization_id: int) -> list[RosterSlot]:
+    period = require_planning_period_in_org(db, planning_period_id, organization_id)
 
-    generated_slots = generate_slots_for_month(db, year=period.year, month=period.month)
+    generated_slots = generate_slots_for_month(db, year=period.year, month=period.month, organization_id=organization_id)
     if not generated_slots:
         return []
 
@@ -92,10 +91,10 @@ def ensure_roster_slots_for_period(db: Session, planning_period_id: int) -> list
     return list_roster_slots(db, planning_period_id=planning_period_id)
 
 
-def reset_roster_slots_for_period(db: Session, planning_period_id: int, *, actor: str, source: str) -> list[RosterSlot]:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+def reset_roster_slots_for_period(
+    db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
+) -> list[RosterSlot]:
+    period = require_planning_period_in_org(db, planning_period_id, organization_id)
     slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.planning_period_id == planning_period_id)))
     if slot_ids:
         for assignment in db.scalars(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id.in_(slot_ids))):
@@ -112,27 +111,33 @@ def reset_roster_slots_for_period(db: Session, planning_period_id: int, *, actor
         entity_id=planning_period_id,
         details={"cleared_slot_count": len(slot_ids)},
     )
-    slots = ensure_roster_slots_for_period(db, planning_period_id)
+    slots = ensure_roster_slots_for_period(db, planning_period_id, organization_id)
     db.commit()
     return slots
 
 
-def get_roster_matrix(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> RosterMatrixRead:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+def get_roster_matrix(
+    db: Session, planning_period_id: int, *, organization_id: int, shift_group_id: int | None = None
+) -> RosterMatrixRead:
+    period = require_planning_period_in_org(db, planning_period_id, organization_id)
 
-    ensure_roster_slots_for_period(db, planning_period_id)
+    ensure_roster_slots_for_period(db, planning_period_id, organization_id)
     db.commit()
 
-    doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.last_name, Doctor.first_name)))
-    shift_templates = list_shift_templates(db, active_only=True)
+    doctors = list(
+        db.scalars(
+            select(Doctor)
+            .where(Doctor.organization_id == organization_id, Doctor.is_active.is_(True))
+            .order_by(Doctor.last_name, Doctor.first_name)
+        )
+    )
+    shift_templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
     slots = list_roster_slots(db, planning_period_id=planning_period_id)
     assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     planning_cells = list_planning_cells(db, planning_period_id=planning_period_id)
     shift_intents = [PlanningShiftIntentRead.model_validate(row) for row in list_planning_shift_intents(db, planning_period_id=planning_period_id)]
     if shift_group_id is not None:
-        require_shift_group(db, shift_group_id)
+        require_shift_group(db, shift_group_id, organization_id)
         allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
         template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
         doctors = [doctor for doctor in doctors if doctor.id in allowed_doctor_ids]
@@ -216,12 +221,14 @@ def upsert_roster_slot_assignment(
     db: Session,
     payload: RosterSlotAssignmentUpsert,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> RosterSlotAssignment:
     slot = db.get(RosterSlot, payload.roster_slot_id)
     if slot is None:
         raise ValueError("Roster slot not found")
+    require_planning_period_in_org(db, slot.planning_period_id, organization_id)
     if not doctor_may_cover_template(db, doctor_id=payload.doctor_id, shift_template_id=slot.shift_template_id):
         raise ValueError("Doctor is not a member of a shift group that covers this template")
     if not payload.manual_override and _doctor_has_template_no_go(
@@ -274,6 +281,7 @@ def clear_roster_slot_assignment(
     db: Session,
     payload: RosterSlotAssignmentClear,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> bool:
@@ -282,6 +290,10 @@ def clear_roster_slot_assignment(
     )
     if assignment is None:
         return False
+    slot = db.get(RosterSlot, payload.roster_slot_id)
+    if slot is None:
+        return False
+    require_planning_period_in_org(db, slot.planning_period_id, organization_id)
     record_audit(
         db,
         actor=actor,

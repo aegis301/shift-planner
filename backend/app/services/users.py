@@ -2,9 +2,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
-from app.models import Doctor, User
-from app.schemas import DoctorSelfUpdate, UserRead, UserShiftGroupBrief
-from app.services.authz import get_linked_doctor, list_shift_groups_for_doctor
+from app.models import Doctor, ShiftGroup, User, UserShiftGroup
+from app.schemas import DoctorSelfUpdate, UserCapabilities, UserRead, UserShiftGroupBrief
+from app.services.authz import (
+    ROLE_PLANNER,
+    can_use_planning_ui,
+    get_linked_doctor,
+    is_admin,
+    list_shift_groups_for_doctor,
+)
+from app.services.tenancy import ensure_default_organization
 
 
 def get_user_by_email(db: Session, email: str) -> User | None:
@@ -25,10 +32,17 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
 
 def ensure_admin_user(db: Session, *, email: str, password: str) -> User:
+    org = ensure_default_organization(db)
     existing = get_user_by_email(db, email)
     if existing:
         return existing
-    user = User(email=email.lower(), hashed_password=hash_password(password), role="admin", locale="de")
+    user = User(
+        email=email.lower(),
+        hashed_password=hash_password(password),
+        role="admin",
+        locale="de",
+        organization_id=org.id,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -42,13 +56,31 @@ def build_user_read(db: Session, user: User) -> UserRead:
     if linked:
         for g in list_shift_groups_for_doctor(db, linked.id):
             groups.append(UserShiftGroupBrief.model_validate(g))
+    planner_groups: list[UserShiftGroupBrief] = []
+    if user.role == ROLE_PLANNER:
+        stmt = (
+            select(ShiftGroup)
+            .join(UserShiftGroup, UserShiftGroup.shift_group_id == ShiftGroup.id)
+            .where(UserShiftGroup.user_id == user.id, ShiftGroup.organization_id == user.organization_id)
+            .order_by(ShiftGroup.display_order, ShiftGroup.code)
+        )
+        for g in db.scalars(stmt):
+            planner_groups.append(UserShiftGroupBrief.model_validate(g))
+    caps = UserCapabilities(
+        admin=is_admin(user),
+        planning=can_use_planning_ui(user),
+        doctor_portal=doctor_id is not None,
+    )
     return UserRead(
         id=user.id,
         email=user.email,
         role=user.role,
         locale=user.locale,
+        organization_id=user.organization_id,
         doctor_id=doctor_id,
         shift_groups=groups,
+        planner_shift_groups=planner_groups,
+        capabilities=caps,
     )
 
 

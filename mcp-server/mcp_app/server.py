@@ -77,6 +77,10 @@ def require_token(token: str) -> None:
         raise PermissionError("Invalid MCP admin token")
 
 
+def mcp_organization_id() -> int:
+    return settings.default_organization_id
+
+
 def serialize_model(model: Any) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for column in model.__table__.columns:
@@ -102,7 +106,7 @@ def doctors_resource() -> list[dict[str, Any]]:
                 **serialize_model(doctor),
                 "shift_group_ids": sorted({link.shift_group_id for link in doctor.shift_group_links}),
             }
-            for doctor in list_doctors(db)
+            for doctor in list_doctors(db, organization_id=mcp_organization_id())
         ]
 
 
@@ -115,7 +119,7 @@ def shift_templates_resource() -> list[dict[str, Any]]:
                 **serialize_model(template),
                 "variants": [serialize_model(variant) for variant in template.variants],
             }
-            for template in list_shift_templates(db)
+            for template in list_shift_templates(db, organization_id=mcp_organization_id())
         ]
 
 
@@ -123,7 +127,9 @@ def shift_templates_resource() -> list[dict[str, Any]]:
 def planning_periods_resource() -> list[dict[str, Any]]:
     """List monthly planning periods."""
     with db_session() as db:
-        return [serialize_model(period) for period in list_planning_periods(db)]
+        return [
+            serialize_model(period) for period in list_planning_periods(db, organization_id=mcp_organization_id())
+        ]
 
 
 @mcp.resource("shift-planner://shift-groups")
@@ -136,7 +142,7 @@ def shift_groups_resource() -> list[dict[str, Any]]:
                 "doctor_ids": sorted({link.doctor_id for link in group.doctor_links}),
                 "shift_template_ids": sorted({link.shift_template_id for link in group.template_links}),
             }
-            for group in list_shift_groups(db)
+            for group in list_shift_groups(db, organization_id=mcp_organization_id())
         ]
 
 
@@ -144,35 +150,48 @@ def shift_groups_resource() -> list[dict[str, Any]]:
 def matrix_resource(planning_period_id: int) -> dict[str, Any]:
     """Return the monthly planning matrix with days, doctors, and cells."""
     with db_session() as db:
-        return get_planning_matrix(db, planning_period_id).model_dump(mode="json")
+        return get_planning_matrix(
+            db, planning_period_id, organization_id=mcp_organization_id()
+        ).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://matrix/{planning_period_id}/shift-group/{shift_group_id}")
 def matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
     """Return the planning matrix filtered to one shift group."""
     with db_session() as db:
-        return get_planning_matrix(db, planning_period_id, shift_group_id=shift_group_id).model_dump(mode="json")
+        return get_planning_matrix(
+            db, planning_period_id, organization_id=mcp_organization_id(), shift_group_id=shift_group_id
+        ).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://roster-matrix/{planning_period_id}")
 def roster_matrix_resource(planning_period_id: int) -> dict[str, Any]:
     """Return the final roster matrix with days, shift slots, doctors, and assignments."""
     with db_session() as db:
-        return get_roster_matrix(db, planning_period_id).model_dump(mode="json")
+        return get_roster_matrix(db, planning_period_id, organization_id=mcp_organization_id()).model_dump(
+            mode="json"
+        )
 
 
 @mcp.resource("shift-planner://roster-matrix/{planning_period_id}/shift-group/{shift_group_id}")
 def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
     """Return the final roster matrix filtered to one shift group."""
     with db_session() as db:
-        return get_roster_matrix(db, planning_period_id, shift_group_id=shift_group_id).model_dump(mode="json")
+        return get_roster_matrix(
+            db, planning_period_id, organization_id=mcp_organization_id(), shift_group_id=shift_group_id
+        ).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://doctor-period-notes/{planning_period_id}")
 def doctor_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]]:
     """Return source emails and monthly notes for a planning period."""
     with db_session() as db:
-        return [serialize_model(note) for note in list_doctor_period_notes(db, planning_period_id=planning_period_id)]
+        return [
+            serialize_model(note)
+            for note in list_doctor_period_notes(
+                db, planning_period_id=planning_period_id, organization_id=mcp_organization_id()
+            )
+        ]
 
 
 @mcp.resource("shift-planner://doctor-period-notes/{planning_period_id}/shift-group/{shift_group_id}")
@@ -181,7 +200,12 @@ def doctor_period_notes_filtered_resource(planning_period_id: int, shift_group_i
     with db_session() as db:
         return [
             serialize_model(note)
-            for note in list_doctor_period_notes(db, planning_period_id=planning_period_id, shift_group_id=shift_group_id)
+            for note in list_doctor_period_notes(
+                db,
+                planning_period_id=planning_period_id,
+                organization_id=mcp_organization_id(),
+                shift_group_id=shift_group_id,
+            )
         ]
 
 
@@ -191,14 +215,17 @@ def get_validation_warnings(planning_period_id: int, shift_group_id: int | None 
     with db_session() as db:
         return [
             warning.model_dump(mode="json")
-            for warning in validate_roster(db, planning_period_id, shift_group_id=shift_group_id)
+            for warning in validate_roster(
+                db, planning_period_id, organization_id=mcp_organization_id(), shift_group_id=shift_group_id
+            )
         ]
 
 
 @mcp.tool
 def create_doctor_tool(
     token: str,
-    name: str,
+    first_name: str,
+    last_name: str,
     email: str,
     employment_percentage: int = 100,
     notes: str | None = None,
@@ -210,12 +237,14 @@ def create_doctor_tool(
         doctor = create_doctor(
             db,
             DoctorCreate(
-                name=name,
+                first_name=first_name,
+                last_name=last_name,
                 email=email,
                 employment_percentage=employment_percentage,
                 notes=notes,
                 shift_group_ids=list(shift_group_ids or []),
             ),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -241,6 +270,7 @@ def create_shift_group_tool(
         group = create_shift_group(
             db,
             ShiftGroupCreate(code=code, name_de=name_de, name_en=name_en, display_order=display_order, is_active=is_active),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -257,7 +287,9 @@ def set_shift_group_doctors_tool(token: str, shift_group_id: int, doctor_ids: li
     """Replace doctors assigned to a shift group. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        replace_group_doctors(db, shift_group_id, doctor_ids, actor="mcp", source="mcp")
+        replace_group_doctors(
+            db, shift_group_id, doctor_ids, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
         match = db.get(ShiftGroup, shift_group_id)
         if match is None:
             return {"shift_group_id": shift_group_id, "doctor_ids": [], "shift_template_ids": []}
@@ -274,7 +306,9 @@ def set_shift_group_templates_tool(token: str, shift_group_id: int, shift_templa
     """Replace shift templates covered by a shift group. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        replace_group_shift_templates(db, shift_group_id, shift_template_ids, actor="mcp", source="mcp")
+        replace_group_shift_templates(
+            db, shift_group_id, shift_template_ids, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
         match = db.get(ShiftGroup, shift_group_id)
         if match is None:
             return {"shift_group_id": shift_group_id, "doctor_ids": [], "shift_template_ids": []}
@@ -291,7 +325,11 @@ def delete_doctor_tool(token: str, doctor_id: int) -> dict[str, bool]:
     """Delete a doctor and clear related wishes/notes/assignments. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        return {"deleted": delete_doctor(db, doctor_id, actor="mcp", source="mcp")}
+        return {
+            "deleted": delete_doctor(
+                db, doctor_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
+        }
 
 
 @mcp.tool
@@ -316,6 +354,7 @@ def create_shift_template_tool(
                     category=category,  # type: ignore[arg-type]
                     display_order=display_order,
                 ),
+                organization_id=mcp_organization_id(),
                 actor="mcp",
                 source="mcp",
             )
@@ -329,7 +368,11 @@ def delete_shift_template_tool(token: str, shift_template_id: int) -> dict[str, 
     """Delete a shift template, its variants, generated slots, and assignments. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        return {"deleted": delete_shift_template(db, shift_template_id, actor="mcp", source="mcp")}
+        return {
+            "deleted": delete_shift_template(
+                db, shift_template_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
+        }
 
 
 @mcp.tool
@@ -359,6 +402,7 @@ def create_shift_variant_tool(
                 end_day_offset=end_day_offset,
                 required_count=required_count,
             ),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -371,7 +415,12 @@ def create_shift_variant_tool(
 def preview_shift_slots_tool(year: int, month: int) -> list[dict[str, Any]]:
     """Preview generated concrete roster slots for a month."""
     with db_session() as db:
-        return [slot.model_dump(mode="json") for slot in preview_slots_for_month(db, year=year, month=month)]
+        return [
+            slot.model_dump(mode="json")
+            for slot in preview_slots_for_month(
+                db, year=year, month=month, organization_id=mcp_organization_id()
+            )
+        ]
 
 
 @mcp.tool
@@ -379,7 +428,13 @@ def create_planning_period_tool(token: str, year: int, month: int) -> dict[str, 
     """Create or return a monthly planning period. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        period = create_planning_period(db, PlanningPeriodCreate(year=year, month=month), actor="mcp", source="mcp")
+        period = create_planning_period(
+            db,
+            PlanningPeriodCreate(year=year, month=month),
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
         return serialize_model(period)
 
 
@@ -388,8 +443,12 @@ def regenerate_planning_period_roster_tool(token: str, planning_period_id: int) 
     """Delete roster slots and assignments for a period, then regenerate slots from current templates."""
     require_token(token)
     with db_session() as db:
-        reset_roster_slots_for_period(db, planning_period_id, actor="mcp", source="mcp")
-        return get_roster_matrix(db, planning_period_id).model_dump(mode="json")
+        reset_roster_slots_for_period(
+            db, planning_period_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return get_roster_matrix(db, planning_period_id, organization_id=mcp_organization_id()).model_dump(
+            mode="json"
+        )
 
 
 @mcp.tool
@@ -397,7 +456,11 @@ def delete_planning_period_tool(token: str, planning_period_id: int) -> dict[str
     """Delete a planning period and all related wishes, notes, roster slots, and assignments."""
     require_token(token)
     with db_session() as db:
-        return {"deleted": delete_planning_period(db, planning_period_id, actor="mcp", source="mcp")}
+        return {
+            "deleted": delete_planning_period(
+                db, planning_period_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
+        }
 
 
 @mcp.tool
@@ -421,6 +484,7 @@ def upsert_planning_cell_tool(
                 status=status,  # type: ignore[arg-type]
                 comment=comment,
             ),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -449,7 +513,9 @@ def bulk_upsert_planning_cells_tool(
     with db_session() as db:
         return [
             serialize_model(cell)
-            for cell in bulk_upsert_planning_cells(db, planning_period_id, payload, actor="mcp", source="mcp")
+            for cell in bulk_upsert_planning_cells(
+                db, planning_period_id, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
         ]
 
 
@@ -478,7 +544,9 @@ def bulk_upsert_planning_shift_intents_tool(
     with db_session() as db:
         return [
             serialize_model(item)
-            for item in bulk_upsert_planning_shift_intents(db, planning_period_id, payload, actor="mcp", source="mcp")
+            for item in bulk_upsert_planning_shift_intents(
+                db, planning_period_id, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
         ]
 
 
@@ -497,6 +565,7 @@ def save_doctor_period_note_tool(
             db,
             planning_period_id,
             DoctorPeriodNoteUpsert(doctor_id=doctor_id, source_text=source_text, summary=summary),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -522,6 +591,7 @@ def upsert_roster_slot_assignment_tool(
                 comment=comment,
                 manual_override=manual_override,
             ),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -536,6 +606,7 @@ def clear_roster_slot_assignment_tool(token: str, roster_slot_id: int) -> dict[s
         deleted = clear_roster_slot_assignment(
             db,
             RosterSlotAssignmentClear(roster_slot_id=roster_slot_id),
+            organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
         )
@@ -547,7 +618,11 @@ def delete_shift_variant_tool(token: str, shift_variant_id: int) -> dict[str, bo
     """Delete a shift variant and clear generated slots/assignments for it. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        return {"deleted": delete_shift_variant(db, shift_variant_id, actor="mcp", source="mcp")}
+        return {
+            "deleted": delete_shift_variant(
+                db, shift_variant_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
+        }
 
 
 if __name__ == "__main__":

@@ -10,8 +10,11 @@ export type MeUser = {
   email: string;
   role: string;
   locale: string;
+  organization_id: number;
   doctor_id: number | null;
   shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
+  planner_shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
+  capabilities: { admin: boolean; planning: boolean; doctor_portal: boolean };
 };
 
 type SessionValue = {

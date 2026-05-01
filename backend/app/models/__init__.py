@@ -3,6 +3,7 @@ from app.models.entities import (
     Doctor,
     DoctorPeriodNote,
     DoctorShiftGroup,
+    Organization,
     PlanningCell,
     PlanningPeriod,
     PlanningShiftIntent,
@@ -14,6 +15,7 @@ from app.models.entities import (
     ShiftTemplate,
     ShiftVariant,
     User,
+    UserShiftGroup,
 )
 
 __all__ = [
@@ -21,6 +23,7 @@ __all__ = [
     "DoctorPeriodNote",
     "Doctor",
     "DoctorShiftGroup",
+    "Organization",
     "PlanningPeriod",
     "PlanningCell",
     "PlanningShiftIntent",
@@ -32,4 +35,5 @@ __all__ = [
     "ShiftTemplate",
     "ShiftVariant",
     "User",
+    "UserShiftGroup",
 ]

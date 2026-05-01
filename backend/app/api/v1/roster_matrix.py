@@ -10,7 +10,11 @@ from app.schemas import (
     RosterSlotAssignmentRead,
     RosterSlotAssignmentUpsert,
 )
-from app.services.authz import assert_doctor_shift_group_access, is_planner
+from app.services.authz import (
+    assert_doctor_shift_group_access,
+    assert_planning_shift_group_scope,
+    use_doctor_roster_publish_gate,
+)
 from app.services.roster_matrix import (
     clear_roster_slot_assignment,
     get_roster_matrix,
@@ -27,9 +31,9 @@ def get_final_roster_matrix(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not is_planner(user):
+    if use_doctor_roster_publish_gate(db, user):
         period = db.get(PlanningPeriod, planning_period_id)
-        if period is None:
+        if period is None or period.organization_id != user.organization_id:
             raise HTTPException(status_code=404, detail="Planning period not found")
         if period.status != "published":
             raise HTTPException(status_code=403, detail="Roster is not published yet")
@@ -39,8 +43,15 @@ def get_final_roster_matrix(
             assert_doctor_shift_group_access(db, user, shift_group_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+    else:
+        try:
+            assert_planning_shift_group_scope(db, user, shift_group_id)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
-        return get_roster_matrix(db, planning_period_id, shift_group_id=shift_group_id)
+        return get_roster_matrix(
+            db, planning_period_id, organization_id=user.organization_id, shift_group_id=shift_group_id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -52,7 +63,9 @@ def put_roster_slot_assignment(
     user: User = Depends(get_current_planner),
 ):
     try:
-        return upsert_roster_slot_assignment(db, payload, actor=user.email, source="rest")
+        return upsert_roster_slot_assignment(
+            db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+        )
     except ValueError as exc:
         detail = str(exc)
         if detail == "Roster slot not found":
@@ -66,5 +79,7 @@ def clear_assignment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    deleted = clear_roster_slot_assignment(db, payload, actor=user.email, source="rest")
+    deleted = clear_roster_slot_assignment(
+        db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+    )
     return {"deleted": deleted}

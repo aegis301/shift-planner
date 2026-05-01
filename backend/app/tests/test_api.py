@@ -9,7 +9,8 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.core.security import hash_password
 from app.main import app
-from app.models import Doctor, DoctorShiftGroup, ShiftGroup, User
+from app.models import Doctor, DoctorShiftGroup, Organization, ShiftGroup, User, UserShiftGroup
+from app.services.authz import ROLE_PLANNER
 from app.models.base import Base
 
 
@@ -24,7 +25,17 @@ def client():
     Base.metadata.create_all(engine)
 
     with TestingSessionLocal() as db:
-        db.add(User(email="admin@example.com", hashed_password=hash_password("secret"), role="admin", locale="de"))
+        db.add(Organization(id=1, name="Default", plan_tier="team"))
+        db.flush()
+        db.add(
+            User(
+                email="admin@example.com",
+                hashed_password=hash_password("secret"),
+                role="admin",
+                locale="de",
+                organization_id=1,
+            )
+        )
         db.commit()
 
     def override_get_db():
@@ -50,14 +61,37 @@ def doctor_client():
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(engine)
     with TestingSessionLocal() as db:
-        db.add(User(email="admin@example.com", hashed_password=hash_password("secret"), role="admin", locale="de"))
-        doc_user = User(email="doc@example.com", hashed_password=hash_password("docsecret"), role="doctor", locale="de")
+        db.add(Organization(id=1, name="Default", plan_tier="team"))
+        db.flush()
+        db.add(
+            User(
+                email="admin@example.com",
+                hashed_password=hash_password("secret"),
+                role="admin",
+                locale="de",
+                organization_id=1,
+            )
+        )
+        doc_user = User(
+            email="doc@example.com",
+            hashed_password=hash_password("docsecret"),
+            role="doctor",
+            locale="de",
+            organization_id=1,
+        )
         db.add(doc_user)
         db.flush()
-        doctor = Doctor(first_name="Seeded", last_name="Doctor", email="docperson@example.com", employment_percentage=100, user_id=doc_user.id)
+        doctor = Doctor(
+            organization_id=1,
+            first_name="Seeded",
+            last_name="Doctor",
+            email="docperson@example.com",
+            employment_percentage=100,
+            user_id=doc_user.id,
+        )
         db.add(doctor)
         db.flush()
-        sg = ShiftGroup(code="docsg", name_de="Doc G", name_en="Doc G", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="docsg", name_de="Doc G", name_en="Doc G", display_order=0)
         db.add(sg)
         db.flush()
         db.add(DoctorShiftGroup(doctor_id=doctor.id, shift_group_id=sg.id))
@@ -642,6 +676,108 @@ def test_publish_planning_period(client: TestClient):
 def test_doctor_shift_templates_forbidden(doctor_client: TestClient):
     login_doctor(doctor_client)
     assert doctor_client.get("/api/v1/shift-templates").status_code == 403
+
+
+@pytest.fixture()
+def planner_client():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="Default", plan_tier="team"))
+        db.flush()
+        db.add(
+            User(
+                email="admin@example.com",
+                hashed_password=hash_password("secret"),
+                role="admin",
+                locale="de",
+                organization_id=1,
+            )
+        )
+        planner_user = User(
+            email="planner@example.com",
+            hashed_password=hash_password("plannersecret"),
+            role=ROLE_PLANNER,
+            locale="de",
+            organization_id=1,
+        )
+        db.add(planner_user)
+        db.flush()
+        sg = ShiftGroup(organization_id=1, code="sg1", name_de="SG", name_en="SG", display_order=0)
+        db.add(sg)
+        db.flush()
+        db.add(UserShiftGroup(user_id=planner_user.id, shift_group_id=sg.id))
+        doctor = Doctor(
+            organization_id=1,
+            first_name="In",
+            last_name="Group",
+            email="ingroup@example.com",
+            employment_percentage=100,
+        )
+        db.add(doctor)
+        db.flush()
+        db.add(DoctorShiftGroup(doctor_id=doctor.id, shift_group_id=sg.id))
+        other = Doctor(
+            organization_id=1,
+            first_name="Out",
+            last_name="Group",
+            email="outgroup@example.com",
+            employment_percentage=100,
+        )
+        db.add(other)
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+def login_planner(cl: TestClient) -> None:
+    response = cl.post("/api/v1/auth/login", json={"email": "planner@example.com", "password": "plannersecret"})
+    assert response.status_code == 200
+
+
+def test_planner_cannot_post_shift_template(planner_client: TestClient):
+    login_planner(planner_client)
+    response = planner_client.post(
+        "/api/v1/shift-templates",
+        json={"code": "X", "name_de": "X", "name_en": "X", "category": "other"},
+    )
+    assert response.status_code == 403
+
+
+def test_planner_cannot_post_planning_period(planner_client: TestClient):
+    login_planner(planner_client)
+    response = planner_client.post("/api/v1/planning-periods", json={"year": 2050, "month": 1})
+    assert response.status_code == 403
+
+
+def test_planner_doctors_list_scoped(planner_client: TestClient):
+    login_planner(planner_client)
+    doctors = planner_client.get("/api/v1/doctors").json()
+    assert len(doctors) == 1
+    assert doctors[0]["email"] == "ingroup@example.com"
+
+
+def test_planner_matrix_requires_shift_group(planner_client: TestClient):
+    login(planner_client)
+    pid = planner_client.post("/api/v1/planning-periods", json={"year": 2040, "month": 1}).json()["id"]
+    login_planner(planner_client)
+    assert planner_client.get(f"/api/v1/matrix/{pid}").status_code == 403
+    assert planner_client.get(f"/api/v1/matrix/{pid}?shift_group_id=1").status_code == 200
 
 
 def test_doctor_matrix_requires_shift_group(doctor_client: TestClient):

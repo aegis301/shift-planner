@@ -137,20 +137,22 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
 
-  const plannerUi = variant === "planner" && me?.role === "admin";
-  const doctorUi = variant === "doctor" && me?.role === "doctor";
+  const planningUi = variant === "planner" && Boolean(me?.capabilities?.planning);
+  const adminUi = variant === "planner" && Boolean(me?.capabilities?.admin);
+  const doctorUi = variant === "doctor" && Boolean(me?.capabilities?.doctor_portal);
   const editableDoctorId = doctorUi && me?.doctor_id != null ? me.doctor_id : undefined;
   const waitingForDoctorSession = variant === "doctor" && (sessionLoading || !doctorUi);
+  const plannerNeedsShiftGroup = planningUi && !adminUi;
 
   useEffect(() => {
     if (sessionLoading || !me) {
       return;
     }
-    if (variant === "planner" && me.role === "doctor") {
-      router.replace("/my-planning");
+    if (variant === "planner" && !me.capabilities?.planning) {
+      router.replace(me.capabilities?.doctor_portal ? "/my-planning" : "/");
     }
-    if (variant === "doctor" && me.role !== "doctor") {
-      router.replace("/planning");
+    if (variant === "doctor" && !me.capabilities?.doctor_portal) {
+      router.replace(me.capabilities?.planning ? "/planning" : "/");
     }
   }, [me, router, sessionLoading, variant]);
 
@@ -164,11 +166,22 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   }, [searchParams]);
 
   useEffect(() => {
-    if (!plannerUi) {
+    if (!planningUi || !me) {
       return;
     }
-    void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
-  }, [plannerUi]);
+    if (me.capabilities?.admin) {
+      void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
+      return;
+    }
+    setShiftGroups(
+      (me.planner_shift_groups ?? []).map((g) => ({
+        id: g.id,
+        code: g.code,
+        name_de: g.name_de,
+        name_en: g.name_en
+      }))
+    );
+  }, [planningUi, me]);
 
   useEffect(() => {
     if (variant !== "doctor" || !me?.shift_groups?.length) {
@@ -189,13 +202,13 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
 
   const loadWarnings = useCallback(
     async (nextPeriodId: string) => {
-      if (!nextPeriodId || !plannerUi) {
+      if (!nextPeriodId || !planningUi) {
         setWarnings([]);
         return;
       }
       setWarnings(await apiFetch<ValidationWarning[]>(`/api/v1/validation/${nextPeriodId}${shiftGroupQuery}`));
     },
-    [plannerUi, shiftGroupQuery]
+    [planningUi, shiftGroupQuery]
   );
 
   const loadRosterMatrix = useCallback(
@@ -248,6 +261,19 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
     }
   }, [variant, me, shiftGroupId, pathname, router, searchParams]);
 
+  useEffect(() => {
+    if (variant !== "planner" || !me?.capabilities?.planning || me.capabilities.admin || !me.planner_shift_groups?.length || shiftGroupId) {
+      return;
+    }
+    if (me.planner_shift_groups.length === 1) {
+      const id = String(me.planner_shift_groups[0].id);
+      setShiftGroupId(id);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("shiftGroup", id);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [variant, me, shiftGroupId, pathname, router, searchParams]);
+
   const refreshPeriods = useCallback(async () => {
     const next = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
     setPeriods(next);
@@ -264,12 +290,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   }, [refreshPeriods, waitingForDoctorSession]);
 
   useEffect(() => {
-    if (!periodId || waitingForDoctorSession || (doctorUi && !shiftGroupId)) {
+    if (!periodId || waitingForDoctorSession || (doctorUi && !shiftGroupId) || (plannerNeedsShiftGroup && !shiftGroupId)) {
       return;
     }
     void loadWarnings(periodId);
     void loadRosterMatrix(periodId);
-  }, [doctorUi, loadRosterMatrix, loadWarnings, periodId, shiftGroupId, waitingForDoctorSession]);
+  }, [doctorUi, loadRosterMatrix, loadWarnings, periodId, plannerNeedsShiftGroup, shiftGroupId, waitingForDoctorSession]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -340,7 +366,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
       </div>
-      {doctorUi && !shiftGroupId ? (
+      {(doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <MatrixEditor
@@ -360,7 +386,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
       </div>
-      {doctorUi && !shiftGroupId ? (
+      {(doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <RosterMatrixEditor
@@ -410,7 +436,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
                   onChange={(event) => updateShiftGroup(event.target.value)}
                   title={t(locale, "planningShiftGroupHelp")}
                 >
-                  {!doctorUi ? <option value="">{t(locale, "allShiftGroupsLabel")}</option> : null}
+                  {adminUi ? <option value="">{t(locale, "allShiftGroupsLabel")}</option> : null}
                   {shiftGroups.map((group) => (
                     <option key={group.id} value={String(group.id)}>
                       {locale === "de" ? group.name_de : group.name_en} ({group.code})
@@ -418,17 +444,19 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
                   ))}
                 </select>
               </Field>
-              {plannerUi ? (
+              {planningUi ? (
                 <>
-                  <button
-                    aria-label={t(locale, "createPeriod")}
-                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-mint text-ink ring-1 ring-mint/60"
-                    onClick={() => setIsCreateModalOpen(true)}
-                    title={t(locale, "createPeriod")}
-                    type="button"
-                  >
-                    <Plus size={19} />
-                  </button>
+                  {adminUi ? (
+                    <button
+                      aria-label={t(locale, "createPeriod")}
+                      className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-mint text-ink ring-1 ring-mint/60"
+                      onClick={() => setIsCreateModalOpen(true)}
+                      title={t(locale, "createPeriod")}
+                      type="button"
+                    >
+                      <Plus size={19} />
+                    </button>
+                  ) : null}
                   <button
                     aria-label={t(locale, "exports")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
@@ -463,16 +491,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
                   >
                     <RotateCw size={18} />
                   </button>
-                  <button
-                    aria-label={t(locale, "deletePlanningPeriod")}
-                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={!periodId}
-                    onClick={() => setDestructiveAction("delete-period")}
-                    title={t(locale, "deletePlanningPeriod")}
-                    type="button"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  {adminUi ? (
+                    <button
+                      aria-label={t(locale, "deletePlanningPeriod")}
+                      className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!periodId}
+                      onClick={() => setDestructiveAction("delete-period")}
+                      title={t(locale, "deletePlanningPeriod")}
+                      type="button"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  ) : null}
                   <div className="mt-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
                     <button
                       aria-label={t(locale, "stackedView")}
@@ -566,14 +596,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
             </div>
             <div className="grid gap-3">
               <a
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                  plannerNeedsShiftGroup && !shiftGroupId ? "pointer-events-none opacity-40" : ""
+                }`}
                 href={`${API_BASE_URL}/api/v1/exports/matrix/${periodId}.csv${shiftGroupQuery}`}
               >
                 <Download size={17} />
                 {t(locale, "wishesCsvExport")}
               </a>
               <a
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                  plannerNeedsShiftGroup && !shiftGroupId ? "pointer-events-none opacity-40" : ""
+                }`}
                 href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.csv${shiftGroupQuery}`}
               >
                 <Download size={17} />

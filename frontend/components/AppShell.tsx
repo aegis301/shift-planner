@@ -2,25 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
 import { CalendarDays, Languages, LogOut, Settings, Sparkles, Stethoscope, UserRound, UsersRound } from "lucide-react";
 import { useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
-import { Locale, t } from "@/lib/i18n";
+import { Locale, t, TranslationKey } from "@/lib/i18n";
 
-const plannerNav = [
-  { href: "/", key: "dashboard", icon: Sparkles },
-  { href: "/planning", key: "planning", icon: CalendarDays },
-  { href: "/doctors", key: "doctors", icon: Stethoscope },
-  { href: "/shift-groups", key: "shiftGroups", icon: UsersRound },
-  { href: "/shift-types", key: "shiftTypes", icon: CalendarDays },
-  { href: "/settings", key: "settings", icon: Settings }
-] as const;
-
-const doctorNav = [
-  { href: "/", key: "dashboard", icon: Sparkles },
-  { href: "/my-planning", key: "myPlanning", icon: CalendarDays },
-  { href: "/profile", key: "profile", icon: UserRound }
-] as const;
+type NavItem = { href: string; key: TranslationKey; icon: LucideIcon };
 
 export function AppShell({
   locale,
@@ -34,7 +22,24 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const { me, loading, refreshMe } = useSession();
-  const isDoctor = me?.role === "doctor";
+
+  const navItems: NavItem[] = [];
+  if (me) {
+    navItems.push({ href: "/", key: "dashboard", icon: Sparkles });
+    if (me.capabilities.planning) {
+      navItems.push({ href: "/planning", key: "planning", icon: CalendarDays });
+    }
+    if (me.capabilities.doctor_portal) {
+      navItems.push({ href: "/my-planning", key: "myPlanning", icon: CalendarDays });
+      navItems.push({ href: "/profile", key: "profile", icon: UserRound });
+    }
+    if (me.capabilities.admin) {
+      navItems.push({ href: "/doctors", key: "doctors", icon: Stethoscope });
+      navItems.push({ href: "/shift-groups", key: "shiftGroups", icon: UsersRound });
+      navItems.push({ href: "/shift-types", key: "shiftTypes", icon: CalendarDays });
+    }
+    navItems.push({ href: "/settings", key: "settings", icon: Settings });
+  }
 
   async function logout() {
     try {
@@ -46,8 +51,6 @@ export function AppShell({
     router.push("/login");
     router.refresh();
   }
-
-  const navItems = isDoctor ? doctorNav : plannerNav;
 
   return (
     <div className="min-h-screen">

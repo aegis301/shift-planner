@@ -27,13 +27,13 @@ function ProfileContent() {
     if (loading) {
       return;
     }
-    if (!me || me.role !== "doctor") {
-      router.replace("/planning");
+    if (!me || !me.capabilities?.doctor_portal) {
+      router.replace(me?.capabilities?.planning ? "/planning" : "/");
     }
   }, [loading, me, router]);
 
   useEffect(() => {
-    if (!me || me.role !== "doctor") {
+    if (!me || !me.capabilities?.doctor_portal) {
       return;
     }
     void apiFetch<DoctorRead>("/api/v1/auth/me/doctor")
@@ -58,7 +58,7 @@ function ProfileContent() {
     await refreshMe();
   }
 
-  if (loading || !me || me.role !== "doctor") {
+  if (loading || !me || !me.capabilities?.doctor_portal) {
     return null;
   }
 

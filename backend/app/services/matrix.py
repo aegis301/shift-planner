@@ -33,6 +33,13 @@ def _cell_date_in_period(period: PlanningPeriod, cell_date: date) -> bool:
     return cell_date.year == period.year and cell_date.month == period.month
 
 
+def _require_period_org(db: Session, planning_period_id: int, organization_id: int) -> PlanningPeriod:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None or period.organization_id != organization_id:
+        raise ValueError("Planning period not found")
+    return period
+
+
 def list_planning_cells(db: Session, *, planning_period_id: int) -> list[PlanningCell]:
     stmt = (
         select(PlanningCell)
@@ -55,15 +62,21 @@ def list_planning_shift_intents(db: Session, *, planning_period_id: int) -> list
     return list(db.scalars(stmt))
 
 
-def get_planning_matrix(db: Session, planning_period_id: int, *, shift_group_id: int | None = None) -> PlanningMatrixRead:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+def get_planning_matrix(
+    db: Session, planning_period_id: int, *, organization_id: int, shift_group_id: int | None = None
+) -> PlanningMatrixRead:
+    period = _require_period_org(db, planning_period_id, organization_id)
 
-    doctors = list(db.scalars(select(Doctor).where(Doctor.is_active.is_(True)).order_by(Doctor.last_name, Doctor.first_name)))
+    doctors = list(
+        db.scalars(
+            select(Doctor)
+            .where(Doctor.organization_id == organization_id, Doctor.is_active.is_(True))
+            .order_by(Doctor.last_name, Doctor.first_name)
+        )
+    )
     group_template_ids: set[int] = set()
     if shift_group_id is not None:
-        require_shift_group(db, shift_group_id)
+        require_shift_group(db, shift_group_id, organization_id)
         allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
         doctors = [doctor for doctor in doctors if doctor.id in allowed_doctor_ids]
         group_template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
@@ -85,7 +98,7 @@ def get_planning_matrix(db: Session, planning_period_id: int, *, shift_group_id:
             for row in all_intents
             if row.shift_group_id == shift_group_id and row.doctor_id in allowed_doctor_ids
         ]
-        templates = list_shift_templates(db, active_only=True)
+        templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
         by_id = {template.id: template for template in templates}
         shift_templates_out = [
             ShiftTemplateRead.model_validate(by_id[tid])
@@ -93,7 +106,7 @@ def get_planning_matrix(db: Session, planning_period_id: int, *, shift_group_id:
             if tid in by_id
         ]
         slot_pairs: set[tuple[date, int]] = set()
-        for slot in generate_slots_for_month(db, year=period.year, month=period.month):
+        for slot in generate_slots_for_month(db, year=period.year, month=period.month, organization_id=organization_id):
             if slot.template_id in group_template_ids:
                 slot_pairs.add((slot.slot_date, slot.template_id))
         template_slot_days = [
@@ -124,12 +137,11 @@ def upsert_planning_cell(
     planning_period_id: int,
     payload: PlanningCellUpsert,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> PlanningCell:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+    period = _require_period_org(db, planning_period_id, organization_id)
     if not _cell_date_in_period(period, payload.cell_date):
         raise ValueError("Cell date is outside the planning period month")
     cell = db.scalar(
@@ -180,12 +192,11 @@ def bulk_upsert_planning_cells(
     planning_period_id: int,
     payload: PlanningCellBulkUpsert,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> list[PlanningCell]:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+    period = _require_period_org(db, planning_period_id, organization_id)
     for cell_payload in payload.cells:
         if not _cell_date_in_period(period, cell_payload.cell_date):
             raise ValueError("Cell date is outside the planning period month")
@@ -248,9 +259,11 @@ def clear_planning_cell(
     planning_period_id: int,
     payload: PlanningCellClear,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> bool:
+    _require_period_org(db, planning_period_id, organization_id)
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
@@ -275,13 +288,14 @@ def clear_planning_cell(
 
 
 def list_doctor_period_notes(
-    db: Session, *, planning_period_id: int, shift_group_id: int | None = None
+    db: Session, *, planning_period_id: int, organization_id: int, shift_group_id: int | None = None
 ) -> list[DoctorPeriodNote]:
+    _require_period_org(db, planning_period_id, organization_id)
     stmt = select(DoctorPeriodNote).where(DoctorPeriodNote.planning_period_id == planning_period_id)
     notes = list(db.scalars(stmt.order_by(DoctorPeriodNote.doctor_id)))
     if shift_group_id is None:
         return notes
-    require_shift_group(db, shift_group_id)
+    require_shift_group(db, shift_group_id, organization_id)
     allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
     return [note for note in notes if note.doctor_id in allowed_doctor_ids]
 
@@ -300,9 +314,11 @@ def save_doctor_period_note(
     planning_period_id: int,
     payload: DoctorPeriodNoteUpsert,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> DoctorPeriodNote:
+    _require_period_org(db, planning_period_id, organization_id)
     note = get_doctor_period_note(db, planning_period_id=planning_period_id, doctor_id=payload.doctor_id)
     if note is None:
         note = DoctorPeriodNote(planning_period_id=planning_period_id, **payload.model_dump())
@@ -332,17 +348,16 @@ def bulk_upsert_planning_shift_intents(
     planning_period_id: int,
     payload: PlanningShiftIntentBulkUpsert,
     *,
+    organization_id: int,
     actor: str,
     source: str,
 ) -> list[PlanningShiftIntent]:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None:
-        raise ValueError("Planning period not found")
+    period = _require_period_org(db, planning_period_id, organization_id)
     out: list[PlanningShiftIntent] = []
     for item in payload.intents:
         if not _cell_date_in_period(period, item.cell_date):
             raise ValueError("Cell date is outside the planning period month")
-        require_shift_group(db, item.shift_group_id)
+        require_shift_group(db, item.shift_group_id, organization_id)
         allowed_doctors = active_doctor_ids_in_shift_group(db, item.shift_group_id)
         if item.doctor_id not in allowed_doctors:
             raise ValueError("Doctor is not a member of this shift group")

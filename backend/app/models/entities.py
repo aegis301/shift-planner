@@ -6,21 +6,45 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 
-class ShiftGroup(Base):
-    __tablename__ = "shift_groups"
+class Organization(Base):
+    __tablename__ = "organizations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), default="Default")
+    plan_tier: Mapped[str] = mapped_column(String(50), default="team")
+    seat_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    billing_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    subscription_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    users: Mapped[list["User"]] = relationship(back_populates="organization")
+    doctors: Mapped[list["Doctor"]] = relationship(back_populates="organization")
+    shift_groups: Mapped[list["ShiftGroup"]] = relationship(back_populates="organization")
+    shift_templates: Mapped[list["ShiftTemplate"]] = relationship(back_populates="organization")
+    planning_periods: Mapped[list["PlanningPeriod"]] = relationship(back_populates="organization")
+
+
+class ShiftGroup(Base):
+    __tablename__ = "shift_groups"
+    __table_args__ = (UniqueConstraint("organization_id", "code", name="uq_shift_group_org_code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    code: Mapped[str] = mapped_column(String(50), index=True)
     name_de: Mapped[str] = mapped_column(String(255))
     name_en: Mapped[str] = mapped_column(String(255))
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    organization: Mapped["Organization"] = relationship(back_populates="shift_groups")
     doctor_links: Mapped[list["DoctorShiftGroup"]] = relationship(
         back_populates="shift_group", cascade="all, delete-orphan"
     )
     template_links: Mapped[list["ShiftGroupShiftTemplate"]] = relationship(
+        back_populates="shift_group", cascade="all, delete-orphan"
+    )
+    planner_links: Mapped[list["UserShiftGroup"]] = relationship(
         back_populates="shift_group", cascade="all, delete-orphan"
     )
 
@@ -53,6 +77,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(50), default="admin")
@@ -60,6 +85,10 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    organization: Mapped["Organization"] = relationship(back_populates="users")
+    planner_shift_group_links: Mapped[list["UserShiftGroup"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     linked_doctor: Mapped["Doctor | None"] = relationship(
         back_populates="user",
         uselist=False,
@@ -67,19 +96,34 @@ class User(Base):
     )
 
 
-class Doctor(Base):
-    __tablename__ = "doctors"
+class UserShiftGroup(Base):
+    __tablename__ = "user_shift_groups"
+    __table_args__ = (UniqueConstraint("user_id", "shift_group_id", name="uq_user_shift_group"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+
+    user: Mapped["User"] = relationship(back_populates="planner_shift_group_links")
+    shift_group: Mapped["ShiftGroup"] = relationship(back_populates="planner_links")
+
+
+class Doctor(Base):
+    __tablename__ = "doctors"
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_doctor_org_email"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     first_name: Mapped[str] = mapped_column(String(255))
     last_name: Mapped[str] = mapped_column(String(255))
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
     employment_percentage: Mapped[int] = mapped_column(Integer, default=100)
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    organization: Mapped["Organization"] = relationship(back_populates="doctors")
     user: Mapped["User | None"] = relationship(back_populates="linked_doctor", foreign_keys=[user_id])
     shift_group_links: Mapped[list["DoctorShiftGroup"]] = relationship(
         back_populates="doctor", cascade="all, delete-orphan"
@@ -88,9 +132,11 @@ class Doctor(Base):
 
 class ShiftTemplate(Base):
     __tablename__ = "shift_templates"
+    __table_args__ = (UniqueConstraint("organization_id", "code", name="uq_shift_template_org_code"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    code: Mapped[str] = mapped_column(String(50), index=True)
     name_de: Mapped[str] = mapped_column(String(255))
     name_en: Mapped[str] = mapped_column(String(255))
     category: Mapped[str] = mapped_column(String(50))
@@ -98,6 +144,7 @@ class ShiftTemplate(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    organization: Mapped["Organization"] = relationship(back_populates="shift_templates")
     variants: Mapped[list["ShiftVariant"]] = relationship(back_populates="shift_template", cascade="all, delete-orphan")
     shift_group_links: Mapped[list["ShiftGroupShiftTemplate"]] = relationship(
         back_populates="shift_template", cascade="all, delete-orphan"
@@ -124,14 +171,17 @@ class ShiftVariant(Base):
 
 class PlanningPeriod(Base):
     __tablename__ = "planning_periods"
-    __table_args__ = (UniqueConstraint("year", "month", name="uq_planning_period_month"),)
+    __table_args__ = (UniqueConstraint("organization_id", "year", "month", name="uq_planning_period_org_month"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     year: Mapped[int] = mapped_column(Integer)
     month: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(50), default="draft")
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    organization: Mapped["Organization"] = relationship(back_populates="planning_periods")
 
 
 class RuleConfig(Base):
