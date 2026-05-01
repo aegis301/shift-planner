@@ -13,7 +13,8 @@ from app.schemas import (
 from app.services.authz import (
     assert_doctor_shift_group_access,
     assert_planning_shift_group_scope,
-    use_doctor_roster_publish_gate,
+    can_use_planning_ui,
+    get_linked_doctor,
 )
 from app.services.roster_matrix import (
     clear_roster_slot_assignment,
@@ -28,26 +29,36 @@ router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
 def get_final_roster_matrix(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
+    doctor_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if use_doctor_roster_publish_gate(db, user):
-        period = db.get(PlanningPeriod, planning_period_id)
-        if period is None or period.organization_id != user.organization_id:
-            raise HTTPException(status_code=404, detail="Planning period not found")
-        if period.status != "published":
-            raise HTTPException(status_code=403, detail="Roster is not published yet")
-        if shift_group_id is None:
-            raise HTTPException(status_code=400, detail="shift_group_id is required")
-        try:
-            assert_doctor_shift_group_access(db, user, shift_group_id)
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-    else:
+    if can_use_planning_ui(user) and not doctor_portal:
         try:
             assert_planning_shift_group_scope(db, user, shift_group_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        try:
+            return get_roster_matrix(
+                db, planning_period_id, organization_id=user.organization_id, shift_group_id=shift_group_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    linked = get_linked_doctor(db, user.id)
+    if linked is None:
+        raise HTTPException(status_code=403, detail="No linked doctor profile")
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None or period.organization_id != user.organization_id:
+        raise HTTPException(status_code=404, detail="Planning period not found")
+    if period.status != "published":
+        raise HTTPException(status_code=403, detail="Roster is not published yet")
+    if shift_group_id is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
+    try:
+        assert_doctor_shift_group_access(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
         return get_roster_matrix(
             db, planning_period_id, organization_id=user.organization_id, shift_group_id=shift_group_id

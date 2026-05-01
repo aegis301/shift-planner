@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     admin_email: str = "admin@example.com"
     admin_password: str = "change-me"
     doctor_seed_password: str = "change-me-doctors"
+    planner_seed_email: str | None = None
+    planner_seed_password: str = "change-me-planner"
     mcp_admin_token: str = "change-me-mcp-token"
     default_organization_id: int = 1
     backend_cors_origins: str = "http://localhost:3000"

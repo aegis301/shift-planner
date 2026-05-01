@@ -25,7 +25,7 @@ def client():
     Base.metadata.create_all(engine)
 
     with TestingSessionLocal() as db:
-        db.add(Organization(id=1, name="Default", plan_tier="team"))
+        db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
         db.flush()
         db.add(
             User(
@@ -61,7 +61,7 @@ def doctor_client():
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(engine)
     with TestingSessionLocal() as db:
-        db.add(Organization(id=1, name="Default", plan_tier="team"))
+        db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
         db.flush()
         db.add(
             User(
@@ -111,17 +111,162 @@ def doctor_client():
 
 
 def login(client: TestClient) -> None:
-    response = client.post("/api/v1/auth/login", json={"email": "admin@example.com", "password": "secret"})
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin@example.com",
+            "password": "secret",
+            "organization_slug": "default",
+        },
+    )
     assert response.status_code == 200
 
 
 def login_doctor(cl: TestClient) -> None:
-    response = cl.post("/api/v1/auth/login", json={"email": "doc@example.com", "password": "docsecret"})
+    response = cl.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "doc@example.com",
+            "password": "docsecret",
+            "organization_slug": "default",
+        },
+    )
     assert response.status_code == 200
 
 
 def test_health(client: TestClient):
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_delete_own_account_wrong_password(client: TestClient):
+    login(client)
+    response = client.post("/api/v1/auth/delete-account", json={"password": "wrong"})
+    assert response.status_code == 400
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_delete_own_account_sole_admin_forbidden(client: TestClient):
+    login(client)
+    response = client.post("/api/v1/auth/delete-account", json={"password": "secret"})
+    assert response.status_code == 400
+    assert "only" in response.json()["detail"].lower() and "admin" in response.json()["detail"].lower()
+    assert client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_delete_own_account_doctor_user(doctor_client: TestClient):
+    login_doctor(doctor_client)
+    response = doctor_client.post("/api/v1/auth/delete-account", json={"password": "docsecret"})
+    assert response.status_code == 204
+    assert doctor_client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_auth_me_includes_organization(client: TestClient):
+    login(client)
+    data = client.get("/api/v1/auth/me").json()
+    assert data["organization_id"] == 1
+    assert data["organization"]["id"] == 1
+    assert data["organization"]["name"] == "Default"
+    assert data["organization"]["slug"] == "default"
+    assert data["organization"]["plan_tier"] == "team"
+
+
+def test_organization_users_list_for_admin(client: TestClient):
+    login(client)
+    response = client.get("/api/v1/organization/users")
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) >= 1
+    admin_row = next(r for r in rows if r["email"] == "admin@example.com")
+    assert admin_row["role"] == "admin"
+    assert admin_row["id"] >= 1
+
+
+def test_organization_users_forbidden_for_doctor(doctor_client: TestClient):
+    login_doctor(doctor_client)
+    assert doctor_client.get("/api/v1/organization/users").status_code == 403
+
+
+def test_register_create_organization(client: TestClient):
+    response = client.post(
+        "/api/v1/auth/register/create-organization",
+        json={
+            "organization_name": "New Hospital",
+            "organization_slug": "new-hospital-test",
+            "email": "founder@regtest.example",
+            "password": "founderpass1",
+            "locale": "en",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["role"] == "admin"
+    assert data["organization"]["slug"] == "new-hospital-test"
+    me = client.get("/api/v1/auth/me").json()
+    assert me["email"] == "founder@regtest.example"
+
+
+def test_register_join_and_approve_create_doctor(client: TestClient):
+    r0 = client.post(
+        "/api/v1/auth/register/create-organization",
+        json={
+            "organization_name": "Join Flow Org",
+            "organization_slug": "join-flow-org",
+            "email": "owner@joinflow.example",
+            "password": "ownerpass12",
+            "locale": "de",
+        },
+    )
+    assert r0.status_code == 200
+    client.post("/api/v1/auth/logout")
+    r1 = client.post(
+        "/api/v1/auth/register/join-organization",
+        json={
+            "organization_slug": "join-flow-org",
+            "email": "joiner@joinflow.example",
+            "password": "joinerpass12",
+            "first_name": "Join",
+            "last_name": "Er",
+            "locale": "de",
+        },
+    )
+    assert r1.status_code == 200
+    assert r1.json()["role"] == "applicant"
+    client.post("/api/v1/auth/logout")
+    login_owner = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "owner@joinflow.example",
+            "password": "ownerpass12",
+            "organization_slug": "join-flow-org",
+        },
+    )
+    assert login_owner.status_code == 200
+    pending = client.get("/api/v1/organization/join-requests?status=pending").json()
+    assert len(pending) == 1
+    rid = pending[0]["id"]
+    approve = client.post(
+        f"/api/v1/organization/join-requests/{rid}/approve-create-doctor",
+        json={
+            "first_name": "Join",
+            "last_name": "Er",
+            "email": "joiner@joinflow.example",
+            "employment_percentage": 100,
+            "shift_group_ids": [],
+        },
+    )
+    assert approve.status_code == 200
+    client.post("/api/v1/auth/logout")
+    login_joiner = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "joiner@joinflow.example",
+            "password": "joinerpass12",
+            "organization_slug": "join-flow-org",
+        },
+    )
+    assert login_joiner.status_code == 200
+    assert login_joiner.json()["role"] == "doctor"
+    assert login_joiner.json()["capabilities"]["doctor_portal"] is True
 
 
 def test_auth_and_doctor_crud(client: TestClient):
@@ -615,6 +760,8 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
     full = client.get(f"/api/v1/matrix/{period_id}").json()
     assert len(full["doctors"]) == 2
+    assert len(full["shift_templates"]) == 1
+    assert len(full["template_slot_days"]) > 0
     filtered = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
     assert len(filtered["doctors"]) == 1
     assert filtered["doctors"][0]["id"] == doc_in["id"]
@@ -688,7 +835,7 @@ def planner_client():
     TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(engine)
     with TestingSessionLocal() as db:
-        db.add(Organization(id=1, name="Default", plan_tier="team"))
+        db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
         db.flush()
         db.add(
             User(
@@ -746,7 +893,14 @@ def planner_client():
 
 
 def login_planner(cl: TestClient) -> None:
-    response = cl.post("/api/v1/auth/login", json={"email": "planner@example.com", "password": "plannersecret"})
+    response = cl.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "planner@example.com",
+            "password": "plannersecret",
+            "organization_slug": "default",
+        },
+    )
     assert response.status_code == 200
 
 

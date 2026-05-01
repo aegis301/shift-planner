@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin, get_current_planner, get_current_user
+from app.api.deps import (
+    get_current_admin,
+    get_current_planner,
+    get_current_user_excluding_applicant,
+)
 from app.db.session import get_db
 from app.models import User
 from app.services.authz import is_admin, is_shift_planner_role
@@ -27,7 +31,9 @@ router = APIRouter(tags=["planning"])
 
 
 @router.get("/planning-periods", response_model=list[PlanningPeriodRead])
-def get_planning_periods(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def get_planning_periods(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user_excluding_applicant)
+):
     return list_planning_periods(db, organization_id=user.organization_id)
 
 

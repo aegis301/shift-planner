@@ -27,6 +27,15 @@ class UserCapabilities(BaseModel):
     doctor_portal: bool
 
 
+class OrganizationBrief(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    plan_tier: str
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -35,6 +44,7 @@ class UserRead(BaseModel):
     role: str
     locale: str
     organization_id: int
+    organization: OrganizationBrief
     doctor_id: int | None = None
     shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
     planner_shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
@@ -44,6 +54,84 @@ class UserRead(BaseModel):
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+    organization_slug: str = Field(min_length=1, max_length=64)
+
+
+class DeleteAccountInput(BaseModel):
+    password: str = Field(min_length=1, max_length=256)
+
+
+class OrganizationLookupResponse(BaseModel):
+    slug: str
+    name: str
+
+
+class RegisterCreateOrganizationInput(BaseModel):
+    organization_name: str = Field(min_length=1, max_length=255)
+    organization_slug: str = Field(min_length=3, max_length=64)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    locale: str = Field(default="de", pattern=r"^(de|en)$")
+
+
+class RegisterJoinOrganizationInput(BaseModel):
+    organization_slug: str = Field(min_length=1, max_length=64)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=2000)
+    locale: str = Field(default="de", pattern=r"^(de|en)$")
+
+
+class OrganizationUpdateInput(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    organization_slug: str | None = Field(default=None, min_length=3, max_length=64)
+
+
+class OrganizationReadForAdmin(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    plan_tier: str
+
+
+class OrganizationUserRead(BaseModel):
+    id: int
+    email: EmailStr
+    role: str
+    locale: str
+    linked_doctor_id: int | None
+    linked_doctor_label: str | None
+
+
+class JoinRequestRead(BaseModel):
+    id: int
+    organization_id: int
+    requester_user_id: int
+    requester_email: str
+    first_name: str
+    last_name: str
+    message: str | None
+    status: str
+    resolution: str | None
+    resolved_doctor_id: int | None
+    created_at: datetime
+
+
+class ApproveJoinCreateDoctorInput(BaseModel):
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    email: EmailStr
+    employment_percentage: int = Field(default=100, ge=1, le=100)
+    notes: str | None = None
+    shift_group_ids: list[int] = Field(default_factory=list)
+
+
+class ApproveJoinLinkDoctorBody(BaseModel):
+    doctor_id: int
 
 
 class DoctorCreate(BaseModel):
@@ -295,6 +383,7 @@ class PlanningCellRead(PlanningCellBase):
 class MatrixTemplateSlotDay(BaseModel):
     cell_date: date_type
     shift_template_id: int
+    shift_group_id: int | None = None
 
 
 class PlanningShiftIntentUpsert(BaseModel):

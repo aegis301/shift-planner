@@ -18,5 +18,5 @@ Refine the unified `/planning` workflow with shared month state, wishes, final r
 - LLM email parser that proposes matrix cells from pasted colleague emails.
 - LLM-assisted roster draft generation using the final roster slot matrix.
 - Excel and calendar exports.
-- Multi-team and multi-tenant platform mode.
+- Multi-org routing in UI, REST, and MCP (beyond single `DEFAULT_ORGANIZATION_ID`); org admin invites and billing tied to `Organization`.
 - Hosted production deployment with TLS and external authentication options.

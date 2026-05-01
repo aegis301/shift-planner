@@ -2,7 +2,7 @@
 
 import { BrainCircuit, CalendarCheck, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/Card";
-import { LocaleShell, useLocale } from "@/components/LocaleProvider";
+import { useLocale } from "@/components/LocaleProvider";
 import { t } from "@/lib/i18n";
 
 function DashboardContent() {
@@ -42,10 +42,6 @@ function DashboardContent() {
 }
 
 export function Dashboard() {
-  return (
-    <LocaleShell>
-      <DashboardContent />
-    </LocaleShell>
-  );
+  return <DashboardContent />;
 }
 

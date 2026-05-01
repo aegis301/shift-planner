@@ -11,6 +11,7 @@ export type MeUser = {
   role: string;
   locale: string;
   organization_id: number;
+  organization: { id: number; name: string; slug: string; plan_tier: string };
   doctor_id: number | null;
   shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
   planner_shift_groups: { id: number; code: string; name_de: string; name_en: string }[];

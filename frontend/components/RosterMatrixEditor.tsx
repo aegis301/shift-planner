@@ -294,7 +294,17 @@ export function RosterMatrixEditor({
   const [message, setMessage] = useState("");
   const [savingAssignments, setSavingAssignments] = useState(0);
 
-  const groupQuery = useMemo(() => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""), [shiftGroupId]);
+  const groupQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (shiftGroupId) {
+      params.set("shift_group_id", shiftGroupId);
+    }
+    if (readOnly) {
+      params.set("doctor_portal", "true");
+    }
+    const qs = params.toString();
+    return qs ? `?${qs}` : "";
+  }, [readOnly, shiftGroupId]);
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, RosterSlot[]>();

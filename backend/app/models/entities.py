@@ -11,6 +11,7 @@ class Organization(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), default="Default")
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     plan_tier: Mapped[str] = mapped_column(String(50), default="team")
     seat_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     billing_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -22,6 +23,7 @@ class Organization(Base):
     shift_groups: Mapped[list["ShiftGroup"]] = relationship(back_populates="organization")
     shift_templates: Mapped[list["ShiftTemplate"]] = relationship(back_populates="organization")
     planning_periods: Mapped[list["PlanningPeriod"]] = relationship(back_populates="organization")
+    join_requests: Mapped[list["OrganizationJoinRequest"]] = relationship(back_populates="organization")
 
 
 class ShiftGroup(Base):
@@ -75,10 +77,11 @@ class ShiftGroupShiftTemplate(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_users_organization_email"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(50), default="admin")
     locale: Mapped[str] = mapped_column(String(5), default="de")
@@ -312,6 +315,30 @@ class DoctorPeriodNote(Base):
 
     doctor: Mapped[Doctor] = relationship()
     planning_period: Mapped[PlanningPeriod] = relationship()
+
+
+class OrganizationJoinRequest(Base):
+    __tablename__ = "organization_join_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    requester_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    first_name: Mapped[str] = mapped_column(String(255))
+    last_name: Mapped[str] = mapped_column(String(255))
+    message: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    resolution: Mapped[str | None] = mapped_column(String(32))
+    resolved_doctor_id: Mapped[int | None] = mapped_column(ForeignKey("doctors.id", ondelete="SET NULL"))
+    resolved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="join_requests")
+    requester: Mapped["User"] = relationship(foreign_keys=[requester_user_id])
 
 
 class AuditLog(Base):

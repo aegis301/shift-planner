@@ -23,6 +23,10 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      DOCTOR_SEED_PASSWORD: ${DOCTOR_SEED_PASSWORD:-change-me-doctors}
+      DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
+      PLANNER_SEED_EMAIL: ${PLANNER_SEED_EMAIL:-}
+      PLANNER_SEED_PASSWORD: ${PLANNER_SEED_PASSWORD:-change-me-planner}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-change-me-mcp-token}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
     ports:
@@ -41,6 +45,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://shift_planner:shift_planner@postgres:5432/shift_planner}
       PYTHONPATH: /workspace/backend:/app
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
+      DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-change-me-mcp-token}
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0

@@ -7,7 +7,7 @@ from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models import Doctor, User
 from app.services.authz import ROLE_DOCTOR
-from app.services.users import get_user_by_email
+from app.services.users import get_user_in_organization
 
 log = logging.getLogger(__name__)
 
@@ -22,11 +22,17 @@ def main() -> None:
         )
         for doctor in doctors:
             email = doctor.email.lower()
-            existing = get_user_by_email(db, email)
+            org_id = doctor.organization_id if doctor.organization_id is not None else settings.default_organization_id
+            existing = get_user_in_organization(db, email, org_id)
             if existing is not None:
                 log.info("skip doctor id=%s email=%s (user email already exists)", doctor.id, email)
                 continue
-            user = User(email=email, hashed_password=hash_password(settings.doctor_seed_password), role=ROLE_DOCTOR)
+            user = User(
+                email=email,
+                hashed_password=hash_password(settings.doctor_seed_password),
+                role=ROLE_DOCTOR,
+                organization_id=org_id,
+            )
             db.add(user)
             db.flush()
             doctor.user_id = user.id

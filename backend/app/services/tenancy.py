@@ -12,7 +12,7 @@ def ensure_default_organization(db: Session) -> Organization:
     org = db.get(Organization, 1)
     if org is not None:
         return org
-    org = Organization(id=1, name="Default", plan_tier="team")
+    org = Organization(id=1, name="Default", slug="default", plan_tier="team")
     db.add(org)
     db.commit()
     db.refresh(org)

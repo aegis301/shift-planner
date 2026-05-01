@@ -3,7 +3,7 @@
 AI-first shift planning for doctors, built with FastAPI, Next.js, Postgres, Docker Compose, and FastMCP.
 
 ## Current Scope
-The MVP supports an admin shift planner plus doctor accounts linked to `Doctor` rows. Planners manage doctors, shift groups, templates, planning months, publish workflow, validation, and exports. Linked doctors use `/my-planning` for wishes and no-gos in their shift groups, `/profile` for self-service profile fields, and read-only published roster views. It has two matrix planning surfaces: a wishes matrix where rows are days and columns are doctors, and a final roster matrix where rows are days and concrete generated shift slots. Shift template categories are currently `Bereitschaftsdienst`/on-call duty, `Rufdienst`/stand-by duty, `Spätdienst`/late duty, and `Andere`/other.
+The MVP supports **organizations** as the tenancy boundary: users, doctors, shift groups, shift templates, and planning periods belong to an `organization_id` (default org `1` via `DEFAULT_ORGANIZATION_ID` in settings). Each organization has a globally unique **`slug`** (public code, e.g. `default`) used at sign-in and for join-by-code flows. **Self-service registration** creates a new org (founding **admin**) or joins an existing org as an **applicant** until an admin approves a **join request** by creating a new doctor or linking an existing unlinked doctor row. An **admin** (`User.role` `admin`) manages doctors, shift groups, templates, creates and deletes planning months, publish workflow, validation, and exports. A **planner** (`User.role` `planner`) uses the same planning UI for months that already exist: matrix, roster, publish, unpublish, regenerate roster, validation, and exports, scoped to shift groups linked in `user_shift_groups`. Planners see a **read-only doctors list** filtered to doctors who share at least one of those shift groups. The same person can be admin, planner, and linked doctor in one org (capabilities on `GET /api/v1/auth/me` drive the shell). **Doctor** accounts (`User.role` `doctor`, or planner/admin with a linked `Doctor`) use `/my-planning` for wishes and no-gos, `/profile` for self-service fields, and read-only published roster for their shift groups. Two matrix surfaces: wishes (days × doctors) and final roster (days × generated slots). Shift template categories are `Bereitschaftsdienst`/on-call, `Rufdienst`/stand-by, `Spätdienst`/late, and `Andere`/other.
 
 ## Quick Start
 ```bash
@@ -30,6 +30,7 @@ pip install -e ".[dev]"
 alembic upgrade head
 python -m app.scripts.seed_admin
 python -m app.scripts.seed_doctor_users
+python -m app.scripts.seed_planner_user
 uvicorn app.main:app --reload
 pytest
 ```
@@ -45,6 +46,8 @@ npm run lint
 npm run typecheck
 ```
 
+The App Router root layout wraps the app in one **`LocaleShell`** (see `app/ClientRoot.tsx`) so locale and `/api/v1/auth/me` session state are not reset on every navigation. Individual pages do not nest another `LocaleShell`.
+
 ## MCP Development
 ```bash
 cd mcp-server
@@ -55,14 +58,14 @@ PYTHONPATH=../backend python -m mcp_app.server
 pytest
 ```
 
-Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and share backend service behavior. Local CLI runs use FastMCP stdio by default; Docker Compose sets `MCP_TRANSPORT=http`.
+Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and share backend service behavior. Local CLI runs use FastMCP stdio by default; Docker Compose sets `MCP_TRANSPORT=http`. MCP reads and mutations use the backend `Settings.default_organization_id` (`DEFAULT_ORGANIZATION_ID`, default `1`) so all tool calls stay within one org until multi-org routing exists in MCP.
 
 ## Planning Workflow
 Use `/planning` for the planner workflow and `/my-planning` for linked doctors. One selected planning month controls wishes, final roster assignment, inline validation, CSV exports, and workload stats. The planner page supports both a full stacked view and a tabbed view for Wishes, Roster, and Analysis.
 
 Wishes matrix day statuses (each blocks any roster assignment on that day for the doctor): `urlaub`, `forschung`, `lehre`, `frei`.
 
-When a `shift_group_id` query is present on `GET /api/v1/matrix/{id}`, the response also includes `shift_templates`, `template_slot_days` (which concrete templates occur on which dates that month), and `shift_intents` for that group. Use `PUT /api/v1/matrix/{id}/shift-intents/bulk` with `{ "intents": [ { "doctor_id", "cell_date", "shift_group_id", "shift_template_id", "kind": "wish" | "no_go" | null } ] }` — `kind` null removes that intent row.
+`GET /api/v1/matrix/{id}` always returns `shift_templates`, `template_slot_days`, and `shift_intents` for wish/no-go editing: **with** `shift_group_id`, they are limited to that group; **without** it (admin full-org view), templates are every template linked to any shift group, each `template_slot_days` row includes `shift_group_id`, and intents list all rows for doctors in the matrix. Use `PUT /api/v1/matrix/{id}/shift-intents/bulk` with `{ "intents": [ { "doctor_id", "cell_date", "shift_group_id", "shift_template_id", "kind": "wish" | "no_go" | null } ] }` — `kind` null removes that intent row.
 
 Doctor/month notes store source emails and summaries so future LLM parsing can propose matrix updates. In the wishes matrix, each doctor header has a notes button that opens that doctor's month-specific source text and summary.
 
@@ -78,7 +81,9 @@ Relevant CSV exports:
 - Wishes matrix: `/api/v1/exports/matrix/{planning_period_id}.csv`
 - Final roster matrix: `/api/v1/exports/roster-matrix/{planning_period_id}.csv`
 
-Optional query parameter `shift_group_id` on `GET /api/v1/matrix/{id}`, `GET /api/v1/matrix/{id}/notes`, `GET /api/v1/roster-matrix/{id}`, `GET /api/v1/validation/{id}`, and the two CSV export routes above filters doctors, slots, warnings, and export rows to one shift group. Shift groups are managed at `GET|POST|PATCH|DELETE /api/v1/shift-groups` with `PUT /api/v1/shift-groups/{id}/doctors` and `PUT /api/v1/shift-groups/{id}/shift-templates` for memberships. Doctors carry `shift_group_ids`; roster assignments require the doctor to share a group with the slot’s template when that template belongs to at least one group.
+Query parameter `shift_group_id`: **admins** may omit it for a full-org matrix, matrix notes, roster, validation, and CSV exports. **Planners** (non-admin) must pass `shift_group_id` on `GET /api/v1/matrix/{id}`, matrix note routes under `/api/v1/matrix/{id}/notes`, `GET /api/v1/roster-matrix/{id}`, `GET /api/v1/validation/{id}`, and on both CSV export routes; the value must be one of their `user_shift_groups`. Creating or deleting a planning month (`POST` / `DELETE /api/v1/planning-periods`) is **admin-only**; publish, unpublish, and regenerate roster remain available to any user with planning access (admin or planner).
+
+Shift groups are managed at `GET|POST|PATCH|DELETE /api/v1/shift-groups` (`GET` for any planning user, scoped for planners; create/update/delete and membership `PUT`s are admin-only). Doctors carry `shift_group_ids`; roster assignments require the doctor to share a group with the slot’s template when that template belongs to at least one group.
 
 The old request/roster form APIs and simple shift-type API have been removed. Current workflow code should target `/api/v1/matrix`, `/api/v1/roster-matrix`, `/api/v1/shift-templates`, and `/api/v1/shift-groups`.
 
@@ -98,12 +103,24 @@ Migration `202604300002` adds `planning_shift_intents` and maps legacy `planning
 
 Migration `202604300003` adds optional `doctors.user_id` (unique, links a doctor login) and `planning_periods.published_at`.
 
+Migration `202604300004` splits doctor display names into `first_name` and `last_name`.
+
+Migration `202605010001` adds `organizations` (with `plan_tier`, optional `seat_limit`, and subscription-related columns for future billing), `user_shift_groups`, `organization_id` on core tenant tables, composite uniqueness per org (for example shift group code, template code, doctor email, planning year/month), and `User.role` value `planner`.
+
+Migration `202605020001` adds **`organizations.slug`**, **`organization_join_requests`**, switches `users.email` uniqueness to **per organization** (`organization_id`, `email`), and backfills `slug` for existing organizations.
+
 ## Users and roles
-- `User.role` is `admin` (shift planner UI and full API) or `doctor` (wishes and self-profile; published roster only for their shift groups). `Doctor.user_id` links a doctor record to a doctor-role user; planners set it when creating or editing a doctor (numeric user id) or leave it empty.
-- `GET /api/v1/auth/me` returns `doctor_id` and `shift_groups` (id and names) for the session. `GET|PATCH /api/v1/auth/me/doctor` load or update the linked doctor profile for doctor sessions.
-- `POST /api/v1/planning-periods/{id}/publish` sets `status` to `published` and `published_at`; `POST /api/v1/planning-periods/{id}/unpublish` reverts back to `draft` and clears `published_at`.
-- Doctors receive `403` on `GET /api/v1/roster-matrix/{id}` while the planning period is draft.
-- Seed doctor logins: set `DOCTOR_SEED_PASSWORD` in `.env` (see `.env.example`), then run `python -m app.scripts.seed_doctor_users` (also runs after migrations in Docker Compose). It creates a `doctor`-role user per active unlinked doctor email and links `Doctor.user_id`. Skip when the email is already a user.
+- `User.role` is `admin` (full admin API and UI), `planner` (planning UI and scoped reads; no doctor/template/shift-group mutations), `doctor` (wishes and self-profile; published roster only for their shift groups), or **`applicant`** (signed up to join an org; no planning or doctor portal until an admin approves the join request). `Doctor.user_id` links a doctor row to a user; only admins assign or clear that link when creating or editing a doctor (or via join-request approval). Linking a user to a doctor checks org **seat limits** when `organizations.seat_limit` is set.
+- **Sign-in:** `POST /api/v1/auth/login` requires `email`, `password`, and **`organization_slug`** (same org scope as `users` uniqueness).
+- **Delete account:** `POST /api/v1/auth/delete-account` with JSON `{ "password" }` removes the signed-in user after password check; clears the session cookie. The **last admin** in an organization cannot delete themselves (add another admin first). `Doctor.user_id` is set to null when a linked user is deleted; planner `user_shift_groups` rows cascade.
+- **Registration:** `POST /api/v1/auth/register/create-organization` (founding admin + new org) and `POST /api/v1/auth/register/join-organization` (applicant + pending join request). Public **`GET /api/v1/organizations/lookup?slug=`** resolves a slug to the org display name before join.
+- **Join requests (admin):** `GET /api/v1/organization/join-requests`, `POST .../approve-create-doctor`, `POST .../approve-link-doctor`, `POST .../reject`, and **`POST /api/v1/organization/join-requests/{id}/cancel`** for the requester. **`GET /api/v1/auth/me/join-request`** returns the caller’s pending request, if any. Org settings: **`GET|PATCH /api/v1/organization`** (admin). **`GET /api/v1/organization/users`** lists all users in the org with **user id**, email, role, and linked doctor (for re-linking after clearing `Doctor.user_id` in the doctor editor).
+- `GET /api/v1/auth/me` (and login/register responses) returns `organization_id`, nested `organization` (`id`, `name`, **`slug`**, `plan_tier`), `doctor_id`, `shift_groups`, `planner_shift_groups`, and `capabilities` (`admin`, `planning`, `doctor_portal`) so the frontend can show Dashboard, Planning, My planning, Profile, admin routes (including **`/organization`** for join requests), and the current organization in the shell and settings.
+- `GET|PATCH /api/v1/auth/me/doctor` applies when the session has a linked doctor (any allowed role for that link).
+- `POST /api/v1/planning-periods/{id}/publish` sets `status` to `published` and `published_at`; `POST /api/v1/planning-periods/{id}/unpublish` reverts to `draft` and clears `published_at`.
+- `GET /api/v1/roster-matrix/{id}`: users with planning access (`admin` / `planner`) use **draft** roster data unless the query includes `doctor_portal=true` (the my-planning UI sends this for read-only roster). With `doctor_portal=true`, a **linked** doctor session requires `shift_group_id`, group membership, and a **published** month (`403` while draft). Pure `doctor` users always follow that published read path.
+- Seed doctor logins: set `DOCTOR_SEED_PASSWORD` in `.env`, then run `python -m app.scripts.seed_doctor_users` (Docker Compose runs it after migrations). It creates a `doctor`-role user per active unlinked doctor email with the same `organization_id` as that doctor (or `DEFAULT_ORGANIZATION_ID` if missing) and links `Doctor.user_id`. Skip when the email is already a user.
+- Optional planner demo: set `PLANNER_SEED_EMAIL` and `PLANNER_SEED_PASSWORD` in `.env`. Docker Compose passes these into the **backend** container so `seed_planner_user` hashes the same password you use in the browser. Run `docker compose exec backend python -m app.scripts.seed_planner_user` (or add it to the backend command); re-running updates an existing planner’s password and shift-group links. Default email is `planner@example.com` when `PLANNER_SEED_EMAIL` is unset or empty.
 
 ## Documentation Rule
 When behavior, setup, architecture, API shape, MCP capabilities, or roadmap changes, update `README.md`, `AGENTS.md`, `CHANGELOG.md`, `PLAN.md`, or `BRAINSTORM.md` as appropriate.

@@ -11,7 +11,17 @@ type PlanningStatus = "urlaub" | "forschung" | "lehre" | "frei";
 
 type PlanningShiftIntentKind = "wish" | "no_go";
 
-type TemplateSlotDay = { cell_date: string; shift_template_id: number };
+type SaveMatrixIntentFn = (
+  doctorId: number,
+  cellDate: string,
+  templateId: number,
+  kind: PlanningShiftIntentKind | null,
+  intentShiftGroupId?: number
+) => Promise<void>;
+
+type TemplateSlotDay = { cell_date: string; shift_template_id: number; shift_group_id?: number | null };
+
+type IntentTemplateRow = { templateId: number; shiftGroupId: number };
 
 type MatrixShiftTemplate = {
   id: number;
@@ -104,14 +114,22 @@ function normalizePlanningStatus(value: string | undefined): PlanningStatus | ""
   return "";
 }
 
-function templateIdsForDate(matrix: PlanningMatrix, cellDate: string): number[] {
-  const ids = new Set<number>();
+function intentTemplateRowsForDate(matrix: PlanningMatrix, cellDate: string): IntentTemplateRow[] {
+  const seen = new Set<string>();
+  const out: IntentTemplateRow[] = [];
   for (const row of matrix.template_slot_days ?? []) {
-    if (row.cell_date === cellDate) {
-      ids.add(row.shift_template_id);
+    if (row.cell_date !== cellDate || row.shift_group_id == null) {
+      continue;
     }
+    const key = `${row.shift_template_id}:${row.shift_group_id}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push({ templateId: row.shift_template_id, shiftGroupId: row.shift_group_id });
   }
-  return [...ids].sort((a, b) => a - b);
+  out.sort((a, b) => a.templateId - b.templateId || a.shiftGroupId - b.shiftGroupId);
+  return out;
 }
 
 function templateLabel(matrix: PlanningMatrix, templateId: number, locale: Locale): string {
@@ -286,9 +304,10 @@ export function MatrixEditor({
     }
   }
 
-  const saveIntent = useCallback(
-    async (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => {
-      if (!shiftGroupId) {
+  const saveIntent = useCallback<SaveMatrixIntentFn>(
+    async (doctorId, cellDate, templateId, kind, intentShiftGroupId) => {
+      const gid = intentShiftGroupId ?? (shiftGroupId ? Number(shiftGroupId) : undefined);
+      if (gid == null || Number.isNaN(gid)) {
         return;
       }
       setSavingCells((count) => count + 1);
@@ -300,7 +319,7 @@ export function MatrixEditor({
               {
                 doctor_id: doctorId,
                 cell_date: cellDate,
-                shift_group_id: Number(shiftGroupId),
+                shift_group_id: gid,
                 shift_template_id: templateId,
                 kind
               }
@@ -419,7 +438,6 @@ export function MatrixEditor({
               onSave={saveCell}
               locale={locale}
               onOpenNote={setNoteDoctor}
-              shiftGroupId={shiftGroupId}
               onSaveIntent={saveIntent}
               editableDoctorId={editableDoctorId}
               intentStatsByDoctor={intentStatsByDoctor}
@@ -432,7 +450,6 @@ export function MatrixEditor({
                 onSave={saveCell}
                 locale={locale}
                 onOpenNote={setNoteDoctor}
-                shiftGroupId={shiftGroupId}
                 onSaveIntent={saveIntent}
                 editableDoctorId={editableDoctorId}
                 intentStatsByDoctor={intentStatsByDoctor}
@@ -443,7 +460,6 @@ export function MatrixEditor({
                 onSave={saveCell}
                 locale={locale}
                 onOpenNote={setNoteDoctor}
-                shiftGroupId={shiftGroupId}
                 onSaveIntent={saveIntent}
                 editableDoctorId={editableDoctorId}
                 intentStatsByDoctor={intentStatsByDoctor}
@@ -543,7 +559,6 @@ function PlanningDenseMatrix({
   onSave,
   onOpenNote,
   locale,
-  shiftGroupId,
   onSaveIntent,
   editableDoctorId,
   intentStatsByDoctor
@@ -553,8 +568,7 @@ function PlanningDenseMatrix({
   onSave: (doctorId: number, cellDate: string, status: PlanningStatus | "", comment?: string | null) => Promise<void>;
   onOpenNote: (doctor: MatrixDoctor) => void;
   locale: Locale;
-  shiftGroupId?: string;
-  onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  onSaveIntent: SaveMatrixIntentFn;
   editableDoctorId?: number;
   intentStatsByDoctor: Map<number, DoctorIntentStats>;
 }) {
@@ -625,7 +639,6 @@ function PlanningDenseMatrix({
                     cellDate={day.date}
                     onSave={onSave}
                     locale={locale}
-                    shiftGroupId={shiftGroupId}
                     onSaveIntent={onSaveIntent}
                     readOnly={editableDoctorId != null && doctor.id !== editableDoctorId}
                   />
@@ -645,7 +658,6 @@ function DesktopMatrix({
   onSave,
   onOpenNote,
   locale,
-  shiftGroupId,
   onSaveIntent,
   editableDoctorId,
   intentStatsByDoctor
@@ -655,8 +667,7 @@ function DesktopMatrix({
   onSave: (doctorId: number, cellDate: string, status: PlanningStatus | "", comment?: string | null) => Promise<void>;
   onOpenNote: (doctor: MatrixDoctor) => void;
   locale: Locale;
-  shiftGroupId?: string;
-  onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  onSaveIntent: SaveMatrixIntentFn;
   editableDoctorId?: number;
   intentStatsByDoctor: Map<number, DoctorIntentStats>;
 }) {
@@ -728,7 +739,6 @@ function DesktopMatrix({
                       cellDate={day.date}
                       onSave={onSave}
                       locale={locale}
-                      shiftGroupId={shiftGroupId}
                       onSaveIntent={onSaveIntent}
                       readOnly={editableDoctorId != null && doctor.id !== editableDoctorId}
                     />
@@ -749,7 +759,6 @@ function MobileMatrix({
   onSave,
   onOpenNote,
   locale,
-  shiftGroupId,
   onSaveIntent,
   editableDoctorId,
   intentStatsByDoctor
@@ -759,8 +768,7 @@ function MobileMatrix({
   onSave: (doctorId: number, cellDate: string, status: PlanningStatus | "", comment?: string | null) => Promise<void>;
   onOpenNote: (doctor: MatrixDoctor) => void;
   locale: Locale;
-  shiftGroupId?: string;
-  onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  onSaveIntent: SaveMatrixIntentFn;
   editableDoctorId?: number;
   intentStatsByDoctor: Map<number, DoctorIntentStats>;
 }) {
@@ -809,7 +817,6 @@ function MobileMatrix({
                   cellDate={day.date}
                   onSave={onSave}
                   locale={locale}
-                  shiftGroupId={shiftGroupId}
                   onSaveIntent={onSaveIntent}
                   readOnly={editableDoctorId != null && doctor.id !== editableDoctorId}
                 />
@@ -904,7 +911,6 @@ function MatrixCell({
   onSave,
   locale,
   dense = false,
-  shiftGroupId,
   onSaveIntent,
   readOnly = false
 }: {
@@ -915,8 +921,7 @@ function MatrixCell({
   onSave: (doctorId: number, cellDate: string, status: PlanningStatus | "", comment?: string | null) => Promise<void>;
   locale: Locale;
   dense?: boolean;
-  shiftGroupId?: string;
-  onSaveIntent: (doctorId: number, cellDate: string, templateId: number, kind: PlanningShiftIntentKind | null) => Promise<void>;
+  onSaveIntent: SaveMatrixIntentFn;
   readOnly?: boolean;
 }) {
   const [status, setStatus] = useState<PlanningStatus | "">(() => normalizePlanningStatus(cell?.status));
@@ -929,12 +934,19 @@ function MatrixCell({
       if (row.doctor_id !== doctorId || row.cell_date !== cellDate) {
         continue;
       }
-      map.set(`${cellDate}:${doctorId}:${row.shift_template_id}`, row.kind);
+      map.set(`${cellDate}:${doctorId}:${row.shift_template_id}:${row.shift_group_id}`, row.kind);
     }
     return map;
   }, [matrix.shift_intents, doctorId, cellDate]);
-  const templateIds = useMemo(() => templateIdsForDate(matrix, cellDate), [matrix, cellDate]);
-  const showIntents = Boolean(shiftGroupId && matrix.shift_templates?.length && templateIds.length);
+  const intentRows = useMemo(() => intentTemplateRowsForDate(matrix, cellDate), [matrix, cellDate]);
+  const templateIdMultiGroup = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const row of intentRows) {
+      counts.set(row.templateId, (counts.get(row.templateId) ?? 0) + 1);
+    }
+    return counts;
+  }, [intentRows]);
+  const showIntents = Boolean(matrix.shift_templates?.length && intentRows.length);
 
   useEffect(() => {
     setStatus(normalizePlanningStatus(cell?.status));
@@ -999,12 +1011,16 @@ function MatrixCell({
       {showIntents ? (
         <div className={`grid gap-1.5 ${dense ? "pt-0.5" : "pt-1"}`}>
           <p className={`font-medium text-slate-600 ${dense ? "text-[0.6rem]" : "text-[0.65rem]"}`}>{t(locale, "shiftIntentsHeading")}</p>
-          {templateIds.map((templateId) => {
-            const current = intentMap.get(`${cellDate}:${doctorId}:${templateId}`);
+          {intentRows.map(({ templateId, shiftGroupId }) => {
+            const current = intentMap.get(`${cellDate}:${doctorId}:${templateId}:${shiftGroupId}`);
             const label = templateLabel(matrix, templateId, locale);
+            const groupSuffix = (templateIdMultiGroup.get(templateId) ?? 0) > 1 ? ` · #${shiftGroupId}` : "";
             return (
-              <div key={templateId} className="flex flex-wrap items-center gap-1">
-                <span className={`max-w-[9rem] truncate text-slate-600 ${dense ? "text-[0.6rem]" : "text-xs"}`}>{label}</span>
+              <div key={`${templateId}-${shiftGroupId}`} className="flex flex-wrap items-center gap-1">
+                <span className={`max-w-[9rem] truncate text-slate-600 ${dense ? "text-[0.6rem]" : "text-xs"}`}>
+                  {label}
+                  {groupSuffix}
+                </span>
                 <button
                   type="button"
                   title={t(locale, "wish")}
@@ -1012,7 +1028,7 @@ function MatrixCell({
                   className={`rounded-md font-semibold ring-1 ring-sky-200 disabled:cursor-not-allowed disabled:opacity-40 ${
                     current === "wish" ? "bg-sky-200 text-sky-950" : "bg-sky-50 text-sky-900"
                   } ${dense ? "px-1 py-0.5 text-[0.6rem]" : "px-1.5 py-0.5 text-[0.65rem]"}`}
-                  onClick={() => void onSaveIntent(doctorId, cellDate, templateId, current === "wish" ? null : "wish")}
+                  onClick={() => void onSaveIntent(doctorId, cellDate, templateId, current === "wish" ? null : "wish", shiftGroupId)}
                 >
                   {t(locale, "wishShort")}
                 </button>
@@ -1023,7 +1039,7 @@ function MatrixCell({
                   className={`rounded-md font-semibold ring-1 ring-rose-200 disabled:cursor-not-allowed disabled:opacity-40 ${
                     current === "no_go" ? "bg-rose-200 text-rose-950" : "bg-rose-50 text-rose-900"
                   } ${dense ? "px-1 py-0.5 text-[0.6rem]" : "px-1.5 py-0.5 text-[0.65rem]"}`}
-                  onClick={() => void onSaveIntent(doctorId, cellDate, templateId, current === "no_go" ? null : "no_go")}
+                  onClick={() => void onSaveIntent(doctorId, cellDate, templateId, current === "no_go" ? null : "no_go", shiftGroupId)}
                 >
                   {t(locale, "noGoShort")}
                 </button>

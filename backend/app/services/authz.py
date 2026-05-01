@@ -6,6 +6,7 @@ from app.models import Doctor, DoctorShiftGroup, ShiftGroup, User, UserShiftGrou
 ROLE_ADMIN = "admin"
 ROLE_PLANNER = "planner"
 ROLE_DOCTOR = "doctor"
+ROLE_APPLICANT = "applicant"
 
 
 def is_admin(user: User) -> bool:
@@ -26,6 +27,10 @@ def can_access_doctor_portal(db: Session, user: User) -> bool:
 
 def is_pure_doctor(user: User) -> bool:
     return user.role == ROLE_DOCTOR
+
+
+def is_applicant(user: User) -> bool:
+    return user.role == ROLE_APPLICANT
 
 
 def get_linked_doctor(db: Session, user_id: int) -> Doctor | None:
@@ -111,20 +116,10 @@ def assert_doctor_cell_access(user: User, doctor: Doctor, payload_doctor_id: int
 
 
 def roles_allowed_for_doctor_user_link() -> set[str]:
-    return {ROLE_ADMIN, ROLE_PLANNER, ROLE_DOCTOR}
+    return {ROLE_ADMIN, ROLE_PLANNER, ROLE_DOCTOR, ROLE_APPLICANT}
 
 
 def use_doctor_filtered_matrix_view(db: Session, user: User) -> bool:
-    if is_admin(user):
-        return False
-    if is_pure_doctor(user):
-        return True
-    if is_shift_planner_role(user) and get_linked_doctor(db, user.id) is not None:
-        return True
-    return False
-
-
-def use_doctor_roster_publish_gate(db: Session, user: User) -> bool:
     if is_admin(user):
         return False
     if is_pure_doctor(user):

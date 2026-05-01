@@ -3,7 +3,18 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { CalendarDays, Languages, LogOut, Settings, Sparkles, Stethoscope, UserRound, UsersRound } from "lucide-react";
+import {
+  CalendarDays,
+  ClipboardList,
+  ContactRound,
+  Languages,
+  LogOut,
+  Settings,
+  Sparkles,
+  Stethoscope,
+  UserRound,
+  UsersRound
+} from "lucide-react";
 import { useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { Locale, t, TranslationKey } from "@/lib/i18n";
@@ -25,18 +36,24 @@ export function AppShell({
 
   const navItems: NavItem[] = [];
   if (me) {
-    navItems.push({ href: "/", key: "dashboard", icon: Sparkles });
-    if (me.capabilities.planning) {
-      navItems.push({ href: "/planning", key: "planning", icon: CalendarDays });
-    }
-    if (me.capabilities.doctor_portal) {
-      navItems.push({ href: "/my-planning", key: "myPlanning", icon: CalendarDays });
-      navItems.push({ href: "/profile", key: "profile", icon: UserRound });
-    }
-    if (me.capabilities.admin) {
-      navItems.push({ href: "/doctors", key: "doctors", icon: Stethoscope });
-      navItems.push({ href: "/shift-groups", key: "shiftGroups", icon: UsersRound });
-      navItems.push({ href: "/shift-types", key: "shiftTypes", icon: CalendarDays });
+    if (me.role === "applicant") {
+      navItems.push({ href: "/pending-onboarding", key: "pendingNav", icon: CalendarDays });
+    } else {
+      navItems.push({ href: "/", key: "dashboard", icon: Sparkles });
+      if (me.capabilities.planning) {
+        navItems.push({ href: "/planning", key: "planning", icon: CalendarDays });
+      }
+      if (me.capabilities.doctor_portal) {
+        navItems.push({ href: "/my-planning", key: "myPlanning", icon: CalendarDays });
+        navItems.push({ href: "/profile", key: "profile", icon: UserRound });
+      }
+      if (me.capabilities.admin) {
+        navItems.push({ href: "/doctors", key: "doctors", icon: Stethoscope });
+        navItems.push({ href: "/shift-groups", key: "shiftGroups", icon: UsersRound });
+        navItems.push({ href: "/shift-types", key: "shiftTypes", icon: CalendarDays });
+        navItems.push({ href: "/organization", key: "joinRequestsNav", icon: ClipboardList });
+        navItems.push({ href: "/organization/users", key: "orgUserAccountsNav", icon: ContactRound });
+      }
     }
     navItems.push({ href: "/settings", key: "settings", icon: Settings });
   }
@@ -61,7 +78,13 @@ export function AppShell({
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-ink">{t(locale, "appName")}</p>
-            <p className="truncate text-xs text-slate-500">{t(locale, "aiFirst")}</p>
+            <p className="truncate text-xs text-slate-500">
+              {me
+                ? me.organization.name.trim()
+                  ? me.organization.name
+                  : t(locale, "emptyValue")
+                : t(locale, "aiFirst")}
+            </p>
           </div>
           {!loading && me ? (
             <button

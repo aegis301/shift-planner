@@ -47,7 +47,14 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
         : body;
     throw new ApiError(response.status, messageFromDetail(detail, response.status), detail);
   }
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  const text = await response.text();
+  if (!text.trim()) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 export { API_BASE_URL };

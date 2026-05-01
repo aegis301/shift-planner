@@ -6,7 +6,7 @@ import { AlertTriangle, BarChart3, CalendarCheck, Columns3, Download, Heart, Lay
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
-import { LocaleShell, useLocale, useSession } from "@/components/LocaleProvider";
+import { useLocale, useSession } from "@/components/LocaleProvider";
 import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
@@ -142,7 +142,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   const doctorUi = variant === "doctor" && Boolean(me?.capabilities?.doctor_portal);
   const editableDoctorId = doctorUi && me?.doctor_id != null ? me.doctor_id : undefined;
   const waitingForDoctorSession = variant === "doctor" && (sessionLoading || !doctorUi);
-  const plannerNeedsShiftGroup = planningUi && !adminUi;
+  const waitingForPlannerSession = variant === "planner" && (sessionLoading || !me);
+  const plannerNeedsShiftGroup = variant === "planner" && me?.role === "planner";
 
   useEffect(() => {
     if (sessionLoading || !me) {
@@ -283,19 +284,34 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   }, [periodId]);
 
   useEffect(() => {
-    if (waitingForDoctorSession) {
+    if (waitingForDoctorSession || waitingForPlannerSession) {
       return;
     }
     void refreshPeriods();
-  }, [refreshPeriods, waitingForDoctorSession]);
+  }, [refreshPeriods, waitingForDoctorSession, waitingForPlannerSession]);
 
   useEffect(() => {
-    if (!periodId || waitingForDoctorSession || (doctorUi && !shiftGroupId) || (plannerNeedsShiftGroup && !shiftGroupId)) {
+    if (
+      !periodId ||
+      waitingForDoctorSession ||
+      waitingForPlannerSession ||
+      (doctorUi && !shiftGroupId) ||
+      (plannerNeedsShiftGroup && !shiftGroupId)
+    ) {
       return;
     }
     void loadWarnings(periodId);
     void loadRosterMatrix(periodId);
-  }, [doctorUi, loadRosterMatrix, loadWarnings, periodId, plannerNeedsShiftGroup, shiftGroupId, waitingForDoctorSession]);
+  }, [
+    doctorUi,
+    loadRosterMatrix,
+    loadWarnings,
+    periodId,
+    plannerNeedsShiftGroup,
+    shiftGroupId,
+    waitingForDoctorSession,
+    waitingForPlannerSession
+  ]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -366,7 +382,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
       </div>
-      {(doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
+      {waitingForPlannerSession ? null : (doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <MatrixEditor
@@ -386,7 +402,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
       </div>
-      {(doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
+      {waitingForPlannerSession ? null : (doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <RosterMatrixEditor
@@ -694,9 +710,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         </div>
       ) : null}
 
-      {waitingForDoctorSession ? (
+      {waitingForDoctorSession || waitingForPlannerSession ? (
         <Card>
-          <p className="text-sm text-slate-600">{t(locale, "saving")}</p>
+          <p className="text-sm text-slate-600">
+            {waitingForPlannerSession ? t(locale, "planningSessionLoading") : t(locale, "saving")}
+          </p>
         </Card>
       ) : periodId ? (
         viewMode === "stacked" ? (
@@ -885,9 +903,5 @@ function WorkloadStats({ rows, unassigned }: { rows: DoctorStats[]; unassigned: 
 }
 
 export function PlanningWorkspace({ variant = "planner" }: { variant?: "planner" | "doctor" } = {}) {
-  return (
-    <LocaleShell>
-      <PlanningWorkspaceContent variant={variant} />
-    </LocaleShell>
-  );
+  return <PlanningWorkspaceContent variant={variant} />;
 }

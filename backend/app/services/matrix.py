@@ -23,6 +23,8 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.shift_groups import (
     active_doctor_ids_in_shift_group,
+    list_shift_groups,
+    list_shift_template_ids_with_any_group,
     require_shift_group,
     shift_template_ids_in_shift_group,
 )
@@ -74,7 +76,6 @@ def get_planning_matrix(
             .order_by(Doctor.last_name, Doctor.first_name)
         )
     )
-    group_template_ids: set[int] = set()
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
         allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
@@ -110,7 +111,39 @@ def get_planning_matrix(
             if slot.template_id in group_template_ids:
                 slot_pairs.add((slot.slot_date, slot.template_id))
         template_slot_days = [
-            MatrixTemplateSlotDay(cell_date=d, shift_template_id=tid) for d, tid in sorted(slot_pairs)
+            MatrixTemplateSlotDay(cell_date=d, shift_template_id=tid, shift_group_id=shift_group_id)
+            for d, tid in sorted(slot_pairs)
+        ]
+    else:
+        union_templates = list_shift_template_ids_with_any_group(db, organization_id)
+        templates_all = list_shift_templates(db, organization_id=organization_id, active_only=True)
+        by_id = {template.id: template for template in templates_all}
+        shift_templates_out = [
+            ShiftTemplateRead.model_validate(by_id[tid])
+            for tid in sorted(union_templates)
+            if tid in by_id
+        ]
+        slot_triples: set[tuple[date, int, int]] = set()
+        active_groups = list_shift_groups(db, organization_id=organization_id, active_only=True)
+        allowed_doctor_ids = {doctor.id for doctor in doctors}
+        for group in active_groups:
+            g_templates = shift_template_ids_in_shift_group(db, group.id)
+            if not g_templates:
+                continue
+            for slot in generate_slots_for_month(
+                db, year=period.year, month=period.month, organization_id=organization_id
+            ):
+                if slot.template_id in g_templates:
+                    slot_triples.add((slot.slot_date, slot.template_id, group.id))
+        template_slot_days = [
+            MatrixTemplateSlotDay(cell_date=d, shift_template_id=tid, shift_group_id=gid)
+            for d, tid, gid in sorted(slot_triples)
+        ]
+        active_gids = {group.id for group in active_groups}
+        shift_intents_out = [
+            PlanningShiftIntentRead.model_validate(row)
+            for row in all_intents
+            if row.doctor_id in allowed_doctor_ids and row.shift_group_id in active_gids
         ]
     return PlanningMatrixRead(
         planning_period=period,

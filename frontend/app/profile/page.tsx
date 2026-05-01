@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Card, Field, inputClass } from "@/components/Card";
-import { LocaleShell, useLocale, useSession } from "@/components/LocaleProvider";
+import { useLocale, useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { useRouter } from "next/navigation";
@@ -103,9 +103,5 @@ function ProfileContent() {
 }
 
 export default function ProfilePage() {
-  return (
-    <LocaleShell>
-      <ProfileContent />
-    </LocaleShell>
-  );
+  return <ProfileContent />;
 }

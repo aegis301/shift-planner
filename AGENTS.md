@@ -2,7 +2,23 @@
 
 ## Purpose
 
-This project is an AI-first shift planning tool for doctors. The MVP supports an admin shift planner (`User.role` `admin`) who manages doctors, monthly planning periods, publish state, wishes and roster matrices, notes, validation, and exports. Doctors (`User.role` `doctor`) are rows in `Doctor` linked by `Doctor.user_id`; they edit only their own wishes and notes for shift groups they belong to, update their profile via `PATCH /api/v1/auth/me/doctor`, and read the roster matrix only after the planner publishes that month (`PlanningPeriod.status` `published`).
+This project is an AI-first shift planning tool for doctors. Data is scoped by **`organization_id`** on `User`, `Doctor`, `ShiftGroup`, `ShiftTemplate`, and `PlanningPeriod` (see `Organization`). The default org id comes from **`Settings.default_organization_id`** (`DEFAULT_ORGANIZATION_ID`, typically `1`).
+
+**Admins** (`User.role` `admin`) manage doctors, shift groups, shift templates, create and delete planning months, publish state, wishes and roster matrices, notes, validation, and exports.
+
+**Planners** (`User.role` `planner`) use the same planning surfaces for **existing** months: wishes matrix, roster matrix, publish, unpublish, regenerate roster, validation, exports, and workload stats, but only for shift groups listed in **`user_shift_groups`**. They receive a **read-only doctors list** filtered to doctors who belong to at least one of those groups (intersection). They must pass **`shift_group_id`** on matrix, roster, validation, and CSV export APIs. They do not mutate doctors, templates, or shift-group membership.
+
+**Applicants** (`User.role` `applicant`) are users who registered to **join** an existing organization and are waiting on an admin to approve an **`organization_join_request`** (create doctor + link, or link to an existing unlinked `Doctor`). They authenticate with the same **`organization_slug` + email** scope as other users; they have no planning or doctor-portal capabilities until approved (role becomes `doctor`).
+
+**Doctors** are `Doctor` rows; a user with a linked `Doctor.user_id` uses `/my-planning` and `/profile` behavior (wishes, notes, self profile) and reads the roster matrix only after publish, subject to shift-group scope. The same user may also be `admin` or `planner` with overlapping capabilities; `GET /api/v1/auth/me` exposes **`capabilities`** (`admin`, `planning`, `doctor_portal`) plus `planner_shift_groups` and doctor `shift_groups` so the UI merges nav items correctly. For `GET /api/v1/roster-matrix/{id}`, **`doctor_portal=true`** selects the published-only doctor read path; omit it (default) when the client is the **planning** workspace so admins and planners—including planner+doctor—edit draft rosters under `assert_planning_shift_group_scope`.
+
+**Registration and org codes:** `organizations.slug` is globally unique and human-readable. Business logic lives in `app/services/registration.py`, `app/services/join_requests.py`, and `app/services/organizations.py`; REST mirrors those services. `users.email` is unique per **`organization_id`**, not globally; login and registration always carry **`organization_slug`**.
+
+**Account deletion:** Users may call **`POST /api/v1/auth/delete-account`** with their password (`delete_own_account` in `app/services/users.py`). The last **`admin`** user in an organization cannot delete themselves until another admin exists.
+
+**Org user directory (admin):** **`GET /api/v1/organization/users`** lists all `User` rows in the org with ids, roles, and linked doctor labels so admins can copy **user id** back into the doctor form after unlinking.
+
+**Subscription hooks:** `Organization` carries optional `seat_limit`, `billing_customer_id`, and `subscription_status` for future billing; linking a doctor login enforces seat limits when `seat_limit` is set.
 
 ## Architecture
 
@@ -23,7 +39,7 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 - Mutating MCP tools must require explicit authorization, currently through `MCP_ADMIN_TOKEN`.
 
 ## Shift groups (Dienstgruppen)
-Doctors can belong to multiple shift groups; each group links to multiple shift templates. Planning matrix, roster matrix, validation, and CSV exports accept optional `shift_group_id` to filter the view. Roster assignment is rejected when the doctor does not share a group with the slot’s template (templates with no group remain assignable by any active doctor). Admin UI: `/shift-groups`; planning toolbar: shift group selector and optional `?shiftGroup=` URL param.
+Doctors can belong to multiple shift groups; each group links to multiple shift templates. **Admins** may omit `shift_group_id` on planning reads/exports for a full-org view; the **wishes matrix** still returns `shift_templates`, `template_slot_days` (each row includes `shift_group_id`), and `shift_intents` so wish/no-go editing matches the filtered experience. **Planners** must supply `shift_group_id` (and it must appear in `user_shift_groups`). Roster assignment is rejected when the doctor does not share a group with the slot’s template (templates with no group remain assignable by any active doctor). Admin UI: `/shift-groups`; planning toolbar: shift group selector and `?shiftGroup=` URL param. Destructive **create/delete planning month** actions are admin-only in API and UI; mutating MCP tools remain admin-token gated.
 
 ## Matrix Planning Rule
 The active planning workflow uses two monthly matrices:
