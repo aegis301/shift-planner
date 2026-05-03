@@ -7,7 +7,7 @@ from app.models import PlanningCell, PlanningShiftIntent, RosterSlotAssignment, 
 from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationWarning
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
-from app.services.shift_groups import active_doctor_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
+from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
 from app.services.tenancy import require_planning_period_in_org
 
 
@@ -23,9 +23,9 @@ def get_default_rule_config(db: Session) -> RuleConfig:
 
 
 def _warning_in_shift_group_scope(
-    warning: ValidationWarning, *, doctor_ids: set[int], slot_ids: set[int]
+    warning: ValidationWarning, *, team_member_ids: set[int], slot_ids: set[int]
 ) -> bool:
-    if warning.doctor_id is not None and warning.doctor_id not in doctor_ids:
+    if warning.team_member_id is not None and warning.team_member_id not in team_member_ids:
         return False
     if warning.code == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT":
         rid = warning.details.get("roster_slot_id")
@@ -57,32 +57,36 @@ def validate_roster(
     if shift_group_id is None:
         return warnings
     require_shift_group(db, shift_group_id, organization_id)
-    doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
+    team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
     template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
     slot_ids = {
         slot.id
         for slot in list_roster_slots(db, planning_period_id=planning_period_id)
         if slot.shift_template_id is not None and slot.shift_template_id in template_ids
     }
-    return [warning for warning in warnings if _warning_in_shift_group_scope(warning, doctor_ids=doctor_ids, slot_ids=slot_ids)]
+    return [
+        warning
+        for warning in warnings
+        if _warning_in_shift_group_scope(warning, team_member_ids=team_member_ids, slot_ids=slot_ids)
+    ]
 
 
 def _add_matrix_conflicts(warnings: list[ValidationWarning], cells: list[PlanningCell]) -> None:
     duties = [cell for cell in cells if cell.status in PLANNED_DUTY_STATUSES]
     unavailable = {
-        (cell.doctor_id, cell.cell_date): cell
+        (cell.team_member_id, cell.cell_date): cell
         for cell in cells
         if cell.status in UNAVAILABLE_STATUSES
     }
     for duty in duties:
-        conflict = unavailable.get((duty.doctor_id, duty.cell_date))
+        conflict = unavailable.get((duty.team_member_id, duty.cell_date))
         if conflict:
             warnings.append(
                 ValidationWarning(
                     code="MATRIX_UNAVAILABLE_CONFLICT",
                     severity="error",
                     message="Planned duty conflicts with an unavailable matrix status.",
-                    doctor_id=duty.doctor_id,
+                    team_member_id=duty.team_member_id,
                     date=duty.cell_date,
                     details={"duty_status": duty.status, "unavailable_status": conflict.status},
                 )
@@ -95,12 +99,12 @@ def _add_roster_slot_matrix_conflicts(
     cells: list[PlanningCell],
 ) -> None:
     unavailable = {
-        (cell.doctor_id, cell.cell_date): cell
+        (cell.team_member_id, cell.cell_date): cell
         for cell in cells
         if cell.status in UNAVAILABLE_STATUSES
     }
     for assignment in assignments:
-        conflict = unavailable.get((assignment.doctor_id, assignment.roster_slot.slot_date))
+        conflict = unavailable.get((assignment.team_member_id, assignment.roster_slot.slot_date))
         if conflict is None:
             continue
         warnings.append(
@@ -108,7 +112,7 @@ def _add_roster_slot_matrix_conflicts(
                 code="ROSTER_MATRIX_UNAVAILABLE_CONFLICT",
                 severity="error",
                 message="Final roster assignment conflicts with an unavailable wishes matrix status.",
-                doctor_id=assignment.doctor_id,
+                team_member_id=assignment.team_member_id,
                 date=assignment.roster_slot.slot_date,
                 details={
                     "roster_slot_id": assignment.roster_slot_id,
@@ -135,7 +139,7 @@ def _add_roster_template_no_go_conflicts(
         if template_id is None:
             continue
         for intent in no_gos:
-            if intent.doctor_id != assignment.doctor_id:
+            if intent.team_member_id != assignment.team_member_id:
                 continue
             if intent.cell_date != slot.slot_date:
                 continue
@@ -146,7 +150,7 @@ def _add_roster_template_no_go_conflicts(
                     code="ROSTER_TEMPLATE_NO_GO_CONFLICT",
                     severity="error",
                     message="Final roster assignment conflicts with a shift no-go.",
-                    doctor_id=assignment.doctor_id,
+                    team_member_id=assignment.team_member_id,
                     date=slot.slot_date,
                     details={
                         "roster_slot_id": assignment.roster_slot_id,
@@ -164,18 +168,18 @@ def _add_roster_slot_duplicate_day_warnings(
     warnings: list[ValidationWarning],
     assignments: list[RosterSlotAssignment],
 ) -> None:
-    assignments_by_doctor_day: dict[tuple[int, date], list[RosterSlotAssignment]] = defaultdict(list)
+    assignments_by_member_day: dict[tuple[int, date], list[RosterSlotAssignment]] = defaultdict(list)
     for assignment in assignments:
-        assignments_by_doctor_day[(assignment.doctor_id, assignment.roster_slot.slot_date)].append(assignment)
-    for (doctor_id, assignment_date), day_assignments in assignments_by_doctor_day.items():
+        assignments_by_member_day[(assignment.team_member_id, assignment.roster_slot.slot_date)].append(assignment)
+    for (team_member_id, assignment_date), day_assignments in assignments_by_member_day.items():
         if len(day_assignments) < 2:
             continue
         warnings.append(
             ValidationWarning(
                 code="ROSTER_MATRIX_DUPLICATE_DAY",
                 severity="warning",
-                message="Doctor is assigned to more than one final roster slot on the same day.",
-                doctor_id=doctor_id,
+                message="Team member is assigned to more than one final roster slot on the same day.",
+                team_member_id=team_member_id,
                 date=assignment_date,
                 details={
                     "roster_slot_ids": [assignment.roster_slot_id for assignment in day_assignments],

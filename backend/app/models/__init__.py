@@ -1,8 +1,6 @@
 from app.models.entities import (
+    Account,
     AuditLog,
-    Doctor,
-    DoctorPeriodNote,
-    DoctorShiftGroup,
     Organization,
     OrganizationJoinRequest,
     PlanningCell,
@@ -15,15 +13,19 @@ from app.models.entities import (
     ShiftGroupShiftTemplate,
     ShiftTemplate,
     ShiftVariant,
+    TeamMember,
+    TeamMemberPeriodNote,
+    TeamMemberShiftGroup,
     User,
     UserShiftGroup,
 )
 
 __all__ = [
+    "Account",
     "AuditLog",
-    "DoctorPeriodNote",
-    "Doctor",
-    "DoctorShiftGroup",
+    "TeamMemberPeriodNote",
+    "TeamMember",
+    "TeamMemberShiftGroup",
     "Organization",
     "OrganizationJoinRequest",
     "PlanningPeriod",

@@ -4,7 +4,7 @@ import { ClientRoot } from "./ClientRoot";
 
 export const metadata: Metadata = {
   title: "Shift Planner",
-  description: "AI-first shift planning for doctors",
+  description: "AI-first shift planning for healthcare teams",
   manifest: "/manifest.json"
 };
 

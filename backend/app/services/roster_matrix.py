@@ -4,10 +4,10 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Doctor, PlanningPeriod, RosterSlot, RosterSlotAssignment
+from app.models import PlanningPeriod, RosterSlot, RosterSlotAssignment, TeamMember
 from app.schemas import (
     MatrixDay,
-    MatrixDoctor,
+    MatrixTeamMember,
     PlanningCellRead,
     PlanningShiftIntentRead,
     RosterMatrixRead,
@@ -18,13 +18,13 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
-from app.services.tenancy import require_planning_period_in_org
 from app.services.shift_groups import (
-    active_doctor_ids_in_shift_group,
-    doctor_may_cover_template,
+    active_team_member_ids_in_shift_group,
     require_shift_group,
     shift_template_ids_in_shift_group,
+    team_member_may_cover_template,
 )
+from app.services.tenancy import require_planning_period_in_org
 from app.services.shift_templates import generate_slots_for_month, list_shift_templates
 
 
@@ -50,7 +50,7 @@ def list_roster_slot_assignments(db: Session, *, planning_period_id: int) -> lis
     stmt = (
         select(RosterSlotAssignment)
         .join(RosterSlot)
-        .options(joinedload(RosterSlotAssignment.roster_slot), joinedload(RosterSlotAssignment.doctor))
+        .options(joinedload(RosterSlotAssignment.roster_slot), joinedload(RosterSlotAssignment.team_member))
         .where(RosterSlot.planning_period_id == planning_period_id)
         .order_by(RosterSlot.slot_date, RosterSlot.position, RosterSlot.shift_template_id, RosterSlot.shift_variant_id)
     )
@@ -94,7 +94,7 @@ def ensure_roster_slots_for_period(db: Session, planning_period_id: int, organiz
 def reset_roster_slots_for_period(
     db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
 ) -> list[RosterSlot]:
-    period = require_planning_period_in_org(db, planning_period_id, organization_id)
+    require_planning_period_in_org(db, planning_period_id, organization_id)
     slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.planning_period_id == planning_period_id)))
     if slot_ids:
         for assignment in db.scalars(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id.in_(slot_ids))):
@@ -124,11 +124,11 @@ def get_roster_matrix(
     ensure_roster_slots_for_period(db, planning_period_id, organization_id)
     db.commit()
 
-    doctors = list(
+    team_members = list(
         db.scalars(
-            select(Doctor)
-            .where(Doctor.organization_id == organization_id, Doctor.is_active.is_(True))
-            .order_by(Doctor.last_name, Doctor.first_name)
+            select(TeamMember)
+            .where(TeamMember.organization_id == organization_id, TeamMember.is_active.is_(True))
+            .order_by(TeamMember.last_name, TeamMember.first_name)
         )
     )
     shift_templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
@@ -138,29 +138,29 @@ def get_roster_matrix(
     shift_intents = [PlanningShiftIntentRead.model_validate(row) for row in list_planning_shift_intents(db, planning_period_id=planning_period_id)]
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
-        allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
+        allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
         template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
-        doctors = [doctor for doctor in doctors if doctor.id in allowed_doctor_ids]
+        team_members = [m for m in team_members if m.id in allowed_team_member_ids]
         slots = [slot for slot in slots if slot.shift_template_id is not None and slot.shift_template_id in template_ids]
         visible_template_ids = {slot.shift_template_id for slot in slots}
         shift_templates = [template for template in shift_templates if template.id in visible_template_ids]
         slot_ids = {slot.id for slot in slots}
         assignments = [assignment for assignment in assignments if assignment.roster_slot_id in slot_ids]
-        planning_cells = [cell for cell in planning_cells if cell.doctor_id in allowed_doctor_ids]
+        planning_cells = [cell for cell in planning_cells if cell.team_member_id in allowed_team_member_ids]
         shift_intents = [
-            row for row in shift_intents if row.shift_group_id == shift_group_id and row.doctor_id in allowed_doctor_ids
+            row for row in shift_intents if row.shift_group_id == shift_group_id and row.team_member_id in allowed_team_member_ids
         ]
     return RosterMatrixRead(
         planning_period=period,
-        doctors=[
-            MatrixDoctor(
-                id=doctor.id,
-                first_name=doctor.first_name,
-                last_name=doctor.last_name,
-                email=doctor.email,
-                employment_percentage=doctor.employment_percentage,
+        team_members=[
+            MatrixTeamMember(
+                id=m.id,
+                first_name=m.first_name,
+                last_name=m.last_name,
+                email=m.email,
+                employment_percentage=m.employment_percentage,
             )
-            for doctor in doctors
+            for m in team_members
         ],
         days=_period_days(period),
         shift_templates=shift_templates,
@@ -196,11 +196,11 @@ def _read_slot(slot: RosterSlot) -> RosterSlotRead:
     )
 
 
-def _doctor_has_template_no_go(
+def _team_member_has_template_no_go(
     db: Session,
     *,
     planning_period_id: int,
-    doctor_id: int,
+    team_member_id: int,
     slot_date: date,
     shift_template_id: int | None,
 ) -> bool:
@@ -209,7 +209,7 @@ def _doctor_has_template_no_go(
     for intent in list_planning_shift_intents(db, planning_period_id=planning_period_id):
         if (
             intent.kind == "no_go"
-            and intent.doctor_id == doctor_id
+            and intent.team_member_id == team_member_id
             and intent.cell_date == slot_date
             and intent.shift_template_id == shift_template_id
         ):
@@ -229,23 +229,23 @@ def upsert_roster_slot_assignment(
     if slot is None:
         raise ValueError("Roster slot not found")
     require_planning_period_in_org(db, slot.planning_period_id, organization_id)
-    if not doctor_may_cover_template(db, doctor_id=payload.doctor_id, shift_template_id=slot.shift_template_id):
-        raise ValueError("Doctor is not a member of a shift group that covers this template")
-    if not payload.manual_override and _doctor_has_template_no_go(
+    if not team_member_may_cover_template(db, team_member_id=payload.team_member_id, shift_template_id=slot.shift_template_id):
+        raise ValueError("Team member is not a member of a shift group that covers this template")
+    if not payload.manual_override and _team_member_has_template_no_go(
         db,
         planning_period_id=slot.planning_period_id,
-        doctor_id=payload.doctor_id,
+        team_member_id=payload.team_member_id,
         slot_date=slot.slot_date,
         shift_template_id=slot.shift_template_id,
     ):
-        raise ValueError("Doctor marked this shift template as a no-go on that day")
+        raise ValueError("Team member marked this shift template as a no-go on that day")
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )
     if assignment is None:
         assignment = RosterSlotAssignment(
             roster_slot_id=payload.roster_slot_id,
-            doctor_id=payload.doctor_id,
+            team_member_id=payload.team_member_id,
             comment=payload.comment,
             manual_override=payload.manual_override,
             source=source,
@@ -253,7 +253,7 @@ def upsert_roster_slot_assignment(
         db.add(assignment)
         action = "create"
     else:
-        assignment.doctor_id = payload.doctor_id
+        assignment.team_member_id = payload.team_member_id
         assignment.comment = payload.comment
         assignment.manual_override = payload.manual_override
         assignment.source = source
@@ -269,7 +269,7 @@ def upsert_roster_slot_assignment(
         details={
             "planning_period_id": slot.planning_period_id,
             "roster_slot_id": payload.roster_slot_id,
-            "doctor_id": payload.doctor_id,
+            "team_member_id": payload.team_member_id,
         },
     )
     db.commit()

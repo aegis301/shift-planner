@@ -4,7 +4,7 @@ app/main.py
 app/api/deps.py
 app/api/v1/__init__.py
 app/api/v1/auth.py
-app/api/v1/doctors.py
+app/api/v1/team_members.py
 app/api/v1/planning.py
 app/api/v1/router.py
 app/api/v1/shift_types.py
@@ -19,7 +19,7 @@ app/schemas/domain.py
 app/scripts/seed_admin.py
 app/services/__init__.py
 app/services/audit.py
-app/services/doctors.py
+app/services/team_members.py
 app/services/exports.py
 app/services/planning.py
 app/services/shift_types.py

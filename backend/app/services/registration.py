@@ -1,8 +1,9 @@
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password
-from app.models import Organization, User
+from app.core.security import hash_password, verify_password
+from app.models import Account, Organization, User
 from app.services.audit import record_audit
 from app.services.join_requests import create_pending_join_request
 from app.services.organizations import (
@@ -11,7 +12,7 @@ from app.services.organizations import (
     get_organization_by_slug,
     validate_organization_slug,
 )
-from app.services.users import get_user_in_organization
+from app.services.users import get_account_by_email
 
 ROLE_ADMIN = "admin"
 ROLE_APPLICANT = "applicant"
@@ -30,17 +31,23 @@ def register_create_organization(
     assert_organization_slug_available(db, slug)
     org = create_organization_record(db, name=organization_name, slug=slug)
     db.flush()
-    existing = get_user_in_organization(db, email, org.id)
-    if existing is not None:
+    em = email.lower()
+    acc = get_account_by_email(db, em)
+    if acc is None:
+        acc = Account(email=em, hashed_password=hash_password(password))
+        db.add(acc)
+        db.flush()
+    else:
+        if not verify_password(password, acc.hashed_password):
+            db.rollback()
+            raise ValueError("Invalid password for this email")
+    existing_membership = db.scalar(
+        select(User).where(User.account_id == acc.id, User.organization_id == org.id)
+    )
+    if existing_membership is not None:
         db.rollback()
         raise ValueError("An account with this email already exists for this organization")
-    user = User(
-        email=email.lower(),
-        hashed_password=hash_password(password),
-        role=ROLE_ADMIN,
-        locale=locale,
-        organization_id=org.id,
-    )
+    user = User(account_id=acc.id, organization_id=org.id, role=ROLE_ADMIN, locale=locale)
     db.add(user)
     db.flush()
     record_audit(
@@ -76,16 +83,19 @@ def register_join_organization(
     org = get_organization_by_slug(db, organization_slug)
     if org is None:
         raise ValueError("Organization not found")
-    existing = get_user_in_organization(db, email, org.id)
+    em = email.lower()
+    acc = get_account_by_email(db, em)
+    if acc is None:
+        acc = Account(email=em, hashed_password=hash_password(password))
+        db.add(acc)
+        db.flush()
+    else:
+        if not verify_password(password, acc.hashed_password):
+            raise ValueError("Invalid password for this email")
+    existing = db.scalar(select(User).where(User.account_id == acc.id, User.organization_id == org.id))
     if existing is not None:
         raise ValueError("An account with this email already exists for this organization")
-    user = User(
-        email=email.lower(),
-        hashed_password=hash_password(password),
-        role=ROLE_APPLICANT,
-        locale=locale,
-        organization_id=org.id,
-    )
+    user = User(account_id=acc.id, organization_id=org.id, role=ROLE_APPLICANT, locale=locale)
     db.add(user)
     db.flush()
     create_pending_join_request(

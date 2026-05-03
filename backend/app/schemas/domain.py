@@ -1,8 +1,8 @@
 from datetime import date as date_type
 from datetime import datetime, time
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 PlanningCellStatus = Literal["urlaub", "forschung", "lehre", "frei"]
 
@@ -24,7 +24,7 @@ class UserShiftGroupBrief(BaseModel):
 class UserCapabilities(BaseModel):
     admin: bool
     planning: bool
-    doctor_portal: bool
+    team_member_portal: bool
 
 
 class OrganizationBrief(BaseModel):
@@ -36,6 +36,15 @@ class OrganizationBrief(BaseModel):
     plan_tier: str
 
 
+class MembershipSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    membership_id: int
+    organization: OrganizationBrief
+    role: str
+    team_member_id: int | None = None
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,16 +54,27 @@ class UserRead(BaseModel):
     locale: str
     organization_id: int
     organization: OrganizationBrief
-    doctor_id: int | None = None
+    team_member_id: int | None = None
     shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
     planner_shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
     capabilities: UserCapabilities
+    memberships: list[MembershipSummary] = Field(default_factory=list)
+
+
+class ActiveOrganizationInput(BaseModel):
+    organization_slug: str = Field(min_length=1, max_length=64)
 
 
 class LoginInput(BaseModel):
     email: EmailStr
-    password: str
-    organization_slug: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+    organization_slug: str = Field(default="", max_length=64)
+
+
+class JoinRequestResubmitInput(BaseModel):
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=2000)
 
 
 class DeleteAccountInput(BaseModel):
@@ -71,17 +91,31 @@ class RegisterCreateOrganizationInput(BaseModel):
     organization_slug: str = Field(min_length=3, max_length=64)
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)
+    password_confirm: str = Field(min_length=8, max_length=256)
     locale: str = Field(default="de", pattern=r"^(de|en)$")
+
+    @model_validator(mode="after")
+    def register_passwords_match(self) -> Self:
+        if self.password != self.password_confirm:
+            raise ValueError("passwords_do_not_match")
+        return self
 
 
 class RegisterJoinOrganizationInput(BaseModel):
     organization_slug: str = Field(min_length=1, max_length=64)
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)
+    password_confirm: str = Field(min_length=8, max_length=256)
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
     message: str | None = Field(default=None, max_length=2000)
     locale: str = Field(default="de", pattern=r"^(de|en)$")
+
+    @model_validator(mode="after")
+    def register_passwords_match(self) -> Self:
+        if self.password != self.password_confirm:
+            raise ValueError("passwords_do_not_match")
+        return self
 
 
 class OrganizationUpdateInput(BaseModel):
@@ -103,8 +137,40 @@ class OrganizationUserRead(BaseModel):
     email: EmailStr
     role: str
     locale: str
-    linked_doctor_id: int | None
-    linked_doctor_label: str | None
+    is_active: bool
+    linked_team_member_id: int | None
+    linked_team_member_label: str | None
+
+
+OrganizationUserAssignableRole = Literal["admin", "planner", "team_member"]
+
+
+class OrganizationUserRolePatch(BaseModel):
+    role: OrganizationUserAssignableRole
+
+
+StaffDirectoryLinkStatus = Literal[
+    "team_member_only",
+    "login_only",
+    "login_unlinked",
+    "linked_ok",
+    "linked_wrong_user",
+    "linked_foreign_user",
+]
+
+
+class OrganizationStaffDirectoryRow(BaseModel):
+    email: str
+    team_member_id: int | None
+    team_member_label: str | None
+    team_member_is_active: bool | None
+    user_id: int | None
+    user_role: str | None
+    user_is_active: bool | None
+    linked_user_id: int | None
+    linked_user_role: str | None
+    linked_user_is_active: bool | None
+    link_status: StaffDirectoryLinkStatus
 
 
 class JoinRequestRead(BaseModel):
@@ -117,11 +183,11 @@ class JoinRequestRead(BaseModel):
     message: str | None
     status: str
     resolution: str | None
-    resolved_doctor_id: int | None
+    resolved_team_member_id: int | None
     created_at: datetime
 
 
-class ApproveJoinCreateDoctorInput(BaseModel):
+class ApproveJoinCreateTeamMemberInput(BaseModel):
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
     email: EmailStr
@@ -130,11 +196,11 @@ class ApproveJoinCreateDoctorInput(BaseModel):
     shift_group_ids: list[int] = Field(default_factory=list)
 
 
-class ApproveJoinLinkDoctorBody(BaseModel):
-    doctor_id: int
+class ApproveJoinLinkTeamMemberBody(BaseModel):
+    team_member_id: int
 
 
-class DoctorCreate(BaseModel):
+class TeamMemberCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
     email: EmailStr
@@ -144,7 +210,7 @@ class DoctorCreate(BaseModel):
     user_id: int | None = None
 
 
-class DoctorUpdate(BaseModel):
+class TeamMemberUpdate(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=255)
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = None
@@ -155,7 +221,7 @@ class DoctorUpdate(BaseModel):
     user_id: int | None = None
 
 
-class DoctorSelfUpdate(BaseModel):
+class TeamMemberSelfUpdate(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=255)
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
     email: EmailStr | None = None
@@ -163,7 +229,7 @@ class DoctorSelfUpdate(BaseModel):
     notes: str | None = None
 
 
-class DoctorRead(DoctorCreate):
+class TeamMemberRead(TeamMemberCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -197,12 +263,12 @@ class ShiftGroupRead(BaseModel):
     display_order: int
     is_active: bool
     created_at: datetime
-    doctor_ids: list[int] = Field(default_factory=list)
+    team_member_ids: list[int] = Field(default_factory=list)
     shift_template_ids: list[int] = Field(default_factory=list)
 
 
-class ShiftGroupDoctorIdsPut(BaseModel):
-    doctor_ids: list[int] = Field(default_factory=list)
+class ShiftGroupTeamMemberIdsPut(BaseModel):
+    team_member_ids: list[int] = Field(default_factory=list)
 
 
 class ShiftGroupTemplateIdsPut(BaseModel):
@@ -329,7 +395,7 @@ class RosterSlotRead(BaseModel):
 
 class RosterSlotAssignmentUpsert(BaseModel):
     roster_slot_id: int
-    doctor_id: int
+    team_member_id: int
     comment: str | None = None
     manual_override: bool = False
 
@@ -348,7 +414,7 @@ class RosterSlotAssignmentRead(RosterSlotAssignmentUpsert):
 
 
 class PlanningCellBase(BaseModel):
-    doctor_id: int
+    team_member_id: int
     cell_date: date_type
     status: PlanningCellStatus
     comment: str | None = None
@@ -356,7 +422,7 @@ class PlanningCellBase(BaseModel):
 
 
 class PlanningCellUpsert(BaseModel):
-    doctor_id: int
+    team_member_id: int
     cell_date: date_type
     status: PlanningCellStatus
     comment: str | None = None
@@ -367,7 +433,7 @@ class PlanningCellBulkUpsert(BaseModel):
 
 
 class PlanningCellClear(BaseModel):
-    doctor_id: int
+    team_member_id: int
     cell_date: date_type
 
 
@@ -387,7 +453,7 @@ class MatrixTemplateSlotDay(BaseModel):
 
 
 class PlanningShiftIntentUpsert(BaseModel):
-    doctor_id: int
+    team_member_id: int
     cell_date: date_type
     shift_group_id: int
     shift_template_id: int
@@ -403,7 +469,7 @@ class PlanningShiftIntentRead(BaseModel):
 
     id: int
     planning_period_id: int
-    doctor_id: int
+    team_member_id: int
     cell_date: date_type
     shift_group_id: int
     shift_template_id: int
@@ -413,7 +479,7 @@ class PlanningShiftIntentRead(BaseModel):
     updated_at: datetime
 
 
-class MatrixDoctor(BaseModel):
+class MatrixTeamMember(BaseModel):
     id: int
     first_name: str
     last_name: str
@@ -428,7 +494,7 @@ class MatrixDay(BaseModel):
 
 class PlanningMatrixRead(BaseModel):
     planning_period: PlanningPeriodRead
-    doctors: list[MatrixDoctor]
+    team_members: list[MatrixTeamMember]
     days: list[MatrixDay]
     cells: list[PlanningCellRead]
     shift_templates: list[ShiftTemplateRead] = Field(default_factory=list)
@@ -438,7 +504,7 @@ class PlanningMatrixRead(BaseModel):
 
 class RosterMatrixRead(BaseModel):
     planning_period: PlanningPeriodRead
-    doctors: list[MatrixDoctor]
+    team_members: list[MatrixTeamMember]
     days: list[MatrixDay]
     shift_templates: list[ShiftTemplateRead] = Field(default_factory=list)
     slots: list[RosterSlotRead]
@@ -447,13 +513,13 @@ class RosterMatrixRead(BaseModel):
     shift_intents: list[PlanningShiftIntentRead] = Field(default_factory=list)
 
 
-class DoctorPeriodNoteUpsert(BaseModel):
-    doctor_id: int
+class TeamMemberPeriodNoteUpsert(BaseModel):
+    team_member_id: int
     source_text: str | None = None
     summary: str | None = None
 
 
-class DoctorPeriodNoteRead(DoctorPeriodNoteUpsert):
+class TeamMemberPeriodNoteRead(TeamMemberPeriodNoteUpsert):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -476,7 +542,7 @@ class ValidationWarning(BaseModel):
     code: str
     severity: Literal["info", "warning", "error"] = "warning"
     message: str
-    doctor_id: int | None = None
+    team_member_id: int | None = None
     assignment_id: int | None = None
     request_id: int | None = None
     date: date_type | None = None

@@ -6,20 +6,32 @@ from app.core.security import SESSION_MAX_AGE_SECONDS, create_session_token
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    ActiveOrganizationInput,
     DeleteAccountInput,
-    DoctorRead,
-    DoctorSelfUpdate,
+    TeamMemberRead,
+    TeamMemberSelfUpdate,
     JoinRequestRead,
+    JoinRequestResubmitInput,
     LoginInput,
     RegisterCreateOrganizationInput,
     RegisterJoinOrganizationInput,
     UserRead,
 )
-from app.services.authz import get_linked_doctor
-from app.services.doctors import doctor_to_read
-from app.services.join_requests import get_pending_join_request_for_user, join_request_to_read
+from app.services.authz import get_linked_team_member
+from app.services.team_members import team_member_to_read
+from app.services.join_requests import (
+    create_join_request_for_applicant,
+    get_pending_join_request_for_user,
+    join_request_to_read,
+)
 from app.services.registration import register_create_organization, register_join_organization
-from app.services.users import authenticate_user, build_user_read, delete_own_account, update_self_doctor_profile
+from app.services.users import (
+    authenticate_login,
+    build_user_read,
+    delete_own_account,
+    switch_membership_by_organization_slug,
+    update_self_team_member_profile,
+)
 
 
 def _set_session_cookie(response: Response, user_id: int) -> None:
@@ -38,11 +50,38 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/login", response_model=UserRead)
 def login(payload: LoginInput, response: Response, db: Session = Depends(get_db)) -> UserRead:
-    user = authenticate_user(db, payload.email, payload.password, payload.organization_slug)
-    if user is None:
+    outcome, user, org_choices = authenticate_login(
+        db,
+        email=str(payload.email),
+        password=payload.password,
+        organization_slug=payload.organization_slug,
+    )
+    if outcome == "organization_slug_required":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "organization_slug_required",
+                "organizations": org_choices or [],
+            },
+        )
+    if outcome != "success" or user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     _set_session_cookie(response, user.id)
     return build_user_read(db, user)
+
+
+@router.post("/me/active-organization", response_model=UserRead)
+def post_active_organization(
+    payload: ActiveOrganizationInput,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserRead:
+    nxt = switch_membership_by_organization_slug(db, current=user, organization_slug=payload.organization_slug)
+    if nxt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found or no access")
+    _set_session_cookie(response, nxt.id)
+    return build_user_read(db, nxt)
 
 
 @router.post("/register/create-organization", response_model=UserRead)
@@ -122,30 +161,53 @@ def get_me_join_request(user: User = Depends(get_current_user), db: Session = De
     return join_request_to_read(row)
 
 
-@router.get("/me/doctor", response_model=DoctorRead)
-def get_me_doctor(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role != "doctor":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Doctor only")
-    doctor = get_linked_doctor(db, user.id)
-    if doctor is None:
-        raise HTTPException(status_code=404, detail="No linked doctor profile")
-    db.refresh(doctor, attribute_names=["shift_group_links"])
-    return doctor_to_read(doctor)
+@router.post("/me/join-request", response_model=JoinRequestRead)
+def post_me_join_request(
+    payload: JoinRequestResubmitInput,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> JoinRequestRead:
+    if user.role != "applicant":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Applicant only")
+    try:
+        row = create_join_request_for_applicant(
+            db,
+            user=user,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            message=payload.message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(row)
+    return join_request_to_read(row)
 
 
-@router.patch("/me/doctor", response_model=DoctorRead)
-def patch_me_doctor(
-    payload: DoctorSelfUpdate,
+@router.get("/me/team-member", response_model=TeamMemberRead)
+def get_me_team_member(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != "team_member":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team member role only")
+    member = get_linked_team_member(db, user)
+    if member is None:
+        raise HTTPException(status_code=404, detail="No linked team member profile")
+    db.refresh(member, attribute_names=["shift_group_links"])
+    return team_member_to_read(member)
+
+
+@router.patch("/me/team-member", response_model=TeamMemberRead)
+def patch_me_team_member(
+    payload: TeamMemberSelfUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if user.role != "doctor":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Doctor only")
+    if user.role != "team_member":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team member role only")
     try:
-        doctor = update_self_doctor_profile(db, user, payload)
+        member = update_self_team_member_profile(db, user, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if doctor is None:
-        raise HTTPException(status_code=404, detail="No linked doctor profile")
-    db.refresh(doctor, attribute_names=["shift_group_links"])
-    return doctor_to_read(doctor)
+    if member is None:
+        raise HTTPException(status_code=404, detail="No linked team member profile")
+    db.refresh(member, attribute_names=["shift_group_links"])
+    return team_member_to_read(member)

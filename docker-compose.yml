@@ -23,7 +23,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
-      DOCTOR_SEED_PASSWORD: ${DOCTOR_SEED_PASSWORD:-change-me-doctors}
+      TEAM_MEMBER_SEED_PASSWORD: ${TEAM_MEMBER_SEED_PASSWORD:-change-me-team-members}
       DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
       PLANNER_SEED_EMAIL: ${PLANNER_SEED_EMAIL:-}
       PLANNER_SEED_PASSWORD: ${PLANNER_SEED_PASSWORD:-change-me-planner}
@@ -36,7 +36,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: sh -c "alembic upgrade head && python -m app.scripts.seed_admin && python -m app.scripts.seed_doctor_users && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && python -m app.scripts.seed_admin && python -m app.scripts.seed_team_member_users && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   mcp:
     build:
@@ -47,6 +47,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
       DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-change-me-mcp-token}
+      MCP_ORGANIZATION_ID: ${MCP_ORGANIZATION_ID:-}
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0
       MCP_PORT: 8001

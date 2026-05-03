@@ -16,30 +16,30 @@ type ShiftGroupRecord = {
   display_order: number;
   is_active: boolean;
   created_at: string;
-  doctor_ids: number[];
+  team_member_ids: number[];
   shift_template_ids: number[];
 };
 
-type DoctorOption = { id: number; first_name: string; last_name: string };
+type TeamMemberOption = { id: number; first_name: string; last_name: string };
 type TemplateOption = { id: number; code: string; name_de: string; name_en: string };
 
-function doctorLabel(doctor: DoctorOption): string {
-  return `${doctor.first_name} ${doctor.last_name}`.trim();
+function teamMemberLabel(option: TeamMemberOption): string {
+  return `${option.first_name} ${option.last_name}`.trim();
 }
 
 function groupLabel(locale: Locale, group: ShiftGroupRecord) {
   return locale === "de" ? group.name_de : group.name_en;
 }
 
-function ShiftGroupDoctorPicker({
-  doctors,
-  doctorIds,
-  setDoctorIds,
+function ShiftGroupTeamMemberPicker({
+  teamMemberOptions,
+  memberIds,
+  setMemberIds,
   locale
 }: {
-  doctors: DoctorOption[];
-  doctorIds: Set<number>;
-  setDoctorIds: Dispatch<SetStateAction<Set<number>>>;
+  teamMemberOptions: TeamMemberOption[];
+  memberIds: Set<number>;
+  setMemberIds: Dispatch<SetStateAction<Set<number>>>;
   locale: Locale;
 }) {
   const [query, setQuery] = useState("");
@@ -48,19 +48,19 @@ function ShiftGroupDoctorPicker({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = doctors.filter((doctor) => !doctorIds.has(doctor.id));
+    const pool = teamMemberOptions.filter((option) => !memberIds.has(option.id));
     if (!q) {
       return [];
     }
-    return pool.filter((doctor) => doctorLabel(doctor).toLowerCase().includes(q)).slice(0, 25);
-  }, [doctors, doctorIds, query]);
+    return pool.filter((option) => teamMemberLabel(option).toLowerCase().includes(q)).slice(0, 25);
+  }, [teamMemberOptions, memberIds, query]);
 
-  const selectedDoctors = useMemo(
+  const selectedMembers = useMemo(
     () =>
-      doctors
-        .filter((doctor) => doctorIds.has(doctor.id))
-        .sort((a, b) => doctorLabel(a).localeCompare(doctorLabel(b))),
-    [doctors, doctorIds]
+      teamMemberOptions
+        .filter((option) => memberIds.has(option.id))
+        .sort((a, b) => teamMemberLabel(a).localeCompare(teamMemberLabel(b))),
+    [teamMemberOptions, memberIds]
   );
 
   useEffect(() => {
@@ -73,14 +73,14 @@ function ShiftGroupDoctorPicker({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  function addDoctor(id: number) {
-    setDoctorIds((prev) => new Set([...prev, id]));
+  function addMember(id: number) {
+    setMemberIds((prev) => new Set([...prev, id]));
     setQuery("");
     setOpen(false);
   }
 
-  function removeDoctor(id: number) {
-    setDoctorIds((prev) => {
+  function removeMember(id: number) {
+    setMemberIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
@@ -91,7 +91,7 @@ function ShiftGroupDoctorPicker({
 
   return (
     <div ref={rootRef} className="grid gap-2">
-      <p className="text-xs text-slate-600">{t(locale, "searchDoctorsHint")}</p>
+      <p className="text-xs text-slate-600">{t(locale, "searchTeamMembersHint")}</p>
       <div className="relative">
         <input
           type="search"
@@ -102,23 +102,23 @@ function ShiftGroupDoctorPicker({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder={t(locale, "searchDoctorsPlaceholder")}
+          placeholder={t(locale, "searchTeamMembersPlaceholder")}
           className={inputClass}
         />
         {showList ? (
           <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-200/80">
             {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-slate-500">{t(locale, "noDoctorMatches")}</li>
+              <li className="px-3 py-2 text-sm text-slate-500">{t(locale, "noTeamMemberMatches")}</li>
             ) : (
-              filtered.map((doctor) => (
-                <li key={doctor.id}>
+              filtered.map((option) => (
+                <li key={option.id}>
                   <button
                     type="button"
                     className="w-full px-3 py-2 text-left text-sm text-ink hover:bg-slate-50"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => addDoctor(doctor.id)}
+                    onClick={() => addMember(option.id)}
                   >
-                    {doctorLabel(doctor)}
+                    {teamMemberLabel(option)}
                   </button>
                 </li>
               ))
@@ -126,19 +126,19 @@ function ShiftGroupDoctorPicker({
           </ul>
         ) : null}
       </div>
-      {selectedDoctors.length ? (
+      {selectedMembers.length ? (
         <div className="flex flex-wrap gap-1.5">
-          {selectedDoctors.map((doctor) => (
+          {selectedMembers.map((option) => (
             <span
-              key={doctor.id}
+              key={option.id}
               className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 py-1 pl-2.5 pr-1 text-xs font-medium text-slate-800 ring-1 ring-slate-200"
             >
-              <span className="truncate">{doctorLabel(doctor)}</span>
+              <span className="truncate">{teamMemberLabel(option)}</span>
               <button
                 type="button"
                 className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-                onClick={() => removeDoctor(doctor.id)}
-                aria-label={`${t(locale, "removeFromSelection")}: ${doctorLabel(doctor)}`}
+                onClick={() => removeMember(option.id)}
+                aria-label={`${t(locale, "removeFromSelection")}: ${teamMemberLabel(option)}`}
               >
                 <X size={14} />
               </button>
@@ -152,23 +152,23 @@ function ShiftGroupDoctorPicker({
 
 function ShiftGroupEditorModal({
   group,
-  doctors,
+  teamMemberOptions,
   templates,
   onChanged,
   onClose
 }: {
   group: ShiftGroupRecord | null;
-  doctors: DoctorOption[];
+  teamMemberOptions: TeamMemberOption[];
   templates: TemplateOption[];
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
   const { locale } = useLocale();
-  const [doctorIds, setDoctorIds] = useState<Set<number>>(new Set(group?.doctor_ids ?? []));
+  const [memberIds, setMemberIds] = useState<Set<number>>(new Set(group?.team_member_ids ?? []));
   const [templateIds, setTemplateIds] = useState<Set<number>>(new Set(group?.shift_template_ids ?? []));
 
   useEffect(() => {
-    setDoctorIds(new Set(group?.doctor_ids ?? []));
+    setMemberIds(new Set(group?.team_member_ids ?? []));
     setTemplateIds(new Set(group?.shift_template_ids ?? []));
   }, [group]);
 
@@ -184,9 +184,9 @@ function ShiftGroupEditorModal({
     };
     if (group) {
       await apiFetch(`/api/v1/shift-groups/${group.id}`, { method: "PATCH", body: JSON.stringify(body) });
-      await apiFetch(`/api/v1/shift-groups/${group.id}/doctors`, {
+      await apiFetch(`/api/v1/shift-groups/${group.id}/team-members`, {
         method: "PUT",
-        body: JSON.stringify({ doctor_ids: [...doctorIds] })
+        body: JSON.stringify({ team_member_ids: [...memberIds] })
       });
       await apiFetch(`/api/v1/shift-groups/${group.id}/shift-templates`, {
         method: "PUT",
@@ -194,9 +194,9 @@ function ShiftGroupEditorModal({
       });
     } else {
       const created = await apiFetch<ShiftGroupRecord>("/api/v1/shift-groups", { method: "POST", body: JSON.stringify(body) });
-      await apiFetch(`/api/v1/shift-groups/${created.id}/doctors`, {
+      await apiFetch(`/api/v1/shift-groups/${created.id}/team-members`, {
         method: "PUT",
-        body: JSON.stringify({ doctor_ids: [...doctorIds] })
+        body: JSON.stringify({ team_member_ids: [...memberIds] })
       });
       await apiFetch(`/api/v1/shift-groups/${created.id}/shift-templates`, {
         method: "PUT",
@@ -228,9 +228,9 @@ function ShiftGroupEditorModal({
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <div className="rounded-lg border border-slate-200 p-3">
-            <p className="text-sm font-semibold text-ink">{t(locale, "shiftGroupDoctors")}</p>
+            <p className="text-sm font-semibold text-ink">{t(locale, "shiftGroupTeamMembers")}</p>
             <div className="mt-2">
-              <ShiftGroupDoctorPicker doctors={doctors} doctorIds={doctorIds} setDoctorIds={setDoctorIds} locale={locale} />
+              <ShiftGroupTeamMemberPicker teamMemberOptions={teamMemberOptions} memberIds={memberIds} setMemberIds={setMemberIds} locale={locale} />
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 p-3">
@@ -277,19 +277,19 @@ function ShiftGroupEditorModal({
 export function ShiftGroupForm() {
   const { locale } = useLocale();
   const [groups, setGroups] = useState<ShiftGroupRecord[]>([]);
-  const [doctors, setDoctors] = useState<DoctorOption[]>([]);
+  const [teamMemberOptions, setTeamMemberOptions] = useState<TeamMemberOption[]>([]);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [editing, setEditing] = useState<ShiftGroupRecord | "new" | null>(null);
   const [message, setMessage] = useState("");
 
   const refresh = useCallback(async () => {
-    const [nextGroups, nextDoctors, nextTemplates] = await Promise.all([
+    const [nextGroups, nextTeamMembers, nextTemplates] = await Promise.all([
       apiFetch<ShiftGroupRecord[]>("/api/v1/shift-groups"),
-      apiFetch<Array<{ id: number; first_name: string; last_name: string }>>("/api/v1/doctors?active_only=true"),
+      apiFetch<Array<{ id: number; first_name: string; last_name: string }>>("/api/v1/team-members?active_only=true"),
       apiFetch<Array<{ id: number; code: string; name_de: string; name_en: string }>>("/api/v1/shift-templates")
     ]);
     setGroups(nextGroups);
-    setDoctors(nextDoctors.map((d) => ({ id: d.id, first_name: d.first_name, last_name: d.last_name })));
+    setTeamMemberOptions(nextTeamMembers.map((m) => ({ id: m.id, first_name: m.first_name, last_name: m.last_name })));
     setTemplates(nextTemplates.map((row) => ({ id: row.id, code: row.code, name_de: row.name_de, name_en: row.name_en })));
   }, []);
 
@@ -336,7 +336,7 @@ export function ShiftGroupForm() {
                 <h2 className="text-lg font-semibold text-ink">{groupLabel(locale, group)}</h2>
                 <p className="mt-1 font-mono text-xs text-slate-500">{group.code}</p>
                 <p className="mt-2 text-sm text-slate-600">
-                  {t(locale, "shiftGroupDoctors")}: {group.doctor_ids.length} · {t(locale, "shiftGroupTemplates")}: {group.shift_template_ids.length}
+                  {t(locale, "shiftGroupTeamMembers")}: {group.team_member_ids.length} · {t(locale, "shiftGroupTemplates")}: {group.shift_template_ids.length}
                 </p>
               </div>
               <div className="flex shrink-0 gap-1">
@@ -366,7 +366,7 @@ export function ShiftGroupForm() {
       {editing ? (
         <ShiftGroupEditorModal
           group={editing === "new" ? null : editing}
-          doctors={doctors}
+          teamMemberOptions={teamMemberOptions}
           templates={templates}
           onChanged={refresh}
           onClose={() => setEditing(null)}

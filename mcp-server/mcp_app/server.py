@@ -10,8 +10,8 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import ShiftGroup
 from app.schemas import (
-    DoctorCreate,
-    DoctorPeriodNoteUpsert,
+    TeamMemberCreate,
+    TeamMemberPeriodNoteUpsert,
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
     PlanningPeriodCreate,
@@ -23,13 +23,13 @@ from app.schemas import (
     ShiftTemplateCreate,
     ShiftVariantCreate,
 )
-from app.services.doctors import create_doctor, delete_doctor, list_doctors
+from app.services.team_members import create_team_member, delete_team_member, list_team_members
 from app.services.matrix import (
     bulk_upsert_planning_cells,
     bulk_upsert_planning_shift_intents,
     get_planning_matrix,
-    list_doctor_period_notes,
-    save_doctor_period_note,
+    list_team_member_period_notes,
+    save_team_member_period_note,
     upsert_planning_cell,
 )
 from app.services.planning import (
@@ -46,7 +46,7 @@ from app.services.roster_matrix import (
 from app.services.shift_groups import (
     create_shift_group,
     list_shift_groups,
-    replace_group_doctors,
+    replace_group_team_members,
     replace_group_shift_templates,
 )
 from app.services.shift_templates import (
@@ -78,6 +78,8 @@ def require_token(token: str) -> None:
 
 
 def mcp_organization_id() -> int:
+    if settings.mcp_organization_id is not None:
+        return settings.mcp_organization_id
     return settings.default_organization_id
 
 
@@ -97,16 +99,16 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "shift-planner-mcp"}
 
 
-@mcp.resource("shift-planner://doctors")
-def doctors_resource() -> list[dict[str, Any]]:
-    """List all doctors."""
+@mcp.resource("shift-planner://team-members")
+def team_members_resource() -> list[dict[str, Any]]:
+    """List all team members in the default organization."""
     with db_session() as db:
         return [
             {
-                **serialize_model(doctor),
-                "shift_group_ids": sorted({link.shift_group_id for link in doctor.shift_group_links}),
+                **serialize_model(member),
+                "shift_group_ids": sorted({link.shift_group_id for link in member.shift_group_links}),
             }
-            for doctor in list_doctors(db, organization_id=mcp_organization_id())
+            for member in list_team_members(db, organization_id=mcp_organization_id())
         ]
 
 
@@ -134,12 +136,12 @@ def planning_periods_resource() -> list[dict[str, Any]]:
 
 @mcp.resource("shift-planner://shift-groups")
 def shift_groups_resource() -> list[dict[str, Any]]:
-    """List shift groups with doctor and shift template membership ids."""
+    """List shift groups with team member and shift template membership ids (`team_member_ids` in payload)."""
     with db_session() as db:
         return [
             {
                 **serialize_model(group),
-                "doctor_ids": sorted({link.doctor_id for link in group.doctor_links}),
+                "team_member_ids": sorted({link.team_member_id for link in group.team_member_links}),
                 "shift_template_ids": sorted({link.shift_template_id for link in group.template_links}),
             }
             for group in list_shift_groups(db, organization_id=mcp_organization_id())
@@ -148,7 +150,7 @@ def shift_groups_resource() -> list[dict[str, Any]]:
 
 @mcp.resource("shift-planner://matrix/{planning_period_id}")
 def matrix_resource(planning_period_id: int) -> dict[str, Any]:
-    """Return the monthly planning matrix with days, doctors, and cells."""
+    """Return the monthly planning matrix with days, `team_members`, and cells."""
     with db_session() as db:
         return get_planning_matrix(
             db, planning_period_id, organization_id=mcp_organization_id()
@@ -166,7 +168,7 @@ def matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> di
 
 @mcp.resource("shift-planner://roster-matrix/{planning_period_id}")
 def roster_matrix_resource(planning_period_id: int) -> dict[str, Any]:
-    """Return the final roster matrix with days, shift slots, doctors, and assignments."""
+    """Return the final roster matrix with days, shift slots, `team_members`, and assignments."""
     with db_session() as db:
         return get_roster_matrix(db, planning_period_id, organization_id=mcp_organization_id()).model_dump(
             mode="json"
@@ -182,25 +184,25 @@ def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int
         ).model_dump(mode="json")
 
 
-@mcp.resource("shift-planner://doctor-period-notes/{planning_period_id}")
-def doctor_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]]:
-    """Return source emails and monthly notes for a planning period."""
+@mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}")
+def team_member_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]]:
+    """Return source emails and monthly notes per team member for a planning period."""
     with db_session() as db:
         return [
             serialize_model(note)
-            for note in list_doctor_period_notes(
+            for note in list_team_member_period_notes(
                 db, planning_period_id=planning_period_id, organization_id=mcp_organization_id()
             )
         ]
 
 
-@mcp.resource("shift-planner://doctor-period-notes/{planning_period_id}/shift-group/{shift_group_id}")
-def doctor_period_notes_filtered_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
-    """Return doctor period notes filtered to doctors in a shift group."""
+@mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}/shift-group/{shift_group_id}")
+def team_member_period_notes_filtered_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+    """Return period notes filtered to team members in a shift group."""
     with db_session() as db:
         return [
             serialize_model(note)
-            for note in list_doctor_period_notes(
+            for note in list_team_member_period_notes(
                 db,
                 planning_period_id=planning_period_id,
                 organization_id=mcp_organization_id(),
@@ -222,7 +224,7 @@ def get_validation_warnings(planning_period_id: int, shift_group_id: int | None 
 
 
 @mcp.tool
-def create_doctor_tool(
+def create_team_member_tool(
     token: str,
     first_name: str,
     last_name: str,
@@ -231,12 +233,12 @@ def create_doctor_tool(
     notes: str | None = None,
     shift_group_ids: list[int] | None = None,
 ) -> dict[str, Any]:
-    """Create a doctor. Requires MCP admin token."""
+    """Create a team member row. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        doctor = create_doctor(
+        member = create_team_member(
             db,
-            DoctorCreate(
+            TeamMemberCreate(
                 first_name=first_name,
                 last_name=last_name,
                 email=email,
@@ -248,10 +250,10 @@ def create_doctor_tool(
             actor="mcp",
             source="mcp",
         )
-        db.refresh(doctor, attribute_names=["shift_group_links"])
+        db.refresh(member, attribute_names=["shift_group_links"])
         return {
-            **serialize_model(doctor),
-            "shift_group_ids": sorted({link.shift_group_id for link in doctor.shift_group_links}),
+            **serialize_model(member),
+            "shift_group_ids": sorted({link.shift_group_id for link in member.shift_group_links}),
         }
 
 
@@ -274,29 +276,29 @@ def create_shift_group_tool(
             actor="mcp",
             source="mcp",
         )
-        db.refresh(group, attribute_names=["doctor_links", "template_links"])
+        db.refresh(group, attribute_names=["team_member_links", "template_links"])
         return {
             **serialize_model(group),
-            "doctor_ids": sorted({link.doctor_id for link in group.doctor_links}),
+            "team_member_ids": sorted({link.team_member_id for link in group.team_member_links}),
             "shift_template_ids": sorted({link.shift_template_id for link in group.template_links}),
         }
 
 
 @mcp.tool
-def set_shift_group_doctors_tool(token: str, shift_group_id: int, doctor_ids: list[int]) -> dict[str, Any]:
-    """Replace doctors assigned to a shift group. Requires MCP admin token."""
+def set_shift_group_team_members_tool(token: str, shift_group_id: int, team_member_ids: list[int]) -> dict[str, Any]:
+    """Replace team members assigned to a shift group. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        replace_group_doctors(
-            db, shift_group_id, doctor_ids, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        replace_group_team_members(
+            db, shift_group_id, team_member_ids, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
         )
         match = db.get(ShiftGroup, shift_group_id)
         if match is None:
-            return {"shift_group_id": shift_group_id, "doctor_ids": [], "shift_template_ids": []}
-        db.refresh(match, attribute_names=["doctor_links", "template_links"])
+            return {"shift_group_id": shift_group_id, "team_member_ids": [], "shift_template_ids": []}
+        db.refresh(match, attribute_names=["team_member_links", "template_links"])
         return {
             **serialize_model(match),
-            "doctor_ids": sorted({link.doctor_id for link in match.doctor_links}),
+            "team_member_ids": sorted({link.team_member_id for link in match.team_member_links}),
             "shift_template_ids": sorted({link.shift_template_id for link in match.template_links}),
         }
 
@@ -311,23 +313,23 @@ def set_shift_group_templates_tool(token: str, shift_group_id: int, shift_templa
         )
         match = db.get(ShiftGroup, shift_group_id)
         if match is None:
-            return {"shift_group_id": shift_group_id, "doctor_ids": [], "shift_template_ids": []}
-        db.refresh(match, attribute_names=["doctor_links", "template_links"])
+            return {"shift_group_id": shift_group_id, "team_member_ids": [], "shift_template_ids": []}
+        db.refresh(match, attribute_names=["team_member_links", "template_links"])
         return {
             **serialize_model(match),
-            "doctor_ids": sorted({link.doctor_id for link in match.doctor_links}),
+            "team_member_ids": sorted({link.team_member_id for link in match.team_member_links}),
             "shift_template_ids": sorted({link.shift_template_id for link in match.template_links}),
         }
 
 
 @mcp.tool
-def delete_doctor_tool(token: str, doctor_id: int) -> dict[str, bool]:
-    """Delete a doctor and clear related wishes/notes/assignments. Requires MCP admin token."""
+def delete_team_member_tool(token: str, team_member_id: int) -> dict[str, bool]:
+    """Delete a team member and clear related wishes, notes, and assignments. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         return {
-            "deleted": delete_doctor(
-                db, doctor_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            "deleted": delete_team_member(
+                db, team_member_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
             )
         }
 
@@ -467,7 +469,7 @@ def delete_planning_period_tool(token: str, planning_period_id: int) -> dict[str
 def upsert_planning_cell_tool(
     token: str,
     planning_period_id: int,
-    doctor_id: int,
+    team_member_id: int,
     cell_date: str,
     status: str,
     comment: str | None = None,
@@ -479,7 +481,7 @@ def upsert_planning_cell_tool(
             db,
             planning_period_id,
             PlanningCellUpsert(
-                doctor_id=doctor_id,
+                team_member_id=team_member_id,
                 cell_date=date.fromisoformat(cell_date),
                 status=status,  # type: ignore[arg-type]
                 comment=comment,
@@ -502,7 +504,7 @@ def bulk_upsert_planning_cells_tool(
     payload = PlanningCellBulkUpsert(
         cells=[
             PlanningCellUpsert(
-                doctor_id=int(cell["doctor_id"]),
+                team_member_id=int(cell["team_member_id"]),
                 cell_date=date.fromisoformat(str(cell["cell_date"])),
                 status=str(cell["status"]),  # type: ignore[arg-type]
                 comment=cell.get("comment"),
@@ -533,7 +535,7 @@ def bulk_upsert_planning_shift_intents_tool(
         kind: str | None = str(raw_kind) if raw_kind is not None else None
         intent_rows.append(
             PlanningShiftIntentUpsert(
-                doctor_id=int(row["doctor_id"]),
+                team_member_id=int(row["team_member_id"]),
                 cell_date=date.fromisoformat(str(row["cell_date"])),
                 shift_group_id=int(row["shift_group_id"]),
                 shift_template_id=int(row["shift_template_id"]),
@@ -551,20 +553,20 @@ def bulk_upsert_planning_shift_intents_tool(
 
 
 @mcp.tool
-def save_doctor_period_note_tool(
+def save_team_member_period_note_tool(
     token: str,
     planning_period_id: int,
-    doctor_id: int,
+    team_member_id: int,
     source_text: str | None = None,
     summary: str | None = None,
 ) -> dict[str, Any]:
-    """Save a doctor's monthly source email/general note. Requires MCP admin token."""
+    """Save a team member's monthly source email/general note. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        note = save_doctor_period_note(
+        note = save_team_member_period_note(
             db,
             planning_period_id,
-            DoctorPeriodNoteUpsert(doctor_id=doctor_id, source_text=source_text, summary=summary),
+            TeamMemberPeriodNoteUpsert(team_member_id=team_member_id, source_text=source_text, summary=summary),
             organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
@@ -576,18 +578,18 @@ def save_doctor_period_note_tool(
 def upsert_roster_slot_assignment_tool(
     token: str,
     roster_slot_id: int,
-    doctor_id: int,
+    team_member_id: int,
     comment: str | None = None,
     manual_override: bool = False,
 ) -> dict[str, Any]:
-    """Assign a doctor to one final roster slot. Requires MCP admin token."""
+    """Assign a team member (team_member_id) to one final roster slot. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         assignment = upsert_roster_slot_assignment(
             db,
             RosterSlotAssignmentUpsert(
                 roster_slot_id=roster_slot_id,
-                doctor_id=doctor_id,
+                team_member_id=team_member_id,
                 comment=comment,
                 manual_override=manual_override,
             ),

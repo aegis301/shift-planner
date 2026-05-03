@@ -19,6 +19,12 @@ export default function RegisterCreateOrganizationPage() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setMessage("");
+    const password = String(form.get("password") ?? "");
+    const passwordConfirm = String(form.get("password_confirm") ?? "");
+    if (password !== passwordConfirm) {
+      setMessage(t(locale, "registerPasswordMismatch"));
+      return;
+    }
     try {
       const slug = String(form.get("organization_slug") ?? "")
         .trim()
@@ -29,12 +35,13 @@ export default function RegisterCreateOrganizationPage() {
           organization_name: form.get("organization_name"),
           organization_slug: slug,
           email: form.get("email"),
-          password: form.get("password"),
+          password,
+          password_confirm: passwordConfirm,
           locale: form.get("locale") || locale
         })
       });
       await refreshMe();
-      const path = user.capabilities.admin ? "/organization" : "/";
+      const path = user.capabilities.admin ? "/organization/team" : "/";
       router.push(path);
       router.refresh();
     } catch {
@@ -66,7 +73,17 @@ export default function RegisterCreateOrganizationPage() {
           <input className={inputClass} name="email" type="email" required />
         </Field>
         <Field label={t(locale, "password")}>
-          <input className={inputClass} name="password" type="password" required minLength={8} />
+          <input className={inputClass} name="password" type="password" required minLength={8} autoComplete="new-password" />
+        </Field>
+        <Field label={t(locale, "registerPasswordConfirmLabel")}>
+          <input
+            className={inputClass}
+            name="password_confirm"
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
         </Field>
         <input type="hidden" name="locale" value={locale} />
         <button

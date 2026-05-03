@@ -5,8 +5,6 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
-    DoctorPeriodNoteRead,
-    DoctorPeriodNoteUpsert,
     PlanningCellBulkUpsert,
     PlanningCellClear,
     PlanningCellRead,
@@ -14,34 +12,36 @@ from app.schemas import (
     PlanningMatrixRead,
     PlanningShiftIntentBulkUpsert,
     PlanningShiftIntentRead,
+    TeamMemberPeriodNoteRead,
+    TeamMemberPeriodNoteUpsert,
 )
 from app.services.authz import (
-    assert_doctor_cell_access,
-    assert_doctor_shift_group_access,
     assert_planning_shift_group_scope,
+    assert_team_member_cell_access,
+    assert_team_member_shift_group_access,
     can_use_planning_ui,
-    get_linked_doctor,
-    require_shift_group_id_for_doctor,
-    use_doctor_filtered_matrix_view,
+    get_linked_team_member,
+    require_shift_group_id_for_team_member,
+    use_team_member_filtered_matrix_view,
 )
 from app.services.matrix import (
     bulk_upsert_planning_cells,
     bulk_upsert_planning_shift_intents,
     clear_planning_cell,
     get_planning_matrix,
-    list_doctor_period_notes,
-    save_doctor_period_note,
+    list_team_member_period_notes,
+    save_team_member_period_note,
     upsert_planning_cell,
 )
 
 router = APIRouter(prefix="/matrix", tags=["matrix"])
 
 
-def _linked_doctor_or_403(db: Session, user: User):
-    doctor = get_linked_doctor(db, user.id)
-    if doctor is None:
-        raise HTTPException(status_code=403, detail="Doctor profile is not linked to this account")
-    return doctor
+def _linked_team_member_or_403(db: Session, user: User):
+    member = get_linked_team_member(db, user)
+    if member is None:
+        raise HTTPException(status_code=403, detail="Team member profile is not linked to this account")
+    return member
 
 
 def _matrix_access(db: Session, user: User, shift_group_id: int | None) -> None:
@@ -52,11 +52,11 @@ def _matrix_access(db: Session, user: User, shift_group_id: int | None) -> None:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         return
     try:
-        require_shift_group_id_for_doctor(shift_group_id)
+        require_shift_group_id_for_team_member(shift_group_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        assert_doctor_shift_group_access(db, user, shift_group_id)
+        assert_team_member_shift_group_access(db, user, shift_group_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -73,13 +73,13 @@ def get_matrix(
         matrix = get_planning_matrix(
             db, planning_period_id, organization_id=user.organization_id, shift_group_id=shift_group_id
         )
-        if use_doctor_filtered_matrix_view(db, user):
-            doctor = _linked_doctor_or_403(db, user)
+        if use_team_member_filtered_matrix_view(db, user):
+            member = _linked_team_member_or_403(db, user)
             return matrix.model_copy(
                 update={
-                    "doctors": [row for row in matrix.doctors if row.id == doctor.id],
-                    "cells": [row for row in matrix.cells if row.doctor_id == doctor.id],
-                    "shift_intents": [row for row in matrix.shift_intents if row.doctor_id == doctor.id],
+                    "team_members": [row for row in matrix.team_members if row.id == member.id],
+                    "cells": [row for row in matrix.cells if row.team_member_id == member.id],
+                    "shift_intents": [row for row in matrix.shift_intents if row.team_member_id == member.id],
                 }
             )
         return matrix
@@ -95,9 +95,9 @@ def put_cell(
     user: User = Depends(get_current_user),
 ):
     if not can_use_planning_ui(user):
-        doctor = _linked_doctor_or_403(db, user)
+        member = _linked_team_member_or_403(db, user)
         try:
-            assert_doctor_cell_access(user, doctor, payload.doctor_id)
+            assert_team_member_cell_access(user, member, payload.team_member_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
@@ -116,10 +116,10 @@ def put_cells_bulk(
     user: User = Depends(get_current_user),
 ):
     if not can_use_planning_ui(user):
-        doctor = _linked_doctor_or_403(db, user)
+        member = _linked_team_member_or_403(db, user)
         for cell in payload.cells:
             try:
-                assert_doctor_cell_access(user, doctor, cell.doctor_id)
+                assert_team_member_cell_access(user, member, cell.team_member_id)
             except PermissionError as exc:
                 raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
@@ -138,14 +138,14 @@ def put_shift_intents_bulk(
     user: User = Depends(get_current_user),
 ):
     if not can_use_planning_ui(user):
-        doctor = _linked_doctor_or_403(db, user)
+        member = _linked_team_member_or_403(db, user)
         for item in payload.intents:
             try:
-                assert_doctor_cell_access(user, doctor, item.doctor_id)
+                assert_team_member_cell_access(user, member, item.team_member_id)
             except PermissionError as exc:
                 raise HTTPException(status_code=403, detail=str(exc)) from exc
             try:
-                assert_doctor_shift_group_access(db, user, item.shift_group_id)
+                assert_team_member_shift_group_access(db, user, item.shift_group_id)
             except PermissionError as exc:
                 raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
@@ -165,9 +165,9 @@ def clear_cell(
     user: User = Depends(get_current_user),
 ):
     if not can_use_planning_ui(user):
-        doctor = _linked_doctor_or_403(db, user)
+        member = _linked_team_member_or_403(db, user)
         try:
-            assert_doctor_cell_access(user, doctor, payload.doctor_id)
+            assert_team_member_cell_access(user, member, payload.team_member_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
     deleted = clear_planning_cell(
@@ -176,7 +176,7 @@ def clear_cell(
     return {"deleted": deleted}
 
 
-@router.get("/{planning_period_id}/notes", response_model=list[DoctorPeriodNoteRead])
+@router.get("/{planning_period_id}/notes", response_model=list[TeamMemberPeriodNoteRead])
 def get_notes(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
@@ -184,31 +184,31 @@ def get_notes(
     user: User = Depends(get_current_user),
 ):
     _matrix_access(db, user, shift_group_id)
-    notes = list_doctor_period_notes(
+    notes = list_team_member_period_notes(
         db,
         planning_period_id=planning_period_id,
         organization_id=user.organization_id,
         shift_group_id=shift_group_id,
     )
-    if use_doctor_filtered_matrix_view(db, user):
-        doctor = _linked_doctor_or_403(db, user)
-        notes = [note for note in notes if note.doctor_id == doctor.id]
+    if use_team_member_filtered_matrix_view(db, user):
+        member = _linked_team_member_or_403(db, user)
+        notes = [note for note in notes if note.team_member_id == member.id]
     return notes
 
 
-@router.put("/{planning_period_id}/notes", response_model=DoctorPeriodNoteRead)
+@router.put("/{planning_period_id}/notes", response_model=TeamMemberPeriodNoteRead)
 def put_note(
     planning_period_id: int,
-    payload: DoctorPeriodNoteUpsert,
+    payload: TeamMemberPeriodNoteUpsert,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     if not can_use_planning_ui(user):
-        doctor = _linked_doctor_or_403(db, user)
+        member = _linked_team_member_or_403(db, user)
         try:
-            assert_doctor_cell_access(user, doctor, payload.doctor_id)
+            assert_team_member_cell_access(user, member, payload.team_member_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return save_doctor_period_note(
+    return save_team_member_period_note(
         db, planning_period_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
     )

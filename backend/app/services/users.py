@@ -1,10 +1,13 @@
-from sqlalchemy import func, select
+from typing import Literal
+
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
-from app.models import Doctor, Organization, ShiftGroup, User, UserShiftGroup
+from app.models import Account, Organization, ShiftGroup, TeamMember, User, UserShiftGroup
 from app.schemas import (
-    DoctorSelfUpdate,
+    TeamMemberSelfUpdate,
+    MembershipSummary,
     OrganizationBrief,
     OrganizationUserRead,
     UserCapabilities,
@@ -15,18 +18,25 @@ from app.services.audit import record_audit
 from app.services.authz import (
     ROLE_ADMIN,
     ROLE_PLANNER,
+    ROLE_TEAM_MEMBER,
     can_use_planning_ui,
-    get_linked_doctor,
+    get_linked_team_member,
     is_admin,
-    list_shift_groups_for_doctor,
+    list_shift_groups_for_team_member,
 )
 from app.services.organizations import get_organization_by_slug
 from app.services.tenancy import ensure_default_organization
 
 
+def get_account_by_email(db: Session, email: str) -> Account | None:
+    return db.scalar(select(Account).where(Account.email == email.lower()))
+
+
 def get_user_in_organization(db: Session, email: str, organization_id: int) -> User | None:
     return db.scalar(
-        select(User).where(User.email == email.lower(), User.organization_id == organization_id)
+        select(User)
+        .join(Account, Account.id == User.account_id)
+        .where(Account.email == email.lower(), User.organization_id == organization_id)
     )
 
 
@@ -34,16 +44,58 @@ def get_user(db: Session, user_id: int) -> User | None:
     return db.get(User, user_id)
 
 
-def authenticate_user(db: Session, email: str, password: str, organization_slug: str) -> User | None:
-    org = get_organization_by_slug(db, organization_slug)
+LoginAuthOutcome = Literal["success", "invalid_credentials", "organization_slug_required"]
+
+
+def authenticate_login(
+    db: Session, *, email: str, password: str, organization_slug: str
+) -> tuple[LoginAuthOutcome, User | None, list[dict] | None]:
+    slug = (organization_slug or "").strip().lower()
+    normalized_email = email.lower()
+    if slug:
+        org = get_organization_by_slug(db, slug)
+        if org is None:
+            return "invalid_credentials", None, None
+        user = get_user_in_organization(db, email, org.id)
+        if not user or not user.is_active:
+            return "invalid_credentials", None, None
+        if not verify_password(password, user.account.hashed_password):
+            return "invalid_credentials", None, None
+        return "success", user, None
+    stmt = (
+        select(User)
+        .join(Account, Account.id == User.account_id)
+        .where(Account.email == normalized_email, User.is_active.is_(True))
+    )
+    matches = list(db.scalars(stmt).all())
+    if len(matches) == 0:
+        return "invalid_credentials", None, None
+    account = matches[0].account
+    if not verify_password(password, account.hashed_password):
+        return "invalid_credentials", None, None
+    if len(matches) > 1:
+        choices: list[dict] = []
+        for m in matches:
+            o = db.get(Organization, m.organization_id)
+            if o is not None:
+                choices.append({"slug": o.slug, "name": o.name, "organization_id": o.id})
+        choices.sort(key=lambda x: x["slug"])
+        return "organization_slug_required", None, choices
+    return "success", matches[0], None
+
+
+def switch_membership_by_organization_slug(db: Session, *, current: User, organization_slug: str) -> User | None:
+    slug = organization_slug.strip().lower()
+    org = get_organization_by_slug(db, slug)
     if org is None:
         return None
-    user = get_user_in_organization(db, email, org.id)
-    if not user or not user.is_active:
-        return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    return user
+    return db.scalar(
+        select(User).where(
+            User.account_id == current.account_id,
+            User.organization_id == org.id,
+            User.is_active.is_(True),
+        )
+    )
 
 
 def ensure_admin_user(db: Session, *, email: str, password: str) -> User:
@@ -51,25 +103,48 @@ def ensure_admin_user(db: Session, *, email: str, password: str) -> User:
     existing = get_user_in_organization(db, email, org.id)
     if existing:
         return existing
-    user = User(
-        email=email.lower(),
-        hashed_password=hash_password(password),
-        role="admin",
-        locale="de",
-        organization_id=org.id,
-    )
+    acc = Account(email=email.lower(), hashed_password=hash_password(password))
+    db.add(acc)
+    db.flush()
+    user = User(account_id=acc.id, organization_id=org.id, role="admin", locale="de")
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
 
+def _membership_summaries(db: Session, account_id: int) -> list[MembershipSummary]:
+    rows = list(
+        db.scalars(
+            select(User).where(User.account_id == account_id, User.is_active.is_(True)).order_by(User.organization_id)
+        ).all()
+    )
+    out: list[MembershipSummary] = []
+    for m in rows:
+        org = db.get(Organization, m.organization_id)
+        if org is None:
+            ob = OrganizationBrief(id=m.organization_id, name="", slug="", plan_tier="team")
+        else:
+            ob = OrganizationBrief.model_validate(org)
+        doc = get_linked_team_member(db, m)
+        out.append(
+            MembershipSummary(
+                membership_id=m.id,
+                organization=ob,
+                role=m.role,
+                team_member_id=doc.id if doc is not None else None,
+            )
+        )
+    out.sort(key=lambda s: (s.organization.slug, s.membership_id))
+    return out
+
+
 def build_user_read(db: Session, user: User) -> UserRead:
-    linked = get_linked_doctor(db, user.id)
-    doctor_id = linked.id if linked else None
+    linked = get_linked_team_member(db, user)
+    team_member_id = linked.id if linked else None
     groups: list[UserShiftGroupBrief] = []
     if linked:
-        for g in list_shift_groups_for_doctor(db, linked.id):
+        for g in list_shift_groups_for_team_member(db, linked.id):
             groups.append(UserShiftGroupBrief.model_validate(g))
     planner_groups: list[UserShiftGroupBrief] = []
     if user.role == ROLE_PLANNER:
@@ -84,7 +159,7 @@ def build_user_read(db: Session, user: User) -> UserRead:
     caps = UserCapabilities(
         admin=is_admin(user),
         planning=can_use_planning_ui(user),
-        doctor_portal=doctor_id is not None,
+        team_member_portal=team_member_id is not None,
     )
     org = db.get(Organization, user.organization_id)
     if org is None:
@@ -96,6 +171,7 @@ def build_user_read(db: Session, user: User) -> UserRead:
         )
     else:
         org_brief = OrganizationBrief.model_validate(org)
+    memberships = _membership_summaries(db, user.account_id)
     return UserRead(
         id=user.id,
         email=user.email,
@@ -103,28 +179,30 @@ def build_user_read(db: Session, user: User) -> UserRead:
         locale=user.locale,
         organization_id=user.organization_id,
         organization=org_brief,
-        doctor_id=doctor_id,
+        team_member_id=team_member_id,
         shift_groups=groups,
         planner_shift_groups=planner_groups,
         capabilities=caps,
+        memberships=memberships,
     )
 
 
-def update_self_doctor_profile(db: Session, user: User, payload: DoctorSelfUpdate) -> Doctor | None:
-    from app.services.doctors import update_doctor_self
+def update_self_team_member_profile(db: Session, user: User, payload: TeamMemberSelfUpdate) -> TeamMember | None:
+    from app.services.team_members import update_team_member_self
 
-    doctor = get_linked_doctor(db, user.id)
-    if doctor is None:
+    member = get_linked_team_member(db, user)
+    if member is None:
         return None
-    return update_doctor_self(db, doctor, payload, actor=user.email, source="rest")
+    return update_team_member_self(db, member, payload, actor=user.email, source="rest")
 
 
 def list_organization_users(db: Session, *, organization_id: int) -> list[OrganizationUserRead]:
     stmt = (
-        select(User, Doctor)
-        .outerjoin(Doctor, Doctor.user_id == User.id)
+        select(User, TeamMember)
+        .join(Account, Account.id == User.account_id)
+        .outerjoin(TeamMember, TeamMember.user_id == User.id)
         .where(User.organization_id == organization_id)
-        .order_by(User.email)
+        .order_by(Account.email)
     )
     out: list[OrganizationUserRead] = []
     for row in db.execute(stmt).all():
@@ -136,34 +214,144 @@ def list_organization_users(db: Session, *, organization_id: int) -> list[Organi
                 email=u.email,
                 role=u.role,
                 locale=u.locale,
-                linked_doctor_id=d.id if d is not None else None,
-                linked_doctor_label=label,
+                is_active=u.is_active,
+                linked_team_member_id=d.id if d is not None else None,
+                linked_team_member_label=label,
             )
         )
     return out
 
 
-def delete_own_account(db: Session, user: User, *, password: str) -> None:
-    if not verify_password(password, user.hashed_password):
-        raise ValueError("Invalid password")
-    if is_admin(user):
+def get_organization_user_read(db: Session, *, user_id: int, organization_id: int) -> OrganizationUserRead | None:
+    stmt = (
+        select(User, TeamMember)
+        .outerjoin(TeamMember, TeamMember.user_id == User.id)
+        .where(User.id == user_id, User.organization_id == organization_id)
+    )
+    row = db.execute(stmt).first()
+    if row is None:
+        return None
+    u, d = row[0], row[1]
+    label = f"{d.last_name}, {d.first_name}" if d is not None else None
+    return OrganizationUserRead(
+        id=u.id,
+        email=u.email,
+        role=u.role,
+        locale=u.locale,
+        is_active=u.is_active,
+        linked_team_member_id=d.id if d is not None else None,
+        linked_team_member_label=label,
+    )
+
+
+_ASSIGNABLE_ROLES = frozenset({ROLE_ADMIN, ROLE_PLANNER, ROLE_TEAM_MEMBER})
+
+
+def admin_set_organization_user_role(db: Session, *, actor: User, target_user_id: int, role: str) -> OrganizationUserRead:
+    if not is_admin(actor):
+        raise ValueError("Admin only")
+    if role not in _ASSIGNABLE_ROLES:
+        raise ValueError("Invalid role")
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise ValueError("User not found")
+    if target.organization_id != actor.organization_id:
+        raise ValueError("User not in this organization")
+    if target.role == ROLE_ADMIN and role != ROLE_ADMIN:
         admin_count = db.scalar(
             select(func.count())
             .select_from(User)
-            .where(User.organization_id == user.organization_id, User.role == ROLE_ADMIN)
+            .where(User.organization_id == actor.organization_id, User.role == ROLE_ADMIN)
         )
         if admin_count is not None and admin_count <= 1:
-            raise ValueError("Cannot delete the only administrator for this organization")
-    actor_email = user.email
-    user_id = user.id
+            raise ValueError("Cannot demote the only administrator for this organization")
+    previous_role = target.role
+    target.role = role
+    if role != ROLE_PLANNER:
+        db.execute(delete(UserShiftGroup).where(UserShiftGroup.user_id == target.id))
+    record_audit(
+        db,
+        actor=actor.email,
+        source="rest",
+        action="admin_set_user_role",
+        entity_type="user",
+        entity_id=target.id,
+        details={
+            "organization_id": target.organization_id,
+            "target_email": target.email,
+            "previous_role": previous_role,
+            "new_role": role,
+        },
+    )
+    db.commit()
+    db.refresh(target)
+    out = get_organization_user_read(db, user_id=target.id, organization_id=actor.organization_id)
+    if out is None:
+        raise ValueError("User not found")
+    return out
+
+
+def admin_delete_organization_user(db: Session, *, actor: User, target_user_id: int) -> None:
+    if not is_admin(actor):
+        raise ValueError("Admin only")
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise ValueError("User not found")
+    if target.organization_id != actor.organization_id:
+        raise ValueError("User not in this organization")
+    if target.id == actor.id:
+        raise ValueError("Cannot remove your own account here; use account settings")
+    if target.role == ROLE_ADMIN:
+        admin_count = db.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.organization_id == actor.organization_id, User.role == ROLE_ADMIN)
+        )
+        if admin_count is not None and admin_count <= 1:
+            raise ValueError("Cannot remove the only administrator for this organization")
+    record_audit(
+        db,
+        actor=actor.email,
+        source="rest",
+        action="admin_delete_organization_user",
+        entity_type="user",
+        entity_id=target.id,
+        details={"organization_id": target.organization_id, "target_email": target.email},
+    )
+    account_id = target.account_id
+    db.delete(target)
+    db.flush()
+    remaining = db.scalar(select(func.count()).select_from(User).where(User.account_id == account_id))
+    if remaining == 0:
+        acc = db.get(Account, account_id)
+        if acc is not None:
+            db.delete(acc)
+    db.commit()
+
+
+def delete_own_account(db: Session, user: User, *, password: str) -> None:
+    account = user.account
+    if not verify_password(password, account.hashed_password):
+        raise ValueError("Invalid password")
+    memberships = list(db.scalars(select(User).where(User.account_id == account.id)).all())
+    for m in memberships:
+        if is_admin(m):
+            admin_count = db.scalar(
+                select(func.count())
+                .select_from(User)
+                .where(User.organization_id == m.organization_id, User.role == ROLE_ADMIN)
+            )
+            if admin_count is not None and admin_count <= 1:
+                raise ValueError("Cannot delete the only administrator for this organization")
+    actor_email = account.email
     record_audit(
         db,
         actor=actor_email,
         source="rest",
         action="delete_account",
-        entity_type="user",
-        entity_id=user_id,
-        details={"organization_id": user.organization_id},
+        entity_type="account",
+        entity_id=str(account.id),
+        details={"membership_ids": [m.id for m in memberships]},
     )
-    db.delete(user)
+    db.delete(account)
     db.commit()

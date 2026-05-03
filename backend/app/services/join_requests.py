@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Doctor, OrganizationJoinRequest, User
-from app.schemas import ApproveJoinCreateDoctorInput, DoctorCreate, DoctorUpdate, JoinRequestRead
+from app.models import OrganizationJoinRequest, TeamMember, User
+from app.schemas import ApproveJoinCreateTeamMemberInput, JoinRequestRead, TeamMemberCreate, TeamMemberUpdate
 from app.services.audit import record_audit
-from app.services.doctors import create_doctor, update_doctor
+from app.services.team_members import create_team_member, update_team_member
 from app.services.users import get_user
 
 STATUS_PENDING = "pending"
@@ -16,8 +16,8 @@ STATUS_APPROVED = "approved"
 STATUS_REJECTED = "rejected"
 STATUS_CANCELLED = "cancelled"
 
-RESOLUTION_CREATED_DOCTOR = "created_doctor"
-RESOLUTION_LINKED_DOCTOR = "linked_existing_doctor"
+RESOLUTION_CREATED_TEAM_MEMBER = "created_team_member"
+RESOLUTION_LINKED_TEAM_MEMBER = "linked_existing_team_member"
 
 
 def join_request_to_read(row: OrganizationJoinRequest) -> JoinRequestRead:
@@ -33,7 +33,7 @@ def join_request_to_read(row: OrganizationJoinRequest) -> JoinRequestRead:
         message=row.message,
         status=row.status,
         resolution=row.resolution,
-        resolved_doctor_id=row.resolved_doctor_id,
+        resolved_team_member_id=row.resolved_team_member_id,
         created_at=row.created_at,
     )
 
@@ -66,6 +66,36 @@ def create_pending_join_request(
     )
     db.add(row)
     db.flush()
+    return row
+
+
+def create_join_request_for_applicant(
+    db: Session,
+    *,
+    user: User,
+    first_name: str,
+    last_name: str,
+    message: str | None,
+) -> OrganizationJoinRequest:
+    if user.role != "applicant":
+        raise ValueError("Applicant only")
+    row = create_pending_join_request(
+        db,
+        organization_id=user.organization_id,
+        requester_user_id=user.id,
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
+        message=message.strip() if message else None,
+    )
+    record_audit(
+        db,
+        actor=user.email,
+        source="rest",
+        action="resubmit_join_request",
+        entity_type="organization_join_request",
+        entity_id=row.id,
+        details={"organization_id": user.organization_id},
+    )
     return row
 
 
@@ -153,19 +183,19 @@ def reject_join_request(
     return row
 
 
-def approve_join_request_create_doctor(
+def approve_join_request_create_team_member(
     db: Session,
     *,
     row: OrganizationJoinRequest,
     admin_user: User,
-    payload: ApproveJoinCreateDoctorInput,
+    payload: ApproveJoinCreateTeamMemberInput,
 ) -> OrganizationJoinRequest:
     if row.status != STATUS_PENDING:
         raise ValueError("Request is not pending")
     requester = get_user(db, row.requester_user_id)
     if requester is None:
         raise ValueError("Requester not found")
-    doctor_payload = DoctorCreate(
+    member_payload = TeamMemberCreate(
         first_name=payload.first_name,
         last_name=payload.last_name,
         email=payload.email,
@@ -174,21 +204,21 @@ def approve_join_request_create_doctor(
         shift_group_ids=payload.shift_group_ids,
         user_id=requester.id,
     )
-    doctor = create_doctor(
+    member = create_team_member(
         db,
-        doctor_payload,
+        member_payload,
         organization_id=row.organization_id,
         actor=admin_user.email,
         source="rest",
     )
     requester = get_user(db, row.requester_user_id)
     if requester is not None:
-        requester.role = "doctor"
+        requester.role = "team_member"
     row = db.get(OrganizationJoinRequest, row.id)
     if row is not None:
         row.status = STATUS_APPROVED
-        row.resolution = RESOLUTION_CREATED_DOCTOR
-        row.resolved_doctor_id = doctor.id
+        row.resolution = RESOLUTION_CREATED_TEAM_MEMBER
+        row.resolved_team_member_id = member.id
         row.resolved_by_user_id = admin_user.id
         row.resolved_at = datetime.now(timezone.utc)
         row.updated_at = datetime.now(timezone.utc)
@@ -196,10 +226,10 @@ def approve_join_request_create_doctor(
         db,
         actor=admin_user.email,
         source="rest",
-        action="approve_join_request_create_doctor",
+        action="approve_join_request_create_team_member",
         entity_type="organization_join_request",
         entity_id=row.id if row else None,
-        details={"doctor_id": doctor.id},
+        details={"team_member_id": member.id},
     )
     db.commit()
     if row:
@@ -207,39 +237,39 @@ def approve_join_request_create_doctor(
     return row
 
 
-def approve_join_request_link_doctor(
+def approve_join_request_link_team_member(
     db: Session,
     *,
     row: OrganizationJoinRequest,
     admin_user: User,
-    doctor_id: int,
+    team_member_id: int,
 ) -> OrganizationJoinRequest:
     if row.status != STATUS_PENDING:
         raise ValueError("Request is not pending")
     requester = get_user(db, row.requester_user_id)
     if requester is None:
         raise ValueError("Requester not found")
-    doctor = db.get(Doctor, doctor_id)
-    if doctor is None or doctor.organization_id != row.organization_id or doctor.user_id is not None:
-        raise ValueError("Doctor cannot be linked")
-    updated = update_doctor(
+    member = db.get(TeamMember, team_member_id)
+    if member is None or member.organization_id != row.organization_id or member.user_id is not None:
+        raise ValueError("Team member cannot be linked")
+    updated = update_team_member(
         db,
-        doctor_id,
-        DoctorUpdate(user_id=requester.id),
+        team_member_id,
+        TeamMemberUpdate(user_id=requester.id),
         organization_id=row.organization_id,
         actor=admin_user.email,
         source="rest",
     )
     if updated is None:
-        raise ValueError("Doctor update failed")
+        raise ValueError("Team member update failed")
     requester = get_user(db, row.requester_user_id)
     if requester is not None:
-        requester.role = "doctor"
+        requester.role = "team_member"
     row = db.get(OrganizationJoinRequest, row.id)
     if row is not None:
         row.status = STATUS_APPROVED
-        row.resolution = RESOLUTION_LINKED_DOCTOR
-        row.resolved_doctor_id = doctor_id
+        row.resolution = RESOLUTION_LINKED_TEAM_MEMBER
+        row.resolved_team_member_id = team_member_id
         row.resolved_by_user_id = admin_user.id
         row.resolved_at = datetime.now(timezone.utc)
         row.updated_at = datetime.now(timezone.utc)
@@ -247,10 +277,10 @@ def approve_join_request_link_doctor(
         db,
         actor=admin_user.email,
         source="rest",
-        action="approve_join_request_link_doctor",
+        action="approve_join_request_link_team_member",
         entity_type="organization_join_request",
         entity_id=row.id if row else None,
-        details={"doctor_id": doctor_id},
+        details={"team_member_id": team_member_id},
     )
     db.commit()
     if row:

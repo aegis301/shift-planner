@@ -5,6 +5,13 @@ import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
 import { Locale } from "@/lib/i18n";
 
+export type MembershipSummary = {
+  membership_id: number;
+  organization: { id: number; name: string; slug: string; plan_tier: string };
+  role: string;
+  team_member_id: number | null;
+};
+
 export type MeUser = {
   id: number;
   email: string;
@@ -12,10 +19,11 @@ export type MeUser = {
   locale: string;
   organization_id: number;
   organization: { id: number; name: string; slug: string; plan_tier: string };
-  doctor_id: number | null;
+  team_member_id: number | null;
   shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
   planner_shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
-  capabilities: { admin: boolean; planning: boolean; doctor_portal: boolean };
+  capabilities: { admin: boolean; planning: boolean; team_member_portal: boolean };
+  memberships: MembershipSummary[];
 };
 
 type SessionValue = {

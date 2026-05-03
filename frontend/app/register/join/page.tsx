@@ -38,6 +38,12 @@ export default function RegisterJoinOrganizationPage() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setMessage("");
+    const password = String(form.get("password") ?? "");
+    const passwordConfirm = String(form.get("password_confirm") ?? "");
+    if (password !== passwordConfirm) {
+      setMessage(t(locale, "registerPasswordMismatch"));
+      return;
+    }
     try {
       await apiFetch<MeUser>("/api/v1/auth/register/join-organization", {
         method: "POST",
@@ -46,7 +52,8 @@ export default function RegisterJoinOrganizationPage() {
             .trim()
             .toLowerCase(),
           email: form.get("email"),
-          password: form.get("password"),
+          password,
+          password_confirm: passwordConfirm,
           first_name: form.get("first_name"),
           last_name: form.get("last_name"),
           message: form.get("message") || null,
@@ -107,7 +114,17 @@ export default function RegisterJoinOrganizationPage() {
           <input className={inputClass} name="email" type="email" required />
         </Field>
         <Field label={t(locale, "password")}>
-          <input className={inputClass} name="password" type="password" required minLength={8} />
+          <input className={inputClass} name="password" type="password" required minLength={8} autoComplete="new-password" />
+        </Field>
+        <Field label={t(locale, "registerPasswordConfirmLabel")}>
+          <input
+            className={inputClass}
+            name="password_confirm"
+            type="password"
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
         </Field>
         <Field label={t(locale, "joinMessageOptional")}>
           <textarea className={`${inputClass} min-h-[88px] py-2`} name="message" maxLength={2000} />

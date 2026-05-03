@@ -2,11 +2,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
-    Doctor,
-    DoctorShiftGroup,
     ShiftGroup,
     ShiftGroupShiftTemplate,
     ShiftTemplate,
+    TeamMember,
+    TeamMemberShiftGroup,
     User,
 )
 from app.schemas import ShiftGroupCreate, ShiftGroupUpdate
@@ -23,19 +23,19 @@ def list_shift_template_ids_with_any_group(db: Session, organization_id: int) ->
     return set(rows)
 
 
-def doctor_may_cover_template(db: Session, *, doctor_id: int, shift_template_id: int | None) -> bool:
-    doctor = db.get(Doctor, doctor_id)
-    if doctor is None:
+def team_member_may_cover_template(db: Session, *, team_member_id: int, shift_template_id: int | None) -> bool:
+    member = db.get(TeamMember, team_member_id)
+    if member is None:
         return False
     if shift_template_id is None:
         return True
-    if shift_template_id not in list_shift_template_ids_with_any_group(db, doctor.organization_id):
+    if shift_template_id not in list_shift_template_ids_with_any_group(db, member.organization_id):
         return True
     stmt = (
-        select(DoctorShiftGroup.id)
-        .join(ShiftGroupShiftTemplate, ShiftGroupShiftTemplate.shift_group_id == DoctorShiftGroup.shift_group_id)
+        select(TeamMemberShiftGroup.id)
+        .join(ShiftGroupShiftTemplate, ShiftGroupShiftTemplate.shift_group_id == TeamMemberShiftGroup.shift_group_id)
         .where(
-            DoctorShiftGroup.doctor_id == doctor_id,
+            TeamMemberShiftGroup.team_member_id == team_member_id,
             ShiftGroupShiftTemplate.shift_template_id == shift_template_id,
         )
         .limit(1)
@@ -56,11 +56,11 @@ def require_shift_group(db: Session, shift_group_id: int, organization_id: int |
     return group
 
 
-def active_doctor_ids_in_shift_group(db: Session, shift_group_id: int) -> set[int]:
+def active_team_member_ids_in_shift_group(db: Session, shift_group_id: int) -> set[int]:
     stmt = (
-        select(DoctorShiftGroup.doctor_id)
-        .join(Doctor, Doctor.id == DoctorShiftGroup.doctor_id)
-        .where(DoctorShiftGroup.shift_group_id == shift_group_id, Doctor.is_active.is_(True))
+        select(TeamMemberShiftGroup.team_member_id)
+        .join(TeamMember, TeamMember.id == TeamMemberShiftGroup.team_member_id)
+        .where(TeamMemberShiftGroup.shift_group_id == shift_group_id, TeamMember.is_active.is_(True))
     )
     return set(db.scalars(stmt).all())
 
@@ -73,7 +73,7 @@ def shift_template_ids_in_shift_group(db: Session, shift_group_id: int) -> set[i
 def list_shift_groups(db: Session, *, organization_id: int, active_only: bool = False) -> list[ShiftGroup]:
     stmt = (
         select(ShiftGroup)
-        .options(joinedload(ShiftGroup.doctor_links), joinedload(ShiftGroup.template_links))
+        .options(joinedload(ShiftGroup.team_member_links), joinedload(ShiftGroup.template_links))
         .where(ShiftGroup.organization_id == organization_id)
     )
     if active_only:
@@ -92,7 +92,7 @@ def list_shift_groups_for_planner(db: Session, *, user: User, active_only: bool 
         return []
     stmt = (
         select(ShiftGroup)
-        .options(joinedload(ShiftGroup.doctor_links), joinedload(ShiftGroup.template_links))
+        .options(joinedload(ShiftGroup.team_member_links), joinedload(ShiftGroup.template_links))
         .where(ShiftGroup.organization_id == user.organization_id, ShiftGroup.id.in_(gids))
     )
     if active_only:
@@ -152,22 +152,22 @@ def delete_shift_group(db: Session, shift_group_id: int, *, organization_id: int
     return True
 
 
-def replace_group_doctors(
-    db: Session, shift_group_id: int, doctor_ids: list[int], *, organization_id: int, actor: str, source: str
+def replace_group_team_members(
+    db: Session, shift_group_id: int, team_member_ids: list[int], *, organization_id: int, actor: str, source: str
 ) -> None:
     require_shift_group(db, shift_group_id, organization_id)
-    db.execute(delete(DoctorShiftGroup).where(DoctorShiftGroup.shift_group_id == shift_group_id))
-    for doctor_id in sorted(set(doctor_ids)):
-        db.add(DoctorShiftGroup(doctor_id=doctor_id, shift_group_id=shift_group_id))
+    db.execute(delete(TeamMemberShiftGroup).where(TeamMemberShiftGroup.shift_group_id == shift_group_id))
+    for team_member_id in sorted(set(team_member_ids)):
+        db.add(TeamMemberShiftGroup(team_member_id=team_member_id, shift_group_id=shift_group_id))
     db.flush()
     record_audit(
         db,
         actor=actor,
         source=source,
         action="replace_members",
-        entity_type="shift_group_doctors",
+        entity_type="shift_group_team_members",
         entity_id=shift_group_id,
-        details={"doctor_ids": sorted(set(doctor_ids))},
+        details={"team_member_ids": sorted(set(team_member_ids))},
     )
     db.commit()
 
@@ -196,23 +196,23 @@ def replace_group_shift_templates(
     db.commit()
 
 
-def replace_doctor_shift_groups(db: Session, doctor_id: int, shift_group_ids: list[int], *, actor: str, source: str) -> None:
-    doctor = db.get(Doctor, doctor_id)
-    if doctor is None:
-        raise ValueError("Doctor not found")
+def replace_team_member_shift_groups(db: Session, team_member_id: int, shift_group_ids: list[int], *, actor: str, source: str) -> None:
+    member = db.get(TeamMember, team_member_id)
+    if member is None:
+        raise ValueError("Team member not found")
     for gid in set(shift_group_ids):
-        require_shift_group(db, gid, doctor.organization_id)
-    db.execute(delete(DoctorShiftGroup).where(DoctorShiftGroup.doctor_id == doctor_id))
+        require_shift_group(db, gid, member.organization_id)
+    db.execute(delete(TeamMemberShiftGroup).where(TeamMemberShiftGroup.team_member_id == team_member_id))
     for shift_group_id in sorted(set(shift_group_ids)):
-        db.add(DoctorShiftGroup(doctor_id=doctor_id, shift_group_id=shift_group_id))
+        db.add(TeamMemberShiftGroup(team_member_id=team_member_id, shift_group_id=shift_group_id))
     db.flush()
     record_audit(
         db,
         actor=actor,
         source=source,
         action="replace_members",
-        entity_type="doctor_shift_groups",
-        entity_id=doctor_id,
+        entity_type="team_member_shift_groups",
+        entity_id=team_member_id,
         details={"shift_group_ids": sorted(set(shift_group_ids))},
     )
     db.commit()

@@ -12,7 +12,7 @@ type PlanningStatus = "urlaub" | "forschung" | "lehre" | "frei";
 
 type ShiftIntentKind = "wish" | "no_go";
 
-type Doctor = {
+type RosterMatrixTeamMember = {
   id: number;
   first_name: string;
   last_name: string;
@@ -66,14 +66,14 @@ type ShiftTemplateSummary = {
 type RosterSlotAssignment = {
   id: number;
   roster_slot_id: number;
-  doctor_id: number;
+  team_member_id: number;
   manual_override: boolean;
 };
 
 type PlanningCell = {
   id: number;
   planning_period_id: number;
-  doctor_id: number;
+  team_member_id: number;
   cell_date: string;
   status: string;
   comment: string | null;
@@ -81,14 +81,14 @@ type PlanningCell = {
 
 type RosterShiftIntent = {
   cell_date: string;
-  doctor_id: number;
+  team_member_id: number;
   shift_template_id: number;
   kind: ShiftIntentKind;
 };
 
 export type RosterMatrix = {
   planning_period: PlanningPeriod;
-  doctors: Doctor[];
+  team_members: RosterMatrixTeamMember[];
   days: MatrixDay[];
   shift_templates: ShiftTemplateSummary[];
   slots: RosterSlot[];
@@ -125,8 +125,8 @@ function formatDate(locale: Locale, value: string) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
-function doctorLabel(doctor: Doctor): string {
-  return `${doctor.first_name} ${doctor.last_name}`.trim();
+function teamMemberLabel(member: RosterMatrixTeamMember): string {
+  return `${member.first_name} ${member.last_name}`.trim();
 }
 
 function formatTimeRange(slot: RosterSlot) {
@@ -300,7 +300,7 @@ export function RosterMatrixEditor({
       params.set("shift_group_id", shiftGroupId);
     }
     if (readOnly) {
-      params.set("doctor_portal", "true");
+      params.set("team_member_portal", "true");
     }
     const qs = params.toString();
     return qs ? `?${qs}` : "";
@@ -325,14 +325,14 @@ export function RosterMatrixEditor({
 
   const planningCellMap = useMemo(() => {
     const map = new Map<string, PlanningCell>();
-    matrix?.planning_cells.forEach((cell) => map.set(`${cell.cell_date}:${cell.doctor_id}`, cell));
+    matrix?.planning_cells.forEach((cell) => map.set(`${cell.cell_date}:${cell.team_member_id}`, cell));
     return map;
   }, [matrix]);
 
   const intentMap = useMemo(() => {
     const map = new Map<string, ShiftIntentKind>();
     matrix?.shift_intents?.forEach((row) => {
-      map.set(`${row.cell_date}:${row.doctor_id}:${row.shift_template_id}`, row.kind);
+      map.set(`${row.cell_date}:${row.team_member_id}:${row.shift_template_id}`, row.kind);
     });
     return map;
   }, [matrix]);
@@ -396,13 +396,13 @@ export function RosterMatrixEditor({
     setMessage(t(locale, "saved"));
   }
 
-  async function saveAssignment(rosterSlotId: number, doctorId: number | "", manualOverride = false): Promise<boolean> {
+  async function saveAssignment(rosterSlotId: number, memberId: number | "", manualOverride = false): Promise<boolean> {
     if (readOnly) {
       return false;
     }
     setSavingAssignments((count) => count + 1);
     try {
-      if (!doctorId) {
+      if (!memberId) {
         await apiFetch("/api/v1/roster-matrix/assignments/clear", {
           method: "POST",
           body: JSON.stringify({ roster_slot_id: rosterSlotId })
@@ -418,7 +418,7 @@ export function RosterMatrixEditor({
           method: "PUT",
           body: JSON.stringify({
             roster_slot_id: rosterSlotId,
-            doctor_id: doctorId,
+            team_member_id: memberId,
             comment: null,
             manual_override: manualOverride
           })
@@ -568,7 +568,7 @@ function DesktopRosterMatrix({
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
   intentMap: Map<string, ShiftIntentKind>;
-  onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
+  onSave: (rosterSlotId: number, memberId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
@@ -627,7 +627,7 @@ function DesktopRosterMatrix({
                                 ) : null}
                                 <RosterCell
                                   slot={slot}
-                                  doctors={matrix.doctors}
+                                  members={matrix.team_members}
                                   assignment={assignmentMap.get(slot.id)}
                                   planningCellMap={planningCellMap}
                                   intentMap={intentMap}
@@ -680,7 +680,7 @@ function DesktopRosterMatrix({
                       <SlotHeader slot={slot} locale={locale} />
                       <RosterCell
                         slot={slot}
-                        doctors={matrix.doctors}
+                        members={matrix.team_members}
                         assignment={assignmentMap.get(slot.id)}
                         planningCellMap={planningCellMap}
                         intentMap={intentMap}
@@ -717,7 +717,7 @@ function MobileRosterMatrix({
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
   intentMap: Map<string, ShiftIntentKind>;
-  onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
+  onSave: (rosterSlotId: number, memberId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
@@ -773,7 +773,7 @@ function MobileRosterMatrix({
                                     ) : null}
                                     <RosterCell
                                       slot={slot}
-                                      doctors={matrix.doctors}
+                                      members={matrix.team_members}
                                       assignment={assignmentMap.get(slot.id)}
                                       planningCellMap={planningCellMap}
                                       intentMap={intentMap}
@@ -813,7 +813,7 @@ function MobileRosterMatrix({
                   <SlotHeader slot={slot} locale={locale} />
                     <RosterCell
                       slot={slot}
-                      doctors={matrix.doctors}
+                      members={matrix.team_members}
                       assignment={assignmentMap.get(slot.id)}
                       planningCellMap={planningCellMap}
                       intentMap={intentMap}
@@ -847,7 +847,7 @@ function SlotHeader({ slot, locale }: { slot: RosterSlot; locale: Locale }) {
 
 function RosterCell({
   slot,
-  doctors,
+  members,
   assignment,
   planningCellMap,
   intentMap,
@@ -856,15 +856,15 @@ function RosterCell({
   readOnly = false
 }: {
   slot: RosterSlot;
-  doctors: Doctor[];
+  members: RosterMatrixTeamMember[];
   assignment?: RosterSlotAssignment;
   planningCellMap: Map<string, PlanningCell>;
   intentMap: Map<string, ShiftIntentKind>;
-  onSave: (rosterSlotId: number, doctorId: number | "", manualOverride?: boolean) => Promise<boolean>;
+  onSave: (rosterSlotId: number, memberId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   readOnly?: boolean;
 }) {
-  const [doctorId, setDoctorId] = useState<number | "">(assignment?.doctor_id ?? "");
+  const [memberId, setMemberId] = useState<number | "">(assignment?.team_member_id ?? "");
   const [open, setOpen] = useState(false);
   const [manualOverride, setManualOverride] = useState(() => assignment?.manual_override === true);
   const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -873,14 +873,14 @@ function RosterCell({
   const menuRef = useRef<HTMLDivElement>(null);
   const templateId = slot.shift_template_id;
 
-  const planningCell = doctorId ? planningCellMap.get(`${slot.slot_date}:${doctorId}`) : undefined;
+  const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
   const status = planningCell?.status;
   const meta = status && isPlanningStatus(status) ? STATUS_META[status] : undefined;
   const hasUnavailableDay = status && isPlanningStatus(status) ? UNAVAILABLE_STATUSES.has(status) : false;
-  const selectedDoctor = doctors.find((doctor) => doctor.id === doctorId);
+  const selectedMember = members.find((member) => member.id === memberId);
   const selectedNoGo =
-    doctorId && templateId
-      ? intentMap.get(`${slot.slot_date}:${doctorId}:${templateId}`) === "no_go"
+    memberId && templateId
+      ? intentMap.get(`${slot.slot_date}:${memberId}:${templateId}`) === "no_go"
       : false;
   const highlightNoGo = selectedNoGo && !manualOverride;
 
@@ -898,9 +898,9 @@ function RosterCell({
   }, []);
 
   useEffect(() => {
-    setDoctorId(assignment?.doctor_id ?? "");
+    setMemberId(assignment?.team_member_id ?? "");
     setManualOverride(assignment?.manual_override === true);
-  }, [assignment?.doctor_id, assignment?.manual_override]);
+  }, [assignment?.team_member_id, assignment?.manual_override]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -958,41 +958,41 @@ function RosterCell({
                   type="button"
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
                   onClick={async () => {
-                    const previous = doctorId;
-                    setDoctorId("");
+                    const previous = memberId;
+                    setMemberId("");
                     setOpen(false);
                     const ok = await onSave(slot.id, "");
                     if (!ok) {
-                      setDoctorId(previous);
+                      setMemberId(previous);
                     }
                   }}
                 >
                   {t(locale, "emptyValue")}
                 </button>
               </li>
-              {doctors.map((doctor) => {
-                const cell = planningCellMap.get(`${slot.slot_date}:${doctor.id}`);
+              {members.map((member) => {
+                const cell = planningCellMap.get(`${slot.slot_date}:${member.id}`);
                 const st = cell?.status;
                 const dotClass = st && isPlanningStatus(st) ? DAY_STATUS_DOT[st] : "bg-slate-300";
-                const intentKey = templateId ? `${slot.slot_date}:${doctor.id}:${templateId}` : "";
+                const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
                 const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
                 return (
-                  <li key={doctor.id} role="none">
+                  <li key={member.id} role="none">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
                       onClick={async () => {
-                        const previous = doctorId;
-                        setDoctorId(doctor.id);
+                        const previous = memberId;
+                        setMemberId(member.id);
                         setOpen(false);
-                        const ok = await onSave(slot.id, doctor.id, manualOverride);
+                        const ok = await onSave(slot.id, member.id, manualOverride);
                         if (!ok) {
-                          setDoctorId(previous);
+                          setMemberId(previous);
                         }
                       }}
                     >
                       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{doctorLabel(doctor)}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{teamMemberLabel(member)}</span>
                       {intentKind === "wish" ? (
                         <span className="shrink-0 rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900">
                           {t(locale, "wishShort")}
@@ -1047,12 +1047,12 @@ function RosterCell({
         }}
       >
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          {doctorId && status && isPlanningStatus(status) ? (
+          {memberId && status && isPlanningStatus(status) ? (
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DAY_STATUS_DOT[status]}`} aria-hidden />
           ) : (
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" aria-hidden />
           )}
-          <span className="truncate">{selectedDoctor ? doctorLabel(selectedDoctor) : t(locale, "emptyValue")}</span>
+          <span className="truncate">{selectedMember ? teamMemberLabel(selectedMember) : t(locale, "emptyValue")}</span>
         </span>
         {manualOverride ? (
           <span

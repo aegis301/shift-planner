@@ -72,7 +72,7 @@ type ShiftTemplateRecord = {
   variants?: ShiftVariantRecord[];
 };
 
-type DoctorRecord = {
+export type TeamMemberRecord = {
   id: number;
   first_name: string;
   last_name: string;
@@ -109,7 +109,7 @@ const FIELD_LABEL_MAP: Partial<Record<string, TranslationKey>> = {
   starts_at: "start",
   ends_at: "end",
   category: "category",
-  doctor_id: "doctorId",
+  team_member_id: "teamMemberId",
   planning_period_id: "planningPeriodId",
   note: "note",
   manual_override: "manualOverride",
@@ -278,18 +278,20 @@ function isShiftTemplateRecord(row: AnyRecord): row is ShiftTemplateRecord {
   );
 }
 
-function isDoctorRecord(row: AnyRecord): row is DoctorRecord {
+export function isTeamMemberRecord(row: unknown): row is TeamMemberRecord {
+  if (typeof row !== "object" || row === null) return false;
+  const r = row as AnyRecord;
   return (
-    typeof row.id === "number" &&
-    typeof row.first_name === "string" &&
-    typeof row.last_name === "string" &&
-    typeof row.email === "string" &&
-    typeof row.employment_percentage === "number"
+    typeof r.id === "number" &&
+    typeof r.first_name === "string" &&
+    typeof r.last_name === "string" &&
+    typeof r.email === "string" &&
+    typeof r.employment_percentage === "number"
   );
 }
 
-function doctorLabel(doctor: { first_name: string; last_name: string }): string {
-  return `${doctor.first_name} ${doctor.last_name}`.trim();
+export function teamMemberLabel(record: { first_name: string; last_name: string }): string {
+  return `${record.first_name} ${record.last_name}`.trim();
 }
 
 function categoryLabel(locale: Locale, category: string): string {
@@ -870,23 +872,25 @@ function ShiftTemplateList({ rows, onChanged }: { rows: AnyRecord[]; onChanged: 
   );
 }
 
-function DoctorEditorModal({
-  doctor,
+export function TeamMemberEditorModal({
+  member,
   onChanged,
-  onClose
+  onClose,
+  embedded = false,
 }: {
-  doctor: DoctorRecord;
+  member: TeamMemberRecord;
   onChanged: () => Promise<void>;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const { locale } = useLocale();
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(() => new Set(doctor.shift_group_ids ?? []));
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(() => new Set(member.shift_group_ids ?? []));
 
   useEffect(() => {
-    setSelectedGroupIds(new Set(doctor.shift_group_ids ?? []));
-  }, [doctor]);
+    setSelectedGroupIds(new Set(member.shift_group_ids ?? []));
+  }, [member]);
 
   useEffect(() => {
     void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
@@ -898,7 +902,7 @@ function DoctorEditorModal({
     const rawUserId = form.get("user_id");
     const user_id =
       rawUserId === "" || rawUserId == null ? null : Number(rawUserId);
-    await apiFetch(`/api/v1/doctors/${doctor.id}`, {
+    await apiFetch(`/api/v1/team-members/${member.id}`, {
       method: "PATCH",
       body: JSON.stringify({
         first_name: form.get("first_name"),
@@ -912,30 +916,39 @@ function DoctorEditorModal({
       })
     });
     await onChanged();
-    onClose();
+    if (!embedded) {
+      onClose();
+    }
   }
 
-  async function deleteDoctorEntry() {
-    await apiFetch(`/api/v1/doctors/${doctor.id}`, { method: "DELETE" });
+  async function deleteTeamMemberEntry() {
+    await apiFetch(`/api/v1/team-members/${member.id}`, { method: "DELETE" });
     setIsDeleteConfirmOpen(false);
     await onChanged();
     onClose();
   }
 
+  const shellClass = embedded
+    ? "w-full"
+    : "fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm";
+  const formShellClass = embedded
+    ? "max-h-[55vh] w-full overflow-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
+    : "max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={`doctor-edit-${doctor.id}`}>
-      <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submitEditor}>
+    <div className={shellClass} role="dialog" aria-modal="true" aria-labelledby={`team-member-edit-${member.id}`}>
+      <form className={formShellClass} onSubmit={submitEditor}>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
-            <h2 id={`doctor-edit-${doctor.id}`} className="text-lg font-semibold text-ink">{t(locale, "editDoctor")}</h2>
-            <p className="mt-1 truncate text-sm text-slate-500">{doctorLabel(doctor)} · {doctor.email}</p>
+            <h2 id={`team-member-edit-${member.id}`} className="text-lg font-semibold text-ink">{t(locale, "editTeamMember")}</h2>
+            <p className="mt-1 truncate text-sm text-slate-500">{teamMemberLabel(member)} · {member.email}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
-              aria-label={t(locale, "deleteDoctor")}
+              aria-label={t(locale, "deleteTeamMember")}
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
               onClick={() => setIsDeleteConfirmOpen(true)}
-              title={t(locale, "deleteDoctor")}
+              title={t(locale, "deleteTeamMember")}
               type="button"
             >
               <Trash2 size={17} />
@@ -959,29 +972,29 @@ function DoctorEditorModal({
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label={t(locale, "firstName")}><input className={inputClass} name="first_name" defaultValue={doctor.first_name} required /></Field>
-          <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" defaultValue={doctor.last_name} required /></Field>
-          <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" defaultValue={doctor.email} required /></Field>
-          <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue={doctor.employment_percentage} /></Field>
-          <Field label={t(locale, "notes")}><input className={inputClass} name="notes" defaultValue={doctor.notes ?? ""} /></Field>
+          <Field label={t(locale, "firstName")}><input className={inputClass} name="first_name" defaultValue={member.first_name} required /></Field>
+          <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" defaultValue={member.last_name} required /></Field>
+          <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" defaultValue={member.email} required /></Field>
+          <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue={member.employment_percentage} /></Field>
+          <Field label={t(locale, "notes")}><input className={inputClass} name="notes" defaultValue={member.notes ?? ""} /></Field>
           <Field label={t(locale, "linkedUserId")}>
             <input
               className={inputClass}
               name="user_id"
               type="number"
               min={1}
-              defaultValue={doctor.user_id ?? ""}
+              defaultValue={member.user_id ?? ""}
               placeholder={t(locale, "emptyValue")}
               title={t(locale, "linkedUserIdHint")}
             />
           </Field>
           <label className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
-            <input name="is_active" type="checkbox" defaultChecked={doctor.is_active} />
+            <input name="is_active" type="checkbox" defaultChecked={member.is_active} />
             {t(locale, "isActive")}
           </label>
         </div>
         <div className="mt-4 rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold text-ink">{t(locale, "doctorShiftGroups")}</p>
+          <p className="text-sm font-semibold text-ink">{t(locale, "teamMemberShiftGroups")}</p>
           <div className="mt-2 max-h-40 space-y-2 overflow-y-auto text-sm">
             {shiftGroups.map((group) => (
               <label key={group.id} className="flex items-center gap-2">
@@ -1013,8 +1026,8 @@ function DoctorEditorModal({
                 <AlertTriangle size={19} />
               </span>
               <div>
-                <h3 className="text-sm font-semibold text-rose-950">{t(locale, "deleteDoctor")}</h3>
-                <p className="mt-1 text-sm text-rose-900">{t(locale, "deleteDoctorWarning")}</p>
+                <h3 className="text-sm font-semibold text-rose-950">{t(locale, "deleteTeamMember")}</h3>
+                <p className="mt-1 text-sm text-rose-900">{t(locale, "deleteTeamMemberWarning")}</p>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
@@ -1027,7 +1040,7 @@ function DoctorEditorModal({
               </button>
               <button
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
-                onClick={deleteDoctorEntry}
+                onClick={deleteTeamMemberEntry}
                 type="button"
               >
                 <Trash2 size={16} />
@@ -1041,79 +1054,16 @@ function DoctorEditorModal({
   );
 }
 
-function DoctorCard({ doctor, onChanged }: { doctor: DoctorRecord; onChanged: () => Promise<void> }) {
+export function TeamMemberCreateModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+}) {
   const { locale } = useLocale();
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-
-  return (
-    <>
-      <article className="overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-soft ring-1 ring-slate-100/80">
-        <div className="border-b border-mint/25 bg-gradient-to-r from-mint/10 via-white to-sky-50/40 px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h2 className="truncate text-sm font-semibold text-ink">{doctorLabel(doctor)}</h2>
-              <p className="mt-1 truncate text-xs text-slate-500">{doctor.email}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsEditorOpen(true)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50"
-              aria-label={t(locale, "edit")}
-              title={t(locale, "edit")}
-            >
-              <MoreVertical size={17} />
-            </button>
-          </div>
-        </div>
-        <div className="grid gap-3 p-4 text-sm text-slate-700">
-          <p><span className="font-semibold">{t(locale, "employment")}:</span> {doctor.employment_percentage}</p>
-          <p>
-            <span className="font-semibold">{t(locale, "isActive")}:</span>{" "}
-            {doctor.is_active ? t(locale, "yes") : t(locale, "no")}
-          </p>
-          <p className="line-clamp-2">
-            <span className="font-semibold">{t(locale, "notes")}:</span>{" "}
-            {doctor.notes && doctor.notes.trim() ? doctor.notes : t(locale, "emptyValue")}
-          </p>
-        </div>
-      </article>
-      {isEditorOpen ? <DoctorEditorModal doctor={doctor} onChanged={onChanged} onClose={() => setIsEditorOpen(false)} /> : null}
-    </>
-  );
-}
-
-function DoctorList({ rows, onChanged }: { rows: AnyRecord[]; onChanged: () => Promise<void> }) {
-  const doctors = rows.filter(isDoctorRecord);
-  if (doctors.length !== rows.length) {
-    return <DataList rows={rows} />;
-  }
-  if (!doctors.length) {
-    return <DataList rows={[]} />;
-  }
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {doctors.map((doctor) => (
-        <DoctorCard key={doctor.id} doctor={doctor} onChanged={onChanged} />
-      ))}
-    </div>
-  );
-}
-
-export function DoctorForm() {
-  const { locale } = useLocale();
-  const [rows, setRows] = useState<AnyRecord[]>([]);
-  const [message, setMessage] = useState("");
-  const [isCreateDoctorModalOpen, setIsCreateDoctorModalOpen] = useState(false);
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
   const [createGroupIds, setCreateGroupIds] = useState<Set<number>>(new Set());
-
-  const refresh = useCallback(async () => {
-    setRows(await apiFetch<AnyRecord[]>("/api/v1/doctors"));
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   useEffect(() => {
     void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
@@ -1125,7 +1075,7 @@ export function DoctorForm() {
     const rawCreateUserId = form.get("user_id");
     const createUserId =
       rawCreateUserId === "" || rawCreateUserId == null ? null : Number(rawCreateUserId);
-    await apiFetch("/api/v1/doctors", {
+    await apiFetch("/api/v1/team-members", {
       method: "POST",
       body: JSON.stringify({
         first_name: form.get("first_name"),
@@ -1134,112 +1084,96 @@ export function DoctorForm() {
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
         shift_group_ids: [...createGroupIds],
-        user_id: createUserId
-      })
+        user_id: createUserId,
+      }),
     });
-    setMessage(t(locale, "created"));
-    setIsCreateDoctorModalOpen(false);
     setCreateGroupIds(new Set());
-    await refresh();
+    await onCreated();
+    onClose();
   }
 
   return (
-    <div className="grid gap-5">
-      <Card>
-        <div className="grid gap-4">
-          <h1 className="text-2xl font-semibold text-ink">{t(locale, "doctors")}</h1>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 ring-1 ring-slate-100">
-            <h2 className="text-base font-semibold text-ink">{t(locale, "addDoctor")}</h2>
-            <p className="mt-1 text-sm text-slate-600">{t(locale, "addDoctorDescription")}</p>
-            <button
-              type="button"
-              onClick={() => setIsCreateDoctorModalOpen(true)}
-              className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"
-            >
-              <Plus size={16} />
-              {t(locale, "addDoctor")}
-            </button>
-          </div>
-          <div>
-            <button type="button" onClick={refresh} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold">
-              <RefreshCw size={16} />
-              {t(locale, "refresh")}
-            </button>
-          </div>
-          {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submit}>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <h2 className="text-lg font-semibold text-ink">{t(locale, "addTeamMember")}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+            aria-label={t(locale, "close")}
+            title={t(locale, "close")}
+          >
+            <X size={17} />
+          </button>
         </div>
-      </Card>
-      {isCreateDoctorModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submit}>
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <h2 className="text-lg font-semibold text-ink">{t(locale, "addDoctor")}</h2>
-              <button
-                type="button"
-                onClick={() => setIsCreateDoctorModalOpen(false)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
-                aria-label={t(locale, "close")}
-                title={t(locale, "close")}
-              >
-                <X size={17} />
-              </button>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label={t(locale, "firstName")}><input className={inputClass} name="first_name" required /></Field>
-              <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" required /></Field>
-              <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" required /></Field>
-              <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" /></Field>
-              <Field label={t(locale, "notes")}><input className={inputClass} name="notes" /></Field>
-              <Field label={t(locale, "linkedUserId")}>
-                <input className={inputClass} name="user_id" type="number" min={1} placeholder={t(locale, "emptyValue")} title={t(locale, "linkedUserIdHint")} />
-              </Field>
-            </div>
-            <div className="mt-4 rounded-lg border border-slate-200 p-3">
-              <p className="text-sm font-semibold text-ink">{t(locale, "doctorShiftGroups")}</p>
-              <div className="mt-2 max-h-36 space-y-2 overflow-y-auto text-sm">
-                {shiftGroups.map((group) => (
-                  <label key={group.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={createGroupIds.has(group.id)}
-                      onChange={() => {
-                        setCreateGroupIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(group.id)) {
-                            next.delete(group.id);
-                          } else {
-                            next.add(group.id);
-                          }
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="font-mono text-xs">{group.code}</span>
-                    {locale === "de" ? group.name_de : group.name_en}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsCreateDoctorModalOpen(false)}
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-              >
-                {t(locale, "close")}
-              </button>
-              <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white">
-                <Plus size={16} />
-                {t(locale, "save")}
-              </button>
-            </div>
-          </form>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label={t(locale, "firstName")}>
+            <input className={inputClass} name="first_name" required />
+          </Field>
+          <Field label={t(locale, "lastName")}>
+            <input className={inputClass} name="last_name" required />
+          </Field>
+          <Field label={t(locale, "email")}>
+            <input className={inputClass} name="email" type="email" required />
+          </Field>
+          <Field label={t(locale, "employment")}>
+            <input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" />
+          </Field>
+          <Field label={t(locale, "notes")}>
+            <input className={inputClass} name="notes" />
+          </Field>
+          <Field label={t(locale, "linkedUserId")}>
+            <input
+              className={inputClass}
+              name="user_id"
+              type="number"
+              min={1}
+              placeholder={t(locale, "emptyValue")}
+              title={t(locale, "linkedUserIdHint")}
+            />
+          </Field>
         </div>
-      ) : null}
-      <Card>
-        <h2 className="text-lg font-semibold text-ink">{t(locale, "doctors")}</h2>
-        <div className="mt-5"><DoctorList rows={rows} onChanged={refresh} /></div>
-      </Card>
+        <div className="mt-4 rounded-lg border border-slate-200 p-3">
+          <p className="text-sm font-semibold text-ink">{t(locale, "teamMemberShiftGroups")}</p>
+          <div className="mt-2 max-h-36 space-y-2 overflow-y-auto text-sm">
+            {shiftGroups.map((group) => (
+              <label key={group.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={createGroupIds.has(group.id)}
+                  onChange={() => {
+                    setCreateGroupIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(group.id)) {
+                        next.delete(group.id);
+                      } else {
+                        next.add(group.id);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+                <span className="font-mono text-xs">{group.code}</span>
+                {locale === "de" ? group.name_de : group.name_en}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+          >
+            {t(locale, "close")}
+          </button>
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white">
+            <Plus size={16} />
+            {t(locale, "save")}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

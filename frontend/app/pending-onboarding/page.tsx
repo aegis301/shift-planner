@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Hourglass } from "lucide-react";
-import { Card } from "@/components/Card";
+import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
 type JoinRequest = {
@@ -18,7 +18,7 @@ type JoinRequest = {
   message: string | null;
   status: string;
   resolution: string | null;
-  resolved_doctor_id: number | null;
+  resolved_team_member_id: number | null;
   created_at: string;
 };
 
@@ -28,6 +28,8 @@ export default function PendingOnboardingPage() {
   const router = useRouter();
   const [row, setRow] = useState<JoinRequest | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [resubmitBusy, setResubmitBusy] = useState(false);
+  const [resubmitError, setResubmitError] = useState("");
 
   useEffect(() => {
     if (loading) return;
@@ -62,6 +64,29 @@ export default function PendingOnboardingPage() {
     }
   }
 
+  async function resubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setResubmitError("");
+    const form = new FormData(event.currentTarget);
+    const first_name = String(form.get("first_name") ?? "").trim();
+    const last_name = String(form.get("last_name") ?? "").trim();
+    const messageRaw = String(form.get("message") ?? "").trim();
+    const message = messageRaw.length > 0 ? messageRaw : null;
+    setResubmitBusy(true);
+    try {
+      const created = await apiFetch<JoinRequest>("/api/v1/auth/me/join-request", {
+        method: "POST",
+        body: JSON.stringify({ first_name, last_name, message }),
+      });
+      setRow(created);
+      await refreshMe();
+    } catch (e) {
+      setResubmitError(e instanceof ApiError ? e.message : t(locale, "pendingOnboardingResubmitError"));
+    } finally {
+      setResubmitBusy(false);
+    }
+  }
+
   if (loading || !me || me.role !== "applicant") {
     return null;
   }
@@ -71,10 +96,10 @@ export default function PendingOnboardingPage() {
       <Card>
         <div className="flex items-start gap-4">
           <Hourglass className="shrink-0 text-amber-600" aria-hidden />
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold text-ink">{t(locale, "pendingOnboardingTitle")}</h1>
             <p className="mt-2 text-sm text-slate-600">{t(locale, "pendingOnboardingBody")}</p>
-            {row ? (
+            {row === undefined ? null : row ? (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
                 <p className="font-medium text-ink">
                   {me.organization.name} ({me.organization.slug})
@@ -91,7 +116,31 @@ export default function PendingOnboardingPage() {
                   {t(locale, "cancelJoinRequest")}
                 </button>
               </div>
-            ) : null}
+            ) : (
+              <div className="mt-4">
+                <h2 className="text-lg font-semibold text-ink">{t(locale, "pendingOnboardingResubmitTitle")}</h2>
+                <p className="mt-2 text-sm text-slate-600">{t(locale, "pendingOnboardingResubmitBody")}</p>
+                {resubmitError ? <p className="mt-2 text-sm text-red-600">{resubmitError}</p> : null}
+                <form className="mt-4 grid gap-3" onSubmit={resubmit}>
+                  <Field label={t(locale, "firstName")}>
+                    <input className={inputClass} name="first_name" required minLength={1} maxLength={255} />
+                  </Field>
+                  <Field label={t(locale, "lastName")}>
+                    <input className={inputClass} name="last_name" required minLength={1} maxLength={255} />
+                  </Field>
+                  <Field label={t(locale, "joinMessageOptional")}>
+                    <textarea className={`${inputClass} min-h-[88px]`} name="message" maxLength={2000} rows={3} />
+                  </Field>
+                  <button
+                    type="submit"
+                    disabled={resubmitBusy}
+                    className="h-11 rounded-lg bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {t(locale, "pendingOnboardingResubmitSubmit")}
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       </Card>

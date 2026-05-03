@@ -4,12 +4,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import (
-    DoctorPeriodNote,
     PlanningCell,
     PlanningPeriod,
     PlanningShiftIntent,
     RosterSlot,
     RosterSlotAssignment,
+    TeamMemberPeriodNote,
 )
 from app.schemas import PlanningPeriodCreate
 from app.services.audit import record_audit
@@ -56,7 +56,7 @@ def delete_planning_period(db: Session, planning_period_id: int, *, organization
             db.delete(assignment)
     for slot in db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)):
         db.delete(slot)
-    for model in (PlanningShiftIntent, PlanningCell, DoctorPeriodNote):
+    for model in (PlanningShiftIntent, PlanningCell, TeamMemberPeriodNote):
         for item in db.scalars(select(model).where(model.planning_period_id == planning_period_id)):
             db.delete(item)
 

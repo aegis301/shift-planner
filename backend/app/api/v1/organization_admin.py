@@ -5,16 +5,18 @@ from app.api.deps import get_current_admin, get_current_user
 from app.db.session import get_db
 from app.models import Organization, User
 from app.schemas import (
-    ApproveJoinCreateDoctorInput,
-    ApproveJoinLinkDoctorBody,
+    ApproveJoinCreateTeamMemberInput,
+    ApproveJoinLinkTeamMemberBody,
     JoinRequestRead,
     OrganizationReadForAdmin,
+    OrganizationStaffDirectoryRow,
     OrganizationUpdateInput,
     OrganizationUserRead,
+    OrganizationUserRolePatch,
 )
 from app.services.join_requests import (
-    approve_join_request_create_doctor,
-    approve_join_request_link_doctor,
+    approve_join_request_create_team_member,
+    approve_join_request_link_team_member,
     cancel_join_request_by_requester,
     get_join_request_in_org,
     join_request_to_read,
@@ -22,7 +24,12 @@ from app.services.join_requests import (
     reject_join_request,
 )
 from app.services.organizations import update_organization_settings
-from app.services.users import list_organization_users
+from app.services.organization_directory import list_organization_staff_directory
+from app.services.users import (
+    admin_delete_organization_user,
+    admin_set_organization_user_role,
+    list_organization_users,
+)
 
 router = APIRouter(prefix="/organization", tags=["organization"])
 
@@ -33,6 +40,39 @@ def get_organization_users(
     user: User = Depends(get_current_admin),
 ) -> list[OrganizationUserRead]:
     return list_organization_users(db, organization_id=user.organization_id)
+
+
+@router.get("/staff-directory", response_model=list[OrganizationStaffDirectoryRow])
+def get_organization_staff_directory(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> list[OrganizationStaffDirectoryRow]:
+    return list_organization_staff_directory(db, organization_id=user.organization_id)
+
+
+@router.delete("/users/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_organization_user(
+    target_user_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> None:
+    try:
+        admin_delete_organization_user(db, actor=user, target_user_id=target_user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.patch("/users/{target_user_id}", response_model=OrganizationUserRead)
+def patch_organization_user_role(
+    target_user_id: int,
+    payload: OrganizationUserRolePatch,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> OrganizationUserRead:
+    try:
+        return admin_set_organization_user_role(db, actor=user, target_user_id=target_user_id, role=payload.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("", response_model=OrganizationReadForAdmin)
@@ -78,10 +118,10 @@ def get_join_requests(
     return [join_request_to_read(r) for r in rows]
 
 
-@router.post("/join-requests/{request_id}/approve-create-doctor", response_model=JoinRequestRead)
-def post_approve_join_create_doctor(
+@router.post("/join-requests/{request_id}/approve-create-team-member", response_model=JoinRequestRead)
+def post_approve_join_create_team_member(
     request_id: int,
-    payload: ApproveJoinCreateDoctorInput,
+    payload: ApproveJoinCreateTeamMemberInput,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ) -> JoinRequestRead:
@@ -89,16 +129,16 @@ def post_approve_join_create_doctor(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found")
     try:
-        updated = approve_join_request_create_doctor(db, row=row, admin_user=user, payload=payload)
+        updated = approve_join_request_create_team_member(db, row=row, admin_user=user, payload=payload)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return join_request_to_read(updated)
 
 
-@router.post("/join-requests/{request_id}/approve-link-doctor", response_model=JoinRequestRead)
-def post_approve_join_link_doctor(
+@router.post("/join-requests/{request_id}/approve-link-team-member", response_model=JoinRequestRead)
+def post_approve_join_link_team_member(
     request_id: int,
-    payload: ApproveJoinLinkDoctorBody,
+    payload: ApproveJoinLinkTeamMemberBody,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ) -> JoinRequestRead:
@@ -106,8 +146,8 @@ def post_approve_join_link_doctor(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Join request not found")
     try:
-        updated = approve_join_request_link_doctor(
-            db, row=row, admin_user=user, doctor_id=payload.doctor_id
+        updated = approve_join_request_link_team_member(
+            db, row=row, admin_user=user, team_member_id=payload.team_member_id
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -1,5 +1,5 @@
-import { ShiftGroupForm } from "@/components/ShiftGroupForms";
+import { redirect } from "next/navigation";
 
-export default function ShiftGroupsPage() {
-  return <ShiftGroupForm />;
+export default function ShiftGroupsRedirectPage() {
+  redirect("/organization/shifts/groups");
 }

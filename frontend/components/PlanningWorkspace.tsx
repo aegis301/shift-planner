@@ -23,13 +23,13 @@ type ValidationWarning = {
   code: string;
   severity: "info" | "warning" | "error";
   message: string;
-  doctor_id: number | null;
+  team_member_id: number | null;
   date: string | null;
   details: Record<string, unknown>;
 };
 
-type DoctorStats = {
-  doctorId: number;
+type TeamMemberWorkloadRow = {
+  memberId: number;
   name: string;
   total: number;
   onCallDuty: number;
@@ -45,8 +45,8 @@ type DestructiveAction = "delete-period" | "regenerate-roster" | "publish-period
 
 type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
 
-function doctorLabel(doctor: { first_name: string; last_name: string }): string {
-  return `${doctor.first_name} ${doctor.last_name}`.trim();
+function teamMemberLabel(member: { first_name: string; last_name: string }): string {
+  return `${member.first_name} ${member.last_name}`.trim();
 }
 
 function monthLabel(period: PlanningPeriod | undefined) {
@@ -56,17 +56,17 @@ function monthLabel(period: PlanningPeriod | undefined) {
   return `${period.year}-${String(period.month).padStart(2, "0")}`;
 }
 
-function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]): { rows: DoctorStats[]; unassigned: number } {
+function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]): { rows: TeamMemberWorkloadRow[]; unassigned: number } {
   if (!matrix) {
     return { rows: [], unassigned: 0 };
   }
   const slots = new Map(matrix.slots.map((slot) => [slot.id, slot]));
-  const stats = new Map<number, DoctorStats>(
-    matrix.doctors.map((doctor) => [
-      doctor.id,
+  const stats = new Map<number, TeamMemberWorkloadRow>(
+    matrix.team_members.map((member) => [
+      member.id,
       {
-        doctorId: doctor.id,
-        name: doctorLabel(doctor),
+        memberId: member.id,
+        name: teamMemberLabel(member),
         total: 0,
         onCallDuty: 0,
         standbyDuty: 0,
@@ -78,33 +78,33 @@ function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]):
   );
 
   for (const assignment of matrix.assignments) {
-    const doctorStats = stats.get(assignment.doctor_id);
+    const memberStats = stats.get(assignment.team_member_id);
     const slot = slots.get(assignment.roster_slot_id);
     const category = slot?.category;
-    if (!doctorStats || !category) {
+    if (!memberStats || !category) {
       continue;
     }
-    doctorStats.total += 1;
+    memberStats.total += 1;
     if (category === "bereitschaftsdienst") {
-      doctorStats.onCallDuty += 1;
+      memberStats.onCallDuty += 1;
     } else if (category === "rufdienst") {
-      doctorStats.standbyDuty += 1;
+      memberStats.standbyDuty += 1;
     } else if (category === "spaetdienst") {
-      doctorStats.lateDuty += 1;
+      memberStats.lateDuty += 1;
     } else {
-      doctorStats.other += 1;
+      memberStats.other += 1;
     }
   }
 
   for (const warning of warnings) {
     const rosterRelated =
       warning.code.startsWith("ROSTER_MATRIX") || warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT";
-    if (!rosterRelated || !warning.doctor_id) {
+    if (!rosterRelated || !warning.team_member_id) {
       continue;
     }
-    const doctorStats = stats.get(warning.doctor_id);
-    if (doctorStats) {
-      doctorStats.conflicts += 1;
+    const memberStats = stats.get(warning.team_member_id);
+    if (memberStats) {
+      memberStats.conflicts += 1;
     }
   }
 
@@ -114,7 +114,7 @@ function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]):
   };
 }
 
-function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }) {
+function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_member" }) {
   const { locale } = useLocale();
   const { me, loading: sessionLoading } = useSession();
   const router = useRouter();
@@ -139,9 +139,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
 
   const planningUi = variant === "planner" && Boolean(me?.capabilities?.planning);
   const adminUi = variant === "planner" && Boolean(me?.capabilities?.admin);
-  const doctorUi = variant === "doctor" && Boolean(me?.capabilities?.doctor_portal);
-  const editableDoctorId = doctorUi && me?.doctor_id != null ? me.doctor_id : undefined;
-  const waitingForDoctorSession = variant === "doctor" && (sessionLoading || !doctorUi);
+  const teamMemberPortalUi = variant === "team_member" && Boolean(me?.capabilities?.team_member_portal);
+  const editableMemberId = teamMemberPortalUi && me?.team_member_id != null ? me.team_member_id : undefined;
+  const waitingForTeamMemberSession = variant === "team_member" && (sessionLoading || !teamMemberPortalUi);
   const waitingForPlannerSession = variant === "planner" && (sessionLoading || !me);
   const plannerNeedsShiftGroup = variant === "planner" && me?.role === "planner";
 
@@ -150,9 +150,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
       return;
     }
     if (variant === "planner" && !me.capabilities?.planning) {
-      router.replace(me.capabilities?.doctor_portal ? "/my-planning" : "/");
+      router.replace(me.capabilities?.team_member_portal ? "/my-planning" : "/");
     }
-    if (variant === "doctor" && !me.capabilities?.doctor_portal) {
+    if (variant === "team_member" && !me.capabilities?.team_member_portal) {
       router.replace(me.capabilities?.planning ? "/planning" : "/");
     }
   }, [me, router, sessionLoading, variant]);
@@ -185,7 +185,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   }, [planningUi, me]);
 
   useEffect(() => {
-    if (variant !== "doctor" || !me?.shift_groups?.length) {
+    if (variant !== "team_member" || !me?.shift_groups?.length) {
       return;
     }
     setShiftGroups(
@@ -220,13 +220,13 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
       }
       try {
         setRosterMatrix(await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`));
-        if (doctorUi) {
+        if (teamMemberPortalUi) {
           setMessage("");
         }
       } catch (error) {
         if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
           setRosterMatrix(null);
-          if (doctorUi) {
+          if (teamMemberPortalUi) {
             setMessage(t(locale, "rosterNotPublishedYet"));
           }
           return;
@@ -234,7 +234,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         throw error;
       }
     },
-    [doctorUi, locale, shiftGroupQuery]
+    [teamMemberPortalUi, locale, shiftGroupQuery]
   );
 
   function updateShiftGroup(next: string) {
@@ -250,7 +250,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   }
 
   useEffect(() => {
-    if (variant !== "doctor" || !me?.shift_groups?.length || shiftGroupId) {
+    if (variant !== "team_member" || !me?.shift_groups?.length || shiftGroupId) {
       return;
     }
     if (me.shift_groups.length === 1) {
@@ -284,18 +284,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
   }, [periodId]);
 
   useEffect(() => {
-    if (waitingForDoctorSession || waitingForPlannerSession) {
+    if (waitingForTeamMemberSession || waitingForPlannerSession) {
       return;
     }
     void refreshPeriods();
-  }, [refreshPeriods, waitingForDoctorSession, waitingForPlannerSession]);
+  }, [refreshPeriods, waitingForTeamMemberSession, waitingForPlannerSession]);
 
   useEffect(() => {
     if (
       !periodId ||
-      waitingForDoctorSession ||
+      waitingForTeamMemberSession ||
       waitingForPlannerSession ||
-      (doctorUi && !shiftGroupId) ||
+      (teamMemberPortalUi && !shiftGroupId) ||
       (plannerNeedsShiftGroup && !shiftGroupId)
     ) {
       return;
@@ -303,13 +303,13 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
     void loadWarnings(periodId);
     void loadRosterMatrix(periodId);
   }, [
-    doctorUi,
+    teamMemberPortalUi,
     loadRosterMatrix,
     loadWarnings,
     periodId,
     plannerNeedsShiftGroup,
     shiftGroupId,
-    waitingForDoctorSession,
+    waitingForTeamMemberSession,
     waitingForPlannerSession
   ]);
 
@@ -382,14 +382,14 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
       </div>
-      {waitingForPlannerSession ? null : (doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
+      {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <MatrixEditor
           periodId={periodId}
           compact
           shiftGroupId={shiftGroupId || undefined}
-          editableDoctorId={editableDoctorId}
+          editableMemberId={editableMemberId}
           onChanged={handleWishesChanged}
         />
       )}
@@ -402,13 +402,13 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
       </div>
-      {waitingForPlannerSession ? null : (doctorUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
+      {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <RosterMatrixEditor
           periodId={periodId}
           compact
-          readOnly={Boolean(doctorUi)}
+          readOnly={Boolean(teamMemberPortalUi)}
           reloadToken={rosterReloadToken}
           shiftGroupId={shiftGroupId || undefined}
           onMatrixChange={handleRosterChange}
@@ -417,7 +417,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
     </section>
   ) : null;
 
-  const analysisSection = !doctorUi ? (
+  const analysisSection = !teamMemberPortalUi ? (
     <section className="grid gap-4">
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "analysisSection")}</h2>
@@ -433,7 +433,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
       <Card>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-semibold text-ink">{doctorUi ? t(locale, "myPlanning") : t(locale, "planning")}</h1>
+            <h1 className="text-2xl font-semibold text-ink">{teamMemberPortalUi ? t(locale, "myPlanning") : t(locale, "planning")}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <Field label={t(locale, "planningPeriod")}>
                 <select className={`${inputClass} h-10 min-w-40`} value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
@@ -710,7 +710,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
         </div>
       ) : null}
 
-      {waitingForDoctorSession || waitingForPlannerSession ? (
+      {waitingForTeamMemberSession || waitingForPlannerSession ? (
         <Card>
           <p className="text-sm text-slate-600">
             {waitingForPlannerSession ? t(locale, "planningSessionLoading") : t(locale, "saving")}
@@ -721,12 +721,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "doctor" }
           <>
             {wishesSection}
             {rosterSection}
-            {!doctorUi ? analysisSection : null}
+            {!teamMemberPortalUi ? analysisSection : null}
           </>
         ) : (
           <div className="grid gap-5">
             <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              {(doctorUi
+              {(teamMemberPortalUi
                 ? ([
                     ["wishes", "wishesSection", Heart],
                     ["roster", "rosterSection", CalendarCheck]
@@ -821,20 +821,23 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
         {rosterWarnings.length ? (
           <div className="grid gap-2">
             {rosterWarnings.slice(0, 6).map((warning, index) => {
-              const doctor = warning.doctor_id != null ? rosterMatrix?.doctors.find((row) => row.id === warning.doctor_id) : null;
-              const doctorName = doctor ? doctorLabel(doctor) : null;
+              const member =
+                warning.team_member_id != null
+                  ? rosterMatrix?.team_members.find((row) => row.id === warning.team_member_id)
+                  : null;
+              const memberName = member ? teamMemberLabel(member) : null;
               const detail = validationWarningDetailText(warning, rosterMatrix, locale);
-              const hasLead = Boolean(warning.date || doctorName || warning.doctor_id != null);
+              const hasLead = Boolean(warning.date || memberName || warning.team_member_id != null);
               return (
                 <div
-                  key={`${warning.code}-${warning.doctor_id}-${warning.date}-${index}`}
+                  key={`${warning.code}-${warning.team_member_id}-${warning.date}-${index}`}
                   className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200"
                 >
                   {hasLead ? (
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-semibold text-rose-950">
                       {warning.date ? <span className="tabular-nums">{warning.date}</span> : null}
-                      {warning.date && (doctorName || warning.doctor_id != null) ? <span className="text-rose-800/80">·</span> : null}
-                      {doctorName ? <span>{doctorName}</span> : warning.doctor_id != null ? <span>ID {warning.doctor_id}</span> : null}
+                      {warning.date && (memberName || warning.team_member_id != null) ? <span className="text-rose-800/80">·</span> : null}
+                      {memberName ? <span>{memberName}</span> : warning.team_member_id != null ? <span>ID {warning.team_member_id}</span> : null}
                     </div>
                   ) : null}
                   {detail ? (
@@ -854,7 +857,7 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
   );
 }
 
-function WorkloadStats({ rows, unassigned }: { rows: DoctorStats[]; unassigned: number }) {
+function WorkloadStats({ rows, unassigned }: { rows: TeamMemberWorkloadRow[]; unassigned: number }) {
   const { locale } = useLocale();
   return (
     <Card>
@@ -870,7 +873,7 @@ function WorkloadStats({ rows, unassigned }: { rows: DoctorStats[]; unassigned: 
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-slate-600">
                 <tr>
-                  <th className="p-3 font-semibold">{t(locale, "doctors")}</th>
+                  <th className="p-3 font-semibold">{t(locale, "teamMembers")}</th>
                   <th className="p-3 font-semibold">{t(locale, "totalShifts")}</th>
                   <th className="p-3 font-semibold">{t(locale, "onCallDutyCategory")}</th>
                   <th className="p-3 font-semibold">{t(locale, "standbyDutyCategory")}</th>
@@ -881,7 +884,7 @@ function WorkloadStats({ rows, unassigned }: { rows: DoctorStats[]; unassigned: 
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.doctorId} className="border-t border-slate-100">
+                  <tr key={row.memberId} className="border-t border-slate-100">
                     <td className="p-3 font-medium text-ink">{row.name}</td>
                     <td className="p-3">{row.total}</td>
                     <td className="p-3">{row.onCallDuty}</td>
@@ -902,6 +905,6 @@ function WorkloadStats({ rows, unassigned }: { rows: DoctorStats[]; unassigned: 
   );
 }
 
-export function PlanningWorkspace({ variant = "planner" }: { variant?: "planner" | "doctor" } = {}) {
+export function PlanningWorkspace({ variant = "planner" }: { variant?: "planner" | "team_member" } = {}) {
   return <PlanningWorkspaceContent variant={variant} />;
 }

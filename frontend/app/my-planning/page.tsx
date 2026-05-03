@@ -1,5 +1,5 @@
 import { PlanningWorkspace } from "@/components/PlanningWorkspace";
 
 export default function MyPlanningPage() {
-  return <PlanningWorkspace variant="doctor" />;
+  return <PlanningWorkspace variant="team_member" />;
 }

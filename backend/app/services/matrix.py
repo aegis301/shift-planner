@@ -4,11 +4,10 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Doctor, DoctorPeriodNote, PlanningCell, PlanningPeriod, PlanningShiftIntent
+from app.models import PlanningCell, PlanningPeriod, PlanningShiftIntent, TeamMember, TeamMemberPeriodNote
 from app.schemas import (
-    DoctorPeriodNoteUpsert,
     MatrixDay,
-    MatrixDoctor,
+    MatrixTeamMember,
     MatrixTemplateSlotDay,
     PlanningCellBulkUpsert,
     PlanningCellClear,
@@ -19,10 +18,11 @@ from app.schemas import (
     PlanningShiftIntentRead,
     PlanningShiftIntentUpsert,
     ShiftTemplateRead,
+    TeamMemberPeriodNoteUpsert,
 )
 from app.services.audit import record_audit
 from app.services.shift_groups import (
-    active_doctor_ids_in_shift_group,
+    active_team_member_ids_in_shift_group,
     list_shift_groups,
     list_shift_template_ids_with_any_group,
     require_shift_group,
@@ -46,7 +46,7 @@ def list_planning_cells(db: Session, *, planning_period_id: int) -> list[Plannin
     stmt = (
         select(PlanningCell)
         .where(PlanningCell.planning_period_id == planning_period_id)
-        .order_by(PlanningCell.cell_date, PlanningCell.doctor_id)
+        .order_by(PlanningCell.cell_date, PlanningCell.team_member_id)
     )
     return list(db.scalars(stmt))
 
@@ -57,7 +57,7 @@ def list_planning_shift_intents(db: Session, *, planning_period_id: int) -> list
         .where(PlanningShiftIntent.planning_period_id == planning_period_id)
         .order_by(
             PlanningShiftIntent.cell_date,
-            PlanningShiftIntent.doctor_id,
+            PlanningShiftIntent.team_member_id,
             PlanningShiftIntent.shift_template_id,
         )
     )
@@ -69,17 +69,17 @@ def get_planning_matrix(
 ) -> PlanningMatrixRead:
     period = _require_period_org(db, planning_period_id, organization_id)
 
-    doctors = list(
+    team_members = list(
         db.scalars(
-            select(Doctor)
-            .where(Doctor.organization_id == organization_id, Doctor.is_active.is_(True))
-            .order_by(Doctor.last_name, Doctor.first_name)
+            select(TeamMember)
+            .where(TeamMember.organization_id == organization_id, TeamMember.is_active.is_(True))
+            .order_by(TeamMember.last_name, TeamMember.first_name)
         )
     )
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
-        allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
-        doctors = [doctor for doctor in doctors if doctor.id in allowed_doctor_ids]
+        allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
+        team_members = [m for m in team_members if m.id in allowed_team_member_ids]
         group_template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
     days_in_month = calendar.monthrange(period.year, period.month)[1]
     days = [
@@ -92,12 +92,12 @@ def get_planning_matrix(
     shift_intents_out: list[PlanningShiftIntentRead] = []
     template_slot_days: list[MatrixTemplateSlotDay] = []
     if shift_group_id is not None:
-        allowed_doctor_ids = {doctor.id for doctor in doctors}
-        cells = [cell for cell in cells if cell.doctor_id in allowed_doctor_ids]
+        allowed_team_member_ids = {m.id for m in team_members}
+        cells = [cell for cell in cells if cell.team_member_id in allowed_team_member_ids]
         shift_intents_out = [
             PlanningShiftIntentRead.model_validate(row)
             for row in all_intents
-            if row.shift_group_id == shift_group_id and row.doctor_id in allowed_doctor_ids
+            if row.shift_group_id == shift_group_id and row.team_member_id in allowed_team_member_ids
         ]
         templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
         by_id = {template.id: template for template in templates}
@@ -125,7 +125,7 @@ def get_planning_matrix(
         ]
         slot_triples: set[tuple[date, int, int]] = set()
         active_groups = list_shift_groups(db, organization_id=organization_id, active_only=True)
-        allowed_doctor_ids = {doctor.id for doctor in doctors}
+        allowed_team_member_ids = {m.id for m in team_members}
         for group in active_groups:
             g_templates = shift_template_ids_in_shift_group(db, group.id)
             if not g_templates:
@@ -143,19 +143,19 @@ def get_planning_matrix(
         shift_intents_out = [
             PlanningShiftIntentRead.model_validate(row)
             for row in all_intents
-            if row.doctor_id in allowed_doctor_ids and row.shift_group_id in active_gids
+            if row.team_member_id in allowed_team_member_ids and row.shift_group_id in active_gids
         ]
     return PlanningMatrixRead(
         planning_period=period,
-        doctors=[
-            MatrixDoctor(
-                id=doctor.id,
-                first_name=doctor.first_name,
-                last_name=doctor.last_name,
-                email=doctor.email,
-                employment_percentage=doctor.employment_percentage,
+        team_members=[
+            MatrixTeamMember(
+                id=m.id,
+                first_name=m.first_name,
+                last_name=m.last_name,
+                email=m.email,
+                employment_percentage=m.employment_percentage,
             )
-            for doctor in doctors
+            for m in team_members
         ],
         days=days,
         cells=[PlanningCellRead.model_validate(cell) for cell in cells],
@@ -180,14 +180,14 @@ def upsert_planning_cell(
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
-            PlanningCell.doctor_id == payload.doctor_id,
+            PlanningCell.team_member_id == payload.team_member_id,
             PlanningCell.cell_date == payload.cell_date,
         )
     )
     if cell is None:
         cell = PlanningCell(
             planning_period_id=planning_period_id,
-            doctor_id=payload.doctor_id,
+            team_member_id=payload.team_member_id,
             cell_date=payload.cell_date,
             status=payload.status,
             comment=payload.comment,
@@ -210,7 +210,7 @@ def upsert_planning_cell(
         entity_id=cell.id,
         details={
             "planning_period_id": planning_period_id,
-            "doctor_id": payload.doctor_id,
+            "team_member_id": payload.team_member_id,
             "cell_date": payload.cell_date.isoformat(),
             "status": payload.status,
         },
@@ -254,14 +254,14 @@ def _upsert_planning_cell_no_commit(
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
-            PlanningCell.doctor_id == payload.doctor_id,
+            PlanningCell.team_member_id == payload.team_member_id,
             PlanningCell.cell_date == payload.cell_date,
         )
     )
     if cell is None:
         cell = PlanningCell(
             planning_period_id=planning_period_id,
-            doctor_id=payload.doctor_id,
+            team_member_id=payload.team_member_id,
             cell_date=payload.cell_date,
             status=payload.status,
             comment=payload.comment,
@@ -282,7 +282,7 @@ def _upsert_planning_cell_no_commit(
         action=action,
         entity_type="planning_cell",
         entity_id=cell.id,
-        details={"planning_period_id": planning_period_id, "doctor_id": payload.doctor_id},
+        details={"planning_period_id": planning_period_id, "team_member_id": payload.team_member_id},
     )
     return cell
 
@@ -300,7 +300,7 @@ def clear_planning_cell(
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
-            PlanningCell.doctor_id == payload.doctor_id,
+            PlanningCell.team_member_id == payload.team_member_id,
             PlanningCell.cell_date == payload.cell_date,
         )
     )
@@ -313,48 +313,48 @@ def clear_planning_cell(
         action="delete",
         entity_type="planning_cell",
         entity_id=cell.id,
-        details={"planning_period_id": planning_period_id, "doctor_id": payload.doctor_id},
+        details={"planning_period_id": planning_period_id, "team_member_id": payload.team_member_id},
     )
     db.delete(cell)
     db.commit()
     return True
 
 
-def list_doctor_period_notes(
+def list_team_member_period_notes(
     db: Session, *, planning_period_id: int, organization_id: int, shift_group_id: int | None = None
-) -> list[DoctorPeriodNote]:
+) -> list[TeamMemberPeriodNote]:
     _require_period_org(db, planning_period_id, organization_id)
-    stmt = select(DoctorPeriodNote).where(DoctorPeriodNote.planning_period_id == planning_period_id)
-    notes = list(db.scalars(stmt.order_by(DoctorPeriodNote.doctor_id)))
+    stmt = select(TeamMemberPeriodNote).where(TeamMemberPeriodNote.planning_period_id == planning_period_id)
+    notes = list(db.scalars(stmt.order_by(TeamMemberPeriodNote.team_member_id)))
     if shift_group_id is None:
         return notes
     require_shift_group(db, shift_group_id, organization_id)
-    allowed_doctor_ids = active_doctor_ids_in_shift_group(db, shift_group_id)
-    return [note for note in notes if note.doctor_id in allowed_doctor_ids]
+    allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
+    return [note for note in notes if note.team_member_id in allowed_team_member_ids]
 
 
-def get_doctor_period_note(db: Session, *, planning_period_id: int, doctor_id: int) -> DoctorPeriodNote | None:
+def get_team_member_period_note(db: Session, *, planning_period_id: int, team_member_id: int) -> TeamMemberPeriodNote | None:
     return db.scalar(
-        select(DoctorPeriodNote).where(
-            DoctorPeriodNote.planning_period_id == planning_period_id,
-            DoctorPeriodNote.doctor_id == doctor_id,
+        select(TeamMemberPeriodNote).where(
+            TeamMemberPeriodNote.planning_period_id == planning_period_id,
+            TeamMemberPeriodNote.team_member_id == team_member_id,
         )
     )
 
 
-def save_doctor_period_note(
+def save_team_member_period_note(
     db: Session,
     planning_period_id: int,
-    payload: DoctorPeriodNoteUpsert,
+    payload: TeamMemberPeriodNoteUpsert,
     *,
     organization_id: int,
     actor: str,
     source: str,
-) -> DoctorPeriodNote:
+) -> TeamMemberPeriodNote:
     _require_period_org(db, planning_period_id, organization_id)
-    note = get_doctor_period_note(db, planning_period_id=planning_period_id, doctor_id=payload.doctor_id)
+    note = get_team_member_period_note(db, planning_period_id=planning_period_id, team_member_id=payload.team_member_id)
     if note is None:
-        note = DoctorPeriodNote(planning_period_id=planning_period_id, **payload.model_dump())
+        note = TeamMemberPeriodNote(planning_period_id=planning_period_id, **payload.model_dump())
         db.add(note)
         action = "create"
     else:
@@ -367,9 +367,9 @@ def save_doctor_period_note(
         actor=actor,
         source=source,
         action=action,
-        entity_type="doctor_period_note",
+        entity_type="team_member_period_note",
         entity_id=note.id,
-        details={"planning_period_id": planning_period_id, "doctor_id": payload.doctor_id},
+        details={"planning_period_id": planning_period_id, "team_member_id": payload.team_member_id},
     )
     db.commit()
     db.refresh(note)
@@ -391,16 +391,16 @@ def bulk_upsert_planning_shift_intents(
         if not _cell_date_in_period(period, item.cell_date):
             raise ValueError("Cell date is outside the planning period month")
         require_shift_group(db, item.shift_group_id, organization_id)
-        allowed_doctors = active_doctor_ids_in_shift_group(db, item.shift_group_id)
-        if item.doctor_id not in allowed_doctors:
-            raise ValueError("Doctor is not a member of this shift group")
+        allowed_team_members = active_team_member_ids_in_shift_group(db, item.shift_group_id)
+        if item.team_member_id not in allowed_team_members:
+            raise ValueError("Team member is not a member of this shift group")
         allowed_templates = shift_template_ids_in_shift_group(db, item.shift_group_id)
         if item.shift_template_id not in allowed_templates:
             raise ValueError("Shift template is not linked to this shift group")
         existing = db.scalar(
             select(PlanningShiftIntent).where(
                 PlanningShiftIntent.planning_period_id == planning_period_id,
-                PlanningShiftIntent.doctor_id == item.doctor_id,
+                PlanningShiftIntent.team_member_id == item.team_member_id,
                 PlanningShiftIntent.cell_date == item.cell_date,
                 PlanningShiftIntent.shift_group_id == item.shift_group_id,
                 PlanningShiftIntent.shift_template_id == item.shift_template_id,
@@ -417,7 +417,7 @@ def bulk_upsert_planning_shift_intents(
                     entity_id=existing.id,
                     details={
                         "planning_period_id": planning_period_id,
-                        "doctor_id": item.doctor_id,
+                        "team_member_id": item.team_member_id,
                         "cell_date": item.cell_date.isoformat(),
                     },
                 )
@@ -426,7 +426,7 @@ def bulk_upsert_planning_shift_intents(
         if existing is None:
             row = PlanningShiftIntent(
                 planning_period_id=planning_period_id,
-                doctor_id=item.doctor_id,
+                team_member_id=item.team_member_id,
                 cell_date=item.cell_date,
                 shift_group_id=item.shift_group_id,
                 shift_template_id=item.shift_template_id,
@@ -444,7 +444,7 @@ def bulk_upsert_planning_shift_intents(
                 entity_id=row.id,
                 details={
                     "planning_period_id": planning_period_id,
-                    "doctor_id": item.doctor_id,
+                    "team_member_id": item.team_member_id,
                     "cell_date": item.cell_date.isoformat(),
                     "shift_template_id": item.shift_template_id,
                     "kind": item.kind,
@@ -464,7 +464,7 @@ def bulk_upsert_planning_shift_intents(
                 entity_id=existing.id,
                 details={
                     "planning_period_id": planning_period_id,
-                    "doctor_id": item.doctor_id,
+                    "team_member_id": item.team_member_id,
                     "kind": item.kind,
                 },
             )

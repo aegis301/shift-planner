@@ -6,8 +6,8 @@ from app.db.session import get_db
 from app.models import ShiftGroup, User
 from app.schemas import (
     ShiftGroupCreate,
-    ShiftGroupDoctorIdsPut,
     ShiftGroupRead,
+    ShiftGroupTeamMemberIdsPut,
     ShiftGroupTemplateIdsPut,
     ShiftGroupUpdate,
 )
@@ -17,8 +17,8 @@ from app.services.shift_groups import (
     delete_shift_group,
     list_shift_groups,
     list_shift_groups_for_planner,
-    replace_group_doctors,
     replace_group_shift_templates,
+    replace_group_team_members,
     update_shift_group,
 )
 
@@ -34,7 +34,7 @@ def _shift_group_read(group: ShiftGroup) -> ShiftGroupRead:
         display_order=group.display_order,
         is_active=group.is_active,
         created_at=group.created_at,
-        doctor_ids=sorted({link.doctor_id for link in group.doctor_links}),
+        team_member_ids=sorted({link.team_member_id for link in group.team_member_links}),
         shift_template_ids=sorted({link.shift_template_id for link in group.template_links}),
     )
 
@@ -55,7 +55,7 @@ def post_shift_group(
     payload: ShiftGroupCreate, db: Session = Depends(get_db), user: User = Depends(get_current_admin)
 ):
     group = create_shift_group(db, payload, organization_id=user.organization_id, actor=user.email, source="rest")
-    db.refresh(group, attribute_names=["doctor_links", "template_links"])
+    db.refresh(group, attribute_names=["team_member_links", "template_links"])
     return _shift_group_read(group)
 
 
@@ -71,7 +71,7 @@ def patch_shift_group(
     )
     if group is None:
         raise HTTPException(status_code=404, detail="Shift group not found")
-    db.refresh(group, attribute_names=["doctor_links", "template_links"])
+    db.refresh(group, attribute_names=["team_member_links", "template_links"])
     return _shift_group_read(group)
 
 
@@ -86,18 +86,18 @@ def delete_shift_group_endpoint(
     }
 
 
-@router.put("/{shift_group_id}/doctors", response_model=ShiftGroupRead)
-def put_shift_group_doctors(
+@router.put("/{shift_group_id}/team-members", response_model=ShiftGroupRead)
+def put_shift_group_team_members(
     shift_group_id: int,
-    payload: ShiftGroupDoctorIdsPut,
+    payload: ShiftGroupTeamMemberIdsPut,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
     try:
-        replace_group_doctors(
+        replace_group_team_members(
             db,
             shift_group_id,
-            payload.doctor_ids,
+            payload.team_member_ids,
             organization_id=user.organization_id,
             actor=user.email,
             source="rest",
@@ -107,7 +107,7 @@ def put_shift_group_doctors(
     group = db.get(ShiftGroup, shift_group_id)
     if group is None or group.organization_id != user.organization_id:
         raise HTTPException(status_code=404, detail="Shift group not found")
-    db.refresh(group, attribute_names=["doctor_links", "template_links"])
+    db.refresh(group, attribute_names=["team_member_links", "template_links"])
     return _shift_group_read(group)
 
 
@@ -132,5 +132,5 @@ def put_shift_group_templates(
     group = db.get(ShiftGroup, shift_group_id)
     if group is None or group.organization_id != user.organization_id:
         raise HTTPException(status_code=404, detail="Shift group not found")
-    db.refresh(group, attribute_names=["doctor_links", "template_links"])
+    db.refresh(group, attribute_names=["team_member_links", "template_links"])
     return _shift_group_read(group)

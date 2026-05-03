@@ -1,5 +1,5 @@
-import { ShiftTemplateForm } from "@/components/ResourceForms";
+import { redirect } from "next/navigation";
 
-export default function ShiftTypesPage() {
-  return <ShiftTemplateForm />;
+export default function ShiftTypesRedirectPage() {
+  redirect("/organization/shifts/types");
 }
