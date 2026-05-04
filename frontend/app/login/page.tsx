@@ -7,6 +7,7 @@ import { LogIn } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
+import { membershipDefaultPath } from "@/lib/membershipRouting";
 import { t } from "@/lib/i18n";
 
 type OrgChoice = { slug: string; name: string; organization_id: number };
@@ -20,15 +21,7 @@ function LoginContent() {
   const [pending, setPending] = useState<{ email: string; password: string } | null>(null);
 
   function routeAfterLogin(user: MeUser) {
-    let path = "/";
-    if (user.role === "applicant") {
-      path = "/pending-onboarding";
-    } else if (user.capabilities.planning) {
-      path = "/planning";
-    } else if (user.capabilities.team_member_portal) {
-      path = "/my-planning";
-    }
-    router.push(path);
+    router.push(membershipDefaultPath(user));
     router.refresh();
   }
 

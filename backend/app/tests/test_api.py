@@ -350,6 +350,97 @@ def test_auth_me_switch_active_organization():
         app.dependency_overrides.clear()
 
 
+def test_auth_me_add_organization_membership():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="Alpha", slug="org-alpha", plan_tier="team"))
+        db.add(Organization(id=2, name="Beta", slug="org-beta", plan_tier="team"))
+        db.flush()
+        acc = Account(email="adder@example.com", hashed_password=hash_password("secret12"))
+        db.add(acc)
+        db.flush()
+        db.add(User(account_id=acc.id, organization_id=1, role="admin", locale="de"))
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            assert (
+                tc.post(
+                    "/api/v1/auth/login",
+                    json={"email": "adder@example.com", "password": "secret12", "organization_slug": "org-alpha"},
+                ).status_code
+                == 200
+            )
+            r_bad = tc.post(
+                "/api/v1/auth/me/add-organization-membership",
+                json={
+                    "organization_slug": "org-beta",
+                    "password": "wrong",
+                    "first_name": "A",
+                    "last_name": "B",
+                    "message": None,
+                },
+            )
+            assert r_bad.status_code == 400
+            r_same = tc.post(
+                "/api/v1/auth/me/add-organization-membership",
+                json={
+                    "organization_slug": "org-alpha",
+                    "password": "secret12",
+                    "first_name": "A",
+                    "last_name": "B",
+                    "message": None,
+                },
+            )
+            assert r_same.status_code == 400
+            r_ok = tc.post(
+                "/api/v1/auth/me/add-organization-membership",
+                json={
+                    "organization_slug": "org-beta",
+                    "password": "secret12",
+                    "first_name": "Join",
+                    "last_name": "Er",
+                    "message": "hi",
+                },
+            )
+            assert r_ok.status_code == 200
+            body = r_ok.json()
+            assert body["organization_id"] == 2
+            assert body["role"] == "applicant"
+            assert body["organization"]["slug"] == "org-beta"
+            assert len(body["memberships"]) == 2
+            jr = tc.get("/api/v1/auth/me/join-request").json()
+            assert jr is not None
+            assert jr["status"] == "pending"
+            r_dup = tc.post(
+                "/api/v1/auth/me/add-organization-membership",
+                json={
+                    "organization_slug": "org-beta",
+                    "password": "secret12",
+                    "first_name": "X",
+                    "last_name": "Y",
+                    "message": None,
+                },
+            )
+            assert r_dup.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_organization_users_list_for_admin(client: TestClient):
     login(client)
     response = client.get("/api/v1/organization/users")

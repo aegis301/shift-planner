@@ -122,3 +122,59 @@ def register_join_organization(
         raise ValueError("Could not complete registration") from exc
     db.refresh(user)
     return user, org
+
+
+def request_join_additional_organization(
+    db: Session,
+    *,
+    current_membership: User,
+    organization_slug: str,
+    password: str,
+    first_name: str,
+    last_name: str,
+    message: str | None,
+) -> User:
+    slug = organization_slug.strip().lower()
+    org = get_organization_by_slug(db, slug)
+    if org is None:
+        raise ValueError("Organization not found")
+    if org.id == current_membership.organization_id:
+        raise ValueError("Already a member of this organization")
+    acc = current_membership.account
+    if not verify_password(password, acc.hashed_password):
+        raise ValueError("Invalid password for this email")
+    existing = db.scalar(select(User).where(User.account_id == acc.id, User.organization_id == org.id))
+    if existing is not None:
+        raise ValueError("An account with this email already exists for this organization")
+    user = User(
+        account_id=acc.id,
+        organization_id=org.id,
+        role=ROLE_APPLICANT,
+        locale=current_membership.locale,
+    )
+    db.add(user)
+    db.flush()
+    create_pending_join_request(
+        db,
+        organization_id=org.id,
+        requester_user_id=user.id,
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
+        message=message.strip() if message else None,
+    )
+    record_audit(
+        db,
+        actor=current_membership.email,
+        source="rest",
+        action="request_join_additional_organization",
+        entity_type="user",
+        entity_id=user.id,
+        details={"organization_id": org.id},
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError("Could not complete registration") from exc
+    db.refresh(user)
+    return user

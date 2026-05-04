@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas import (
     ActiveOrganizationInput,
+    AddOrganizationMembershipInput,
     DeleteAccountInput,
     TeamMemberRead,
     TeamMemberSelfUpdate,
@@ -24,7 +25,11 @@ from app.services.join_requests import (
     get_pending_join_request_for_user,
     join_request_to_read,
 )
-from app.services.registration import register_create_organization, register_join_organization
+from app.services.registration import (
+    register_create_organization,
+    register_join_organization,
+    request_join_additional_organization,
+)
 from app.services.users import (
     authenticate_login,
     build_user_read,
@@ -82,6 +87,29 @@ def post_active_organization(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found or no access")
     _set_session_cookie(response, nxt.id)
     return build_user_read(db, nxt)
+
+
+@router.post("/me/add-organization-membership", response_model=UserRead)
+def post_add_organization_membership(
+    payload: AddOrganizationMembershipInput,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserRead:
+    try:
+        new_membership = request_join_additional_organization(
+            db,
+            current_membership=user,
+            organization_slug=payload.organization_slug,
+            password=payload.password,
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            message=payload.message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _set_session_cookie(response, new_membership.id)
+    return build_user_read(db, new_membership)
 
 
 @router.post("/register/create-organization", response_model=UserRead)

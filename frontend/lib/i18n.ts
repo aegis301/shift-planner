@@ -66,6 +66,9 @@ export const dictionaries = {
     loginPickOrganization: "Organisation wählen:",
     organizationSwitcherLabel: "Organisation",
     organizationSwitcherCurrent: "Aktiv",
+    organizationSwitcherButton: "Organisation wechseln",
+    organizationSwitcherButtonShort: "Wechseln",
+    organizationSwitcherMenuAria: "Organisationen und Rollen",
     loginRemovedAccountHint:
       "Wurde Ihr Benutzerkonto von einer Admin-Person entfernt, legen Sie es über „Organisation beitreten“ erneut an.",
     created: "Gespeichert",
@@ -245,6 +248,16 @@ export const dictionaries = {
     profileHelp: "Name, E-Mail und Stellenumfang für Ihre sichtbaren Planungen.",
     monthlyComment: "Monats-Kommentar",
     organization: "Organisation",
+    settingsMembershipsTitle: "Organisationen",
+    settingsMembershipsHelp:
+      "Die aktuelle Sitzung gilt immer nur für die gewählte Mitgliedschaft. Rollen und Menü hängen von der Organisation ab.",
+    settingsMembershipSwitch: "Wechseln",
+    settingsJoinAnotherTitle: "Weitere Organisation",
+    settingsJoinAnotherIntro:
+      "Organisations-Code prüfen, Passwort zur Bestätigung eingeben und Antrag senden. Nach der Freigabe erscheint die Organisation in der Liste.",
+    settingsJoinAnotherSubmit: "Antrag senden und Sitzung wechseln",
+    settingsJoinAnotherError: "Die Anfrage konnte nicht gesendet werden.",
+    membershipLinkedTeamProfile: "Mit Teamprofil verknüpft",
     organizationIdLabel: "Organisations-ID",
     organizationSlugLabel: "Organisations-Code",
     organizationSlugHint:
@@ -339,6 +352,7 @@ export const dictionaries = {
     roleOptionAdmin: "Administrator",
     roleOptionPlanner: "Planer",
     roleOptionTeamMember: "Teammitglied",
+    roleOptionApplicant: "Antrag ausstehend",
     orgStaffModalCancel: "Abbrechen",
     orgStaffModalRoleTitle: "Rolle ändern",
     orgStaffModalRoleBody: "Rolle von „{{from}}“ zu „{{to}}“ setzen?",
@@ -414,6 +428,9 @@ export const dictionaries = {
     loginPickOrganization: "Choose an organization:",
     organizationSwitcherLabel: "Organization",
     organizationSwitcherCurrent: "Current",
+    organizationSwitcherButton: "Switch organization",
+    organizationSwitcherButtonShort: "Switch",
+    organizationSwitcherMenuAria: "Organizations and roles",
     loginRemovedAccountHint:
       "If an administrator removed your user account, create it again using Join organization.",
     created: "Saved",
@@ -590,6 +607,16 @@ export const dictionaries = {
     profileHelp: "Name, email, and employment for your visible planning.",
     monthlyComment: "Monthly comment",
     organization: "Organization",
+    settingsMembershipsTitle: "Organizations",
+    settingsMembershipsHelp:
+      "Your active session always applies to one membership at a time. Roles and navigation depend on the organization.",
+    settingsMembershipSwitch: "Switch",
+    settingsJoinAnotherTitle: "Join another organization",
+    settingsJoinAnotherIntro:
+      "Look up the organization code, confirm with your password, and submit a request. After approval, the organization appears in the list.",
+    settingsJoinAnotherSubmit: "Submit request and switch session",
+    settingsJoinAnotherError: "Could not send the request.",
+    membershipLinkedTeamProfile: "Linked to team profile",
     organizationIdLabel: "Organization ID",
     organizationSlugLabel: "Organization code",
     organizationSlugHint:
@@ -684,6 +711,7 @@ export const dictionaries = {
     roleOptionAdmin: "Administrator",
     roleOptionPlanner: "Planner",
     roleOptionTeamMember: "Team member",
+    roleOptionApplicant: "Pending applicant",
     orgStaffModalCancel: "Cancel",
     orgStaffModalRoleTitle: "Change role",
     orgStaffModalRoleBody: "Set role from “{{from}}” to “{{to}}”?",

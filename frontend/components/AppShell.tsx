@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
+  Building2,
   CalendarDays,
+  ChevronDown,
   Languages,
   LayoutGrid,
   LogOut,
@@ -16,13 +18,66 @@ import {
   UserRound,
   UsersRound
 } from "lucide-react";
-import { useSession } from "@/components/LocaleProvider";
+import { useSession, type MeUser } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { Locale, t, TranslationKey } from "@/lib/i18n";
+import {
+  membershipDefaultPath,
+  membershipRoleLabel,
+  pathnameCompatibleWithMembership,
+} from "@/lib/membershipRouting";
 
 const SIDEBAR_STORAGE_KEY = "shift-planner-sidebar-expanded";
 
 type SidebarNavItem = { href: string; key: TranslationKey; icon: LucideIcon; match: (path: string) => boolean };
+
+function OrgMembershipRows({
+  locale,
+  me,
+  orgSwitchBusy,
+  onPick,
+}: {
+  locale: Locale;
+  me: MeUser;
+  orgSwitchBusy: boolean;
+  onPick: (slug: string) => void;
+}) {
+  return (
+    <>
+      {me.memberships.map((m) => {
+        const activeOrg = m.organization.id === me.organization_id;
+        return (
+          <button
+            key={m.membership_id}
+            type="button"
+            role="menuitem"
+            disabled={activeOrg || orgSwitchBusy}
+            className={`flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left text-sm ${
+              activeOrg ? "bg-slate-100 text-slate-900" : "text-slate-800 hover:bg-slate-50"
+            } disabled:opacity-60`}
+            onClick={() => {
+              if (!activeOrg && !orgSwitchBusy) {
+                onPick(m.organization.slug);
+              }
+            }}
+          >
+            <span className="font-medium">
+              {m.organization.name.trim() ? m.organization.name : m.organization.slug}
+            </span>
+            <span className="font-mono text-xs text-slate-500">{m.organization.slug}</span>
+            <span className="text-xs text-slate-600">{membershipRoleLabel(locale, m.role)}</span>
+            {m.team_member_id != null ? (
+              <span className="text-xs text-slate-500">{t(locale, "membershipLinkedTeamProfile")}</span>
+            ) : null}
+            {activeOrg ? (
+              <span className="text-xs text-emerald-800">{t(locale, "organizationSwitcherCurrent")}</span>
+            ) : null}
+          </button>
+        );
+      })}
+    </>
+  );
+}
 
 export function AppShell({
   locale,
@@ -38,8 +93,10 @@ export function AppShell({
   const { me, loading, refreshMe } = useSession();
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const orgMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -58,6 +115,7 @@ export function AppShell({
 
   useEffect(() => {
     setUserMenuOpen(false);
+    setOrgMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -71,6 +129,18 @@ export function AppShell({
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [userMenuOpen]);
+
+  useEffect(() => {
+    if (!orgMenuOpen) return;
+    function onDocMouseDown(ev: MouseEvent) {
+      const el = orgMenuRef.current;
+      if (el && !el.contains(ev.target as Node)) {
+        setOrgMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [orgMenuOpen]);
 
   const sidebarNavItems: SidebarNavItem[] = [];
   if (me) {
@@ -158,21 +228,24 @@ export function AppShell({
     if (!me || slug === me.organization.slug) return;
     setOrgSwitchBusy(true);
     try {
-      await apiFetch("/api/v1/auth/me/active-organization", {
+      const updated = await apiFetch<MeUser>("/api/v1/auth/me/active-organization", {
         method: "POST",
         body: JSON.stringify({ organization_slug: slug }),
       });
       await refreshMe();
+      const next = membershipDefaultPath(updated);
+      if (!pathnameCompatibleWithMembership(pathname, updated)) {
+        router.push(next);
+      }
       router.refresh();
       setUserMenuOpen(false);
+      setOrgMenuOpen(false);
     } catch {
       return;
     } finally {
       setOrgSwitchBusy(false);
     }
   }
-
-  const applicantOnly = me?.role === "applicant";
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -256,6 +329,51 @@ export function AppShell({
               <p className="truncate text-xs text-slate-500">{t(locale, "aiFirst")}</p>
             )}
           </div>
+          {!loading && me && me.memberships.length > 1 ? (
+            <div ref={orgMenuRef} className="relative z-30 max-w-[min(100%,18rem)] shrink-0">
+              <button
+                type="button"
+                aria-expanded={orgMenuOpen}
+                aria-haspopup="menu"
+                aria-label={t(locale, "organizationSwitcherButton")}
+                title={t(locale, "organizationSwitcherButton")}
+                className="inline-flex h-10 max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-left text-sm font-medium text-slate-800 shadow-sm sm:gap-2 sm:px-3"
+                onClick={() => {
+                  setOrgMenuOpen((o) => !o);
+                  setUserMenuOpen(false);
+                }}
+              >
+                <Building2 aria-hidden className="h-4 w-4 shrink-0 text-emerald-700" />
+                <span className="hidden min-w-0 truncate sm:inline">
+                  {me.organization.name.trim() ? me.organization.name : me.organization.slug}
+                </span>
+                <span className="min-w-0 truncate sm:hidden">{t(locale, "organizationSwitcherButtonShort")}</span>
+                <ChevronDown
+                  aria-hidden
+                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${orgMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {orgMenuOpen ? (
+                <div
+                  role="menu"
+                  aria-label={t(locale, "organizationSwitcherMenuAria")}
+                  className="absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,24rem)] w-[min(calc(100vw-2rem),20rem)] overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-white py-2 shadow-lg"
+                >
+                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {t(locale, "organizationSwitcherLabel")}
+                  </p>
+                  <div className="px-1">
+                    <OrgMembershipRows
+                      locale={locale}
+                      me={me}
+                      orgSwitchBusy={orgSwitchBusy}
+                      onPick={(slug) => void switchOrganization(slug)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {!loading && me ? (
             <div ref={userMenuRef} className="relative shrink-0">
               <button
@@ -264,7 +382,10 @@ export function AppShell({
                 aria-haspopup="menu"
                 aria-label={t(locale, "userMenuAriaLabel")}
                 className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold uppercase text-white shadow-md ring-2 ring-white transition hover:bg-emerald-700"
-                onClick={() => setUserMenuOpen((o) => !o)}
+                onClick={() => {
+                  setUserMenuOpen((o) => !o);
+                  setOrgMenuOpen(false);
+                }}
               >
                 {me.email.trim().charAt(0) || "?"}
               </button>
@@ -273,34 +394,17 @@ export function AppShell({
                   role="menu"
                   className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
                 >
-                  {me.memberships.length > 1 ? (
+                  {me.memberships.length > 0 ? (
                     <div className="border-b border-slate-100 px-2 py-2" role="none">
                       <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         {t(locale, "organizationSwitcherLabel")}
                       </p>
-                      {me.memberships.map((m) => {
-                        const activeOrg = m.organization.id === me.organization_id;
-                        return (
-                          <button
-                            key={m.membership_id}
-                            type="button"
-                            role="menuitem"
-                            disabled={activeOrg || orgSwitchBusy}
-                            className={`flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left text-sm ${
-                              activeOrg ? "bg-slate-100 text-slate-900" : "text-slate-800 hover:bg-slate-50"
-                            } disabled:opacity-60`}
-                            onClick={() => void switchOrganization(m.organization.slug)}
-                          >
-                            <span className="font-medium">
-                              {m.organization.name.trim() ? m.organization.name : m.organization.slug}
-                            </span>
-                            <span className="font-mono text-xs text-slate-500">{m.organization.slug}</span>
-                            {activeOrg ? (
-                              <span className="text-xs text-emerald-800">{t(locale, "organizationSwitcherCurrent")}</span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
+                      <OrgMembershipRows
+                        locale={locale}
+                        me={me}
+                        orgSwitchBusy={orgSwitchBusy}
+                        onPick={(slug) => void switchOrganization(slug)}
+                      />
                     </div>
                   ) : null}
                   <Link

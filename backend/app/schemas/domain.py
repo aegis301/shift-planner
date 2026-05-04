@@ -77,6 +77,14 @@ class JoinRequestResubmitInput(BaseModel):
     message: str | None = Field(default=None, max_length=2000)
 
 
+class AddOrganizationMembershipInput(BaseModel):
+    organization_slug: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=2000)
+
+
 class DeleteAccountInput(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
