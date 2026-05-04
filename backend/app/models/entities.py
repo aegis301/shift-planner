@@ -24,6 +24,7 @@ class Organization(Base):
     shift_templates: Mapped[list["ShiftTemplate"]] = relationship(back_populates="organization")
     planning_periods: Mapped[list["PlanningPeriod"]] = relationship(back_populates="organization")
     join_requests: Mapped[list["OrganizationJoinRequest"]] = relationship(back_populates="organization")
+    membership_invites: Mapped[list["OrganizationMembershipInvite"]] = relationship(back_populates="organization")
 
 
 class Account(Base):
@@ -357,6 +358,36 @@ class OrganizationJoinRequest(Base):
 
     organization: Mapped["Organization"] = relationship(back_populates="join_requests")
     requester: Mapped["User"] = relationship(foreign_keys=[requester_user_id])
+
+
+class OrganizationMembershipInvite(Base):
+    __tablename__ = "organization_membership_invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    invitee_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    invited_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    role: Mapped[str] = mapped_column(String(50))
+    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    employment_percentage: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    team_member_shift_group_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    planner_shift_group_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    precreated_team_member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("team_members.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="membership_invites")
+    invitee_account: Mapped["Account"] = relationship(foreign_keys=[invitee_account_id])
+    invited_by: Mapped["User | None"] = relationship(foreign_keys=[invited_by_user_id])
+    precreated_team_member: Mapped["TeamMember | None"] = relationship(foreign_keys=[precreated_team_member_id])
 
 
 class AuditLog(Base):

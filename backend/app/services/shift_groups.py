@@ -196,7 +196,9 @@ def replace_group_shift_templates(
     db.commit()
 
 
-def replace_team_member_shift_groups(db: Session, team_member_id: int, shift_group_ids: list[int], *, actor: str, source: str) -> None:
+def replace_team_member_shift_groups(
+    db: Session, team_member_id: int, shift_group_ids: list[int], *, actor: str, source: str, transactional: bool = True
+) -> None:
     member = db.get(TeamMember, team_member_id)
     if member is None:
         raise ValueError("Team member not found")
@@ -215,4 +217,7 @@ def replace_team_member_shift_groups(db: Session, team_member_id: int, shift_gro
         entity_id=team_member_id,
         details={"shift_group_ids": sorted(set(shift_group_ids))},
     )
-    db.commit()
+    if transactional:
+        db.commit()
+    else:
+        db.flush()

@@ -86,7 +86,13 @@ def _apply_team_member_user_id(db: Session, member: TeamMember, user_id: int | N
 
 
 def create_team_member(
-    db: Session, payload: TeamMemberCreate, *, organization_id: int, actor: str, source: str
+    db: Session,
+    payload: TeamMemberCreate,
+    *,
+    organization_id: int,
+    actor: str,
+    source: str,
+    transactional: bool = True,
 ) -> TeamMember:
     data = payload.model_dump(exclude={"shift_group_ids", "user_id"})
     member = TeamMember(**data, organization_id=organization_id)
@@ -96,13 +102,18 @@ def create_team_member(
         if payload.user_id is not None:
             _apply_team_member_user_id(db, member, payload.user_id)
         record_audit(db, actor=actor, source=source, action="create", entity_type="team_member", entity_id=member.id)
-        db.commit()
+        if transactional:
+            db.commit()
+        else:
+            db.flush()
     except ValueError:
         db.rollback()
         raise
     db.refresh(member)
     if payload.shift_group_ids:
-        replace_team_member_shift_groups(db, member.id, payload.shift_group_ids, actor=actor, source=source)
+        replace_team_member_shift_groups(
+            db, member.id, payload.shift_group_ids, actor=actor, source=source, transactional=transactional
+        )
     db.refresh(member, attribute_names=["shift_group_links"])
     return member
 

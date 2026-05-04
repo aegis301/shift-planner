@@ -20,8 +20,9 @@ export type MeUser = {
   organization_id: number;
   organization: { id: number; name: string; slug: string; plan_tier: string };
   team_member_id: number | null;
-  shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
-  planner_shift_groups: { id: number; code: string; name_de: string; name_en: string }[];
+  shift_groups: { id: number; code: string; name_de: string; name_en: string; is_active?: boolean }[];
+  planner_shift_groups: { id: number; code: string; name_de: string; name_en: string; is_active?: boolean }[];
+  organization_shift_groups?: { id: number; code: string; name_de: string; name_en: string; is_active?: boolean }[];
   capabilities: { admin: boolean; planning: boolean; team_member_portal: boolean };
   memberships: MembershipSummary[];
 };

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Bot, Building2, Languages, Trash2 } from "lucide-react";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { Card, Field, inputClass } from "@/components/Card";
+import { OrganizationPendingInvitesCard } from "@/components/OrganizationPendingInvitesCard";
 import { ApiError, apiFetch } from "@/lib/api";
 import {
   membershipDefaultPath,
@@ -134,6 +135,7 @@ function SettingsContent() {
 
   return (
     <div className="grid gap-5 md:grid-cols-2">
+      <OrganizationPendingInvitesCard />
       <Card>
         <div className="flex items-start gap-4">
           <Languages className="text-emerald-700" aria-hidden />

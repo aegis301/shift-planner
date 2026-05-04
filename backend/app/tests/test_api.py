@@ -301,6 +301,27 @@ def test_auth_me_includes_organization(client: TestClient):
     assert data["memberships"][0]["organization"]["slug"] == "default"
 
 
+def test_auth_me_admin_organization_shift_groups_reflects_org(client: TestClient):
+    login(client)
+    empty = client.get("/api/v1/auth/me").json()
+    assert empty["role"] == "admin"
+    assert empty["organization_shift_groups"] == []
+    r = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "g-me", "name_de": "Gm", "name_en": "Gm", "display_order": 0, "is_active": True},
+    )
+    assert r.status_code == 200
+    gid = r.json()["id"]
+    me = client.get("/api/v1/auth/me").json()
+    assert any(x["id"] == gid for x in me["organization_shift_groups"])
+
+
+def test_auth_me_team_member_organization_shift_groups_empty(team_member_client: TestClient):
+    login_team_member(team_member_client)
+    data = team_member_client.get("/api/v1/auth/me").json()
+    assert data["organization_shift_groups"] == []
+
+
 def test_auth_me_switch_active_organization():
     engine = create_engine(
         "sqlite://",
@@ -1362,3 +1383,407 @@ def test_admin_cannot_demote_sole_admin_to_planner(client: TestClient):
 def test_planner_cannot_patch_organization_user_role(planner_client: TestClient):
     login_planner(planner_client)
     assert planner_client.patch("/api/v1/organization/users/1", json={"role": "team_member"}).status_code == 403
+
+
+def test_organization_membership_invite_planner_flow():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="Host Org", slug="host-org", plan_tier="team"))
+        db.add(Organization(id=2, name="Other Org", slug="other-org", plan_tier="team"))
+        db.flush()
+        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        db.add(sg)
+        db.flush()
+        acc_inv = Account(email="invitee@example.com", hashed_password=hash_password("invpw"))
+        db.add(acc_inv)
+        db.flush()
+        db.add(User(account_id=acc_inv.id, organization_id=2, role="team_member", locale="de"))
+        _seed_membership(db, "hostadmin@example.com", "hostpw", 1, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            assert (
+                tc.post(
+                    "/api/v1/auth/login",
+                    json={"email": "hostadmin@example.com", "password": "hostpw", "organization_slug": "host-org"},
+                ).status_code
+                == 200
+            )
+            inv = tc.post(
+                "/api/v1/organization/invites",
+                json={
+                    "invitee_email": "invitee@example.com",
+                    "role": "planner",
+                    "planner_shift_group_ids": [1],
+                    "message": "Join us",
+                },
+            )
+            assert inv.status_code == 200
+            assert inv.json()["status"] == "pending"
+            listed = tc.get("/api/v1/organization/invites").json()
+            assert len(listed) == 1
+            assert (
+                tc.post(
+                    "/api/v1/auth/login",
+                    json={"email": "invitee@example.com", "password": "invpw", "organization_slug": "other-org"},
+                ).status_code
+                == 200
+            )
+            pending = tc.get("/api/v1/auth/me/organization-invites").json()
+            assert len(pending) == 1
+            assert pending[0]["organization"]["slug"] == "host-org"
+            invite_id = pending[0]["id"]
+            acc = tc.post(f"/api/v1/auth/me/organization-invites/{invite_id}/accept")
+            assert acc.status_code == 200
+            me = tc.get("/api/v1/auth/me").json()
+            assert me["organization_id"] == 1
+            assert me["role"] == "planner"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_organization_invite_rejects_unknown_email(client: TestClient):
+    login(client)
+    r = client.post(
+        "/api/v1/organization/invites",
+        json={
+            "invitee_email": "nobody-at-all@example.com",
+            "role": "planner",
+            "planner_shift_group_ids": [1],
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_organization_invite_revoke():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="R", slug="org-r", plan_tier="team"))
+        db.flush()
+        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        db.add(sg)
+        db.flush()
+        acc = Account(email="revoke_target@example.com", hashed_password=hash_password("x"))
+        db.add(acc)
+        db.flush()
+        _seed_membership(db, "revoke_admin@example.com", "x", 1, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            tc.post(
+                "/api/v1/auth/login",
+                json={"email": "revoke_admin@example.com", "password": "x", "organization_slug": "org-r"},
+            )
+            inv = tc.post(
+                "/api/v1/organization/invites",
+                json={"invitee_email": "revoke_target@example.com", "role": "planner", "planner_shift_group_ids": [1]},
+            )
+            assert inv.status_code == 200
+            iid = inv.json()["id"]
+            assert tc.delete(f"/api/v1/organization/invites/{iid}").status_code == 204
+            row = tc.get("/api/v1/organization/invites").json()
+            assert row[0]["status"] == "revoked"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_organization_membership_invite_team_member_minimal_accept_with_body():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="Host Org", slug="host-org", plan_tier="team"))
+        db.add(Organization(id=2, name="Other Org", slug="other-org", plan_tier="team"))
+        db.flush()
+        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        db.add(sg)
+        db.flush()
+        acc_inv = Account(email="tmmin@example.com", hashed_password=hash_password("invpw"))
+        db.add(acc_inv)
+        db.flush()
+        db.add(User(account_id=acc_inv.id, organization_id=2, role="team_member", locale="de"))
+        _seed_membership(db, "hostadmin2@example.com", "hostpw", 1, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            assert (
+                tc.post(
+                    "/api/v1/auth/login",
+                    json={"email": "hostadmin2@example.com", "password": "hostpw", "organization_slug": "host-org"},
+                ).status_code
+                == 200
+            )
+            inv = tc.post(
+                "/api/v1/organization/invites",
+                json={"invitee_email": "tmmin@example.com", "role": "team_member"},
+            )
+            assert inv.status_code == 200
+            assert (
+                tc.post(
+                    "/api/v1/auth/login",
+                    json={"email": "tmmin@example.com", "password": "invpw", "organization_slug": "other-org"},
+                ).status_code
+                == 200
+            )
+            pending = tc.get("/api/v1/auth/me/organization-invites").json()
+            assert len(pending) == 1
+            assert pending[0]["needs_profile_on_accept"] is True
+            assert len(pending[0]["accept_shift_groups"]) == 1
+            invite_id = pending[0]["id"]
+            acc = tc.post(
+                f"/api/v1/auth/me/organization-invites/{invite_id}/accept",
+                json={
+                    "first_name": "Pat",
+                    "last_name": "Doc",
+                    "shift_group_ids": [1],
+                    "employment_percentage": 80,
+                },
+            )
+            assert acc.status_code == 200
+            me = tc.get("/api/v1/auth/me").json()
+            assert me["organization_id"] == 1
+            assert me["role"] == "team_member"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_organization_membership_invite_team_member_precreated_accept_without_body():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="Host Org", slug="host-org", plan_tier="team"))
+        db.add(Organization(id=2, name="Other Org", slug="other-org", plan_tier="team"))
+        db.flush()
+        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        db.add(sg)
+        db.flush()
+        acc_inv = Account(email="preacc@example.com", hashed_password=hash_password("invpw"))
+        db.add(acc_inv)
+        db.flush()
+        db.add(User(account_id=acc_inv.id, organization_id=2, role="team_member", locale="de"))
+        _seed_membership(db, "hostadmin3@example.com", "hostpw", 1, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            tc.post(
+                "/api/v1/auth/login",
+                json={"email": "hostadmin3@example.com", "password": "hostpw", "organization_slug": "host-org"},
+            )
+            inv = tc.post(
+                "/api/v1/organization/invites",
+                json={
+                    "invitee_email": "preacc@example.com",
+                    "role": "team_member",
+                    "prepare_team_member_profile": True,
+                    "first_name": "Pre",
+                    "last_name": "Created",
+                    "shift_group_ids": [1],
+                },
+            )
+            assert inv.status_code == 200
+            assert inv.json()["has_precreated_team_member"] is True
+            tc.post(
+                "/api/v1/auth/login",
+                json={"email": "preacc@example.com", "password": "invpw", "organization_slug": "other-org"},
+            )
+            pending = tc.get("/api/v1/auth/me/organization-invites").json()
+            assert pending[0]["needs_profile_on_accept"] is False
+            assert pending[0]["has_precreated_team_member"] is True
+            invite_id = pending[0]["id"]
+            acc = tc.post(f"/api/v1/auth/me/organization-invites/{invite_id}/accept", json={})
+            assert acc.status_code == 200
+            me = tc.get("/api/v1/auth/me").json()
+            assert me["organization_id"] == 1
+            assert me["role"] == "team_member"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_organization_invite_revoke_deletes_precreated_team_member():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="R", slug="org-rv", plan_tier="team"))
+        db.flush()
+        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        db.add(sg)
+        db.flush()
+        acc = Account(email="preclean@example.com", hashed_password=hash_password("x"))
+        db.add(acc)
+        db.flush()
+        _seed_membership(db, "rv_admin@example.com", "x", 1, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            tc.post(
+                "/api/v1/auth/login",
+                json={"email": "rv_admin@example.com", "password": "x", "organization_slug": "org-rv"},
+            )
+            inv = tc.post(
+                "/api/v1/organization/invites",
+                json={
+                    "invitee_email": "preclean@example.com",
+                    "role": "team_member",
+                    "prepare_team_member_profile": True,
+                    "first_name": "Or",
+                    "last_name": "Phan",
+                    "shift_group_ids": [1],
+                },
+            )
+            assert inv.status_code == 200
+            members_before = tc.get("/api/v1/team-members").json()
+            assert len(members_before) == 1
+            iid = inv.json()["id"]
+            assert tc.delete(f"/api/v1/organization/invites/{iid}").status_code == 204
+            members_after = tc.get("/api/v1/team-members").json()
+            assert members_after == []
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_organization_delete_wrong_name():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=2, name="Exact Name", slug="exact-slug", plan_tier="team"))
+        db.flush()
+        _seed_membership(db, "deladmin@example.com", "d", 2, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            tc.post(
+                "/api/v1/auth/login",
+                json={"email": "deladmin@example.com", "password": "d", "organization_slug": "exact-slug"},
+            )
+            r = tc.request(
+                "DELETE",
+                "/api/v1/organization",
+                json={"confirm_organization_name": "Wrong"},
+            )
+            assert r.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_organization_delete_success():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=2, name="Wipe Co", slug="wipe-co", plan_tier="team"))
+        db.flush()
+        _seed_membership(db, "wipe@example.com", "w", 2, "admin")
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            tc.post(
+                "/api/v1/auth/login",
+                json={"email": "wipe@example.com", "password": "w", "organization_slug": "wipe-co"},
+            )
+            r = tc.request(
+                "DELETE",
+                "/api/v1/organization",
+                json={"confirm_organization_name": "Wipe Co"},
+            )
+            assert r.status_code == 204
+            assert tc.get("/api/v1/auth/me").status_code == 401
+    finally:
+        app.dependency_overrides.clear()

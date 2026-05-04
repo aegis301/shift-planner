@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
@@ -7,7 +7,10 @@ from app.models import Organization, User
 from app.schemas import (
     ApproveJoinCreateTeamMemberInput,
     ApproveJoinLinkTeamMemberBody,
+    DeleteOrganizationInput,
     JoinRequestRead,
+    OrganizationInviteCreate,
+    OrganizationMembershipInviteRead,
     OrganizationReadForAdmin,
     OrganizationStaffDirectoryRow,
     OrganizationUpdateInput,
@@ -23,6 +26,13 @@ from app.services.join_requests import (
     list_join_requests_for_org,
     reject_join_request,
 )
+from app.services.organization_invites import (
+    create_membership_invite,
+    invite_to_read,
+    list_membership_invites_for_org,
+    revoke_membership_invite,
+)
+from app.services.organization_lifecycle import delete_organization
 from app.services.organizations import update_organization_settings
 from app.services.organization_directory import list_organization_staff_directory
 from app.services.users import (
@@ -180,3 +190,49 @@ def post_cancel_own_join_request(
     ok = cancel_join_request_by_requester(db, request_id=request_id, user_id=user.id)
     if not ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot cancel this request")
+
+
+@router.get("/invites", response_model=list[OrganizationMembershipInviteRead])
+def get_organization_invites(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> list[OrganizationMembershipInviteRead]:
+    rows = list_membership_invites_for_org(db, organization_id=user.organization_id)
+    return [invite_to_read(db, r) for r in rows]
+
+
+@router.post("/invites", response_model=OrganizationMembershipInviteRead)
+def post_organization_invite(
+    payload: OrganizationInviteCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> OrganizationMembershipInviteRead:
+    try:
+        row = create_membership_invite(db, actor=user, payload=payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return invite_to_read(db, row)
+
+
+@router.delete("/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_organization_invite(
+    invite_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> None:
+    try:
+        revoke_membership_invite(db, actor=user, invite_id=invite_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+def delete_organization_endpoint(
+    payload: DeleteOrganizationInput = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> None:
+    try:
+        delete_organization(db, actor=user, confirm_organization_name=payload.confirm_organization_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

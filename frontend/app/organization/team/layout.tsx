@@ -33,12 +33,18 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
             labelKey: "teamMembers",
             isActive: (p) =>
               (p === TEAM_BASE || p === `${TEAM_BASE}/` || p.startsWith(`${TEAM_BASE}/members`)) &&
-              !p.startsWith(`${TEAM_BASE}/requests`),
+              !p.startsWith(`${TEAM_BASE}/requests`) &&
+              !p.startsWith(`${TEAM_BASE}/organization`),
           },
           {
             href: `${TEAM_BASE}/requests`,
             labelKey: "joinRequestsNav",
             isActive: (p) => p.startsWith(`${TEAM_BASE}/requests`),
+          },
+          {
+            href: `${TEAM_BASE}/organization`,
+            labelKey: "orgManagementNav",
+            isActive: (p) => p.startsWith(`${TEAM_BASE}/organization`),
           },
         ]}
       />

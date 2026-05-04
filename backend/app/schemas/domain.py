@@ -19,6 +19,7 @@ class UserShiftGroupBrief(BaseModel):
     code: str
     name_de: str
     name_en: str
+    is_active: bool = True
 
 
 class UserCapabilities(BaseModel):
@@ -57,6 +58,7 @@ class UserRead(BaseModel):
     team_member_id: int | None = None
     shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
     planner_shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
+    organization_shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
     capabilities: UserCapabilities
     memberships: list[MembershipSummary] = Field(default_factory=list)
 
@@ -193,6 +195,84 @@ class JoinRequestRead(BaseModel):
     resolution: str | None
     resolved_team_member_id: int | None
     created_at: datetime
+
+
+OrganizationInviteRole = Literal["planner", "team_member"]
+
+
+class OrganizationInviteCreate(BaseModel):
+    invitee_email: EmailStr
+    role: OrganizationInviteRole = "team_member"
+    message: str | None = None
+    prepare_team_member_profile: bool = False
+    first_name: str | None = None
+    last_name: str | None = None
+    employment_percentage: int = Field(default=100, ge=1, le=100)
+    notes: str | None = None
+    shift_group_ids: list[int] = Field(default_factory=list)
+    planner_shift_group_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_role_payload(self) -> Self:
+        if self.role == "planner" and not self.planner_shift_group_ids:
+            raise ValueError("planner_shift_group_ids is required for planner invites")
+        if self.role == "team_member" and self.prepare_team_member_profile:
+            if not (self.first_name or "").strip() or not (self.last_name or "").strip():
+                raise ValueError("first_name and last_name are required when preparing a team member profile")
+            if not self.shift_group_ids:
+                raise ValueError("shift_group_ids is required when preparing a team member profile")
+        return self
+
+
+class OrganizationInviteAcceptInput(BaseModel):
+    first_name: str | None = Field(default=None, max_length=255)
+    last_name: str | None = Field(default=None, max_length=255)
+    employment_percentage: int | None = Field(default=None, ge=1, le=100)
+    shift_group_ids: list[int] | None = None
+    notes: str | None = None
+
+
+class OrganizationMembershipInviteRead(BaseModel):
+    id: int
+    organization_id: int
+    invitee_email: str
+    role: str
+    status: str
+    message: str | None
+    first_name: str | None
+    last_name: str | None
+    employment_percentage: int | None
+    shift_group_ids: list[int]
+    planner_shift_group_ids: list[int]
+    has_precreated_team_member: bool
+    created_at: datetime
+
+
+class ShiftGroupInviteOption(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name_de: str
+    name_en: str
+    is_active: bool = True
+
+
+class OrganizationMembershipInvitePendingRead(BaseModel):
+    id: int
+    organization: OrganizationBrief
+    role: str
+    message: str | None
+    first_name: str | None
+    last_name: str | None
+    needs_profile_on_accept: bool
+    has_precreated_team_member: bool
+    accept_shift_groups: list[ShiftGroupInviteOption] = Field(default_factory=list)
+    created_at: datetime
+
+
+class DeleteOrganizationInput(BaseModel):
+    confirm_organization_name: str = Field(min_length=1, max_length=255)
 
 
 class ApproveJoinCreateTeamMemberInput(BaseModel):

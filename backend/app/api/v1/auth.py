@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -9,13 +9,15 @@ from app.schemas import (
     ActiveOrganizationInput,
     AddOrganizationMembershipInput,
     DeleteAccountInput,
-    TeamMemberRead,
-    TeamMemberSelfUpdate,
     JoinRequestRead,
     JoinRequestResubmitInput,
     LoginInput,
+    OrganizationInviteAcceptInput,
+    OrganizationMembershipInvitePendingRead,
     RegisterCreateOrganizationInput,
     RegisterJoinOrganizationInput,
+    TeamMemberRead,
+    TeamMemberSelfUpdate,
     UserRead,
 )
 from app.services.authz import get_linked_team_member
@@ -29,6 +31,12 @@ from app.services.registration import (
     register_create_organization,
     register_join_organization,
     request_join_additional_organization,
+)
+from app.services.organization_invites import (
+    accept_membership_invite,
+    decline_membership_invite,
+    invite_pending_to_read,
+    list_pending_invites_for_account,
 )
 from app.services.users import (
     authenticate_login,
@@ -179,6 +187,42 @@ def post_delete_account(
 @router.get("/me", response_model=UserRead)
 def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserRead:
     return build_user_read(db, user)
+
+
+@router.get("/me/organization-invites", response_model=list[OrganizationMembershipInvitePendingRead])
+def get_me_organization_invites(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[OrganizationMembershipInvitePendingRead]:
+    rows = list_pending_invites_for_account(db, account_id=user.account_id)
+    return [invite_pending_to_read(db, r) for r in rows]
+
+
+@router.post("/me/organization-invites/{invite_id}/accept", response_model=UserRead)
+def post_me_accept_organization_invite(
+    invite_id: int,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    body: OrganizationInviteAcceptInput | None = Body(default=None),
+) -> UserRead:
+    try:
+        new_user = accept_membership_invite(db, user=user, invite_id=invite_id, accept=body)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    _set_session_cookie(response, new_user.id)
+    return build_user_read(db, new_user)
+
+
+@router.post("/me/organization-invites/{invite_id}/decline", status_code=status.HTTP_204_NO_CONTENT)
+def post_me_decline_organization_invite(
+    invite_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    try:
+        decline_membership_invite(db, user=user, invite_id=invite_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/me/join-request", response_model=JoinRequestRead | None)
