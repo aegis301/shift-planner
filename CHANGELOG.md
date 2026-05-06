@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-05-06
+- **CI/CD automation:** `.github/workflows/ci.yml` now includes `container-smoke`, which builds and starts the production compose services (`postgres`, `backend`, `frontend`) and verifies backend health. `.github/workflows/deploy.yml` now auto-deploys to the VPS after the **CI** workflow succeeds on `main` (still supports manual `workflow_dispatch`), so merges can promote changes without manual server deploy steps.
+
 ## 2026-05-05
 - **Deployment:** `docker-compose.prod.yml` (Postgres, FastAPI, Next production image via `frontend/Dockerfile.prod`, Caddy with [deploy/Caddyfile](deploy/Caddyfile)), [deploy/README.md](deploy/README.md) for server TLS, Cloudflare, and backups, [deploy/scripts/backup-postgres.sh](deploy/scripts/backup-postgres.sh). **GitHub Actions:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) (backend Ruff + pytest, frontend lint/typecheck/build), [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) (SSH deploy with secrets `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `DEPLOY_PATH`, optional `DEPLOY_REPO_URL`). **Backend:** `SESSION_COOKIE_SECURE` / `session_cookie_secure` for HTTPS session cookies; `backend/Dockerfile` installs runtime deps only (no `[dev]`). **Frontend:** `next start` binds `0.0.0.0`; empty `NEXT_PUBLIC_API_BASE_URL` builds same-origin `/api` calls for the Caddy layout; `/my-planning` wrapped in `Suspense` for production prerender. **CI hygiene:** Ruff fixes in `holidays.py`, `matrix.py`, and `test_organization_directory.py`.
 

@@ -47,3 +47,37 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
         run: npm run build
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start production app services
+        env:
+          SESSION_SECRET: ci-session-secret
+          SESSION_COOKIE_SECURE: "true"
+          BACKEND_CORS_ORIGINS: https://shift-planner.example.invalid
+          NEXT_PUBLIC_API_BASE_URL: ""
+        run: docker compose -f docker-compose.prod.yml up -d --build postgres backend frontend
+      - name: Wait for backend health and frontend startup
+        run: |
+          set -eu
+          for _ in $(seq 1 60); do
+            BACKEND_ID="$(docker compose -f docker-compose.prod.yml ps -q backend)"
+            FRONTEND_ID="$(docker compose -f docker-compose.prod.yml ps -q frontend)"
+            BACKEND_HEALTH="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$BACKEND_ID")"
+            FRONTEND_STATUS="$(docker inspect -f '{{.State.Status}}' "$FRONTEND_ID")"
+            if [ "$BACKEND_HEALTH" = "healthy" ] && [ "$FRONTEND_STATUS" = "running" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Services did not become healthy/running in time."
+          docker compose -f docker-compose.prod.yml logs backend frontend
+          exit 1
+      - name: Validate backend health endpoint
+        run: docker compose -f docker-compose.prod.yml exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=10).read()"
+      - name: Shutdown smoke environment
+        if: always()
+        run: docker compose -f docker-compose.prod.yml down -v --remove-orphans

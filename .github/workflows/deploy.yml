@@ -2,9 +2,9 @@ name: Deploy
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,8 +41,12 @@ jobs:
               git clone "$REPO_URL" .
             fi
             [ -f .env ] || { echo "Missing .env in $DEPLOY_PATH"; exit 1; }
-            git fetch origin "${{ github.sha }}"
-            git checkout "${{ github.sha }}"
+            TARGET_SHA="${{ github.sha }}"
+            if [ "${{ github.event_name }}" = "workflow_run" ]; then
+              TARGET_SHA="${{ github.event.workflow_run.head_sha }}"
+            fi
+            git fetch origin "$TARGET_SHA"
+            git checkout "$TARGET_SHA"
             docker compose -f docker-compose.prod.yml pull || true
             docker compose -f docker-compose.prod.yml build
             docker compose -f docker-compose.prod.yml up -d

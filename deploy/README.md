@@ -40,8 +40,8 @@ If the machine has no public inbound ports (CGNAT, strict firewall), run **Cloud
 
 ## GitHub Actions
 
-- **CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes to `main` and on pull requests (backend Ruff + pytest, frontend lint, typecheck, build).
-- **Deploy:** [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) runs on `workflow_dispatch` and on version tags `v*`. Configure repository secrets:
+- **CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes to `main` and on pull requests (backend Ruff + pytest, frontend lint, typecheck, build, and a `container-smoke` job that boots `postgres`, `backend`, and `frontend` from `docker-compose.prod.yml`).
+- **Deploy:** [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) runs on `workflow_dispatch` and automatically after the **CI** workflow finishes successfully for `main`. Configure repository secrets:
 
 | Secret | Required | Description |
 |--------|----------|-------------|
@@ -51,7 +51,9 @@ If the machine has no public inbound ports (CGNAT, strict firewall), run **Cloud
 | `DEPLOY_PATH` | Yes | Absolute path to the clone on the server |
 | `DEPLOY_REPO_URL` | First deploy only | Git clone URL (HTTPS or SSH) when the directory is empty |
 
-The server must already contain a valid `.env` in `DEPLOY_PATH`. The workflow checks out the triggering commit and runs `docker compose -f docker-compose.prod.yml build` and `up -d`. Use a **full** git clone on the server (not `--depth 1`) so `git fetch` can retrieve arbitrary commit SHAs from the remote.
+The server must already contain a valid `.env` in `DEPLOY_PATH`. The workflow checks out the triggering commit SHA and runs `docker compose -f docker-compose.prod.yml build` and `up -d`. Use a **full** git clone on the server (not `--depth 1`) so `git fetch` can retrieve arbitrary commit SHAs from the remote.
+
+To enforce "no merge before checks", enable branch protection for `main` in GitHub and require CI status checks (including `container-smoke`) before merge.
 
 ## Postgres backups
 
