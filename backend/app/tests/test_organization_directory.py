@@ -39,11 +39,11 @@ def test_list_organization_staff_directory_link_statuses():
     with SessionLocal() as db:
         db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
         db.flush()
-        u_admin = _mk_user(db, "admin@example.com", role="admin")
+        _mk_user(db, "admin@example.com", role="admin")
         u_same = _mk_user(db, "same@example.com")
         u_other = _mk_user(db, "other@example.com")
         u_foreign = _mk_user(db, "foreign-login@example.com")
-        u_wrong = _mk_user(db, "wronglink@example.com")
+        _mk_user(db, "wronglink@example.com")
         db.flush()
         d_linked = TeamMember(
             organization_id=1,
@@ -69,7 +69,7 @@ def test_list_organization_staff_directory_link_statuses():
             employment_percentage=100,
             user_id=None,
         )
-        u_unlinked = _mk_user(db, "unlinked@example.com")
+        _mk_user(db, "unlinked@example.com")
         d_wrong = TeamMember(
             organization_id=1,
             first_name="D",

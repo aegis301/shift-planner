@@ -16,7 +16,6 @@ from app.schemas import (
     PlanningMatrixRead,
     PlanningShiftIntentBulkUpsert,
     PlanningShiftIntentRead,
-    PlanningShiftIntentUpsert,
     ShiftTemplateRead,
     TeamMemberPeriodNoteUpsert,
 )

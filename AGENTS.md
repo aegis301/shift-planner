@@ -25,7 +25,7 @@ This project is an AI-first shift planning tool for **healthcare teams**; people
 - Backend: Python, FastAPI, SQLAlchemy, Alembic, Postgres.
 - Frontend: Next.js App Router, TypeScript, Tailwind CSS, PWA-ready, mobile first.
 - MCP: FastMCP from the start. MCP tools and resources must reuse the same backend service layer as REST endpoints. MCP targeting uses **`MCP_ORGANIZATION_ID`** when set, otherwise the default organization id (see `README.md`); it is not tied to a browser user’s active membership.
-- Runtime: Docker Compose for local development with Postgres, backend, frontend, and MCP services.
+- Runtime: Docker Compose for local development with Postgres, backend, frontend, and MCP services. Production-oriented stack and Cloudflare/GitHub Actions notes live in [deploy/README.md](deploy/README.md) and [docker-compose.prod.yml](docker-compose.prod.yml).
 
 ## AI-First / FastMCP Rule
 

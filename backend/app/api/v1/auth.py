@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.core.security import SESSION_MAX_AGE_SECONDS, create_session_token
 from app.db.session import get_db
 from app.models import User
@@ -52,9 +53,20 @@ def _set_session_cookie(response: Response, user_id: int) -> None:
         "shift_planner_session",
         create_session_token(user_id),
         max_age=SESSION_MAX_AGE_SECONDS,
+        path="/",
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=settings.session_cookie_secure,
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(
+        "shift_planner_session",
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=settings.session_cookie_secure,
     )
 
 
@@ -166,7 +178,7 @@ def post_register_join_organization(
 
 @router.post("/logout")
 def logout(response: Response) -> dict[str, bool]:
-    response.delete_cookie("shift_planner_session")
+    _clear_session_cookie(response)
     return {"ok": True}
 
 
@@ -181,7 +193,7 @@ def post_delete_account(
         delete_own_account(db, user, password=payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    response.delete_cookie("shift_planner_session")
+    _clear_session_cookie(response)
 
 
 @router.get("/me", response_model=UserRead)

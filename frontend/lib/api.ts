@@ -1,4 +1,13 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+function normalizeApiBase(): string {
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (raw === "") {
+    return "";
+  }
+  const base = raw ?? "http://localhost:8000";
+  return base.replace(/\/$/, "");
+}
+
+const API_BASE_URL = normalizeApiBase();
 
 export class ApiError extends Error {
   readonly status: number;

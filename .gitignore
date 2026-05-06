@@ -1,6 +1,8 @@
 .env
 .env.local
 .venv/
+backend/.venv-ci/
+backups/
 __pycache__/
 *.py[cod]
 .pytest_cache/

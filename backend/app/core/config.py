@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     mcp_organization_id: int | None = None
     default_organization_id: int = 1
     backend_cors_origins: str = "http://localhost:3000"
+    session_cookie_secure: bool = False
 
     @property
     def cors_origins(self) -> list[str]:

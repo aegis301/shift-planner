@@ -1,0 +1,47 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remote deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -eu
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            REPO_URL="${{ secrets.DEPLOY_REPO_URL }}"
+            if [ -z "$DEPLOY_PATH" ]; then
+              echo "DEPLOY_PATH secret is required"
+              exit 1
+            fi
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
+            if [ ! -d .git ]; then
+              if [ -z "$REPO_URL" ]; then
+                echo "DEPLOY_REPO_URL secret is required for first-time clone"
+                exit 1
+              fi
+              git clone "$REPO_URL" .
+            fi
+            [ -f .env ] || { echo "Missing .env in $DEPLOY_PATH"; exit 1; }
+            git fetch origin "${{ github.sha }}"
+            git checkout "${{ github.sha }}"
+            docker compose -f docker-compose.prod.yml pull || true
+            docker compose -f docker-compose.prod.yml build
+            docker compose -f docker-compose.prod.yml up -d

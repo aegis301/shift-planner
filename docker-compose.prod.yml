@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shift_planner}
+      POSTGRES_USER: ${POSTGRES_USER:-shift_planner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shift_planner}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-shift_planner} -d ${POSTGRES_DB:-shift_planner}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - internal
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://shift_planner:shift_planner@postgres:5432/shift_planner}
+      SESSION_SECRET: ${SESSION_SECRET:-replace-with-openssl-rand-base64-32}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      TEAM_MEMBER_SEED_PASSWORD: ${TEAM_MEMBER_SEED_PASSWORD:-}
+      DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
+      PLANNER_SEED_EMAIL: ${PLANNER_SEED_EMAIL:-}
+      PLANNER_SEED_PASSWORD: ${PLANNER_SEED_PASSWORD:-}
+      MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-}
+      MCP_ORGANIZATION_ID: ${MCP_ORGANIZATION_ID:-}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
+    expose:
+      - "3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - backend
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+
+volumes:
+  postgres_data_prod:
+  caddy_data:
+  caddy_config:
