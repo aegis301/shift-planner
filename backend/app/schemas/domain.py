@@ -646,6 +646,7 @@ class TeamMemberPeriodNoteUpsert(BaseModel):
     team_member_id: int
     source_text: str | None = None
     summary: str | None = None
+    wishes_response_received: bool = False
 
 
 class TeamMemberPeriodNoteRead(TeamMemberPeriodNoteUpsert):

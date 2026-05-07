@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Download, MessageSquareText, RefreshCw, Save, X } from "lucide-react";
+import { Download, ListChecks, MessageSquarePlus, MessageSquareText, RefreshCw, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
@@ -92,6 +92,7 @@ type TeamMemberPeriodNote = {
   team_member_id: number;
   source_text: string | null;
   summary: string | null;
+  wishes_response_received?: boolean;
 };
 
 const STATUSES: Array<{ value: PlanningStatus; label: TranslationKey; color: string }> = [
@@ -339,14 +340,45 @@ export function MatrixEditor({
 
   async function persistNote(memberId: number, monthlyCommentOnly = false) {
     if (!memberId) return;
+    const prev = notes.find((item) => item.team_member_id === memberId);
     await apiFetch(`/api/v1/matrix/${activePeriodId}/notes`, {
       method: "PUT",
-      body: JSON.stringify({ team_member_id: memberId, source_text: monthlyCommentOnly ? null : sourceText, summary })
+      body: JSON.stringify({
+        team_member_id: memberId,
+        source_text: monthlyCommentOnly ? null : sourceText,
+        summary,
+        wishes_response_received: prev?.wishes_response_received ?? false,
+      }),
     });
     setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
     setMessage(t(locale, "saved"));
     await onChanged?.();
   }
+
+  const toggleWishesAcknowledged = useCallback(
+    async (memberId: number) => {
+      const prev = notes.find((item) => item.team_member_id === memberId);
+      const next = !(prev?.wishes_response_received ?? false);
+      setSavingCells((count) => count + 1);
+      try {
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/notes`, {
+          method: "PUT",
+          body: JSON.stringify({
+            team_member_id: memberId,
+            source_text: prev?.source_text ?? null,
+            summary: prev?.summary ?? null,
+            wishes_response_received: next,
+          }),
+        });
+        setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
+        setMessage(t(locale, "saved"));
+        await onChanged?.();
+      } finally {
+        setSavingCells((count) => Math.max(0, count - 1));
+      }
+    },
+    [activePeriodId, groupQuery, locale, notes, onChanged]
+  );
 
   async function saveNote(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -442,6 +474,9 @@ export function MatrixEditor({
               onSaveIntent={saveIntent}
               editableMemberId={editableMemberId}
               intentStatsByMember={intentStatsByMember}
+              wishesResponseToggleEnabled={editableMemberId == null}
+              wishesResponseReceived={(memberId) => notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false}
+              onToggleWishesResponse={toggleWishesAcknowledged}
             />
           ) : (
             <>
@@ -454,6 +489,9 @@ export function MatrixEditor({
                 onSaveIntent={saveIntent}
                 editableMemberId={editableMemberId}
                 intentStatsByMember={intentStatsByMember}
+                wishesResponseToggleEnabled={editableMemberId == null}
+                wishesResponseReceived={(memberId) => notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false}
+                onToggleWishesResponse={toggleWishesAcknowledged}
               />
               <MobileMatrix
                 matrix={matrix}
@@ -562,7 +600,10 @@ function PlanningDenseMatrix({
   locale,
   onSaveIntent,
   editableMemberId,
-  intentStatsByMember
+  intentStatsByMember,
+  wishesResponseToggleEnabled,
+  wishesResponseReceived,
+  onToggleWishesResponse,
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -572,6 +613,9 @@ function PlanningDenseMatrix({
   onSaveIntent: SaveMatrixIntentFn;
   editableMemberId?: number;
   intentStatsByMember: Map<number, TeamMemberIntentStats>;
+  wishesResponseToggleEnabled: boolean;
+  wishesResponseReceived: (memberId: number) => boolean;
+  onToggleWishesResponse: (memberId: number) => void | Promise<void>;
 }) {
   const singleMemberColumn = matrix.team_members.length === 1;
 
@@ -610,15 +654,34 @@ function PlanningDenseMatrix({
                       );
                     })()}
                   </div>
-                  <button
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={editableMemberId != null && member.id !== editableMemberId}
-                    onClick={() => onOpenNote(member)}
-                    title={t(locale, "teamMemberPeriodNotes")}
-                    type="button"
-                  >
-                    <MessageSquareText aria-hidden size={14} />
-                  </button>
+                  <div className="flex shrink-0 items-start gap-0.5">
+                    {wishesResponseToggleEnabled ? (
+                      <button
+                        type="button"
+                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                          wishesResponseReceived(member.id)
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                            : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                        }`}
+                        disabled={editableMemberId != null && member.id !== editableMemberId}
+                        onClick={() => void onToggleWishesResponse(member.id)}
+                        title={t(locale, "wishesResponseAcknowledgedHint")}
+                        aria-label={t(locale, "wishesResponseAcknowledged")}
+                        aria-pressed={wishesResponseReceived(member.id)}
+                      >
+                        <ListChecks aria-hidden size={14} />
+                      </button>
+                    ) : null}
+                    <button
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={editableMemberId != null && member.id !== editableMemberId}
+                      onClick={() => onOpenNote(member)}
+                      title={t(locale, "teamMemberPeriodNotes")}
+                      type="button"
+                    >
+                      <MessageSquareText aria-hidden size={14} />
+                    </button>
+                  </div>
                 </div>
               </th>
             ))}
@@ -661,7 +724,10 @@ function DesktopMatrix({
   locale,
   onSaveIntent,
   editableMemberId,
-  intentStatsByMember
+  intentStatsByMember,
+  wishesResponseToggleEnabled,
+  wishesResponseReceived,
+  onToggleWishesResponse,
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -671,6 +737,9 @@ function DesktopMatrix({
   onSaveIntent: SaveMatrixIntentFn;
   editableMemberId?: number;
   intentStatsByMember: Map<number, TeamMemberIntentStats>;
+  wishesResponseToggleEnabled: boolean;
+  wishesResponseReceived: (memberId: number) => boolean;
+  onToggleWishesResponse: (memberId: number) => void | Promise<void>;
 }) {
   const singleMemberColumn = matrix.team_members.length === 1;
 
@@ -709,15 +778,34 @@ function DesktopMatrix({
                       );
                     })()}
                   </div>
-                  <button
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={editableMemberId != null && member.id !== editableMemberId}
-                    onClick={() => onOpenNote(member)}
-                    title={t(locale, "teamMemberPeriodNotes")}
-                    type="button"
-                  >
-                    <MessageSquareText aria-hidden size={16} />
-                  </button>
+                  <div className="flex shrink-0 items-start gap-0.5">
+                    {wishesResponseToggleEnabled ? (
+                      <button
+                        type="button"
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                          wishesResponseReceived(member.id)
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                            : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                        }`}
+                        disabled={editableMemberId != null && member.id !== editableMemberId}
+                        onClick={() => void onToggleWishesResponse(member.id)}
+                        title={t(locale, "wishesResponseAcknowledgedHint")}
+                        aria-label={t(locale, "wishesResponseAcknowledged")}
+                        aria-pressed={wishesResponseReceived(member.id)}
+                      >
+                        <ListChecks aria-hidden size={16} />
+                      </button>
+                    ) : null}
+                    <button
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={editableMemberId != null && member.id !== editableMemberId}
+                      onClick={() => onOpenNote(member)}
+                      title={t(locale, "teamMemberPeriodNotes")}
+                      type="button"
+                    >
+                      <MessageSquareText aria-hidden size={16} />
+                    </button>
+                  </div>
                 </div>
               </th>
             ))}
@@ -927,8 +1015,11 @@ function MatrixCell({
 }) {
   const [status, setStatus] = useState<PlanningStatus | "">(() => normalizePlanningStatus(cell?.status));
   const [comment, setComment] = useState(cell?.comment ?? "");
+  const [commentDraftOpen, setCommentDraftOpen] = useState(false);
   const meta = statusMeta(status);
   const [isDirty, setIsDirty] = useState(false);
+  const hasComment = comment.trim().length > 0;
+  const showCommentField = hasComment || commentDraftOpen;
   const intentMap = useMemo(() => {
     const map = new Map<string, PlanningShiftIntentKind>();
     for (const row of matrix.shift_intents ?? []) {
@@ -953,6 +1044,7 @@ function MatrixCell({
     setStatus(normalizePlanningStatus(cell?.status));
     setComment(cell?.comment ?? "");
     setIsDirty(false);
+    setCommentDraftOpen(false);
   }, [cell?.status, cell?.comment]);
 
   useEffect(() => {
@@ -993,25 +1085,39 @@ function MatrixCell({
           {t(locale, meta.label)}
         </span>
       ) : null}
-      <textarea
-        className={`resize-y rounded-lg border border-slate-200 text-xs ${dense ? "min-h-12 p-1.5" : "min-h-16 p-2"}`}
-        disabled={readOnly}
-        placeholder={t(locale, "cellComment")}
-        value={comment}
-        onChange={(event) => {
-          setComment(event.target.value);
-          setIsDirty(true);
-        }}
-        onBlur={() => {
-          if (!readOnly && isDirty) {
-            void onSave(memberId, cellDate, status, comment);
-            setIsDirty(false);
-          }
-        }}
-      />
+      {showCommentField ? (
+        <textarea
+          className={`resize-y rounded-lg border border-slate-200 text-xs ${dense ? "min-h-12 p-1.5" : "min-h-16 p-2"}`}
+          disabled={readOnly}
+          placeholder={t(locale, "cellComment")}
+          value={comment}
+          onChange={(event) => {
+            setComment(event.target.value);
+            setIsDirty(true);
+          }}
+          onBlur={() => {
+            if (!readOnly && isDirty) {
+              void onSave(memberId, cellDate, status, comment);
+              setIsDirty(false);
+            }
+            if (comment.trim() === "") {
+              setCommentDraftOpen(false);
+            }
+          }}
+        />
+      ) : readOnly ? null : (
+        <button
+          type="button"
+          className={`inline-flex w-fit items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 ${dense ? "h-7 w-7 p-0" : "h-9 w-9 p-0"}`}
+          onClick={() => setCommentDraftOpen(true)}
+          title={t(locale, "matrixCellCommentShow")}
+          aria-label={t(locale, "matrixCellCommentShow")}
+        >
+          <MessageSquarePlus aria-hidden size={dense ? 14 : 16} />
+        </button>
+      )}
       {showIntents ? (
         <div className={`grid gap-1.5 ${dense ? "pt-0.5" : "pt-1"}`}>
-          <p className={`font-medium text-slate-600 ${dense ? "text-[0.6rem]" : "text-[0.65rem]"}`}>{t(locale, "shiftIntentsHeading")}</p>
           {intentRows.map(({ templateId, shiftGroupId }) => {
             const current = intentMap.get(`${cellDate}:${memberId}:${templateId}:${shiftGroupId}`);
             const label = templateLabel(matrix, templateId, locale);

@@ -559,6 +559,7 @@ def save_team_member_period_note_tool(
     team_member_id: int,
     source_text: str | None = None,
     summary: str | None = None,
+    wishes_response_received: bool = False,
 ) -> dict[str, Any]:
     """Save a team member's monthly source email/general note. Requires MCP admin token."""
     require_token(token)
@@ -566,7 +567,12 @@ def save_team_member_period_note_tool(
         note = save_team_member_period_note(
             db,
             planning_period_id,
-            TeamMemberPeriodNoteUpsert(team_member_id=team_member_id, source_text=source_text, summary=summary),
+            TeamMemberPeriodNoteUpsert(
+                team_member_id=team_member_id,
+                source_text=source_text,
+                summary=summary,
+                wishes_response_received=wishes_response_received,
+            ),
             organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
