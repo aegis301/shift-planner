@@ -1,6 +1,6 @@
 from datetime import date as date_type
 from datetime import datetime, time
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self, Union
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -49,6 +49,7 @@ class MembershipSummary(BaseModel):
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    auth_kind: Literal["user"] = "user"
     id: int
     email: EmailStr
     role: str
@@ -63,6 +64,17 @@ class UserRead(BaseModel):
     memberships: list[MembershipSummary] = Field(default_factory=list)
 
 
+class AccountSessionRead(BaseModel):
+    auth_kind: Literal["account"] = "account"
+    email: EmailStr
+    locale: str
+    memberships: list[MembershipSummary] = Field(default_factory=list)
+
+
+AuthLoginResponse = Annotated[Union[UserRead, AccountSessionRead], Field(discriminator="auth_kind")]
+AuthMeResponse = Annotated[Union[UserRead, AccountSessionRead], Field(discriminator="auth_kind")]
+
+
 class ActiveOrganizationInput(BaseModel):
     organization_slug: str = Field(min_length=1, max_length=64)
 
@@ -70,7 +82,36 @@ class ActiveOrganizationInput(BaseModel):
 class LoginInput(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=256)
-    organization_slug: str = Field(default="", max_length=64)
+
+
+class RegisterAccountInput(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+    password_confirm: str = Field(min_length=8, max_length=256)
+    locale: str = Field(default="de", pattern=r"^(de|en)$")
+
+    @model_validator(mode="after")
+    def register_passwords_match(self) -> Self:
+        if self.password != self.password_confirm:
+            raise ValueError("passwords_do_not_match")
+        return self
+
+
+class OnboardingCreateOrganizationInput(BaseModel):
+    organization_name: str = Field(min_length=1, max_length=255)
+    organization_slug: str = Field(min_length=3, max_length=64)
+
+
+class CreateOrganizationMembershipInput(BaseModel):
+    organization_name: str = Field(min_length=1, max_length=255)
+    organization_slug: str = Field(min_length=3, max_length=64)
+
+
+class OnboardingJoinOrganizationInput(BaseModel):
+    organization_slug: str = Field(min_length=1, max_length=64)
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    message: str | None = Field(default=None, max_length=2000)
 
 
 class JoinRequestResubmitInput(BaseModel):

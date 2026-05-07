@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Building2, Trash2, UserPlus } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
+import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale } from "@/lib/i18n";
 
@@ -85,7 +86,7 @@ export function OrganizationManagementPanel() {
 
   useEffect(() => {
     if (loading) return;
-    if (!me || !me.capabilities.admin) {
+    if (!me || !isUserSession(me) || !me.capabilities.admin) {
       router.replace("/");
       return;
     }
@@ -112,7 +113,7 @@ export function OrganizationManagementPanel() {
   }, [loading, me, router]);
 
   useEffect(() => {
-    if (loading || !me?.capabilities.admin) return;
+    if (loading || !isUserSession(me) || !me.capabilities.admin) return;
     const fromMe = me.organization_shift_groups;
     if (Array.isArray(fromMe)) {
       setShiftGroups(fromMe);
@@ -248,7 +249,7 @@ export function OrganizationManagementPanel() {
     [invites]
   );
 
-  if (loading || !me?.capabilities.admin) {
+  if (loading || !isUserSession(me) || !me.capabilities.admin) {
     return null;
   }
 

@@ -6,6 +6,7 @@ import { Hourglass } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
+import { isUserSession, membershipDefaultPath } from "@/lib/membershipRouting";
 import { t } from "@/lib/i18n";
 
 type JoinRequest = {
@@ -35,6 +36,10 @@ export default function PendingOnboardingPage() {
     if (loading) return;
     if (!me) {
       router.replace("/login");
+      return;
+    }
+    if (!isUserSession(me)) {
+      router.replace(membershipDefaultPath(me));
       return;
     }
     if (me.role !== "applicant") {
@@ -87,7 +92,7 @@ export default function PendingOnboardingPage() {
     }
   }
 
-  if (loading || !me || me.role !== "applicant") {
+  if (loading || !me || !isUserSession(me) || me.role !== "applicant") {
     return null;
   }
 

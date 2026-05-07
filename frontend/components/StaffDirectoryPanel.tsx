@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ContactRound, Plus, RefreshCw, X } from "lucide-react";
 import { Card } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
+import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { TeamMemberCreateModal, TeamMemberEditorModal, isTeamMemberRecord, type TeamMemberRecord } from "@/components/ResourceForms";
@@ -138,7 +139,7 @@ export function StaffDirectoryPanel() {
 
   useEffect(() => {
     if (loading) return;
-    if (!me?.capabilities.admin) {
+    if (!isUserSession(me) || !me.capabilities.admin) {
       router.replace("/");
       return;
     }
@@ -233,7 +234,7 @@ export function StaffDirectoryPanel() {
     }
   }
 
-  if (loading || !me?.capabilities.admin) {
+  if (loading || !isUserSession(me) || !me.capabilities.admin) {
     return null;
   }
 
@@ -266,7 +267,7 @@ export function StaffDirectoryPanel() {
 
   const detailKey = detailRow ? rowKeyOf(detailRow) : null;
   const detailBusy = detailKey != null && busyRowKey === detailKey;
-  const myId = me.id;
+  const myId = isUserSession(me) ? me.id : 0;
 
   function renderAccessControls(r: StaffDirectoryRow, rowKey: string) {
     const copyUserKey = `u:${rowKey}`;

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AdminSectionTabs } from "@/components/AdminSectionTabs";
 import { useLocale, useSession } from "@/components/LocaleProvider";
+import { isUserSession } from "@/lib/membershipRouting";
 
 const SHIFTS_BASE = "/organization/shifts";
 
@@ -14,12 +15,12 @@ export default function ShiftManagementLayout({ children }: { children: React.Re
 
   useEffect(() => {
     if (loading) return;
-    if (!me?.capabilities.admin) {
+    if (!isUserSession(me) || !me.capabilities.admin) {
       router.replace("/");
     }
   }, [loading, me, router]);
 
-  if (loading || !me?.capabilities.admin) {
+  if (loading || !me || !isUserSession(me) || !me.capabilities.admin) {
     return null;
   }
 

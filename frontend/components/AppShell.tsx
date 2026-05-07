@@ -18,10 +18,11 @@ import {
   UserRound,
   UsersRound
 } from "lucide-react";
-import { useSession, type MeUser } from "@/components/LocaleProvider";
+import { useSession, type MeUser, type SessionMe } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { Locale, t, TranslationKey } from "@/lib/i18n";
 import {
+  isUserSession,
   membershipDefaultPath,
   membershipRoleLabel,
   pathnameCompatibleWithMembership,
@@ -119,6 +120,13 @@ export function AppShell({
   }, [pathname]);
 
   useEffect(() => {
+    if (loading || !me) return;
+    if (!pathnameCompatibleWithMembership(pathname, me)) {
+      router.replace(membershipDefaultPath(me));
+    }
+  }, [loading, me, pathname, router]);
+
+  useEffect(() => {
     if (!userMenuOpen) return;
     function onDocMouseDown(ev: MouseEvent) {
       const el = userMenuRef.current;
@@ -144,7 +152,14 @@ export function AppShell({
 
   const sidebarNavItems: SidebarNavItem[] = [];
   if (me) {
-    if (me.role === "applicant") {
+    if (me.auth_kind === "account") {
+      sidebarNavItems.push({
+        href: "/onboarding",
+        key: "onboardingNav",
+        icon: Building2,
+        match: (p) => p.startsWith("/onboarding"),
+      });
+    } else if (me.role === "applicant") {
       sidebarNavItems.push({
         href: "/pending-onboarding",
         key: "pendingNav",
@@ -225,7 +240,7 @@ export function AppShell({
   }
 
   async function switchOrganization(slug: string) {
-    if (!me || slug === me.organization.slug) return;
+    if (!me || !isUserSession(me) || slug === me.organization.slug) return;
     setOrgSwitchBusy(true);
     try {
       const updated = await apiFetch<MeUser>("/api/v1/auth/me/active-organization", {
@@ -267,7 +282,11 @@ export function AppShell({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{t(locale, "appName")}</p>
                   <p className="truncate text-xs text-slate-500">
-                    {me.organization.name.trim() ? me.organization.name : t(locale, "emptyValue")}
+                    {isUserSession(me)
+                      ? me.organization.name.trim()
+                        ? me.organization.name
+                        : t(locale, "emptyValue")
+                      : me.email}
                   </p>
                 </div>
               ) : null}
@@ -323,13 +342,17 @@ export function AppShell({
             <p className="truncate text-sm font-semibold text-ink">{t(locale, "appName")}</p>
             {me ? (
               <p className="truncate text-xs text-slate-500">
-                {me.organization.name.trim() ? me.organization.name : t(locale, "emptyValue")}
+                {isUserSession(me)
+                  ? me.organization.name.trim()
+                    ? me.organization.name
+                    : t(locale, "emptyValue")
+                  : t(locale, "onboardingHeaderSubtitle")}
               </p>
             ) : (
               <p className="truncate text-xs text-slate-500">{t(locale, "aiFirst")}</p>
             )}
           </div>
-          {!loading && me && me.memberships.length > 1 ? (
+          {!loading && me && isUserSession(me) && me.memberships.length > 1 ? (
             <div ref={orgMenuRef} className="relative z-30 max-w-[min(100%,18rem)] shrink-0">
               <button
                 type="button"
@@ -394,7 +417,7 @@ export function AppShell({
                   role="menu"
                   className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
                 >
-                  {me.memberships.length > 0 ? (
+                  {isUserSession(me) && me.memberships.length > 0 ? (
                     <div className="border-b border-slate-100 px-2 py-2" role="none">
                       <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                         {t(locale, "organizationSwitcherLabel")}

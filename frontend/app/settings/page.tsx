@@ -8,6 +8,7 @@ import { Card, Field, inputClass } from "@/components/Card";
 import { OrganizationPendingInvitesCard } from "@/components/OrganizationPendingInvitesCard";
 import { ApiError, apiFetch } from "@/lib/api";
 import {
+  isUserSession,
   membershipDefaultPath,
   membershipRoleLabel,
   pathnameCompatibleWithMembership,
@@ -36,6 +37,8 @@ function SettingsContent() {
   const router = useRouter();
   const pathname = usePathname();
   const [deleteMsg, setDeleteMsg] = useState("");
+  const [createMsg, setCreateMsg] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
   const [joinMsg, setJoinMsg] = useState("");
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinLookup, setJoinLookup] = useState<LookupResult | null | undefined>(undefined);
@@ -58,7 +61,7 @@ function SettingsContent() {
   }
 
   async function switchToOrganization(slug: string) {
-    if (!me || slug === me.organization.slug) return;
+    if (!me || !isUserSession(me) || slug === me.organization.slug) return;
     setSwitchBusySlug(slug);
     try {
       const updated = await apiFetch<MeUser>("/api/v1/auth/me/active-organization", {
@@ -115,6 +118,37 @@ function SettingsContent() {
     }
   }
 
+  async function submitCreateAnother(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!me || !isUserSession(me)) return;
+    setCreateMsg("");
+    setCreateBusy(true);
+    const form = new FormData(event.currentTarget);
+    const organization_slug = String(form.get("create_organization_slug") ?? "")
+      .trim()
+      .toLowerCase();
+    try {
+      const user = await apiFetch<MeUser>("/api/v1/auth/me/create-organization-membership", {
+        method: "POST",
+        body: JSON.stringify({
+          organization_name: String(form.get("create_organization_name") ?? "").trim(),
+          organization_slug,
+        }),
+      });
+      await refreshMe();
+      router.push(membershipDefaultPath(user));
+      router.refresh();
+    } catch (err) {
+      if (err instanceof ApiError && typeof err.detail === "string") {
+        setCreateMsg(err.detail);
+      } else {
+        setCreateMsg(t(locale, "settingsCreateAnotherError"));
+      }
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
   async function deleteAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setDeleteMsg("");
@@ -159,7 +193,7 @@ function SettingsContent() {
           </div>
         </div>
       </Card>
-      {me ? (
+      {me && isUserSession(me) ? (
         <div className="md:col-span-2">
           <Card>
             <div className="flex items-start gap-4">
@@ -210,6 +244,39 @@ function SettingsContent() {
                       );
                     })}
                 </ul>
+                <div className="border-t border-slate-100 pt-4">
+                  <h3 className="text-lg font-semibold text-ink">{t(locale, "settingsCreateAnotherTitle")}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{t(locale, "settingsCreateAnotherIntro")}</p>
+                  <form className="mt-4 grid max-w-md gap-3" onSubmit={(e) => void submitCreateAnother(e)}>
+                    <Field label={t(locale, "organizationNameField")}>
+                      <input
+                        className={inputClass}
+                        name="create_organization_name"
+                        required
+                        minLength={1}
+                        maxLength={255}
+                      />
+                    </Field>
+                    <Field label={t(locale, "organizationSlugField")}>
+                      <input
+                        className={inputClass}
+                        name="create_organization_slug"
+                        required
+                        minLength={3}
+                        maxLength={64}
+                        autoComplete="off"
+                      />
+                    </Field>
+                    <button
+                      type="submit"
+                      disabled={createBusy}
+                      className="h-11 rounded-lg bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {t(locale, "settingsCreateAnotherSubmit")}
+                    </button>
+                    {createMsg ? <p className="text-sm text-red-600">{createMsg}</p> : null}
+                  </form>
+                </div>
                 <div className="border-t border-slate-100 pt-4">
                   <h3 className="text-lg font-semibold text-ink">{t(locale, "settingsJoinAnotherTitle")}</h3>
                   <p className="mt-1 text-sm text-slate-600">{t(locale, "settingsJoinAnotherIntro")}</p>

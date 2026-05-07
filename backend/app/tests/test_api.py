@@ -148,7 +148,7 @@ def test_login_without_organization_slug_when_email_unique(client: TestClient):
     assert response.status_code == 200
 
 
-def test_login_without_slug_conflict_when_same_email_in_two_orgs():
+def test_login_without_slug_when_same_email_in_two_orgs_prefers_slug_order():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -182,13 +182,12 @@ def test_login_without_slug_conflict_when_same_email_in_two_orgs():
                 json={
                     "email": "dup@example.com",
                     "password": "pwone",
-                    "organization_slug": "",
                 },
             )
-            assert r.status_code == 409
-            body = r.json()["detail"]
-            assert body["code"] == "organization_slug_required"
-            assert len(body["organizations"]) == 2
+            assert r.status_code == 200
+            me = r.json()
+            assert me["auth_kind"] == "user"
+            assert me["organization"]["slug"] == "org-a"
     finally:
         app.dependency_overrides.clear()
 
@@ -292,6 +291,7 @@ def test_delete_own_account_team_member_user(team_member_client: TestClient):
 def test_auth_me_includes_organization(client: TestClient):
     login(client)
     data = client.get("/api/v1/auth/me").json()
+    assert data["auth_kind"] == "user"
     assert data["organization_id"] == 1
     assert data["organization"]["id"] == 1
     assert data["organization"]["name"] == "Default"
@@ -320,6 +320,105 @@ def test_auth_me_team_member_organization_shift_groups_empty(team_member_client:
     login_team_member(team_member_client)
     data = team_member_client.get("/api/v1/auth/me").json()
     assert data["organization_shift_groups"] == []
+
+
+def test_register_account_only_onboarding_create_organization():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            reg = tc.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": "fresh@example.com",
+                    "password": "pw12345678",
+                    "password_confirm": "pw12345678",
+                    "locale": "de",
+                },
+            )
+            assert reg.status_code == 200
+            body = reg.json()
+            assert body["auth_kind"] == "account"
+            assert body["email"] == "fresh@example.com"
+            me = tc.get("/api/v1/auth/me").json()
+            assert me["auth_kind"] == "account"
+            assert tc.get("/api/v1/shift-groups").status_code == 403
+            cr = tc.post(
+                "/api/v1/auth/me/onboarding/create-organization",
+                json={"organization_name": "Fresh Org", "organization_slug": "fresh-org"},
+            )
+            assert cr.status_code == 200
+            u = cr.json()
+            assert u["auth_kind"] == "user"
+            assert u["organization"]["slug"] == "fresh-org"
+            assert u["role"] == "admin"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_register_account_only_onboarding_join_organization():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with TestingSessionLocal() as db:
+        db.add(Organization(id=1, name="Existing", slug="existing-org", plan_tier="team"))
+        db.commit()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as tc:
+            reg = tc.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": "joiner@example.com",
+                    "password": "pw12345678",
+                    "password_confirm": "pw12345678",
+                    "locale": "en",
+                },
+            )
+            assert reg.status_code == 200
+            assert reg.json()["auth_kind"] == "account"
+            jo = tc.post(
+                "/api/v1/auth/me/onboarding/join-organization",
+                json={
+                    "organization_slug": "existing-org",
+                    "first_name": "Ada",
+                    "last_name": "Lovelace",
+                    "message": None,
+                },
+            )
+            assert jo.status_code == 200
+            u = jo.json()
+            assert u["auth_kind"] == "user"
+            assert u["role"] == "applicant"
+            assert u["organization"]["slug"] == "existing-org"
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_auth_me_switch_active_organization():
@@ -354,7 +453,7 @@ def test_auth_me_switch_active_organization():
             assert (
                 tc.post(
                     "/api/v1/auth/login",
-                    json={"email": "multi@example.com", "password": "pw", "organization_slug": "org-a"},
+                    json={"email": "multi@example.com", "password": "pw"},
                 ).status_code
                 == 200
             )
@@ -472,6 +571,27 @@ def test_organization_users_list_for_admin(client: TestClient):
     assert admin_row["role"] == "admin"
     assert admin_row["id"] >= 1
     assert admin_row["is_active"] is True
+
+
+def test_create_additional_organization_membership_as_admin(client: TestClient):
+    login(client)
+    response = client.post(
+        "/api/v1/auth/me/create-organization-membership",
+        json={
+            "organization_name": "Fire Department Team",
+            "organization_slug": "fire-dept-team",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["role"] == "admin"
+    assert data["organization"]["slug"] == "fire-dept-team"
+    assert len(data["memberships"]) == 2
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    me_body = me.json()
+    assert me_body["organization"]["slug"] == "fire-dept-team"
+    assert me_body["role"] == "admin"
 
 
 def test_organization_users_forbidden_for_team_member(team_member_client: TestClient):

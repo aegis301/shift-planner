@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
+import { isUserSession } from "@/lib/membershipRouting";
 import { t } from "@/lib/i18n";
 import { useRouter } from "next/navigation";
 
@@ -27,13 +28,17 @@ function ProfileContent() {
     if (loading) {
       return;
     }
-    if (!me || !me.capabilities?.team_member_portal) {
-      router.replace(me?.capabilities?.planning ? "/planning" : "/");
+    if (!me || !isUserSession(me)) {
+      router.replace("/");
+      return;
+    }
+    if (!me.capabilities.team_member_portal) {
+      router.replace(me.capabilities.planning ? "/planning" : "/");
     }
   }, [loading, me, router]);
 
   useEffect(() => {
-    if (!me || !me.capabilities?.team_member_portal) {
+    if (!me || !isUserSession(me) || !me.capabilities.team_member_portal) {
       return;
     }
     void apiFetch<TeamMemberRead>("/api/v1/auth/me/team-member")
@@ -58,7 +63,7 @@ function ProfileContent() {
     await refreshMe();
   }
 
-  if (loading || !me || !me.capabilities?.team_member_portal) {
+  if (loading || !me || !isUserSession(me) || !me.capabilities.team_member_portal) {
     return null;
   }
 

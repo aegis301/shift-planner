@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Mail } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
+import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
 import { membershipDefaultPath } from "@/lib/membershipRouting";
 import { t, type Locale } from "@/lib/i18n";
@@ -57,7 +58,7 @@ export function OrganizationPendingInvitesCard() {
   >({});
 
   useEffect(() => {
-    if (loading || !me) return;
+    if (loading || !me || !isUserSession(me)) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -171,7 +172,7 @@ export function OrganizationPendingInvitesCard() {
     }
   }
 
-  if (loading || !me || rows.length === 0) {
+  if (loading || !me || !isUserSession(me) || rows.length === 0) {
     return null;
   }
 

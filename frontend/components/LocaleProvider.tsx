@@ -12,7 +12,15 @@ export type MembershipSummary = {
   team_member_id: number | null;
 };
 
+export type MeAccountSession = {
+  auth_kind: "account";
+  email: string;
+  locale: string;
+  memberships: MembershipSummary[];
+};
+
 export type MeUser = {
+  auth_kind: "user";
   id: number;
   email: string;
   role: string;
@@ -27,8 +35,10 @@ export type MeUser = {
   memberships: MembershipSummary[];
 };
 
+export type SessionMe = MeUser | MeAccountSession;
+
 type SessionValue = {
-  me: MeUser | null;
+  me: SessionMe | null;
   loading: boolean;
   refreshMe: () => Promise<void>;
 };
@@ -38,14 +48,14 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 export function LocaleShell({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = useState<Locale>("de");
-  const [me, setMe] = useState<MeUser | null>(null);
+  const [me, setMe] = useState<SessionMe | null>(null);
   const [loading, setLoading] = useState(true);
   const localeValue = useMemo(() => ({ locale, setLocale }), [locale]);
 
   const refreshMe = useCallback(async () => {
     setLoading(true);
     try {
-      const next = await apiFetch<MeUser>("/api/v1/auth/me");
+      const next = await apiFetch<SessionMe>("/api/v1/auth/me");
       setMe(next);
     } catch {
       setMe(null);

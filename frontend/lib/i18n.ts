@@ -252,6 +252,11 @@ export const dictionaries = {
     settingsMembershipsHelp:
       "Die aktuelle Sitzung gilt immer nur für die gewählte Mitgliedschaft. Rollen und Menü hängen von der Organisation ab.",
     settingsMembershipSwitch: "Wechseln",
+    settingsCreateAnotherTitle: "Eigene Organisation anlegen",
+    settingsCreateAnotherIntro:
+      "Sie können jederzeit eine weitere Organisation erstellen. Dafür werden Sie dort automatisch als Admin angemeldet.",
+    settingsCreateAnotherSubmit: "Organisation erstellen und wechseln",
+    settingsCreateAnotherError: "Die Organisation konnte nicht erstellt werden.",
     settingsJoinAnotherTitle: "Weitere Organisation",
     settingsJoinAnotherIntro:
       "Organisations-Code prüfen, Passwort zur Bestätigung eingeben und Antrag senden. Nach der Freigabe erscheint die Organisation in der Liste.",
@@ -272,6 +277,18 @@ export const dictionaries = {
     joinOrganizationSubmit: "Anfrage senden und Konto erstellen",
     lookupOrganization: "Code prüfen",
     organizationFoundName: "Gefunden",
+    onboardingNav: "Einrichten",
+    onboardingHeaderSubtitle: "Organisation noch offen",
+    registerPageTitle: "Konto erstellen",
+    registerPageIntro:
+      "Sie legen hier nur das Anmeldekonto an. Organisation und Rolle klären Sie danach unter „Einrichten“ oder später in den Einstellungen.",
+    registerAccountSubmit: "Konto anlegen und anmelden",
+    onboardingPageTitle: "Organisation einrichten",
+    onboardingPageIntro:
+      "Legen Sie eine neue Organisation als Administrator an oder beantragen Sie den Beitritt mit Organisations-Code.",
+    onboardingCreateSectionTitle: "Neue Organisation",
+    onboardingJoinSectionTitle: "Bestehende Organisation",
+    onboardingCreateSubmit: "Organisation anlegen",
     pendingNav: "Freischaltung",
     pendingOnboardingTitle: "Onboarding ausstehend",
     pendingOnboardingBody:
@@ -646,6 +663,11 @@ export const dictionaries = {
     settingsMembershipsHelp:
       "Your active session always applies to one membership at a time. Roles and navigation depend on the organization.",
     settingsMembershipSwitch: "Switch",
+    settingsCreateAnotherTitle: "Create your own organization",
+    settingsCreateAnotherIntro:
+      "You can create another organization at any time. You will be signed in there automatically as an admin.",
+    settingsCreateAnotherSubmit: "Create organization and switch",
+    settingsCreateAnotherError: "Could not create the organization.",
     settingsJoinAnotherTitle: "Join another organization",
     settingsJoinAnotherIntro:
       "Look up the organization code, confirm with your password, and submit a request. After approval, the organization appears in the list.",
@@ -666,6 +688,18 @@ export const dictionaries = {
     joinOrganizationSubmit: "Submit request and create account",
     lookupOrganization: "Look up code",
     organizationFoundName: "Found",
+    onboardingNav: "Setup",
+    onboardingHeaderSubtitle: "Finish organization setup",
+    registerPageTitle: "Create account",
+    registerPageIntro:
+      "You only create a sign-in account here. You will connect an organization and role next under Setup or later in Settings.",
+    registerAccountSubmit: "Create account and sign in",
+    onboardingPageTitle: "Finish setup",
+    onboardingPageIntro:
+      "Found a new organization as its administrator, or submit a join request with the organization code.",
+    onboardingCreateSectionTitle: "New organization",
+    onboardingJoinSectionTitle: "Existing organization",
+    onboardingCreateSubmit: "Create organization",
     pendingNav: "Access",
     pendingOnboardingTitle: "Onboarding pending",
     pendingOnboardingBody:

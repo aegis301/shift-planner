@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Building2, ClipboardList } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
+import { isUserSession } from "@/lib/membershipRouting";
 import { apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
 
@@ -43,7 +44,7 @@ export function JoinRequestsAdminPanel() {
 
   useEffect(() => {
     if (loading) return;
-    if (!me || !me.capabilities.admin) {
+    if (!me || !isUserSession(me) || !me.capabilities.admin) {
       router.replace("/");
       return;
     }
@@ -64,7 +65,7 @@ export function JoinRequestsAdminPanel() {
   }, [loading, me, router]);
 
   async function reload() {
-    if (!me?.capabilities.admin) return;
+    if (!isUserSession(me) || !me.capabilities.admin) return;
     const [o, r, d] = await Promise.all([
       apiFetch<OrgSettings>("/api/v1/organization"),
       apiFetch<JoinRequest[]>("/api/v1/organization/join-requests?status=pending"),
@@ -121,7 +122,7 @@ export function JoinRequestsAdminPanel() {
     }
   }
 
-  if (loading || !me?.capabilities.admin) {
+  if (loading || !isUserSession(me) || !me.capabilities.admin) {
     return null;
   }
 

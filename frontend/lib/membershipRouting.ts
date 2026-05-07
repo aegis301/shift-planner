@@ -1,36 +1,53 @@
 import type { Locale } from "@/lib/i18n";
-import type { MeUser } from "@/components/LocaleProvider";
+import type { MeAccountSession, MeUser, SessionMe } from "@/components/LocaleProvider";
 import { t, type TranslationKey } from "@/lib/i18n";
 
-export function membershipDefaultPath(user: MeUser): string {
-  if (user.role === "applicant") {
+export function isUserSession(me: SessionMe | null | undefined): me is MeUser {
+  return me != null && me.auth_kind === "user";
+}
+
+export function isAccountSession(me: SessionMe | null | undefined): me is MeAccountSession {
+  return me != null && me.auth_kind === "account";
+}
+
+export function membershipDefaultPath(me: SessionMe): string {
+  if (me.auth_kind === "account") {
+    return "/onboarding";
+  }
+  if (me.role === "applicant") {
     return "/pending-onboarding";
   }
-  if (user.capabilities.planning) {
+  if (me.capabilities.planning) {
     return "/planning";
   }
-  if (user.capabilities.team_member_portal) {
+  if (me.capabilities.team_member_portal) {
     return "/my-planning";
   }
   return "/";
 }
 
-export function pathnameCompatibleWithMembership(pathname: string, user: MeUser): boolean {
+export function pathnameCompatibleWithMembership(pathname: string, me: SessionMe): boolean {
   const p = pathname === "" ? "/" : pathname;
-  if (user.role === "applicant") {
+  if (me.auth_kind === "account") {
+    return p.startsWith("/onboarding") || p.startsWith("/settings");
+  }
+  if (me.role === "applicant") {
     return p.startsWith("/pending-onboarding") || p.startsWith("/settings");
+  }
+  if (p.startsWith("/onboarding")) {
+    return false;
   }
   if (p.startsWith("/pending-onboarding")) {
     return false;
   }
   if (p.startsWith("/planning")) {
-    return user.capabilities.planning;
+    return me.capabilities.planning;
   }
   if (p.startsWith("/my-planning") || p.startsWith("/profile")) {
-    return user.capabilities.team_member_portal;
+    return me.capabilities.team_member_portal;
   }
   if (p.startsWith("/organization")) {
-    return user.capabilities.admin;
+    return me.capabilities.admin;
   }
   return true;
 }

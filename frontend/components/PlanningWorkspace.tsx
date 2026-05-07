@@ -6,7 +6,8 @@ import { AlertTriangle, BarChart3, CalendarCheck, Columns3, Download, Heart, Lay
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
-import { useLocale, useSession } from "@/components/LocaleProvider";
+import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
+import { isUserSession } from "@/lib/membershipRouting";
 import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
@@ -137,25 +138,37 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
 
-  const planningUi = variant === "planner" && Boolean(me?.capabilities?.planning);
-  const adminUi = variant === "planner" && Boolean(me?.capabilities?.admin);
-  const teamMemberPortalUi = variant === "team_member" && Boolean(me?.capabilities?.team_member_portal);
-  const editableMemberId = teamMemberPortalUi && me?.team_member_id != null ? me.team_member_id : undefined;
-  const waitingForTeamMemberSession = variant === "team_member" && (sessionLoading || !teamMemberPortalUi);
-  const waitingForPlannerSession = variant === "planner" && (sessionLoading || !me);
-  const plannerNeedsShiftGroup = variant === "planner" && me?.role === "planner";
+  const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
 
   useEffect(() => {
     if (sessionLoading || !me) {
       return;
     }
-    if (variant === "planner" && !me.capabilities?.planning) {
-      router.replace(me.capabilities?.team_member_portal ? "/my-planning" : "/");
+    if (!isUserSession(me)) {
+      router.replace("/onboarding");
     }
-    if (variant === "team_member" && !me.capabilities?.team_member_portal) {
-      router.replace(me.capabilities?.planning ? "/planning" : "/");
+  }, [me, router, sessionLoading]);
+
+  const planningUi = variant === "planner" && Boolean(userMe?.capabilities.planning);
+  const adminUi = variant === "planner" && Boolean(userMe?.capabilities.admin);
+  const teamMemberPortalUi = variant === "team_member" && Boolean(userMe?.capabilities.team_member_portal);
+  const editableMemberId =
+    teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined;
+  const waitingForTeamMemberSession = variant === "team_member" && (sessionLoading || !teamMemberPortalUi);
+  const waitingForPlannerSession = variant === "planner" && (sessionLoading || !userMe);
+  const plannerNeedsShiftGroup = variant === "planner" && userMe?.role === "planner";
+
+  useEffect(() => {
+    if (sessionLoading || !userMe) {
+      return;
     }
-  }, [me, router, sessionLoading, variant]);
+    if (variant === "planner" && !userMe.capabilities.planning) {
+      router.replace(userMe.capabilities.team_member_portal ? "/my-planning" : "/");
+    }
+    if (variant === "team_member" && !userMe.capabilities.team_member_portal) {
+      router.replace(userMe.capabilities.planning ? "/planning" : "/");
+    }
+  }, [userMe, router, sessionLoading, variant]);
 
   const shiftGroupQuery = useMemo(
     () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
@@ -167,36 +180,36 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }, [searchParams]);
 
   useEffect(() => {
-    if (!planningUi || !me) {
+    if (!planningUi || !userMe) {
       return;
     }
-    if (me.capabilities?.admin) {
+    if (userMe.capabilities.admin) {
       void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
       return;
     }
     setShiftGroups(
-      (me.planner_shift_groups ?? []).map((g) => ({
+      (userMe.planner_shift_groups ?? []).map((g) => ({
         id: g.id,
         code: g.code,
         name_de: g.name_de,
         name_en: g.name_en
       }))
     );
-  }, [planningUi, me]);
+  }, [planningUi, userMe]);
 
   useEffect(() => {
-    if (variant !== "team_member" || !me?.shift_groups?.length) {
+    if (variant !== "team_member" || !userMe?.shift_groups?.length) {
       return;
     }
     setShiftGroups(
-      me.shift_groups.map((g) => ({
+      userMe.shift_groups.map((g) => ({
         id: g.id,
         code: g.code,
         name_de: g.name_de,
         name_en: g.name_en
       }))
     );
-  }, [me, variant]);
+  }, [userMe, variant]);
 
   const activePeriod = periods.find((period) => String(period.id) === periodId);
   const stats = useMemo(() => buildStats(rosterMatrix, warnings), [rosterMatrix, warnings]);
@@ -250,30 +263,36 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }
 
   useEffect(() => {
-    if (variant !== "team_member" || !me?.shift_groups?.length || shiftGroupId) {
+    if (variant !== "team_member" || !userMe?.shift_groups?.length || shiftGroupId) {
       return;
     }
-    if (me.shift_groups.length === 1) {
-      const id = String(me.shift_groups[0].id);
+    if (userMe.shift_groups.length === 1) {
+      const id = String(userMe.shift_groups[0].id);
       setShiftGroupId(id);
       const params = new URLSearchParams(searchParams.toString());
       params.set("shiftGroup", id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [variant, me, shiftGroupId, pathname, router, searchParams]);
+  }, [variant, userMe, shiftGroupId, pathname, router, searchParams]);
 
   useEffect(() => {
-    if (variant !== "planner" || !me?.capabilities?.planning || me.capabilities.admin || !me.planner_shift_groups?.length || shiftGroupId) {
+    if (
+      variant !== "planner" ||
+      !userMe?.capabilities.planning ||
+      userMe.capabilities.admin ||
+      !userMe.planner_shift_groups?.length ||
+      shiftGroupId
+    ) {
       return;
     }
-    if (me.planner_shift_groups.length === 1) {
-      const id = String(me.planner_shift_groups[0].id);
+    if (userMe.planner_shift_groups.length === 1) {
+      const id = String(userMe.planner_shift_groups[0].id);
       setShiftGroupId(id);
       const params = new URLSearchParams(searchParams.toString());
       params.set("shiftGroup", id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [variant, me, shiftGroupId, pathname, router, searchParams]);
+  }, [variant, userMe, shiftGroupId, pathname, router, searchParams]);
 
   const refreshPeriods = useCallback(async () => {
     const next = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");

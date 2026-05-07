@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password, verify_password
 from app.models import Account, Organization, ShiftGroup, TeamMember, User, UserShiftGroup
 from app.schemas import (
-    TeamMemberSelfUpdate,
+    AccountSessionRead,
     MembershipSummary,
     OrganizationBrief,
     OrganizationUserRead,
+    TeamMemberSelfUpdate,
     UserCapabilities,
     UserRead,
     UserShiftGroupBrief,
@@ -45,44 +46,35 @@ def get_user(db: Session, user_id: int) -> User | None:
     return db.get(User, user_id)
 
 
-LoginAuthOutcome = Literal["success", "invalid_credentials", "organization_slug_required"]
+LoginAuthResult = Literal["invalid"] | tuple[Literal["user"], User] | tuple[Literal["account"], Account]
 
 
-def authenticate_login(
-    db: Session, *, email: str, password: str, organization_slug: str
-) -> tuple[LoginAuthOutcome, User | None, list[dict] | None]:
-    slug = (organization_slug or "").strip().lower()
+def authenticate_login(db: Session, *, email: str, password: str) -> LoginAuthResult:
     normalized_email = email.lower()
-    if slug:
-        org = get_organization_by_slug(db, slug)
-        if org is None:
-            return "invalid_credentials", None, None
-        user = get_user_in_organization(db, email, org.id)
-        if not user or not user.is_active:
-            return "invalid_credentials", None, None
-        if not verify_password(password, user.account.hashed_password):
-            return "invalid_credentials", None, None
-        return "success", user, None
-    stmt = (
-        select(User)
-        .join(Account, Account.id == User.account_id)
-        .where(Account.email == normalized_email, User.is_active.is_(True))
-    )
+    account = get_account_by_email(db, normalized_email)
+    if account is None:
+        return "invalid"
+    if not verify_password(password, account.hashed_password):
+        return "invalid"
+    stmt = select(User).where(User.account_id == account.id, User.is_active.is_(True))
     matches = list(db.scalars(stmt).all())
     if len(matches) == 0:
-        return "invalid_credentials", None, None
-    account = matches[0].account
-    if not verify_password(password, account.hashed_password):
-        return "invalid_credentials", None, None
-    if len(matches) > 1:
-        choices: list[dict] = []
-        for m in matches:
-            o = db.get(Organization, m.organization_id)
-            if o is not None:
-                choices.append({"slug": o.slug, "name": o.name, "organization_id": o.id})
-        choices.sort(key=lambda x: x["slug"])
-        return "organization_slug_required", None, choices
-    return "success", matches[0], None
+        return ("account", account)
+    rows: list[tuple[User, Organization | None]] = []
+    for m in matches:
+        o = db.get(Organization, m.organization_id)
+        rows.append((m, o))
+    rows.sort(key=lambda t: ((t[1].slug if t[1] is not None else ""), t[0].id))
+    return ("user", rows[0][0])
+
+
+def build_account_session_read(account: Account) -> AccountSessionRead:
+    return AccountSessionRead(
+        auth_kind="account",
+        email=account.email,
+        locale=account.locale,
+        memberships=[],
+    )
 
 
 def switch_membership_by_organization_slug(db: Session, *, current: User, organization_slug: str) -> User | None:
@@ -104,7 +96,7 @@ def ensure_admin_user(db: Session, *, email: str, password: str) -> User:
     existing = get_user_in_organization(db, email, org.id)
     if existing:
         return existing
-    acc = Account(email=email.lower(), hashed_password=hash_password(password))
+    acc = Account(email=email.lower(), hashed_password=hash_password(password), locale="de")
     db.add(acc)
     db.flush()
     user = User(account_id=acc.id, organization_id=org.id, role="admin", locale="de")
@@ -178,6 +170,7 @@ def build_user_read(db: Session, user: User) -> UserRead:
         org_brief = OrganizationBrief.model_validate(org)
     memberships = _membership_summaries(db, user.account_id)
     return UserRead(
+        auth_kind="user",
         id=user.id,
         email=user.email,
         role=user.role,
@@ -335,8 +328,7 @@ def admin_delete_organization_user(db: Session, *, actor: User, target_user_id: 
     db.commit()
 
 
-def delete_own_account(db: Session, user: User, *, password: str) -> None:
-    account = user.account
+def delete_own_account(db: Session, account: Account, *, password: str) -> None:
     if not verify_password(password, account.hashed_password):
         raise ValueError("Invalid password")
     memberships = list(db.scalars(select(User).where(User.account_id == account.id)).all())
@@ -361,3 +353,7 @@ def delete_own_account(db: Session, user: User, *, password: str) -> None:
     )
     db.delete(account)
     db.commit()
+
+
+def delete_own_account_from_user(db: Session, user: User, *, password: str) -> None:
+    delete_own_account(db, account=user.account, password=password)
