@@ -8,6 +8,7 @@ import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale } from "@/lib/i18n";
 
 type OrgSettings = { id: number; name: string; slug: string; plan_tier: string };
@@ -254,10 +255,10 @@ export function OrganizationManagementPanel() {
   }
 
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center gap-3">
-        <Building2 className="text-emerald-700" aria-hidden />
-        <h1 className="text-2xl font-semibold text-ink">{t(locale, "orgManagementTitle")}</h1>
+    <div className="grid min-w-0 gap-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <Building2 className="shrink-0 text-emerald-700" aria-hidden />
+        <h1 className="min-w-0 truncate text-2xl font-semibold text-ink">{t(locale, "orgManagementTitle")}</h1>
       </div>
       {org ? (
         <Card>
@@ -390,16 +391,16 @@ export function OrganizationManagementPanel() {
             ) : null}
           </div>
         </form>
-        <div className="mt-6 overflow-x-auto">
+        <div className={`mt-6 ${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
           <table className="w-full min-w-[32rem] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                <th className="py-2 pr-3">{t(locale, "email")}</th>
-                <th className="py-2 pr-3">{t(locale, "orgManagementInviteRole")}</th>
-                <th className="py-2 pr-3">{t(locale, "orgManagementInviteProfileColumn")}</th>
-                <th className="py-2 pr-3">{t(locale, "status")}</th>
-                <th className="py-2 pr-3">{t(locale, "createdAt")}</th>
-                <th className="py-2">{t(locale, "orgManagementRevoke")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "email")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgManagementInviteRole")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgManagementInviteProfileColumn")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "status")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "createdAt")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgManagementRevoke")}</th>
               </tr>
             </thead>
             <tbody>

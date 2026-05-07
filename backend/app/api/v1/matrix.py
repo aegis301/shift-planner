@@ -29,6 +29,7 @@ from app.services.matrix import (
     bulk_upsert_planning_shift_intents,
     clear_planning_cell,
     get_planning_matrix,
+    get_team_member_period_note,
     list_team_member_period_notes,
     save_team_member_period_note,
     upsert_planning_cell,
@@ -203,12 +204,19 @@ def put_note(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    payload_effective = payload
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         try:
             assert_team_member_cell_access(user, member, payload.team_member_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        previous = get_team_member_period_note(
+            db, planning_period_id=planning_period_id, team_member_id=payload.team_member_id
+        )
+        payload_effective = payload.model_copy(
+            update={"wishes_response_received": previous.wishes_response_received if previous else False}
+        )
     return save_team_member_period_note(
-        db, planning_period_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+        db, planning_period_id, payload_effective, organization_id=user.organization_id, actor=user.email, source="rest"
     )

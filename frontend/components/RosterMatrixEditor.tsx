@@ -1,9 +1,16 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Download, RefreshCw, Save } from "lucide-react";
+import { BarChart3, ChevronDown, Download, RefreshCw, Save } from "lucide-react";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
+import {
+  formatWorkloadPeriodLabel,
+  workloadRowForMember,
+  type RosterWorkloadMatrixSlice,
+  type RosterWorkloadWarning
+} from "@/lib/rosterWorkload";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
@@ -127,6 +134,20 @@ function formatDate(locale: Locale, value: string) {
 
 function teamMemberLabel(member: RosterMatrixTeamMember): string {
   return `${member.first_name} ${member.last_name}`.trim();
+}
+
+function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    return true;
+  }
+  const label = teamMemberLabel(member).toLowerCase();
+  return (
+    label.includes(q) ||
+    member.first_name.toLowerCase().includes(q) ||
+    member.last_name.toLowerCase().includes(q) ||
+    member.email.toLowerCase().includes(q)
+  );
 }
 
 function formatTimeRange(slot: RosterSlot) {
@@ -276,6 +297,8 @@ export function RosterMatrixEditor({
   reloadToken = 0,
   shiftGroupId,
   readOnly = false,
+  duplicateMemberDayKeys,
+  validationWarnings = [],
   onMatrixChange
 }: {
   periodId?: string;
@@ -283,6 +306,8 @@ export function RosterMatrixEditor({
   reloadToken?: number;
   shiftGroupId?: string;
   readOnly?: boolean;
+  duplicateMemberDayKeys?: ReadonlySet<string>;
+  validationWarnings?: RosterWorkloadWarning[];
   onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -514,6 +539,9 @@ export function RosterMatrixEditor({
           <>
             <DesktopRosterMatrix
               matrix={matrix}
+              workloadMatrix={matrix}
+              workloadWarnings={validationWarnings}
+              planningPeriodLabel={formatWorkloadPeriodLabel(matrix.planning_period)}
               slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
               planningCellMap={planningCellMap}
@@ -523,9 +551,13 @@ export function RosterMatrixEditor({
               dense={compact}
               templateColumns={templateColumns}
               readOnly={readOnly}
+              duplicateMemberDayKeys={duplicateMemberDayKeys}
             />
             <MobileRosterMatrix
               matrix={matrix}
+              workloadMatrix={matrix}
+              workloadWarnings={validationWarnings}
+              planningPeriodLabel={formatWorkloadPeriodLabel(matrix.planning_period)}
               slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
               planningCellMap={planningCellMap}
@@ -535,6 +567,7 @@ export function RosterMatrixEditor({
               dense={compact}
               templateColumns={templateColumns}
               readOnly={readOnly}
+              duplicateMemberDayKeys={duplicateMemberDayKeys}
             />
           </>
         ) : (
@@ -553,6 +586,9 @@ export function RosterMatrixEditor({
 
 function DesktopRosterMatrix({
   matrix,
+  workloadMatrix,
+  workloadWarnings,
+  planningPeriodLabel,
   slotsByDay,
   assignmentMap,
   planningCellMap,
@@ -561,9 +597,13 @@ function DesktopRosterMatrix({
   locale,
   dense,
   templateColumns,
-  readOnly
+  readOnly,
+  duplicateMemberDayKeys,
 }: {
   matrix: RosterMatrix;
+  workloadMatrix: RosterWorkloadMatrixSlice;
+  workloadWarnings: RosterWorkloadWarning[];
+  planningPeriodLabel: string;
   slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
@@ -573,10 +613,11 @@ function DesktopRosterMatrix({
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
   readOnly: boolean;
+  duplicateMemberDayKeys?: ReadonlySet<string>;
 }) {
   if (dense) {
     return (
-      <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
+      <div className={`hidden ${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft lg:block`}>
         <table className="min-w-max border-separate border-spacing-0 text-sm">
           <thead>
             <tr>
@@ -634,6 +675,10 @@ function DesktopRosterMatrix({
                                   onSave={onSave}
                                   locale={locale}
                                   readOnly={readOnly}
+                                  duplicateMemberDayKeys={duplicateMemberDayKeys}
+                                  workloadMatrix={workloadMatrix}
+                                  workloadWarnings={workloadWarnings}
+                                  planningPeriodLabel={planningPeriodLabel}
                                 />
                               </div>
                             );
@@ -655,7 +700,7 @@ function DesktopRosterMatrix({
   }
 
   return (
-    <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
+    <div className={`hidden ${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft lg:block`}>
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
@@ -687,6 +732,10 @@ function DesktopRosterMatrix({
                         onSave={onSave}
                         locale={locale}
                         readOnly={readOnly}
+                        duplicateMemberDayKeys={duplicateMemberDayKeys}
+                        workloadMatrix={workloadMatrix}
+                        workloadWarnings={workloadWarnings}
+                        planningPeriodLabel={planningPeriodLabel}
                       />
                     </div>
                   ))}
@@ -702,6 +751,9 @@ function DesktopRosterMatrix({
 
 function MobileRosterMatrix({
   matrix,
+  workloadMatrix,
+  workloadWarnings,
+  planningPeriodLabel,
   slotsByDay,
   assignmentMap,
   planningCellMap,
@@ -710,9 +762,13 @@ function MobileRosterMatrix({
   locale,
   dense,
   templateColumns,
-  readOnly
+  readOnly,
+  duplicateMemberDayKeys,
 }: {
   matrix: RosterMatrix;
+  workloadMatrix: RosterWorkloadMatrixSlice;
+  workloadWarnings: RosterWorkloadWarning[];
+  planningPeriodLabel: string;
   slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
   planningCellMap: Map<string, PlanningCell>;
@@ -722,6 +778,7 @@ function MobileRosterMatrix({
   dense: boolean;
   templateColumns: ShiftTemplateSummary[];
   readOnly: boolean;
+  duplicateMemberDayKeys?: ReadonlySet<string>;
 }) {
   if (dense) {
     return (
@@ -735,12 +792,12 @@ function MobileRosterMatrix({
                 <h2 className="text-base font-semibold text-ink">{formatDate(locale, day.date)}</h2>
                 {dayClass ? <DayClassPill dayClass={dayClass} locale={locale} /> : null}
               </div>
-              <div className="-mx-1 overflow-x-auto">
+              <div className={`-mx-1 ${dataTableScrollShellClassName}`}>
                 <table className="min-w-max w-full border-separate border-spacing-0 text-sm">
                   <thead>
                     <tr>
                       {templateColumns.map((template) => (
-                        <th key={template.id} className="min-w-[10.5rem] border-b border-slate-200 px-2 pb-2 text-left align-bottom">
+                        <th key={template.id} className="sticky top-0 z-10 min-w-[10.5rem] border-b border-slate-200 bg-white px-2 pb-2 text-left align-bottom shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <div className="grid gap-1">
                             <p className="text-xs font-semibold text-ink">
                               {locale === "de" ? template.name_de : template.name_en}
@@ -780,6 +837,10 @@ function MobileRosterMatrix({
                                       onSave={onSave}
                                       locale={locale}
                                       readOnly={readOnly}
+                                      duplicateMemberDayKeys={duplicateMemberDayKeys}
+                                      workloadMatrix={workloadMatrix}
+                                      workloadWarnings={workloadWarnings}
+                                      planningPeriodLabel={planningPeriodLabel}
                                     />
                                   </div>
                                 );
@@ -820,6 +881,10 @@ function MobileRosterMatrix({
                       onSave={onSave}
                       locale={locale}
                       readOnly={readOnly}
+                      duplicateMemberDayKeys={duplicateMemberDayKeys}
+                      workloadMatrix={workloadMatrix}
+                      workloadWarnings={workloadWarnings}
+                      planningPeriodLabel={planningPeriodLabel}
                     />
                 </div>
             ))}
@@ -853,7 +918,11 @@ function RosterCell({
   intentMap,
   onSave,
   locale,
-  readOnly = false
+  readOnly = false,
+  duplicateMemberDayKeys,
+  workloadMatrix,
+  workloadWarnings,
+  planningPeriodLabel,
 }: {
   slot: RosterSlot;
   members: RosterMatrixTeamMember[];
@@ -863,15 +932,32 @@ function RosterCell({
   onSave: (rosterSlotId: number, memberId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   readOnly?: boolean;
+  duplicateMemberDayKeys?: ReadonlySet<string>;
+  workloadMatrix: RosterWorkloadMatrixSlice;
+  workloadWarnings: RosterWorkloadWarning[];
+  planningPeriodLabel: string;
 }) {
   const [memberId, setMemberId] = useState<number | "">(assignment?.team_member_id ?? "");
   const [open, setOpen] = useState(false);
+  const [workloadModalMemberId, setWorkloadModalMemberId] = useState<number | null>(null);
+  const [pickerFilter, setPickerFilter] = useState("");
   const [manualOverride, setManualOverride] = useState(() => assignment?.manual_override === true);
   const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const workloadDialogTitleId = useId();
   const templateId = slot.shift_template_id;
+
+  const workloadModalRow =
+    workloadModalMemberId != null
+      ? workloadRowForMember(workloadMatrix, workloadWarnings, workloadModalMemberId)
+      : null;
+
+  const filteredMembers = useMemo(
+    () => members.filter((m) => teamMemberMatchesQuery(m, pickerFilter)),
+    [members, pickerFilter]
+  );
 
   const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
   const status = planningCell?.status;
@@ -883,6 +969,10 @@ function RosterCell({
       ? intentMap.get(`${slot.slot_date}:${memberId}:${templateId}`) === "no_go"
       : false;
   const highlightNoGo = selectedNoGo && !manualOverride;
+  const assigneeId = assignment?.team_member_id ?? null;
+  const duplicateSameDay =
+    assigneeId != null && Boolean(duplicateMemberDayKeys?.has(`${assigneeId}:${slot.slot_date}`));
+  const warnUnavailable = hasUnavailableDay || highlightNoGo;
 
   const syncMenuPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -902,6 +992,12 @@ function RosterCell({
     setManualOverride(assignment?.manual_override === true);
   }, [assignment?.team_member_id, assignment?.manual_override]);
 
+  useEffect(() => {
+    if (open) {
+      setPickerFilter("");
+    }
+  }, [open]);
+
   useLayoutEffect(() => {
     if (!open) {
       setMenuBox(null);
@@ -918,6 +1014,19 @@ function RosterCell({
       window.removeEventListener("resize", onReposition);
     };
   }, [open, syncMenuPosition]);
+
+  useEffect(() => {
+    if (workloadModalMemberId == null) {
+      return;
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setWorkloadModalMemberId(null);
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [workloadModalMemberId]);
 
   useEffect(() => {
     if (!open) {
@@ -952,6 +1061,19 @@ function RosterCell({
             style={{ top: menuBox.top, left: menuBox.left, width: menuBox.width }}
             role="presentation"
           >
+            <div className="shrink-0 border-b border-slate-200 p-2">
+              <input
+                type="search"
+                className={`${inputClass} h-9 text-xs`}
+                placeholder={t(locale, "searchTeamMembersPlaceholder")}
+                value={pickerFilter}
+                onChange={(event) => setPickerFilter(event.target.value)}
+                onKeyDown={(event) => event.stopPropagation()}
+                autoComplete="off"
+                autoFocus
+                aria-label={t(locale, "searchTeamMembersPlaceholder")}
+              />
+            </div>
             <ul className="min-h-0 flex-1 list-none overflow-y-auto py-1" role="listbox">
               <li role="none">
                 <button
@@ -970,17 +1092,22 @@ function RosterCell({
                   {t(locale, "emptyValue")}
                 </button>
               </li>
-              {members.map((member) => {
+              {filteredMembers.length === 0 && pickerFilter.trim() ? (
+                <li className="px-3 py-2 text-xs text-slate-500" role="presentation">
+                  {t(locale, "noTeamMemberMatches")}
+                </li>
+              ) : null}
+              {filteredMembers.map((member) => {
                 const cell = planningCellMap.get(`${slot.slot_date}:${member.id}`);
                 const st = cell?.status;
                 const dotClass = st && isPlanningStatus(st) ? DAY_STATUS_DOT[st] : "bg-slate-300";
                 const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
                 const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
                 return (
-                  <li key={member.id} role="none">
+                  <li key={member.id} className="flex items-stretch" role="none">
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
                       onClick={async () => {
                         const previous = memberId;
                         setMemberId(member.id);
@@ -1004,6 +1131,19 @@ function RosterCell({
                         </span>
                       ) : null}
                     </button>
+                    <button
+                      type="button"
+                      className="flex shrink-0 items-center justify-center border-l border-slate-100 px-2 text-slate-500 hover:bg-slate-50 hover:text-ink"
+                      aria-label={t(locale, "rosterMemberWorkloadStatsAria")}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpen(false);
+                        setWorkloadModalMemberId(member.id);
+                      }}
+                    >
+                      <BarChart3 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                    </button>
                   </li>
                 );
               })}
@@ -1024,11 +1164,77 @@ function RosterCell({
         )
       : null;
 
+  const statsModalPortal =
+    workloadModalMemberId != null && workloadModalRow && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[600] flex items-end justify-center bg-slate-900/40 p-4 sm:items-center sm:p-6"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setWorkloadModalMemberId(null);
+              }
+            }}
+          >
+            <div
+              className="max-h-[min(90dvh,32rem)] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-900/10"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={workloadDialogTitleId}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+                <div className="min-w-0">
+                  <h2 id={workloadDialogTitleId} className="text-base font-semibold text-ink">
+                    {t(locale, "rosterMemberWorkloadModalTitle", { name: workloadModalRow.name })}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    {t(locale, "rosterMemberWorkloadModalSubtitle", { period: planningPeriodLabel })}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => setWorkloadModalMemberId(null)}
+                >
+                  {t(locale, "close")}
+                </button>
+              </div>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
+                <dt className="text-slate-600">{t(locale, "employment")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.employmentPercentage}%</dd>
+                <dt className="text-slate-600">{t(locale, "totalShifts")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.total}</dd>
+                <dt className="text-slate-600">{t(locale, "onCallDutyCategory")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.onCallDuty}</dd>
+                <dt className="text-slate-600">{t(locale, "standbyDutyCategory")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.standbyDuty}</dd>
+                <dt className="text-slate-600">{t(locale, "lateDutyCategory")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.lateDuty}</dd>
+                <dt className="text-slate-600">{t(locale, "other")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.other}</dd>
+                <dt className="text-slate-600">{t(locale, "workloadWeekendHolidayShifts")}</dt>
+                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.weekendHolidayShifts}</dd>
+                <dt className="text-slate-600">{t(locale, "conflicts")}</dt>
+                <dd
+                  className={
+                    workloadModalRow.conflicts ? "text-right font-semibold tabular-nums text-rose-700" : "text-right font-medium tabular-nums text-ink"
+                  }
+                >
+                  {workloadModalRow.conflicts}
+                </dd>
+              </dl>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
     <div
       ref={rootRef}
       className={`relative grid gap-1.5 rounded-lg p-1 ${
-        hasUnavailableDay || highlightNoGo ? "bg-rose-50 ring-2 ring-rose-300" : ""
+        warnUnavailable ? "bg-rose-50 ring-2 ring-rose-300" : duplicateSameDay ? "bg-amber-50/80 ring-2 ring-amber-400" : ""
       }`}
     >
       <button
@@ -1038,7 +1244,7 @@ function RosterCell({
         aria-haspopup="listbox"
         disabled={readOnly}
         className={`relative flex min-h-[2.5rem] w-full items-center justify-between gap-2 rounded-lg border bg-white px-2 py-2 pr-7 text-left text-xs font-medium disabled:cursor-default disabled:opacity-90 ${
-          hasUnavailableDay || highlightNoGo ? "border-rose-300 text-rose-950" : "border-slate-200"
+          warnUnavailable ? "border-rose-300 text-rose-950" : duplicateSameDay ? "border-amber-400 text-amber-950" : "border-slate-200"
         }`}
         onClick={() => {
           if (!readOnly) {
@@ -1064,13 +1270,19 @@ function RosterCell({
         <ChevronDown className={`pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition ${open ? "rotate-180" : ""}`} aria-hidden />
       </button>
       {menuPortal}
-      {meta ? (
+      {statsModalPortal}
+      {meta || duplicateSameDay ? (
         <div className="flex flex-wrap items-center gap-1">
           {hasUnavailableDay ? <span className="text-xs font-semibold text-rose-700">{t(locale, "conflict")}</span> : null}
           {highlightNoGo ? <span className="text-xs font-semibold text-rose-700">{t(locale, "noGoShort")}</span> : null}
-          <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 ${meta.color}`}>
-            {t(locale, meta.label)}
-          </span>
+          {duplicateSameDay ? (
+            <span className="text-xs font-semibold text-amber-900">{t(locale, "rosterDuplicateDayInline")}</span>
+          ) : null}
+          {meta ? (
+            <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 ${meta.color}`}>
+              {t(locale, meta.label)}
+            </span>
+          ) : null}
         </div>
       ) : null}
     </div>

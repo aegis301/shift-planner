@@ -127,10 +127,10 @@ export function JoinRequestsAdminPanel() {
   }
 
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center gap-3">
-        <Building2 className="text-emerald-700" aria-hidden />
-        <h1 className="text-2xl font-semibold text-ink">{t(locale, "organizationAdminTitle")}</h1>
+    <div className="grid min-w-0 gap-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <Building2 className="shrink-0 text-emerald-700" aria-hidden />
+        <h1 className="min-w-0 truncate text-2xl font-semibold text-ink">{t(locale, "organizationAdminTitle")}</h1>
       </div>
       {org ? (
         <Card>

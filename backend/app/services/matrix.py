@@ -359,6 +359,7 @@ def save_team_member_period_note(
     else:
         note.source_text = payload.source_text
         note.summary = payload.summary
+        note.wishes_response_received = payload.wishes_response_received
         action = "update"
     db.flush()
     record_audit(
