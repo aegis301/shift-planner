@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Download, MessageSquareText, RefreshCw, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
@@ -575,7 +576,7 @@ function PlanningDenseMatrix({
   const singleMemberColumn = matrix.team_members.length === 1;
 
   return (
-    <div className="overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft">
+    <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft`}>
       <table className={`${singleMemberColumn ? "min-w-full" : "min-w-max"} border-separate border-spacing-0 text-sm`}>
         <thead>
           <tr>
@@ -674,7 +675,7 @@ function DesktopMatrix({
   const singleMemberColumn = matrix.team_members.length === 1;
 
   return (
-    <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
+    <div className={`hidden ${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft lg:block`}>
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>

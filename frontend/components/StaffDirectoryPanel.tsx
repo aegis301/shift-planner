@@ -7,6 +7,7 @@ import { Card } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { TeamMemberCreateModal, TeamMemberEditorModal, isTeamMemberRecord, type TeamMemberRecord } from "@/components/ResourceForms";
 
@@ -470,15 +471,15 @@ export function StaffDirectoryPanel() {
       {loadError ? <p className="text-sm text-red-600">{t(locale, "apiUnavailable")}</p> : null}
       {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
       <Card>
-        <div className="overflow-x-auto">
+        <div className={dataTableScrollShellClassName}>
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="py-2 pr-3">{t(locale, "orgStaffColumnEmail")}</th>
-                <th className="py-2 pr-3">{t(locale, "orgStaffColumnLink")}</th>
-                <th className="py-2 pr-3">{t(locale, "orgStaffColumnTeamProfile")}</th>
-                <th className="py-2 pr-3">{t(locale, "orgStaffColumnLogin")}</th>
-                <th className="py-2 pr-3">{t(locale, "orgStaffColumnUserIdOnTeamProfile")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgStaffColumnEmail")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgStaffColumnLink")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgStaffColumnTeamProfile")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgStaffColumnLogin")}</th>
+                <th className="sticky top-0 z-10 bg-white py-2 pr-3 shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "orgStaffColumnUserIdOnTeamProfile")}</th>
               </tr>
             </thead>
             <tbody>

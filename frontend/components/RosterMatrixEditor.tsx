@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, us
 import { createPortal } from "react-dom";
 import { ChevronDown, Download, RefreshCw, Save } from "lucide-react";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
@@ -127,6 +128,20 @@ function formatDate(locale: Locale, value: string) {
 
 function teamMemberLabel(member: RosterMatrixTeamMember): string {
   return `${member.first_name} ${member.last_name}`.trim();
+}
+
+function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) {
+    return true;
+  }
+  const label = teamMemberLabel(member).toLowerCase();
+  return (
+    label.includes(q) ||
+    member.first_name.toLowerCase().includes(q) ||
+    member.last_name.toLowerCase().includes(q) ||
+    member.email.toLowerCase().includes(q)
+  );
 }
 
 function formatTimeRange(slot: RosterSlot) {
@@ -576,7 +591,7 @@ function DesktopRosterMatrix({
 }) {
   if (dense) {
     return (
-      <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
+      <div className={`hidden ${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft lg:block`}>
         <table className="min-w-max border-separate border-spacing-0 text-sm">
           <thead>
             <tr>
@@ -655,7 +670,7 @@ function DesktopRosterMatrix({
   }
 
   return (
-    <div className="hidden overflow-auto rounded-lg border border-slate-200 bg-white shadow-soft lg:block">
+    <div className={`hidden ${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft lg:block`}>
       <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead>
           <tr>
@@ -735,12 +750,12 @@ function MobileRosterMatrix({
                 <h2 className="text-base font-semibold text-ink">{formatDate(locale, day.date)}</h2>
                 {dayClass ? <DayClassPill dayClass={dayClass} locale={locale} /> : null}
               </div>
-              <div className="-mx-1 overflow-x-auto">
+              <div className={`-mx-1 ${dataTableScrollShellClassName}`}>
                 <table className="min-w-max w-full border-separate border-spacing-0 text-sm">
                   <thead>
                     <tr>
                       {templateColumns.map((template) => (
-                        <th key={template.id} className="min-w-[10.5rem] border-b border-slate-200 px-2 pb-2 text-left align-bottom">
+                        <th key={template.id} className="sticky top-0 z-10 min-w-[10.5rem] border-b border-slate-200 bg-white px-2 pb-2 text-left align-bottom shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <div className="grid gap-1">
                             <p className="text-xs font-semibold text-ink">
                               {locale === "de" ? template.name_de : template.name_en}
@@ -866,12 +881,18 @@ function RosterCell({
 }) {
   const [memberId, setMemberId] = useState<number | "">(assignment?.team_member_id ?? "");
   const [open, setOpen] = useState(false);
+  const [pickerFilter, setPickerFilter] = useState("");
   const [manualOverride, setManualOverride] = useState(() => assignment?.manual_override === true);
   const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const templateId = slot.shift_template_id;
+
+  const filteredMembers = useMemo(
+    () => members.filter((m) => teamMemberMatchesQuery(m, pickerFilter)),
+    [members, pickerFilter]
+  );
 
   const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
   const status = planningCell?.status;
@@ -901,6 +922,12 @@ function RosterCell({
     setMemberId(assignment?.team_member_id ?? "");
     setManualOverride(assignment?.manual_override === true);
   }, [assignment?.team_member_id, assignment?.manual_override]);
+
+  useEffect(() => {
+    if (open) {
+      setPickerFilter("");
+    }
+  }, [open]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -952,6 +979,19 @@ function RosterCell({
             style={{ top: menuBox.top, left: menuBox.left, width: menuBox.width }}
             role="presentation"
           >
+            <div className="shrink-0 border-b border-slate-200 p-2">
+              <input
+                type="search"
+                className={`${inputClass} h-9 text-xs`}
+                placeholder={t(locale, "searchTeamMembersPlaceholder")}
+                value={pickerFilter}
+                onChange={(event) => setPickerFilter(event.target.value)}
+                onKeyDown={(event) => event.stopPropagation()}
+                autoComplete="off"
+                autoFocus
+                aria-label={t(locale, "searchTeamMembersPlaceholder")}
+              />
+            </div>
             <ul className="min-h-0 flex-1 list-none overflow-y-auto py-1" role="listbox">
               <li role="none">
                 <button
@@ -970,7 +1010,12 @@ function RosterCell({
                   {t(locale, "emptyValue")}
                 </button>
               </li>
-              {members.map((member) => {
+              {filteredMembers.length === 0 && pickerFilter.trim() ? (
+                <li className="px-3 py-2 text-xs text-slate-500" role="presentation">
+                  {t(locale, "noTeamMemberMatches")}
+                </li>
+              ) : null}
+              {filteredMembers.map((member) => {
                 const cell = planningCellMap.get(`${slot.slot_date}:${member.id}`);
                 const st = cell?.status;
                 const dotClass = st && isPlanningStatus(st) ? DAY_STATUS_DOT[st] : "bg-slate-300";

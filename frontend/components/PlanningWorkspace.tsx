@@ -10,6 +10,7 @@ import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider"
 import { isUserSession } from "@/lib/membershipRouting";
 import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type PlanningPeriod = {
@@ -888,17 +889,17 @@ function WorkloadStats({ rows, unassigned }: { rows: TeamMemberWorkloadRow[]; un
           </div>
         </div>
         {rows.length ? (
-          <div className="overflow-auto rounded-lg border border-slate-200">
+          <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-600">
-                <tr>
-                  <th className="p-3 font-semibold">{t(locale, "teamMembers")}</th>
-                  <th className="p-3 font-semibold">{t(locale, "totalShifts")}</th>
-                  <th className="p-3 font-semibold">{t(locale, "onCallDutyCategory")}</th>
-                  <th className="p-3 font-semibold">{t(locale, "standbyDutyCategory")}</th>
-                  <th className="p-3 font-semibold">{t(locale, "lateDutyCategory")}</th>
-                  <th className="p-3 font-semibold">{t(locale, "other")}</th>
-                  <th className="p-3 font-semibold">{t(locale, "conflicts")}</th>
+              <thead className="text-left text-slate-600">
+                <tr className="border-b border-slate-200">
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "teamMembers")}</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "totalShifts")}</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "onCallDutyCategory")}</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "standbyDutyCategory")}</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "lateDutyCategory")}</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "other")}</th>
+                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "conflicts")}</th>
                 </tr>
               </thead>
               <tbody>
