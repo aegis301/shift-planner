@@ -2,7 +2,23 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, BarChart3, CalendarCheck, Columns3, Download, Heart, LayoutList, Plus, RotateCw, Save, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
+  BarChart3,
+  CalendarCheck,
+  Columns3,
+  Download,
+  Heart,
+  LayoutList,
+  Plus,
+  RotateCw,
+  Save,
+  Trash2,
+  X
+} from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
@@ -11,6 +27,7 @@ import { isUserSession } from "@/lib/membershipRouting";
 import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
+import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type PlanningPeriod = {
@@ -30,17 +47,6 @@ type ValidationWarning = {
   details: Record<string, unknown>;
 };
 
-type TeamMemberWorkloadRow = {
-  memberId: number;
-  name: string;
-  total: number;
-  onCallDuty: number;
-  standbyDuty: number;
-  lateDuty: number;
-  other: number;
-  conflicts: number;
-};
-
 type PlanningViewMode = "stacked" | "tabs";
 type PlanningTab = "wishes" | "roster" | "analysis";
 type DestructiveAction = "delete-period" | "regenerate-roster" | "publish-period" | "unpublish-period";
@@ -55,65 +61,18 @@ function monthLabel(period: PlanningPeriod | undefined) {
   if (!period) {
     return "";
   }
-  return `${period.year}-${String(period.month).padStart(2, "0")}`;
+  return formatWorkloadPeriodLabel(period);
 }
 
-function buildStats(matrix: RosterMatrix | null, warnings: ValidationWarning[]): { rows: TeamMemberWorkloadRow[]; unassigned: number } {
-  if (!matrix) {
-    return { rows: [], unassigned: 0 };
-  }
-  const slots = new Map(matrix.slots.map((slot) => [slot.id, slot]));
-  const stats = new Map<number, TeamMemberWorkloadRow>(
-    matrix.team_members.map((member) => [
-      member.id,
-      {
-        memberId: member.id,
-        name: teamMemberLabel(member),
-        total: 0,
-        onCallDuty: 0,
-        standbyDuty: 0,
-        lateDuty: 0,
-        other: 0,
-        conflicts: 0
-      }
-    ])
-  );
-
-  for (const assignment of matrix.assignments) {
-    const memberStats = stats.get(assignment.team_member_id);
-    const slot = slots.get(assignment.roster_slot_id);
-    const category = slot?.category;
-    if (!memberStats || !category) {
+function duplicateMemberDayKeysFromWarnings(warnings: ValidationWarning[]): Set<string> {
+  const keys = new Set<string>();
+  for (const w of warnings) {
+    if (w.code !== "ROSTER_MATRIX_DUPLICATE_DAY" || w.team_member_id == null || !w.date) {
       continue;
     }
-    memberStats.total += 1;
-    if (category === "bereitschaftsdienst") {
-      memberStats.onCallDuty += 1;
-    } else if (category === "rufdienst") {
-      memberStats.standbyDuty += 1;
-    } else if (category === "spaetdienst") {
-      memberStats.lateDuty += 1;
-    } else {
-      memberStats.other += 1;
-    }
+    keys.add(`${w.team_member_id}:${w.date}`);
   }
-
-  for (const warning of warnings) {
-    const rosterRelated =
-      warning.code.startsWith("ROSTER_MATRIX") || warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT";
-    if (!rosterRelated || !warning.team_member_id) {
-      continue;
-    }
-    const memberStats = stats.get(warning.team_member_id);
-    if (memberStats) {
-      memberStats.conflicts += 1;
-    }
-  }
-
-  return {
-    rows: [...stats.values()].sort((a, b) => a.name.localeCompare(b.name)),
-    unassigned: Math.max(0, matrix.slots.length - matrix.assignments.length)
-  };
+  return keys;
 }
 
 function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_member" }) {
@@ -213,7 +172,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }, [userMe, variant]);
 
   const activePeriod = periods.find((period) => String(period.id) === periodId);
-  const stats = useMemo(() => buildStats(rosterMatrix, warnings), [rosterMatrix, warnings]);
+  const stats = useMemo(() => buildMemberWorkloadRows(rosterMatrix, warnings), [rosterMatrix, warnings]);
+  const duplicateMemberDayKeys = useMemo(() => duplicateMemberDayKeysFromWarnings(warnings), [warnings]);
+  const duplicateDayWarningsCount = useMemo(
+    () => warnings.filter((w) => w.code === "ROSTER_MATRIX_DUPLICATE_DAY").length,
+    [warnings]
+  );
 
   const loadWarnings = useCallback(
     async (nextPeriodId: string) => {
@@ -422,6 +386,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
       </div>
+      {duplicateDayWarningsCount > 0 ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 ring-1 ring-amber-200">
+          {t(locale, "rosterDuplicateDayPlanningHint", { count: String(duplicateDayWarningsCount) })}
+        </p>
+      ) : null}
       {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
@@ -431,6 +400,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           readOnly={Boolean(teamMemberPortalUi)}
           reloadToken={rosterReloadToken}
           shiftGroupId={shiftGroupId || undefined}
+          duplicateMemberDayKeys={duplicateMemberDayKeys}
+          validationWarnings={warnings}
           onMatrixChange={handleRosterChange}
         />
       )}
@@ -877,8 +848,99 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
   );
 }
 
+type WorkloadSortColumn =
+  | "name"
+  | "employmentPercentage"
+  | "total"
+  | "onCallDuty"
+  | "standbyDuty"
+  | "lateDuty"
+  | "other"
+  | "weekendHolidayShifts"
+  | "conflicts";
+
+function defaultWorkloadSortDir(col: WorkloadSortColumn): "asc" | "desc" {
+  return col === "name" ? "asc" : "desc";
+}
+
+function compareWorkloadRows(
+  a: TeamMemberWorkloadRow,
+  b: TeamMemberWorkloadRow,
+  col: WorkloadSortColumn,
+  dir: "asc" | "desc"
+): number {
+  const mul = dir === "asc" ? 1 : -1;
+  if (col === "name") {
+    return a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) * mul;
+  }
+  const av = a[col];
+  const bv = b[col];
+  if (av !== bv) {
+    return (av - bv) * mul;
+  }
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function SortableWorkloadTh({
+  locale,
+  labelKey,
+  column,
+  active,
+  dir,
+  onSort,
+  numeric
+}: {
+  locale: Locale;
+  labelKey: TranslationKey;
+  column: WorkloadSortColumn;
+  active: boolean;
+  dir: "asc" | "desc";
+  onSort: (col: WorkloadSortColumn) => void;
+  numeric?: boolean;
+}) {
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+      className={`sticky top-0 z-10 bg-slate-50 p-0 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)] ${numeric ? "text-right" : "text-left"}`}
+    >
+      <button
+        type="button"
+        title={t(locale, "workloadTableSortHint")}
+        onClick={() => onSort(column)}
+        className={`flex w-full items-center gap-1 px-3 py-3 text-slate-700 hover:bg-slate-100/80 ${numeric ? "justify-end" : "justify-start"}`}
+      >
+        <span>{t(locale, labelKey)}</span>
+        {active ? (
+          dir === "asc" ? (
+            <ArrowUp className="h-3.5 w-3.5 shrink-0 text-ink" strokeWidth={2} aria-hidden />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5 shrink-0 text-ink" strokeWidth={2} aria-hidden />
+          )
+        ) : (
+          <ArrowDownUp className="h-3.5 w-3.5 shrink-0 opacity-35" strokeWidth={2} aria-hidden />
+        )}
+      </button>
+    </th>
+  );
+}
+
 function WorkloadStats({ rows, unassigned }: { rows: TeamMemberWorkloadRow[]; unassigned: number }) {
   const { locale } = useLocale();
+  const [sort, setSort] = useState<{ col: WorkloadSortColumn; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
+
+  const sortedRows = useMemo(() => {
+    const next = [...rows];
+    next.sort((a, b) => compareWorkloadRows(a, b, sort.col, sort.dir));
+    return next;
+  }, [rows, sort]);
+
+  const activateSort = useCallback((col: WorkloadSortColumn) => {
+    setSort((prev) =>
+      prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: defaultWorkloadSortDir(col) }
+    );
+  }, []);
+
   return (
     <Card>
       <div className="grid gap-4">
@@ -893,25 +955,102 @@ function WorkloadStats({ rows, unassigned }: { rows: TeamMemberWorkloadRow[]; un
             <table className="min-w-full text-sm">
               <thead className="text-left text-slate-600">
                 <tr className="border-b border-slate-200">
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "teamMembers")}</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "totalShifts")}</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "onCallDutyCategory")}</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "standbyDutyCategory")}</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "lateDutyCategory")}</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "other")}</th>
-                  <th className="sticky top-0 z-10 bg-slate-50 p-3 font-semibold shadow-[0_1px_0_0_rgb(226_232_240)]">{t(locale, "conflicts")}</th>
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="teamMembers"
+                    column="name"
+                    active={sort.col === "name"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="employment"
+                    column="employmentPercentage"
+                    active={sort.col === "employmentPercentage"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="totalShifts"
+                    column="total"
+                    active={sort.col === "total"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="onCallDutyCategory"
+                    column="onCallDuty"
+                    active={sort.col === "onCallDuty"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="standbyDutyCategory"
+                    column="standbyDuty"
+                    active={sort.col === "standbyDuty"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="lateDutyCategory"
+                    column="lateDuty"
+                    active={sort.col === "lateDuty"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="other"
+                    column="other"
+                    active={sort.col === "other"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="workloadWeekendHolidayShifts"
+                    column="weekendHolidayShifts"
+                    active={sort.col === "weekendHolidayShifts"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
+                  <SortableWorkloadTh
+                    locale={locale}
+                    labelKey="conflicts"
+                    column="conflicts"
+                    active={sort.col === "conflicts"}
+                    dir={sort.dir}
+                    onSort={activateSort}
+                    numeric
+                  />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {sortedRows.map((row) => (
                   <tr key={row.memberId} className="border-t border-slate-100">
                     <td className="p-3 font-medium text-ink">{row.name}</td>
-                    <td className="p-3">{row.total}</td>
-                    <td className="p-3">{row.onCallDuty}</td>
-                    <td className="p-3">{row.standbyDuty}</td>
-                    <td className="p-3">{row.lateDuty}</td>
-                    <td className="p-3">{row.other}</td>
-                    <td className={row.conflicts ? "p-3 font-semibold text-rose-700" : "p-3"}>{row.conflicts}</td>
+                    <td className="p-3 text-right tabular-nums">{row.employmentPercentage}%</td>
+                    <td className="p-3 text-right tabular-nums">{row.total}</td>
+                    <td className="p-3 text-right tabular-nums">{row.onCallDuty}</td>
+                    <td className="p-3 text-right tabular-nums">{row.standbyDuty}</td>
+                    <td className="p-3 text-right tabular-nums">{row.lateDuty}</td>
+                    <td className="p-3 text-right tabular-nums">{row.other}</td>
+                    <td className="p-3 text-right tabular-nums">{row.weekendHolidayShifts}</td>
+                    <td className={row.conflicts ? "p-3 text-right font-semibold tabular-nums text-rose-700" : "p-3 text-right tabular-nums"}>
+                      {row.conflicts}
+                    </td>
                   </tr>
                 ))}
               </tbody>
