@@ -25,7 +25,7 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <AdminSectionTabs
         locale={locale}
         tabs={[

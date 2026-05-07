@@ -255,10 +255,10 @@ export function OrganizationManagementPanel() {
   }
 
   return (
-    <div className="grid gap-6">
-      <div className="flex items-center gap-3">
-        <Building2 className="text-emerald-700" aria-hidden />
-        <h1 className="text-2xl font-semibold text-ink">{t(locale, "orgManagementTitle")}</h1>
+    <div className="grid min-w-0 gap-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <Building2 className="shrink-0 text-emerald-700" aria-hidden />
+        <h1 className="min-w-0 truncate text-2xl font-semibold text-ink">{t(locale, "orgManagementTitle")}</h1>
       </div>
       {org ? (
         <Card>
@@ -391,7 +391,7 @@ export function OrganizationManagementPanel() {
             ) : null}
           </div>
         </form>
-        <div className={`mt-6 ${dataTableScrollShellClassName}`}>
+        <div className={`mt-6 ${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
           <table className="w-full min-w-[32rem] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">

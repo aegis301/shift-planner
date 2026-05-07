@@ -438,13 +438,13 @@ export function StaffDirectoryPanel() {
   }
 
   return (
-    <div className="grid gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <ContactRound className="text-emerald-700" aria-hidden />
-          <h1 className="text-2xl font-semibold text-ink">{t(locale, "teamMembers")}</h1>
+    <div className="grid min-w-0 gap-5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <ContactRound className="shrink-0 text-emerald-700" aria-hidden />
+          <h1 className="min-w-0 truncate text-2xl font-semibold text-ink">{t(locale, "teamMembers")}</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button
             type="button"
             onClick={() => void reloadDirectory()}
@@ -471,7 +471,7 @@ export function StaffDirectoryPanel() {
       {loadError ? <p className="text-sm text-red-600">{t(locale, "apiUnavailable")}</p> : null}
       {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
       <Card>
-        <div className={dataTableScrollShellClassName}>
+        <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
           <table className="w-full min-w-[960px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">

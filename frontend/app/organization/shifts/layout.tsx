@@ -25,7 +25,7 @@ export default function ShiftManagementLayout({ children }: { children: React.Re
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <AdminSectionTabs
         locale={locale}
         tabs={[
