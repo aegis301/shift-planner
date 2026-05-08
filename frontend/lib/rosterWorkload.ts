@@ -1,7 +1,14 @@
 import { slotTouchesWeekendOrNrwHoliday } from "@/lib/nrwCalendar";
 
 export type RosterWorkloadMatrixSlice = {
-  slots: { id: number; category: string | null; slot_date: string; starts_at: string | null; ends_at: string | null }[];
+  slots: {
+    id: number;
+    shift_template_id: number | null;
+    category: string | null;
+    slot_date: string;
+    starts_at: string | null;
+    ends_at: string | null;
+  }[];
   assignments: { roster_slot_id: number; team_member_id: number }[];
   team_members: {
     id: number;

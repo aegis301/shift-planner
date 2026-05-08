@@ -151,6 +151,7 @@ export const dictionaries = {
     rosterDuplicateDayPlanningHint:
       "{{count}} Fälle: dieselbe Person ist am selben Tag mehrfach eingetragen (Zellen mit Rand hervorgehoben).",
     rosterMemberWorkloadStatsAria: "Monatsstatistik anzeigen",
+    rosterPickerMonthAssignmentsTitle: "{{count}} Dienste dieser Schichtvorlage in diesem Planungsmonat zugewiesen",
     rosterMemberWorkloadModalTitle: "Arbeitslast — {{name}}",
     rosterMemberWorkloadModalSubtitle: "Planungsmonat {{period}}",
     validationDetailUnavailable: "Tagesstatus in den Wünschen: {{wish}} — zugewiesener Dienst: {{slot}}",
@@ -575,6 +576,7 @@ export const dictionaries = {
     rosterDuplicateDayPlanningHint:
       "{{count}} case(s): the same person is assigned more than once on one day (see highlighted cells).",
     rosterMemberWorkloadStatsAria: "Show month workload",
+    rosterPickerMonthAssignmentsTitle: "{{count}} shifts of this template assigned in this planning month",
     rosterMemberWorkloadModalTitle: "Workload — {{name}}",
     rosterMemberWorkloadModalSubtitle: "Planning month {{period}}",
     validationDetailUnavailable: "Day wishes status: {{wish}} — assigned slot: {{slot}}",

@@ -959,6 +959,27 @@ function RosterCell({
     [members, pickerFilter]
   );
 
+  const templateAssignmentCountByMemberId = useMemo(() => {
+    const slotsById = new Map(workloadMatrix.slots.map((s) => [s.id, s]));
+    const map = new Map<number, number>();
+    const targetTemplateId = slot.shift_template_id;
+    for (const row of workloadMatrix.assignments) {
+      const assignedSlot = slotsById.get(row.roster_slot_id);
+      if (!assignedSlot) {
+        continue;
+      }
+      const sameTemplate =
+        targetTemplateId != null
+          ? assignedSlot.shift_template_id === targetTemplateId
+          : assignedSlot.shift_template_id == null && assignedSlot.category === slot.category;
+      if (!sameTemplate) {
+        continue;
+      }
+      map.set(row.team_member_id, (map.get(row.team_member_id) ?? 0) + 1);
+    }
+    return map;
+  }, [workloadMatrix.assignments, workloadMatrix.slots, slot.shift_template_id, slot.category]);
+
   const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
   const status = planningCell?.status;
   const meta = status && isPlanningStatus(status) ? STATUS_META[status] : undefined;
@@ -1103,6 +1124,7 @@ function RosterCell({
                 const dotClass = st && isPlanningStatus(st) ? DAY_STATUS_DOT[st] : "bg-slate-300";
                 const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
                 const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
+                const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
                 return (
                   <li key={member.id} className="flex items-stretch" role="none">
                     <button
@@ -1120,6 +1142,12 @@ function RosterCell({
                     >
                       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
                       <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{teamMemberLabel(member)}</span>
+                      <span
+                        className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums text-slate-700 ring-1 ring-slate-200/80"
+                        title={t(locale, "rosterPickerMonthAssignmentsTitle", { count: String(assignedThisTemplate) })}
+                      >
+                        {assignedThisTemplate}
+                      </span>
                       {intentKind === "wish" ? (
                         <span className="shrink-0 rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900">
                           {t(locale, "wishShort")}
