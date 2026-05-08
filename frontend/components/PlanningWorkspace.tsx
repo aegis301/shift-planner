@@ -134,6 +134,17 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
     [shiftGroupId]
   );
+  const exportQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (shiftGroupId) {
+      params.set("shift_group_id", shiftGroupId);
+    }
+    if (teamMemberPortalUi) {
+      params.set("team_member_portal", "true");
+    }
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  }, [shiftGroupId, teamMemberPortalUi]);
 
   useEffect(() => {
     setShiftGroupId(searchParams.get("shiftGroup") ?? "");
@@ -178,6 +189,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     () => warnings.filter((w) => w.code === "ROSTER_MATRIX_DUPLICATE_DAY").length,
     [warnings]
   );
+  const exportRequiresShiftGroup = plannerNeedsShiftGroup || teamMemberPortalUi;
+  const exportBlockedByShiftGroup = exportRequiresShiftGroup && !shiftGroupId;
+  const exportPublishedReady = activePeriod?.status === "published";
 
   const loadWarnings = useCallback(
     async (nextPeriodId: string) => {
@@ -532,6 +546,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   </div>
                 </>
               ) : null}
+              {teamMemberPortalUi ? (
+                <button
+                  aria-label={t(locale, "exports")}
+                  className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={!periodId}
+                  onClick={() => setIsExportModalOpen(true)}
+                  title={t(locale, "exports")}
+                  type="button"
+                >
+                  <Download size={18} />
+                </button>
+              ) : null}
             </div>
           </div>
           <div className="flex flex-wrap gap-3 text-sm">
@@ -602,24 +628,49 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               </button>
             </div>
             <div className="grid gap-3">
+              {planningUi ? (
+                <>
+                  <a
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                      exportBlockedByShiftGroup ? "pointer-events-none opacity-40" : ""
+                    }`}
+                    href={`${API_BASE_URL}/api/v1/exports/matrix/${periodId}.csv${shiftGroupQuery}`}
+                  >
+                    <Download size={17} />
+                    {t(locale, "wishesCsvExport")}
+                  </a>
+                  <a
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                      exportBlockedByShiftGroup ? "pointer-events-none opacity-40" : ""
+                    }`}
+                    href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.csv${shiftGroupQuery}`}
+                  >
+                    <Download size={17} />
+                    {t(locale, "rosterCsvExport")}
+                  </a>
+                </>
+              ) : null}
               <a
                 className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                  plannerNeedsShiftGroup && !shiftGroupId ? "pointer-events-none opacity-40" : ""
+                  exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
                 }`}
-                href={`${API_BASE_URL}/api/v1/exports/matrix/${periodId}.csv${shiftGroupQuery}`}
+                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.xlsx${exportQuery}`}
               >
                 <Download size={17} />
-                {t(locale, "wishesCsvExport")}
+                {t(locale, "rosterXlsxExport")}
               </a>
               <a
                 className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                  plannerNeedsShiftGroup && !shiftGroupId ? "pointer-events-none opacity-40" : ""
+                  exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
                 }`}
-                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.csv${shiftGroupQuery}`}
+                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.pdf${exportQuery}`}
               >
                 <Download size={17} />
-                {t(locale, "rosterCsvExport")}
+                {t(locale, "rosterPdfExport")}
               </a>
+              {!exportPublishedReady ? (
+                <p className="text-xs text-slate-500">{t(locale, "exportPublishedOnlyHint")}</p>
+              ) : null}
             </div>
           </div>
         </div>

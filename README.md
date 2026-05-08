@@ -88,12 +88,17 @@ The frontend no longer has standalone `/requests`, `/roster`, `/validation`, or 
 
 The `/planning` toolbar includes destructive month actions behind confirmation dialogs: deleting a planning month removes its wishes, notes, generated roster slots, and assignments; regenerating a month clears roster assignments and rebuilds roster slots from the current shift templates. Publish is a separate confirmed action that marks the month published and unlocks roster reads for team members (per selected shift group). Unpublish reverts that month to draft and immediately blocks team member roster reads again.
 
-Relevant CSV exports:
+Relevant CSV exports (planning users):
 
 - Wishes matrix: `/api/v1/exports/matrix/{planning_period_id}.csv`
 - Final roster matrix: `/api/v1/exports/roster-matrix/{planning_period_id}.csv`
 
-Query parameter `shift_group_id`: **admins** may omit it for a full-org matrix, matrix notes, roster, validation, and CSV exports. **Planners** (non-admin) must pass `shift_group_id` on `GET /api/v1/matrix/{id}`, matrix note routes under `/api/v1/matrix/{id}/notes`, `GET /api/v1/roster-matrix/{id}`, `GET /api/v1/validation/{id}`, and on both CSV export routes; the value must be one of their `user_shift_groups`. Creating or deleting a planning month (`POST` / `DELETE /api/v1/planning-periods`) is **admin-only**; publish, unpublish, and regenerate roster remain available to any user with planning access (admin or planner).
+Published roster file exports (planning users and linked team-member portal users):
+
+- Final roster Excel: `/api/v1/exports/roster-matrix/{planning_period_id}.xlsx`
+- Final roster PDF: `/api/v1/exports/roster-matrix/{planning_period_id}.pdf`
+
+Query parameter `shift_group_id`: **admins** may omit it for a full-org matrix, matrix notes, roster, validation, and CSV exports. **Planners** (non-admin) must pass `shift_group_id` on `GET /api/v1/matrix/{id}`, matrix note routes under `/api/v1/matrix/{id}/notes`, `GET /api/v1/roster-matrix/{id}`, `GET /api/v1/validation/{id}`, and on both CSV export routes; the value must be one of their `user_shift_groups`. For published roster XLSX/PDF exports, planners follow the same shift-group scope rules, while team-member portal users must pass `shift_group_id` and are checked against team-member shift-group membership. Creating or deleting a planning month (`POST` / `DELETE /api/v1/planning-periods`) is **admin-only**; publish, unpublish, and regenerate roster remain available to any user with planning access (admin or planner).
 
 Shift groups are managed at `GET|POST|PATCH|DELETE /api/v1/shift-groups` (`GET` for any planning user, scoped for planners; create/update/delete and membership `PUT`s are admin-only). `TeamMember` rows carry `shift_group_ids`; roster assignments require the assignee to share a group with the slot’s template when that template belongs to at least one group.
 
@@ -136,6 +141,7 @@ Migration `202605050001` renames **`doctors`** → **`team_members`**, related j
 - `GET|PATCH /api/v1/auth/me/team-member` applies when the session has a linked `TeamMember` (any allowed role for that link).
 - `POST /api/v1/planning-periods/{id}/publish` sets `status` to `published` and `published_at`; `POST /api/v1/planning-periods/{id}/unpublish` reverts to `draft` and clears `published_at`.
 - `GET /api/v1/roster-matrix/{id}`: users with planning access (`admin` / `planner`) use **draft** roster data unless the query includes `team_member_portal=true` (the my-planning UI sends this for read-only roster). With `team_member_portal=true`, a **linked** team member session requires `shift_group_id`, group membership, and a **published** month (`403` while draft). Pure `team_member` users always follow that published read path.
+- `GET /api/v1/exports/roster-matrix/{id}.xlsx` and `GET /api/v1/exports/roster-matrix/{id}.pdf` are **published-only** roster exports. They use the same planning/team-member portal access split and shift-group scope rules as roster reads; team-member portal callers should pass `team_member_portal=true`.
 - Seed team-member logins: set `TEAM_MEMBER_SEED_PASSWORD` in `.env`, then run `python -m app.scripts.seed_team_member_users` (Docker Compose runs it after migrations). It creates a `team_member`-role user per active unlinked `TeamMember` email with the same `organization_id` as that row (or `DEFAULT_ORGANIZATION_ID` if missing) and links `TeamMember.user_id`. Skip when the email is already a user.
 - Optional planner demo: set `PLANNER_SEED_EMAIL` and `PLANNER_SEED_PASSWORD` in `.env`. Docker Compose passes these into the **backend** container so `seed_planner_user` hashes the same password you use in the browser. Run `docker compose exec backend python -m app.scripts.seed_planner_user` (or add it to the backend command); re-running updates an existing planner’s password and shift-group links. Default email is `planner@example.com` when `PLANNER_SEED_EMAIL` is unset or empty.
 
