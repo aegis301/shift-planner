@@ -79,6 +79,7 @@ export type TeamMemberRecord = {
   email: string;
   employment_percentage: number;
   notes: string | null;
+  planning_preferences?: string | null;
   is_active: boolean;
   created_at: string;
   shift_group_ids?: number[];
@@ -101,6 +102,7 @@ const FIELD_LABEL_MAP: Partial<Record<string, TranslationKey>> = {
   email: "email",
   employment_percentage: "employment",
   notes: "notes",
+  planning_preferences: "planningPreferencesField",
   is_active: "isActive",
   created_at: "createdAt",
   code: "code",
@@ -910,6 +912,7 @@ export function TeamMemberEditorModal({
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
+        planning_preferences: form.get("planning_preferences") || null,
         is_active: form.get("is_active") === "on",
         shift_group_ids: [...selectedGroupIds],
         user_id
@@ -976,6 +979,14 @@ export function TeamMemberEditorModal({
           <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" defaultValue={member.last_name} required /></Field>
           <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" defaultValue={member.email} required /></Field>
           <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue={member.employment_percentage} /></Field>
+          <Field label={t(locale, "planningPreferencesField")}>
+            <textarea
+              className={`${inputClass} min-h-28`}
+              name="planning_preferences"
+              rows={4}
+              defaultValue={member.planning_preferences ?? ""}
+            />
+          </Field>
           <Field label={t(locale, "notes")}><input className={inputClass} name="notes" defaultValue={member.notes ?? ""} /></Field>
           <Field label={t(locale, "linkedUserId")}>
             <input
@@ -1083,6 +1094,7 @@ export function TeamMemberCreateModal({
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
+        planning_preferences: form.get("planning_preferences") || null,
         shift_group_ids: [...createGroupIds],
         user_id: createUserId,
       }),
@@ -1119,6 +1131,9 @@ export function TeamMemberCreateModal({
           </Field>
           <Field label={t(locale, "employment")}>
             <input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue="100" />
+          </Field>
+          <Field label={t(locale, "planningPreferencesField")}>
+            <textarea className={`${inputClass} min-h-28`} name="planning_preferences" rows={4} />
           </Field>
           <Field label={t(locale, "notes")}>
             <input className={inputClass} name="notes" />

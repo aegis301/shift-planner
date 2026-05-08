@@ -14,6 +14,15 @@ from app.models import (
 from app.schemas import PlanningPeriodCreate
 from app.services.audit import record_audit
 
+PLANNING_PERIOD_STATUS_DRAFT = "draft"
+PLANNING_PERIOD_STATUS_PRELIMINARY = "preliminary"
+PLANNING_PERIOD_STATUS_PUBLISHED = "published"
+PLANNING_PERIOD_STATUSES = {
+    PLANNING_PERIOD_STATUS_DRAFT,
+    PLANNING_PERIOD_STATUS_PRELIMINARY,
+    PLANNING_PERIOD_STATUS_PUBLISHED,
+}
+
 
 def list_planning_periods(db: Session, *, organization_id: int) -> list[PlanningPeriod]:
     stmt = (
@@ -36,7 +45,11 @@ def create_planning_period(
     )
     if existing:
         return existing
-    period = PlanningPeriod(**payload.model_dump(), organization_id=organization_id, status="draft")
+    period = PlanningPeriod(
+        **payload.model_dump(),
+        organization_id=organization_id,
+        status=PLANNING_PERIOD_STATUS_DRAFT,
+    )
     db.add(period)
     db.flush()
     record_audit(db, actor=actor, source=source, action="create", entity_type="planning_period", entity_id=period.id)
@@ -80,9 +93,9 @@ def publish_planning_period(
     period = db.get(PlanningPeriod, planning_period_id)
     if period is None or period.organization_id != organization_id:
         return None
-    if period.status == "published":
+    if period.status == PLANNING_PERIOD_STATUS_PUBLISHED:
         return period
-    period.status = "published"
+    period.status = PLANNING_PERIOD_STATUS_PUBLISHED
     period.published_at = datetime.now(timezone.utc)
     db.flush()
     record_audit(
@@ -105,16 +118,16 @@ def unpublish_planning_period(
     period = db.get(PlanningPeriod, planning_period_id)
     if period is None or period.organization_id != organization_id:
         return None
-    if period.status == "draft":
+    if period.status == PLANNING_PERIOD_STATUS_PRELIMINARY:
         return period
-    period.status = "draft"
+    period.status = PLANNING_PERIOD_STATUS_PRELIMINARY
     period.published_at = None
     db.flush()
     record_audit(
         db,
         actor=actor,
         source=source,
-        action="unpublish",
+        action="set_preliminary",
         entity_type="planning_period",
         entity_id=period.id,
         details={"year": period.year, "month": period.month},
@@ -122,3 +135,65 @@ def unpublish_planning_period(
     db.commit()
     db.refresh(period)
     return period
+
+
+def set_planning_period_to_draft(
+    db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
+) -> PlanningPeriod | None:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None or period.organization_id != organization_id:
+        return None
+    if period.status == PLANNING_PERIOD_STATUS_DRAFT:
+        return period
+    period.status = PLANNING_PERIOD_STATUS_DRAFT
+    period.published_at = None
+    db.flush()
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="set_draft",
+        entity_type="planning_period",
+        entity_id=period.id,
+        details={"year": period.year, "month": period.month},
+    )
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+def set_planning_period_to_preliminary(
+    db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
+) -> PlanningPeriod | None:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None or period.organization_id != organization_id:
+        return None
+    if period.status == PLANNING_PERIOD_STATUS_PRELIMINARY:
+        return period
+    period.status = PLANNING_PERIOD_STATUS_PRELIMINARY
+    period.published_at = None
+    db.flush()
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="set_preliminary",
+        entity_type="planning_period",
+        entity_id=period.id,
+        details={"year": period.year, "month": period.month},
+    )
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+def is_team_member_roster_visible(status: str) -> bool:
+    return status in {PLANNING_PERIOD_STATUS_PRELIMINARY, PLANNING_PERIOD_STATUS_PUBLISHED}
+
+
+def can_team_member_submit_feedback(status: str) -> bool:
+    return status == PLANNING_PERIOD_STATUS_PRELIMINARY
+
+
+def can_team_member_edit_wishes_matrix(status: str) -> bool:
+    return status in {PLANNING_PERIOD_STATUS_DRAFT, PLANNING_PERIOD_STATUS_PRELIMINARY}

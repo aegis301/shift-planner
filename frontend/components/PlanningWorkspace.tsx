@@ -49,7 +49,12 @@ type ValidationWarning = {
 
 type PlanningViewMode = "stacked" | "tabs";
 type PlanningTab = "wishes" | "roster" | "analysis";
-type DestructiveAction = "delete-period" | "regenerate-roster" | "publish-period" | "unpublish-period";
+type DestructiveAction =
+  | "delete-period"
+  | "regenerate-roster"
+  | "status-draft"
+  | "status-preliminary"
+  | "status-published";
 
 type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
 
@@ -62,6 +67,16 @@ function monthLabel(period: PlanningPeriod | undefined) {
     return "";
   }
   return formatWorkloadPeriodLabel(period);
+}
+
+function periodStatusLabelKey(status: string): TranslationKey {
+  if (status === "published") {
+    return "periodStatusPublished";
+  }
+  if (status === "preliminary") {
+    return "periodStatusPreliminary";
+  }
+  return "periodStatusDraft";
 }
 
 function duplicateMemberDayKeysFromWarnings(warnings: ValidationWarning[]): Set<string> {
@@ -192,6 +207,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const exportRequiresShiftGroup = plannerNeedsShiftGroup || teamMemberPortalUi;
   const exportBlockedByShiftGroup = exportRequiresShiftGroup && !shiftGroupId;
   const exportPublishedReady = activePeriod?.status === "published";
+  const teamMemberWishesEditable =
+    teamMemberPortalUi && (activePeriod?.status === "draft" || activePeriod?.status === "preliminary");
+  const teamMemberRosterVisible = teamMemberPortalUi ? activePeriod?.status === "preliminary" || activePeriod?.status === "published" : true;
 
   const loadWarnings = useCallback(
     async (nextPeriodId: string) => {
@@ -219,7 +237,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
           setRosterMatrix(null);
           if (teamMemberPortalUi) {
-            setMessage(t(locale, "rosterNotPublishedYet"));
+            setMessage(t(locale, "rosterNotVisibleYet"));
           }
           return;
         }
@@ -330,16 +348,21 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     if (!periodId || !destructiveAction) {
       return;
     }
-    if (destructiveAction === "publish-period") {
+    if (destructiveAction === "status-published") {
       await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/publish`, { method: "POST" });
       await refreshPeriods();
       await loadRosterMatrix(periodId);
       setMessage(t(locale, "periodPublished"));
-    } else if (destructiveAction === "unpublish-period") {
-      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/unpublish`, { method: "POST" });
+    } else if (destructiveAction === "status-preliminary") {
+      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/preliminary`, { method: "POST" });
       await refreshPeriods();
       await loadRosterMatrix(periodId);
-      setMessage(t(locale, "periodUnpublished"));
+      setMessage(t(locale, "periodSetPreliminary"));
+    } else if (destructiveAction === "status-draft") {
+      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/draft`, { method: "POST" });
+      await refreshPeriods();
+      await loadRosterMatrix(periodId);
+      setMessage(t(locale, "periodSetDraft"));
     } else if (destructiveAction === "regenerate-roster") {
       await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster`, {
         method: "POST"
@@ -379,6 +402,13 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
+        {teamMemberPortalUi && teamMemberWishesEditable ? (
+          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-100">
+            {activePeriod?.status === "preliminary"
+              ? t(locale, "myPlanningWishesFeedbackHintPreliminary")
+              : t(locale, "myPlanningWishesFeedbackHintDraft")}
+          </p>
+        ) : null}
       </div>
       {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
@@ -387,7 +417,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           periodId={periodId}
           compact
           shiftGroupId={shiftGroupId || undefined}
-          editableMemberId={editableMemberId}
+          editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
+          readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
+          dayFeedbackAlwaysVisible={Boolean(teamMemberPortalUi && teamMemberWishesEditable)}
           onChanged={handleWishesChanged}
         />
       )}
@@ -399,6 +431,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
+        {teamMemberPortalUi && activePeriod?.status === "preliminary" && teamMemberWishesEditable ? (
+          <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950 ring-1 ring-sky-100">
+            {t(locale, "myPlanningRosterFeedbackRedirect")}
+          </p>
+        ) : null}
       </div>
       {duplicateDayWarningsCount > 0 ? (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 ring-1 ring-amber-200">
@@ -407,6 +444,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       ) : null}
       {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
+      ) : teamMemberPortalUi && !teamMemberRosterVisible ? (
+        <p className="text-sm text-slate-600">{t(locale, "rosterNotVisibleYet")}</p>
       ) : (
         <RosterMatrixEditor
           periodId={periodId}
@@ -488,20 +527,54 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   >
                     <Download size={18} />
                   </button>
-                  <button
-                    aria-label={activePeriod?.status === "published" ? t(locale, "unpublishPlanningPeriod") : t(locale, "publishPlanningPeriod")}
-                    className={`mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      activePeriod?.status === "published"
-                        ? "border-slate-200 bg-slate-50 text-slate-800"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-900"
-                    }`}
-                    disabled={!periodId}
-                    onClick={() => setDestructiveAction(activePeriod?.status === "published" ? "unpublish-period" : "publish-period")}
-                    title={activePeriod?.status === "published" ? t(locale, "unpublishPlanningPeriod") : t(locale, "publishPlanningPeriod")}
-                    type="button"
-                  >
-                    <CalendarCheck size={18} />
-                  </button>
+                  {activePeriod?.status === "draft" ? (
+                    <button
+                      aria-label={t(locale, "setPlanningPeriodPreliminary")}
+                      className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!periodId}
+                      onClick={() => setDestructiveAction("status-preliminary")}
+                      title={t(locale, "setPlanningPeriodPreliminary")}
+                      type="button"
+                    >
+                      <CalendarCheck size={18} />
+                    </button>
+                  ) : null}
+                  {activePeriod?.status === "preliminary" ? (
+                    <>
+                      <button
+                        aria-label={t(locale, "setPlanningPeriodDraft")}
+                        className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!periodId}
+                        onClick={() => setDestructiveAction("status-draft")}
+                        title={t(locale, "setPlanningPeriodDraft")}
+                        type="button"
+                      >
+                        <CalendarCheck size={18} />
+                      </button>
+                      <button
+                        aria-label={t(locale, "publishPlanningPeriod")}
+                        className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={!periodId}
+                        onClick={() => setDestructiveAction("status-published")}
+                        title={t(locale, "publishPlanningPeriod")}
+                        type="button"
+                      >
+                        <CalendarCheck size={18} />
+                      </button>
+                    </>
+                  ) : null}
+                  {activePeriod?.status === "published" ? (
+                    <button
+                      aria-label={t(locale, "setPlanningPeriodPreliminary")}
+                      className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!periodId}
+                      onClick={() => setDestructiveAction("status-preliminary")}
+                      title={t(locale, "setPlanningPeriodPreliminary")}
+                      type="button"
+                    >
+                      <CalendarCheck size={18} />
+                    </button>
+                  ) : null}
                   <button
                     aria-label={t(locale, "regenerateRoster")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
@@ -570,15 +643,23 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
                     activePeriod.status === "published"
                       ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
-                      : "bg-amber-50 text-amber-900 ring-amber-200"
+                      : activePeriod.status === "preliminary"
+                        ? "bg-sky-50 text-sky-900 ring-sky-200"
+                        : "bg-amber-50 text-amber-900 ring-amber-200"
                   }`}
                 >
-                  {activePeriod.status === "published" ? t(locale, "periodStatusPublished") : t(locale, "periodStatusDraft")}
+                  {t(locale, periodStatusLabelKey(activePeriod.status))}
                 </span>
               </div>
             ) : null}
             {message ? <p className="text-emerald-700">{message}</p> : null}
           </div>
+          {teamMemberPortalUi && activePeriod?.status === "preliminary" ? (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 ring-1 ring-sky-100">
+              <p className="font-semibold">{t(locale, "myPlanningPreliminaryBannerTitle")}</p>
+              <p className="mt-1 text-sky-900">{t(locale, "myPlanningPreliminaryBannerBody")}</p>
+            </div>
+          ) : null}
           <PlanningDayStatusLegend locale={locale} />
         </div>
       </Card>
@@ -688,10 +769,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   <h2 id="destructive-title" className="text-lg font-semibold text-ink">
                     {destructiveAction === "delete-period"
                       ? t(locale, "deletePlanningPeriod")
-                      : destructiveAction === "publish-period"
+                      : destructiveAction === "status-published"
                         ? t(locale, "publishPlanningPeriod")
-                        : destructiveAction === "unpublish-period"
-                          ? t(locale, "unpublishPlanningPeriod")
+                        : destructiveAction === "status-preliminary"
+                          ? t(locale, "setPlanningPeriodPreliminary")
+                          : destructiveAction === "status-draft"
+                            ? t(locale, "setPlanningPeriodDraft")
                         : t(locale, "regenerateRoster")}
                   </h2>
                   <p className="mt-1 text-sm text-slate-600">{t(locale, "destructiveAction")}</p>
@@ -708,17 +791,19 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             </div>
             <p
               className={`rounded-lg p-3 text-sm ring-1 ${
-                destructiveAction === "publish-period" || destructiveAction === "unpublish-period"
+                destructiveAction === "status-published" || destructiveAction === "status-preliminary" || destructiveAction === "status-draft"
                   ? "bg-emerald-50 text-emerald-950 ring-emerald-100"
                   : "bg-rose-50 text-rose-900 ring-rose-100"
               }`}
             >
               {destructiveAction === "delete-period"
                 ? t(locale, "deletePlanningPeriodWarning")
-                : destructiveAction === "publish-period"
+                : destructiveAction === "status-published"
                   ? t(locale, "publishPlanningPeriodConfirm")
-                  : destructiveAction === "unpublish-period"
-                    ? t(locale, "unpublishPlanningPeriodConfirm")
+                  : destructiveAction === "status-preliminary"
+                    ? t(locale, "setPlanningPeriodPreliminaryConfirm")
+                    : destructiveAction === "status-draft"
+                      ? t(locale, "setPlanningPeriodDraftConfirm")
                   : t(locale, "regenerateRosterWarning")}
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -731,7 +816,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               </button>
               <button
                 className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white ${
-                  destructiveAction === "publish-period" || destructiveAction === "unpublish-period"
+                  destructiveAction === "status-published" || destructiveAction === "status-preliminary" || destructiveAction === "status-draft"
                     ? "bg-emerald-700"
                     : "bg-rose-700"
                 }`}
@@ -740,7 +825,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               >
                 {destructiveAction === "delete-period" ? (
                   <Trash2 size={16} />
-                ) : destructiveAction === "publish-period" || destructiveAction === "unpublish-period" ? (
+                ) : destructiveAction === "status-published" || destructiveAction === "status-preliminary" || destructiveAction === "status-draft" ? (
                   <CalendarCheck size={16} />
                 ) : (
                   <RotateCw size={16} />

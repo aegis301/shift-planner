@@ -15,6 +15,7 @@ type TeamMemberRead = {
   email: string;
   employment_percentage: number;
   notes: string | null;
+  planning_preferences: string | null;
 };
 
 function ProfileContent() {
@@ -56,7 +57,8 @@ function ProfileContent() {
         last_name: form.get("last_name"),
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
-        notes: form.get("notes") || null
+        notes: form.get("notes") || null,
+        planning_preferences: form.get("planning_preferences") || null
       })
     });
     setMessage(t(locale, "saved"));
@@ -95,6 +97,15 @@ function ProfileContent() {
         <Field label={t(locale, "employment")}>
           <input className={inputClass} name="employment_percentage" type="number" min={1} max={100} defaultValue={member.employment_percentage} />
         </Field>
+        <Field label={t(locale, "planningPreferencesField")}>
+          <textarea
+            className={`${inputClass} min-h-32`}
+            name="planning_preferences"
+            defaultValue={member.planning_preferences ?? ""}
+            rows={5}
+          />
+        </Field>
+        <p className="text-xs text-slate-500">{t(locale, "planningPreferencesMatrixHelp")}</p>
         <Field label={t(locale, "notes")}>
           <input className={inputClass} name="notes" defaultValue={member.notes ?? ""} />
         </Field>

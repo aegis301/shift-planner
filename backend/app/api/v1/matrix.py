@@ -34,6 +34,8 @@ from app.services.matrix import (
     save_team_member_period_note,
     upsert_planning_cell,
 )
+from app.services.planning import can_team_member_edit_wishes_matrix
+from app.services.tenancy import require_planning_period_in_org
 
 router = APIRouter(prefix="/matrix", tags=["matrix"])
 
@@ -60,6 +62,20 @@ def _matrix_access(db: Session, user: User, shift_group_id: int | None) -> None:
         assert_team_member_shift_group_access(db, user, shift_group_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+def _team_member_feedback_access(db: Session, user: User, planning_period_id: int) -> None:
+    if can_use_planning_ui(user):
+        return
+    try:
+        period = require_planning_period_in_org(db, planning_period_id, user.organization_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not can_team_member_edit_wishes_matrix(period.status):
+        raise HTTPException(
+            status_code=403,
+            detail="Team member wishes are only editable while the planning month is in draft or preliminary status",
+        )
 
 
 @router.get("/{planning_period_id}", response_model=PlanningMatrixRead)
@@ -95,6 +111,7 @@ def put_cell(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _team_member_feedback_access(db, user, planning_period_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         try:
@@ -116,6 +133,7 @@ def put_cells_bulk(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _team_member_feedback_access(db, user, planning_period_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         for cell in payload.cells:
@@ -138,6 +156,7 @@ def put_shift_intents_bulk(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _team_member_feedback_access(db, user, planning_period_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         for item in payload.intents:
@@ -165,6 +184,7 @@ def clear_cell(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _team_member_feedback_access(db, user, planning_period_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         try:
@@ -206,6 +226,7 @@ def put_note(
 ):
     payload_effective = payload
     if not can_use_planning_ui(user):
+        _team_member_feedback_access(db, user, planning_period_id)
         member = _linked_team_member_or_403(db, user)
         try:
             assert_team_member_cell_access(user, member, payload.team_member_id)

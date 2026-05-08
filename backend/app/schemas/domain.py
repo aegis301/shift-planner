@@ -5,6 +5,7 @@ from typing import Annotated, Any, Literal, Self, Union
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 PlanningCellStatus = Literal["urlaub", "forschung", "lehre", "frei"]
+PlanningPeriodStatus = Literal["draft", "preliminary", "published"]
 
 PLANNED_DUTY_STATUSES: set[str] = set()
 UNAVAILABLE_STATUSES = {"urlaub", "forschung", "lehre", "frei"}
@@ -335,6 +336,7 @@ class TeamMemberCreate(BaseModel):
     email: EmailStr
     employment_percentage: int = Field(default=100, ge=1, le=100)
     notes: str | None = None
+    planning_preferences: str | None = None
     shift_group_ids: list[int] = Field(default_factory=list)
     user_id: int | None = None
 
@@ -345,6 +347,7 @@ class TeamMemberUpdate(BaseModel):
     email: EmailStr | None = None
     employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
+    planning_preferences: str | None = None
     is_active: bool | None = None
     shift_group_ids: list[int] | None = None
     user_id: int | None = None
@@ -356,6 +359,7 @@ class TeamMemberSelfUpdate(BaseModel):
     email: EmailStr | None = None
     employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
+    planning_preferences: str | None = None
 
 
 class TeamMemberRead(TeamMemberCreate):
@@ -494,7 +498,7 @@ class PlanningPeriodRead(PlanningPeriodCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    status: str
+    status: PlanningPeriodStatus
     published_at: datetime | None = None
     created_at: datetime
 
@@ -614,6 +618,7 @@ class MatrixTeamMember(BaseModel):
     last_name: str
     email: EmailStr
     employment_percentage: int
+    planning_preferences: str | None = None
 
 
 class MatrixDay(BaseModel):
@@ -644,16 +649,20 @@ class RosterMatrixRead(BaseModel):
 
 class TeamMemberPeriodNoteUpsert(BaseModel):
     team_member_id: int
-    source_text: str | None = None
     summary: str | None = None
     wishes_response_received: bool = False
+    planning_preferences: str | None = None
+    sync_planning_preferences: bool = False
 
 
-class TeamMemberPeriodNoteRead(TeamMemberPeriodNoteUpsert):
+class TeamMemberPeriodNoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     planning_period_id: int
+    team_member_id: int
+    summary: str | None = None
+    wishes_response_received: bool
     created_at: datetime
     updated_at: datetime
 

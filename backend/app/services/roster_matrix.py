@@ -159,6 +159,7 @@ def get_roster_matrix(
                 last_name=m.last_name,
                 email=m.email,
                 employment_percentage=m.employment_percentage,
+                planning_preferences=m.planning_preferences,
             )
             for m in team_members
         ],

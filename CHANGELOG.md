@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-05-08
+- **Planning period lifecycle:** Added explicit 3-state status flow for planning months (`draft`, `preliminary`, `published`) with dedicated transition endpoints `POST /api/v1/planning-periods/{id}/draft`, `POST /api/v1/planning-periods/{id}/preliminary`, and `POST /api/v1/planning-periods/{id}/publish` (legacy `unpublish` now maps to `preliminary`).
+- **Team-member visibility and wishes gating:** Team-member roster reads and roster XLSX/PDF exports stay allowed in `preliminary` and `published`; team-member wishes API writes (cells, intents, bulk, clear, month notes) are allowed in `draft` and `preliminary` and blocked in `published`. My-planning shows a preliminary banner; planners see an amber wishes-matrix cue when a day cell has stored feedback text.
+- **Planning UI status controls:** `/planning` now renders status-specific actions for moving between draft, preliminary, and published, with updated badge colors and confirmation copy.
+- **Feedback markers:** Added compact day-comment markers in roster cells and month-comment markers on matrix header note buttons so planners can quickly spot incoming feedback.
+
 ## 2026-05-07
 - **Published roster exports (Excel + PDF):** Added **`GET /api/v1/exports/roster-matrix/{id}.xlsx`** and **`GET /api/v1/exports/roster-matrix/{id}.pdf`**. Both are published-only and follow roster access scope: planners/admins use planning scope (planners must pass `shift_group_id`), team-member portal users require `team_member_portal=true`, `shift_group_id`, linked profile, and group membership. Export rendering uses a roster-table layout with deterministic pastel team-member colors for assigned cells and branded headers.
 - **Analysis workload table:** Counts **weekend & NRW public-holiday** touches per assigned shift (local calendar date of **start** or **end** from slot timestamps, else **`slot_date`**), at most **one** per shift; same metric in the roster **member workload** modal. Headers are **sortable** (click toggles direction; first activation uses **A→Z** for names and **high→low** for numbers). **`frontend/lib/nrwCalendar.ts`** mirrors backend NRW holiday rules for the frontend.

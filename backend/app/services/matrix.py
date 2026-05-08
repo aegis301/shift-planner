@@ -153,6 +153,7 @@ def get_planning_matrix(
                 last_name=m.last_name,
                 email=m.email,
                 employment_percentage=m.employment_percentage,
+                planning_preferences=m.planning_preferences,
             )
             for m in team_members
         ],
@@ -350,17 +351,25 @@ def save_team_member_period_note(
     actor: str,
     source: str,
 ) -> TeamMemberPeriodNote:
-    _require_period_org(db, planning_period_id, organization_id)
+    period = _require_period_org(db, planning_period_id, organization_id)
     note = get_team_member_period_note(db, planning_period_id=planning_period_id, team_member_id=payload.team_member_id)
+    note_fields = payload.model_dump(
+        exclude={"sync_planning_preferences", "planning_preferences"},
+        exclude_unset=False,
+    )
     if note is None:
-        note = TeamMemberPeriodNote(planning_period_id=planning_period_id, **payload.model_dump())
+        note = TeamMemberPeriodNote(planning_period_id=planning_period_id, **note_fields)
         db.add(note)
         action = "create"
     else:
-        note.source_text = payload.source_text
         note.summary = payload.summary
         note.wishes_response_received = payload.wishes_response_received
         action = "update"
+    if payload.sync_planning_preferences:
+        member = db.get(TeamMember, payload.team_member_id)
+        if member is None or member.organization_id != period.organization_id:
+            raise ValueError("Team member not found")
+        member.planning_preferences = payload.planning_preferences
     db.flush()
     record_audit(
         db,

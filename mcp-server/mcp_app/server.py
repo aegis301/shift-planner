@@ -186,7 +186,7 @@ def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int
 
 @mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}")
 def team_member_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]]:
-    """Return source emails and monthly notes per team member for a planning period."""
+    """Return monthly notes per team member for a planning period."""
     with db_session() as db:
         return [
             serialize_model(note)
@@ -557,11 +557,12 @@ def save_team_member_period_note_tool(
     token: str,
     planning_period_id: int,
     team_member_id: int,
-    source_text: str | None = None,
     summary: str | None = None,
     wishes_response_received: bool = False,
+    planning_preferences: str | None = None,
+    sync_planning_preferences: bool = False,
 ) -> dict[str, Any]:
-    """Save a team member's monthly source email/general note. Requires MCP admin token."""
+    """Save a team member's monthly matrix note; optionally sync permanent planning preferences on the team member. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         note = save_team_member_period_note(
@@ -569,9 +570,10 @@ def save_team_member_period_note_tool(
             planning_period_id,
             TeamMemberPeriodNoteUpsert(
                 team_member_id=team_member_id,
-                source_text=source_text,
                 summary=summary,
                 wishes_response_received=wishes_response_received,
+                planning_preferences=planning_preferences,
+                sync_planning_preferences=sync_planning_preferences,
             ),
             organization_id=mcp_organization_id(),
             actor="mcp",
