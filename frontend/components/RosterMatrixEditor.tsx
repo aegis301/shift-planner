@@ -1000,9 +1000,20 @@ function RosterCell({
     if (!trigger) {
       return;
     }
+    const viewportPadding = 8;
+    const gap = 4;
+    const estimatedMenuHeight = Math.min(280, Math.max(140, menuRef.current?.offsetHeight ?? 220));
     const rect = trigger.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - gap - viewportPadding;
+    const spaceAbove = rect.top - gap - viewportPadding;
+    const shouldOpenUp = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow;
+    const idealTop = shouldOpenUp ? rect.top - estimatedMenuHeight - gap : rect.bottom + gap;
+    const top = Math.max(
+      viewportPadding,
+      Math.min(idealTop, window.innerHeight - estimatedMenuHeight - viewportPadding)
+    );
     setMenuBox({
-      top: rect.bottom + 4,
+      top,
       left: rect.left,
       width: Math.max(rect.width, 200)
     });
@@ -1025,12 +1036,16 @@ function RosterCell({
       return;
     }
     syncMenuPosition();
+    const frame = window.requestAnimationFrame(() => {
+      syncMenuPosition();
+    });
     function onReposition() {
       syncMenuPosition();
     }
     window.addEventListener("scroll", onReposition, true);
     window.addEventListener("resize", onReposition);
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onReposition, true);
       window.removeEventListener("resize", onReposition);
     };
