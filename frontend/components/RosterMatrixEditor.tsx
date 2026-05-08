@@ -201,10 +201,26 @@ function dayClassLabel(locale: Locale, dayClass: string): string {
   return dayClass in labels ? t(locale, labels[dayClass as DayClass]) : dayClass;
 }
 
+function dayClassAcronym(dayClass: string): string {
+  if (dayClass === "weekday") {
+    return "WT";
+  }
+  if (dayClass === "weekend") {
+    return "WE";
+  }
+  if (dayClass === "holiday") {
+    return "FT";
+  }
+  return dayClass.toUpperCase();
+}
+
 function DayClassPill({ dayClass, locale }: { dayClass: string; locale: Locale }) {
   return (
-    <span className={`inline-flex rounded-full px-2 py-1 text-[0.65rem] font-semibold uppercase ring-1 ${dayClassPillClass(dayClass)}`}>
-      {dayClassLabel(locale, dayClass)}
+    <span
+      title={dayClassLabel(locale, dayClass)}
+      className={`inline-flex rounded-full px-1 py-0 text-[0.58rem] font-semibold uppercase ring-1 ${dayClassPillClass(dayClass)}`}
+    >
+      {dayClassAcronym(dayClass)}
     </span>
   );
 }
@@ -648,7 +664,7 @@ function DesktopRosterMatrix({
               return (
                 <tr key={day.date}>
                   <td className="sticky left-0 z-10 border-r border-slate-200 bg-white p-3 align-top">
-                    <div className="grid gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <div className="font-medium text-slate-800">{formatDate(locale, day.date)}</div>
                       {dayClass ? <DayClassPill dayClass={dayClass} locale={locale} /> : null}
                     </div>
@@ -660,12 +676,8 @@ function DesktopRosterMatrix({
                         {cellSlots.length ? (
                           <div className="grid gap-2">
                             {cellSlots.map((slot) => {
-                              const discriminator = slotDiscriminator(slot, cellSlots.length > 1);
                               return (
-                              <div key={slot.id} className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
-                                {discriminator ? (
-                                  <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{discriminator}</p>
-                                ) : null}
+                              <div key={slot.id} className="grid">
                                 <RosterCell
                                   slot={slot}
                                   members={matrix.team_members}
@@ -822,12 +834,8 @@ function MobileRosterMatrix({
                             {cellSlots.length ? (
                               <div className="grid gap-2">
                                 {cellSlots.map((slot) => {
-                                  const discriminator = slotDiscriminator(slot, cellSlots.length > 1);
                                   return (
-                                  <div key={slot.id} className="grid gap-1 rounded-lg border border-slate-200 bg-slate-50/60 p-2">
-                                    {discriminator ? (
-                                      <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{discriminator}</p>
-                                    ) : null}
+                                  <div key={slot.id} className="grid">
                                     <RosterCell
                                       slot={slot}
                                       members={matrix.team_members}
@@ -1276,7 +1284,7 @@ function RosterCell({
   return (
     <div
       ref={rootRef}
-      className={`relative grid gap-1.5 rounded-lg p-1 ${
+      className={`relative grid gap-1 rounded-lg p-0.5 ${
         warnUnavailable ? "bg-rose-50 ring-2 ring-rose-300" : duplicateSameDay ? "bg-amber-50/80 ring-2 ring-amber-400" : ""
       }`}
     >
@@ -1286,7 +1294,7 @@ function RosterCell({
         aria-expanded={open}
         aria-haspopup="listbox"
         disabled={readOnly}
-        className={`relative flex min-h-[2.5rem] w-full items-center justify-between gap-2 rounded-lg border bg-white px-2 py-2 pr-7 text-left text-xs font-medium disabled:cursor-default disabled:opacity-90 ${
+        className={`relative flex min-h-[2.25rem] w-full items-center justify-between gap-1.5 rounded-lg border bg-white px-1.5 py-1.5 pr-6.5 text-left text-xs font-medium disabled:cursor-default disabled:opacity-90 ${
           warnUnavailable ? "border-rose-300 text-rose-950" : duplicateSameDay ? "border-amber-400 text-amber-950" : "border-slate-200"
         }`}
         onClick={() => {
@@ -1295,7 +1303,7 @@ function RosterCell({
           }
         }}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
           {memberId && status && isPlanningStatus(status) ? (
             <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DAY_STATUS_DOT[status]}`} aria-hidden />
           ) : (

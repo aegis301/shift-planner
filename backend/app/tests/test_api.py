@@ -907,6 +907,65 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     assert clear_response.json()["deleted"] is True
 
 
+def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
+    login(client)
+    team_member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Export",
+            "last_name": "Member",
+            "email": "export-member@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "EX",
+            "name_de": "Exportdienst",
+            "name_en": "Export shift",
+            "category": "other",
+        },
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tagdienst",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    slot = client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"][0]
+    assign = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": team_member_id, "manual_override": False},
+    )
+    assert assign.status_code == 200
+
+    denied = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx")
+    assert denied.status_code == 403
+
+    assert client.post(f"/api/v1/planning-periods/{period_id}/publish").status_code == 200
+
+    xlsx = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx")
+    assert xlsx.status_code == 200
+    assert xlsx.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert f'attachment; filename="roster-matrix-{period_id}.xlsx"' == xlsx.headers["content-disposition"]
+    assert xlsx.content.startswith(b"PK")
+
+    pdf = client.get(f"/api/v1/exports/roster-matrix/{period_id}.pdf")
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+    assert f'attachment; filename="roster-matrix-{period_id}.pdf"' == pdf.headers["content-disposition"]
+    assert pdf.content.startswith(b"%PDF")
+
+
 def test_create_shift_template_rejects_duplicate_code(client: TestClient):
     login(client)
     body = {"code": "DUPX", "name_de": "Eins", "name_en": "One", "category": "other"}
@@ -1391,6 +1450,81 @@ def test_team_member_roster_requires_publish(team_member_client: TestClient):
     assert team_member_client.post(f"/api/v1/planning-periods/{pid}/unpublish").status_code == 200
     login_team_member(team_member_client)
     assert team_member_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 403
+
+
+def test_team_member_published_roster_binary_export_requires_scope(team_member_client: TestClient):
+    login(team_member_client)
+    template = team_member_client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "TMPDF",
+            "name_de": "Teamdienst",
+            "name_en": "Team shift",
+            "category": "other",
+        },
+    ).json()
+    team_member_client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    pid = team_member_client.post("/api/v1/planning-periods", json={"year": 2032, "month": 1}).json()["id"]
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/publish").status_code == 200
+
+    login_team_member(team_member_client)
+    no_scope = team_member_client.get(f"/api/v1/exports/roster-matrix/{pid}.xlsx?team_member_portal=true")
+    assert no_scope.status_code == 400
+    ok = team_member_client.get(
+        f"/api/v1/exports/roster-matrix/{pid}.xlsx?team_member_portal=true&shift_group_id=1"
+    )
+    assert ok.status_code == 200
+    assert ok.content.startswith(b"PK")
+
+    login(team_member_client)
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/unpublish").status_code == 200
+    login_team_member(team_member_client)
+    denied = team_member_client.get(
+        f"/api/v1/exports/roster-matrix/{pid}.pdf?team_member_portal=true&shift_group_id=1"
+    )
+    assert denied.status_code == 403
+
+
+def test_planner_published_roster_binary_exports_require_shift_group(planner_client: TestClient):
+    login(planner_client)
+    template = planner_client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "PLX",
+            "name_de": "Planerdienst",
+            "name_en": "Planner shift",
+            "category": "other",
+        },
+    ).json()
+    planner_client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    pid = planner_client.post("/api/v1/planning-periods", json={"year": 2041, "month": 1}).json()["id"]
+    assert planner_client.post(f"/api/v1/planning-periods/{pid}/publish").status_code == 200
+
+    login_planner(planner_client)
+    assert planner_client.get(f"/api/v1/exports/roster-matrix/{pid}.xlsx").status_code == 403
+    scoped = planner_client.get(f"/api/v1/exports/roster-matrix/{pid}.xlsx?shift_group_id=1")
+    assert scoped.status_code == 200
+    assert scoped.content.startswith(b"PK")
 
 
 def test_admin_delete_organization_user_removes_joiner(client: TestClient):
