@@ -928,13 +928,43 @@ function validationWarningDetailText(warning: ValidationWarning, matrix: RosterM
     const slotLabel = slot ? summarizeRosterSlot(slot, locale) : "—";
     return t(locale, "validationDetailNoGo", { slot: slotLabel });
   }
+  if (warning.code === "ROSTER_CONSTRAINT_SAME_DAY") {
+    const ids = (warning.details?.conflicting_roster_slot_ids as number[] | undefined) ?? [];
+    const labels = ids
+      .map((id) => matrix.slots.find((slot) => slot.id === id))
+      .filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))
+      .map((slot) => summarizeRosterSlot(slot, locale));
+    const slotsText = labels.length ? labels.join(" · ") : ids.map(String).join(", ");
+    return t(locale, "validationDetailConstraintSameDay", { slots: slotsText || "—" });
+  }
+  if (warning.code === "ROSTER_CONSTRAINT_MIN_REST_HOURS") {
+    const slotId = warning.details?.related_roster_slot_id as number | undefined;
+    const slot = slotId != null ? matrix.slots.find((s) => s.id === slotId) : undefined;
+    const slotLabel = slot ? summarizeRosterSlot(slot, locale) : "—";
+    const required = String(warning.details?.required_rest_hours ?? "—");
+    const actual = String(warning.details?.actual_rest_hours ?? "—");
+    return t(locale, "validationDetailConstraintRestHours", { required, actual, slot: slotLabel });
+  }
+  if (warning.code === "ROSTER_CONSTRAINT_CROSS_DAY_UNAVAILABLE") {
+    return t(locale, "validationDetailConstraintCrossDayUnavailable", {
+      endDay: String(warning.details?.end_day ?? warning.date ?? "—")
+    });
+  }
+  if (warning.code === "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH") {
+    const max = String(warning.details?.max_assignments_per_month ?? "—");
+    const actual = String(warning.details?.actual_assignments_per_month ?? "—");
+    return t(locale, "validationDetailConstraintMaxAssignmentsPerMonth", { max, actual });
+  }
   return null;
 }
 
 function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatrix | null; warnings: ValidationWarning[] }) {
   const { locale } = useLocale();
   const rosterWarnings = warnings.filter(
-    (warning) => warning.code.startsWith("ROSTER_MATRIX") || warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT"
+    (warning) =>
+      warning.code.startsWith("ROSTER_MATRIX") ||
+      warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT" ||
+      warning.code.startsWith("ROSTER_CONSTRAINT")
   );
   return (
     <Card>

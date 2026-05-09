@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models import PlanningCell, PlanningShiftIntent, RosterSlotAssignment, RuleConfig
 from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationWarning
+from app.services.constraints import evaluate_assignment_constraints, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
@@ -39,6 +40,10 @@ def _warning_in_shift_group_scope(
         rid = warning.details.get("roster_slot_id")
         if rid is not None and rid not in slot_ids:
             return False
+    if warning.code.startswith("ROSTER_CONSTRAINT"):
+        rid = warning.details.get("roster_slot_id")
+        if rid is not None and rid not in slot_ids:
+            return False
     return True
 
 
@@ -54,6 +59,7 @@ def validate_roster(
     _add_roster_slot_matrix_conflicts(warnings, slot_assignments, cells)
     _add_roster_template_no_go_conflicts(warnings, slot_assignments, intents)
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
+    _add_roster_constraint_conflicts(db, warnings, slot_assignments, cells)
     if shift_group_id is None:
         return warnings
     require_shift_group(db, shift_group_id, organization_id)
@@ -185,5 +191,38 @@ def _add_roster_slot_duplicate_day_warnings(
                     "roster_slot_ids": [assignment.roster_slot_id for assignment in day_assignments],
                     "count": len(day_assignments),
                 },
+            )
+        )
+
+
+def _add_roster_constraint_conflicts(
+    db: Session,
+    warnings: list[ValidationWarning],
+    assignments: list[RosterSlotAssignment],
+    cells: list[PlanningCell],
+) -> None:
+    assignments_by_member: dict[int, list[RosterSlotAssignment]] = defaultdict(list)
+    for assignment in assignments:
+        assignments_by_member[assignment.team_member_id].append(assignment)
+    cells_by_member: dict[int, list[PlanningCell]] = defaultdict(list)
+    for cell in cells:
+        cells_by_member[cell.team_member_id].append(cell)
+    for assignment in assignments:
+        slot = assignment.roster_slot
+        if slot is None:
+            continue
+        resolved = resolve_slot_constraints(db, slot)
+        if not resolved:
+            continue
+        member_assignments = assignments_by_member.get(assignment.team_member_id, [])
+        member_cells = cells_by_member.get(assignment.team_member_id, [])
+        warnings.extend(
+            evaluate_assignment_constraints(
+                slot=slot,
+                team_member_id=assignment.team_member_id,
+                resolved_constraints=resolved,
+                assigned_slots_for_member=member_assignments,
+                planning_cells_for_member=member_cells,
+                assignment_id=assignment.id,
             )
         )

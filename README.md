@@ -78,11 +78,20 @@ Wishes matrix day statuses (each blocks any roster assignment on that day for th
 
 `GET /api/v1/matrix/{id}` always returns `shift_templates`, `template_slot_days`, and `shift_intents` for wish/no-go editing: **with** `shift_group_id`, they are limited to that group; **without** it (admin full-org view), templates are every template linked to any shift group, each `template_slot_days` row includes `shift_group_id`, and intents list all rows for team members in the matrix. Use `PUT /api/v1/matrix/{id}/shift-intents/bulk` with `{ "intents": [ { "team_member_id", "cell_date", "shift_group_id", "shift_template_id", "kind": "wish" | "no_go" | null } ] }` — `kind` null removes that intent row.
 
-Team member month notes store source emails and summaries so future LLM parsing can propose matrix updates. In the wishes matrix, each team member column header has a notes button that opens that person's month-specific source text and summary.
+Team member month notes now store only month-specific summaries. Permanent preference text is stored on `team_members.planning_preferences` and reused in `/profile` and the matrix note modal.
 
 Shift templates are configured under Shift Types. A template has one or more variants that define applicability (`weekday`, `weekend`, `holiday`, or `any`), start/end times, overnight offsets, and required count. Holidays use the North Rhine-Westphalia German holiday calendar and behave like weekend rules unless explicit holiday variants exist.
 
-The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a team member to that date/slot, and changes autosave. The team member picker shows a color dot for that person’s day-level wishes status and labels for wish/no-go on the slot’s template. Day-level unavailable statuses and template no-gos (unless Manual override is checked on the cell) are highlighted as conflicts.
+Templates and variants can each define constraints with per-rule enforcement (`warning` or `block`). Current rule types:
+
+- `no_additional_same_day`
+- `min_rest_hours` (requires `min_rest_hours`)
+- `no_cross_day_into_unavailable_day`
+- `max_assignments_per_month` (requires `max_assignments_per_month`, counts same-template assignments in the selected month)
+
+These constraints are evaluated for assignment preflight and validation warnings through a shared backend rule engine.
+
+The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a team member to that date/slot, and changes autosave. The team member picker shows a color dot for that person’s day-level wishes status and labels for wish/no-go on the slot’s template. Day-level unavailable statuses, template no-gos (unless Manual override is checked on the cell), and template/variant constraints are highlighted as conflicts.
 
 The frontend no longer has standalone `/requests`, `/roster`, `/validation`, or `/exports/print` pages. Validation remains available through the backend API and MCP, and `/planning` uses it for inline conflict summaries.
 
@@ -129,6 +138,8 @@ Migration `202605010001` adds `organizations` (with `plan_tier`, optional `seat_
 Migration `202605020001` adds **`organizations.slug`**, **`organization_join_requests`**, switches `users.email` uniqueness to **per organization** (`organization_id`, `email`), and backfills `slug` for existing organizations.
 
 Migration `202605050001` renames **`doctors`** → **`team_members`**, related join tables and FK columns (**`team_member_id`**), period notes, join-request resolution column, and sets `users.role` from **`doctor`** to **`team_member`** where applicable.
+
+Migration `202606080002` adds JSON `constraints` columns on `shift_templates` and `shift_variants`.
 
 ## Users and roles
 

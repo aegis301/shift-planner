@@ -410,6 +410,32 @@ class ShiftGroupTemplateIdsPut(BaseModel):
 
 DayClass = Literal["any", "weekday", "weekend", "holiday"]
 ShiftTemplateCategory = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
+ConstraintEnforcement = Literal["warning", "block"]
+ShiftConstraintType = Literal[
+    "no_additional_same_day",
+    "min_rest_hours",
+    "no_cross_day_into_unavailable_day",
+    "max_assignments_per_month",
+]
+
+
+class ShiftConstraint(BaseModel):
+    type: ShiftConstraintType
+    enforcement: ConstraintEnforcement = "warning"
+    min_rest_hours: int | None = Field(default=None, ge=1, le=48)
+    max_assignments_per_month: int | None = Field(default=None, ge=1, le=31)
+
+    @model_validator(mode="after")
+    def validate_min_rest_hours(self) -> Self:
+        if self.type == "min_rest_hours" and self.min_rest_hours is None:
+            raise ValueError("min_rest_hours is required for min_rest_hours constraints")
+        if self.type == "max_assignments_per_month" and self.max_assignments_per_month is None:
+            raise ValueError("max_assignments_per_month is required for max_assignments_per_month constraints")
+        if self.type != "min_rest_hours":
+            self.min_rest_hours = None
+        if self.type != "max_assignments_per_month":
+            self.max_assignments_per_month = None
+        return self
 
 
 class ShiftVariantCreate(BaseModel):
@@ -420,6 +446,7 @@ class ShiftVariantCreate(BaseModel):
     ends_at: time
     end_day_offset: int = Field(default=0, ge=0, le=1)
     required_count: int = Field(default=1, ge=1, le=20)
+    constraints: list[ShiftConstraint] = Field(default_factory=list)
 
 
 class ShiftVariantUpdate(BaseModel):
@@ -430,6 +457,7 @@ class ShiftVariantUpdate(BaseModel):
     ends_at: time | None = None
     end_day_offset: int | None = Field(default=None, ge=0, le=1)
     required_count: int | None = Field(default=None, ge=1, le=20)
+    constraints: list[ShiftConstraint] | None = None
     is_active: bool | None = None
 
 
@@ -448,6 +476,7 @@ class ShiftTemplateCreate(BaseModel):
     name_en: str
     category: ShiftTemplateCategory = "bereitschaftsdienst"
     display_order: int = 0
+    constraints: list[ShiftConstraint] = Field(default_factory=list)
 
 
 class ShiftTemplateUpdate(BaseModel):
@@ -456,6 +485,7 @@ class ShiftTemplateUpdate(BaseModel):
     name_en: str | None = None
     category: ShiftTemplateCategory | None = None
     display_order: int | None = None
+    constraints: list[ShiftConstraint] | None = None
     is_active: bool | None = None
 
 

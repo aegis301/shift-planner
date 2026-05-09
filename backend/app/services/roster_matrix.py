@@ -17,6 +17,7 @@ from app.schemas import (
     RosterSlotRead,
 )
 from app.services.audit import record_audit
+from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
@@ -208,12 +209,13 @@ def _team_member_has_template_no_go(
     if shift_template_id is None:
         return False
     for intent in list_planning_shift_intents(db, planning_period_id=planning_period_id):
-        if (
-            intent.kind == "no_go"
-            and intent.team_member_id == team_member_id
-            and intent.cell_date == slot_date
-            and intent.shift_template_id == shift_template_id
-        ):
+        if intent.kind != "no_go":
+            continue
+        if intent.team_member_id != team_member_id:
+            continue
+        if intent.cell_date != slot_date:
+            continue
+        if intent.shift_template_id == shift_template_id:
             return True
     return False
 
@@ -240,6 +242,28 @@ def upsert_roster_slot_assignment(
         shift_template_id=slot.shift_template_id,
     ):
         raise ValueError("Team member marked this shift template as a no-go on that day")
+    resolved_constraints = resolve_slot_constraints(db, slot)
+    if resolved_constraints:
+        member_assignments = [
+            row
+            for row in list_roster_slot_assignments(db, planning_period_id=slot.planning_period_id)
+            if row.team_member_id == payload.team_member_id
+        ]
+        member_cells = [
+            row
+            for row in list_planning_cells(db, planning_period_id=slot.planning_period_id)
+            if row.team_member_id == payload.team_member_id
+        ]
+        preflight_warnings = evaluate_assignment_constraints(
+            slot=slot,
+            team_member_id=payload.team_member_id,
+            resolved_constraints=resolved_constraints,
+            assigned_slots_for_member=member_assignments,
+            planning_cells_for_member=member_cells,
+        )
+        blocking = find_blocking_constraint(preflight_warnings)
+        if blocking is not None:
+            raise ValueError(blocking.message)
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-05-09
+- **Constraint rule system for shifts:** Added typed constraint payloads on both **`ShiftTemplate`** and **`ShiftVariant`** (Alembic **`202606080002`**, JSON `constraints`) with rule types **`no_additional_same_day`**, **`min_rest_hours`**, **`no_cross_day_into_unavailable_day`**, and **`max_assignments_per_month`**, each with enforcement **`warning`** or **`block`**.
+- **Shared backend rule engine:** New **`backend/app/services/constraints.py`** resolves template+variant constraints and evaluates roster assignments against existing assignments and wishes statuses, including cross-midnight unavailable-day checks.
+- **Assignment + validation integration:** Roster assignment upsert now preflights block-mode constraints and returns `400` on blocking violations; validation now emits additional codes **`ROSTER_CONSTRAINT_SAME_DAY`**, **`ROSTER_CONSTRAINT_MIN_REST_HOURS`**, and **`ROSTER_CONSTRAINT_CROSS_DAY_UNAVAILABLE`**.
+- **Admin UI + i18n:** Shift template create/edit and variant editors now include reusable constraints controls with enforcement selection and rest-hours input, with DE/EN translations.
+- **MCP parity for shift configuration:** MCP tools now accept constraints on create and add update tools (**`update_shift_template_tool`**, **`update_shift_variant_tool`**) so MCP can manage constraints consistently with REST.
+
 ## 2026-05-08
 - **Planning period lifecycle:** Added explicit 3-state status flow for planning months (`draft`, `preliminary`, `published`) with dedicated transition endpoints `POST /api/v1/planning-periods/{id}/draft`, `POST /api/v1/planning-periods/{id}/preliminary`, and `POST /api/v1/planning-periods/{id}/publish` (legacy `unpublish` now maps to `preliminary`).
 - **Team-member visibility and wishes gating:** Team-member roster reads and roster XLSX/PDF exports stay allowed in `preliminary` and `published`; team-member wishes API writes (cells, intents, bulk, clear, month notes) are allowed in `draft` and `preliminary` and blocked in `published`. My-planning shows a preliminary banner; planners see an amber wishes-matrix cue when a day cell has stored feedback text.
