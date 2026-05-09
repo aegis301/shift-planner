@@ -22,6 +22,7 @@ from app.services.roster_matrix import (
     upsert_roster_slot_assignment,
 )
 from app.services.exports import export_roster_matrix_pdf, export_roster_matrix_xlsx
+from app.services.planning import is_team_member_roster_visible
 
 router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
 export_router = APIRouter(tags=["roster-matrix"])
@@ -53,8 +54,8 @@ def _resolve_published_roster_export_scope(
     period = db.get(PlanningPeriod, planning_period_id)
     if period is None or period.organization_id != user.organization_id:
         raise HTTPException(status_code=404, detail="Planning period not found")
-    if period.status != "published":
-        raise HTTPException(status_code=403, detail="Roster is not published yet")
+    if not is_team_member_roster_visible(period.status):
+        raise HTTPException(status_code=403, detail="Roster is not visible for team members")
     return shift_group_id
 
 
@@ -84,8 +85,8 @@ def get_final_roster_matrix(
     period = db.get(PlanningPeriod, planning_period_id)
     if period is None or period.organization_id != user.organization_id:
         raise HTTPException(status_code=404, detail="Planning period not found")
-    if period.status != "published":
-        raise HTTPException(status_code=403, detail="Roster is not published yet")
+    if not is_team_member_roster_visible(period.status):
+        raise HTTPException(status_code=403, detail="Roster is not visible for team members")
     if shift_group_id is None:
         raise HTTPException(status_code=400, detail="shift_group_id is required")
     try:

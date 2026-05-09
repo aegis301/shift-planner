@@ -382,8 +382,6 @@ def post_me_join_request(
 
 @router.get("/me/team-member", response_model=TeamMemberRead)
 def get_me_team_member(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.role != "team_member":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team member role only")
     member = get_linked_team_member(db, user)
     if member is None:
         raise HTTPException(status_code=404, detail="No linked team member profile")
@@ -397,8 +395,6 @@ def patch_me_team_member(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if user.role != "team_member":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Team member role only")
     try:
         member = update_self_team_member_profile(db, user, payload)
     except ValueError as exc:

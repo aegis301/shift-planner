@@ -40,6 +40,7 @@ type MatrixTeamMember = {
   last_name: string;
   email: string;
   employment_percentage: number;
+  planning_preferences?: string | null;
 };
 
 type MatrixDay = {
@@ -90,10 +91,16 @@ type TeamMemberPeriodNote = {
   id: number;
   planning_period_id: number;
   team_member_id: number;
-  source_text: string | null;
   summary: string | null;
   wishes_response_received?: boolean;
 };
+
+function formatPlanningMonthTitle(locale: Locale, year: number, month: number) {
+  return new Intl.DateTimeFormat(locale === "de" ? "de-DE" : "en-US", {
+    month: "long",
+    year: "numeric"
+  }).format(new Date(year, month - 1, 1));
+}
 
 const STATUSES: Array<{ value: PlanningStatus; label: TranslationKey; color: string }> = [
   { value: "urlaub", label: "urlaub", color: "bg-rose-100 text-rose-800 ring-rose-200" },
@@ -166,12 +173,16 @@ export function MatrixEditor({
   compact = false,
   shiftGroupId,
   editableMemberId,
+  readOnly = false,
+  dayFeedbackAlwaysVisible = false,
   onChanged
 }: {
   periodId?: string;
   compact?: boolean;
   shiftGroupId?: string;
   editableMemberId?: number;
+  readOnly?: boolean;
+  dayFeedbackAlwaysVisible?: boolean;
   onChanged?: () => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -183,13 +194,14 @@ export function MatrixEditor({
   const [activeMemberId, setActiveMemberId] = useState<number | null>(null);
   const [notes, setNotes] = useState<TeamMemberPeriodNote[]>([]);
   const [noteMember, setNoteMember] = useState<MatrixTeamMember | null>(null);
-  const [sourceText, setSourceText] = useState("");
+  const [preferencesDraft, setPreferencesDraft] = useState("");
   const [summary, setSummary] = useState("");
   const [message, setMessage] = useState("");
   const [savingCells, setSavingCells] = useState(0);
   const [isMemberCommentModalOpen, setIsMemberCommentModalOpen] = useState(false);
 
   const groupQuery = useMemo(() => shiftGroupQuery(shiftGroupId), [shiftGroupId]);
+  const emphasizeStoredDayComments = editableMemberId == null;
 
   const cellMap = useMemo(() => {
     const map = new Map<string, PlanningCell>();
@@ -275,9 +287,10 @@ export function MatrixEditor({
   useEffect(() => {
     const memberId = noteMember?.id ?? activeMemberId;
     const note = notes.find((item) => item.team_member_id === memberId);
-    setSourceText(note?.source_text ?? "");
+    const memberRow = matrix?.team_members.find((item) => item.id === memberId);
+    setPreferencesDraft(memberRow?.planning_preferences ?? "");
     setSummary(note?.summary ?? "");
-  }, [activeMemberId, noteMember?.id, notes]);
+  }, [activeMemberId, noteMember?.id, notes, matrix?.team_members]);
 
   useEffect(() => {
     if (editableMemberId != null) {
@@ -341,16 +354,32 @@ export function MatrixEditor({
   async function persistNote(memberId: number, monthlyCommentOnly = false) {
     if (!memberId) return;
     const prev = notes.find((item) => item.team_member_id === memberId);
+    const body: Record<string, unknown> = {
+      team_member_id: memberId,
+      summary,
+      wishes_response_received: prev?.wishes_response_received ?? false
+    };
+    if (!monthlyCommentOnly) {
+      body.planning_preferences = preferencesDraft.trim() === "" ? null : preferencesDraft;
+      body.sync_planning_preferences = true;
+    }
     await apiFetch(`/api/v1/matrix/${activePeriodId}/notes`, {
       method: "PUT",
-      body: JSON.stringify({
-        team_member_id: memberId,
-        source_text: monthlyCommentOnly ? null : sourceText,
-        summary,
-        wishes_response_received: prev?.wishes_response_received ?? false,
-      }),
+      body: JSON.stringify(body)
     });
     setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
+    if (!monthlyCommentOnly) {
+      setMatrix((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const nextPrefs = preferencesDraft.trim() === "" ? null : preferencesDraft;
+        return {
+          ...prev,
+          team_members: prev.team_members.map((m) => (m.id === memberId ? { ...m, planning_preferences: nextPrefs } : m))
+        };
+      });
+    }
     setMessage(t(locale, "saved"));
     await onChanged?.();
   }
@@ -365,10 +394,9 @@ export function MatrixEditor({
           method: "PUT",
           body: JSON.stringify({
             team_member_id: memberId,
-            source_text: prev?.source_text ?? null,
             summary: prev?.summary ?? null,
-            wishes_response_received: next,
-          }),
+            wishes_response_received: next
+          })
         });
         setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
         setMessage(t(locale, "saved"));
@@ -450,7 +478,12 @@ export function MatrixEditor({
           {editableMemberId != null ? (
             <button
               type="button"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-semibold shadow-sm ${
+                dayFeedbackAlwaysVisible && !readOnly
+                  ? "border-mint bg-mint/20 text-ink ring-1 ring-mint/50 hover:bg-mint/30"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+              disabled={readOnly}
               onClick={() => setIsMemberCommentModalOpen(true)}
             >
               <MessageSquareText size={16} />
@@ -473,10 +506,14 @@ export function MatrixEditor({
               onOpenNote={setNoteMember}
               onSaveIntent={saveIntent}
               editableMemberId={editableMemberId}
+              readOnly={readOnly}
+              emphasizeStoredDayComments={emphasizeStoredDayComments}
+              dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
               intentStatsByMember={intentStatsByMember}
               wishesResponseToggleEnabled={editableMemberId == null}
               wishesResponseReceived={(memberId) => notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false}
               onToggleWishesResponse={toggleWishesAcknowledged}
+              hasMonthlyComment={(memberId) => Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())}
             />
           ) : (
             <>
@@ -488,10 +525,14 @@ export function MatrixEditor({
                 onOpenNote={setNoteMember}
                 onSaveIntent={saveIntent}
                 editableMemberId={editableMemberId}
+                readOnly={readOnly}
+                emphasizeStoredDayComments={emphasizeStoredDayComments}
+                dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                 intentStatsByMember={intentStatsByMember}
                 wishesResponseToggleEnabled={editableMemberId == null}
                 wishesResponseReceived={(memberId) => notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false}
                 onToggleWishesResponse={toggleWishesAcknowledged}
+                hasMonthlyComment={(memberId) => Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())}
               />
               <MobileMatrix
                 matrix={matrix}
@@ -501,22 +542,32 @@ export function MatrixEditor({
                 onOpenNote={setNoteMember}
                 onSaveIntent={saveIntent}
                 editableMemberId={editableMemberId}
+                readOnly={readOnly}
+                emphasizeStoredDayComments={emphasizeStoredDayComments}
+                dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                 intentStatsByMember={intentStatsByMember}
+                hasMonthlyComment={(memberId) => Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())}
               />
             </>
           )}
           <TeamMemberNoteModal
             member={noteMember}
-            sourceText={sourceText}
+            monthLabel={
+              matrix
+                ? formatPlanningMonthTitle(locale, matrix.planning_period.year, matrix.planning_period.month)
+                : ""
+            }
+            preferencesDraft={preferencesDraft}
             summary={summary}
-            onSourceTextChange={setSourceText}
+            onPreferencesDraftChange={setPreferencesDraft}
             onSummaryChange={setSummary}
             onClose={() => setNoteMember(null)}
             onSubmit={saveNote}
             locale={locale}
           />
-          {editableMemberId != null && isMemberCommentModalOpen ? (
+          {editableMemberId != null && isMemberCommentModalOpen && matrix ? (
             <MonthlyCommentModal
+              monthLabel={formatPlanningMonthTitle(locale, matrix.planning_period.year, matrix.planning_period.month)}
               value={summary}
               locale={locale}
               onClose={() => setIsMemberCommentModalOpen(false)}
@@ -539,23 +590,26 @@ export function MatrixEditor({
 }
 
 function MonthlyCommentModal({
+  monthLabel,
   value,
   onChange,
   onClose,
   onSubmit,
   locale
 }: {
+  monthLabel: string;
   value: string;
   onChange: (value: string) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   locale: Locale;
 }) {
+  const title = t(locale, "monthPlanningNoteForMatrix", { month: monthLabel });
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="monthly-comment-title">
       <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 id="monthly-comment-title" className="text-lg font-semibold text-ink">{t(locale, "monthlyComment")}</h2>
+          <h2 id="monthly-comment-title" className="text-lg font-semibold text-ink">{title}</h2>
           <button
             type="button"
             onClick={onClose}
@@ -566,7 +620,7 @@ function MonthlyCommentModal({
           </button>
         </div>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <Field label={t(locale, "monthlyComment")}>
+          <Field label={title}>
             <textarea
               className="min-h-40 rounded-lg border border-slate-200 p-3 text-sm"
               value={value}
@@ -600,10 +654,14 @@ function PlanningDenseMatrix({
   locale,
   onSaveIntent,
   editableMemberId,
+  readOnly,
+  emphasizeStoredDayComments,
+  dayFeedbackAlwaysVisible,
   intentStatsByMember,
   wishesResponseToggleEnabled,
   wishesResponseReceived,
   onToggleWishesResponse,
+  hasMonthlyComment,
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -612,10 +670,14 @@ function PlanningDenseMatrix({
   locale: Locale;
   onSaveIntent: SaveMatrixIntentFn;
   editableMemberId?: number;
+  readOnly: boolean;
+  emphasizeStoredDayComments: boolean;
+  dayFeedbackAlwaysVisible: boolean;
   intentStatsByMember: Map<number, TeamMemberIntentStats>;
   wishesResponseToggleEnabled: boolean;
   wishesResponseReceived: (memberId: number) => boolean;
   onToggleWishesResponse: (memberId: number) => void | Promise<void>;
+  hasMonthlyComment: (memberId: number) => boolean;
 }) {
   const singleMemberColumn = matrix.team_members.length === 1;
 
@@ -673,8 +735,12 @@ function PlanningDenseMatrix({
                       </button>
                     ) : null}
                     <button
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={editableMemberId != null && member.id !== editableMemberId}
+                      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40 ${
+                        hasMonthlyComment(member.id)
+                          ? "border-amber-300 bg-amber-50 text-amber-800"
+                          : "border-slate-200 bg-white text-coral"
+                      }`}
+                      disabled={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
                       onClick={() => onOpenNote(member)}
                       title={t(locale, "teamMemberPeriodNotes")}
                       type="button"
@@ -704,7 +770,9 @@ function PlanningDenseMatrix({
                     onSave={onSave}
                     locale={locale}
                     onSaveIntent={onSaveIntent}
-                    readOnly={editableMemberId != null && member.id !== editableMemberId}
+                    readOnly={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
+                    emphasizeStoredDayComments={emphasizeStoredDayComments}
+                    dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                   />
                 </td>
               ))}
@@ -724,10 +792,14 @@ function DesktopMatrix({
   locale,
   onSaveIntent,
   editableMemberId,
+  readOnly,
+  emphasizeStoredDayComments,
+  dayFeedbackAlwaysVisible,
   intentStatsByMember,
   wishesResponseToggleEnabled,
   wishesResponseReceived,
   onToggleWishesResponse,
+  hasMonthlyComment,
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -736,10 +808,14 @@ function DesktopMatrix({
   locale: Locale;
   onSaveIntent: SaveMatrixIntentFn;
   editableMemberId?: number;
+  readOnly: boolean;
+  emphasizeStoredDayComments: boolean;
+  dayFeedbackAlwaysVisible: boolean;
   intentStatsByMember: Map<number, TeamMemberIntentStats>;
   wishesResponseToggleEnabled: boolean;
   wishesResponseReceived: (memberId: number) => boolean;
   onToggleWishesResponse: (memberId: number) => void | Promise<void>;
+  hasMonthlyComment: (memberId: number) => boolean;
 }) {
   const singleMemberColumn = matrix.team_members.length === 1;
 
@@ -797,8 +873,12 @@ function DesktopMatrix({
                       </button>
                     ) : null}
                     <button
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={editableMemberId != null && member.id !== editableMemberId}
+                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm hover:bg-coral/10 disabled:cursor-not-allowed disabled:opacity-40 ${
+                        hasMonthlyComment(member.id)
+                          ? "border-amber-300 bg-amber-50 text-amber-800"
+                          : "border-slate-200 bg-white text-coral"
+                      }`}
+                      disabled={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
                       onClick={() => onOpenNote(member)}
                       title={t(locale, "teamMemberPeriodNotes")}
                       type="button"
@@ -829,7 +909,9 @@ function DesktopMatrix({
                       onSave={onSave}
                       locale={locale}
                       onSaveIntent={onSaveIntent}
-                      readOnly={editableMemberId != null && member.id !== editableMemberId}
+                      readOnly={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
+                      emphasizeStoredDayComments={emphasizeStoredDayComments}
+                      dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                     />
                   </td>
                 );
@@ -850,7 +932,11 @@ function MobileMatrix({
   locale,
   onSaveIntent,
   editableMemberId,
-  intentStatsByMember
+  readOnly,
+  emphasizeStoredDayComments,
+  dayFeedbackAlwaysVisible,
+  intentStatsByMember,
+  hasMonthlyComment,
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -859,7 +945,11 @@ function MobileMatrix({
   locale: Locale;
   onSaveIntent: SaveMatrixIntentFn;
   editableMemberId?: number;
+  readOnly: boolean;
+  emphasizeStoredDayComments: boolean;
+  dayFeedbackAlwaysVisible: boolean;
   intentStatsByMember: Map<number, TeamMemberIntentStats>;
+  hasMonthlyComment: (memberId: number) => boolean;
 }) {
   return (
     <div className="grid gap-4 lg:hidden">
@@ -890,8 +980,12 @@ function MobileMatrix({
                     })()}
                   </div>
                   <button
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-coral shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={editableMemberId != null && member.id !== editableMemberId}
+                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                      hasMonthlyComment(member.id)
+                        ? "border-amber-300 bg-amber-50 text-amber-800"
+                        : "border-slate-200 bg-white text-coral"
+                    }`}
+                    disabled={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
                     onClick={() => onOpenNote(member)}
                     title={t(locale, "teamMemberPeriodNotes")}
                     type="button"
@@ -907,7 +1001,9 @@ function MobileMatrix({
                   onSave={onSave}
                   locale={locale}
                   onSaveIntent={onSaveIntent}
-                  readOnly={editableMemberId != null && member.id !== editableMemberId}
+                  readOnly={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
+                  emphasizeStoredDayComments={emphasizeStoredDayComments}
+                  dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                 />
               </div>
             ))}
@@ -920,18 +1016,20 @@ function MobileMatrix({
 
 function TeamMemberNoteModal({
   member,
-  sourceText,
+  monthLabel,
+  preferencesDraft,
   summary,
-  onSourceTextChange,
+  onPreferencesDraftChange,
   onSummaryChange,
   onClose,
   onSubmit,
   locale
 }: {
   member: MatrixTeamMember | null;
-  sourceText: string;
+  monthLabel: string;
+  preferencesDraft: string;
   summary: string;
-  onSourceTextChange: (value: string) => void;
+  onPreferencesDraftChange: (value: string) => void;
   onSummaryChange: (value: string) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
@@ -940,6 +1038,8 @@ function TeamMemberNoteModal({
   if (!member) {
     return null;
   }
+
+  const monthNoteLabel = monthLabel ? t(locale, "monthPlanningNoteForMatrix", { month: monthLabel }) : t(locale, "monthlyComment");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="member-note-title">
@@ -959,14 +1059,17 @@ function TeamMemberNoteModal({
           </button>
         </div>
         <form className="grid gap-4 p-5" onSubmit={onSubmit}>
-          <Field label={t(locale, "sourceEmail")}>
-            <textarea
-              className="min-h-48 rounded-lg border border-slate-200 p-3 text-sm"
-              value={sourceText}
-              onChange={(event) => onSourceTextChange(event.target.value)}
-            />
-          </Field>
-          <Field label={t(locale, "summary")}>
+          <div className="grid gap-1">
+            <Field label={t(locale, "planningPreferencesField")}>
+              <textarea
+                className="min-h-48 rounded-lg border border-slate-200 p-3 text-sm"
+                value={preferencesDraft}
+                onChange={(event) => onPreferencesDraftChange(event.target.value)}
+              />
+            </Field>
+            <p className="text-xs text-slate-500">{t(locale, "planningPreferencesMatrixHelp")}</p>
+          </div>
+          <Field label={monthNoteLabel}>
             <textarea
               className="min-h-28 rounded-lg border border-slate-200 p-3 text-sm"
               value={summary}
@@ -1001,7 +1104,9 @@ function MatrixCell({
   locale,
   dense = false,
   onSaveIntent,
-  readOnly = false
+  readOnly = false,
+  emphasizeStoredDayComments = false,
+  dayFeedbackAlwaysVisible = false
 }: {
   matrix: PlanningMatrix;
   cell?: PlanningCell;
@@ -1012,6 +1117,8 @@ function MatrixCell({
   dense?: boolean;
   onSaveIntent: SaveMatrixIntentFn;
   readOnly?: boolean;
+  emphasizeStoredDayComments?: boolean;
+  dayFeedbackAlwaysVisible?: boolean;
 }) {
   const [status, setStatus] = useState<PlanningStatus | "">(() => normalizePlanningStatus(cell?.status));
   const [comment, setComment] = useState(cell?.comment ?? "");
@@ -1019,7 +1126,9 @@ function MatrixCell({
   const meta = statusMeta(status);
   const [isDirty, setIsDirty] = useState(false);
   const hasComment = comment.trim().length > 0;
-  const showCommentField = hasComment || commentDraftOpen;
+  const showCommentField =
+    Boolean(dayFeedbackAlwaysVisible && !readOnly) || hasComment || commentDraftOpen;
+  const storedDayComment = (cell?.comment ?? "").trim();
   const intentMap = useMemo(() => {
     const map = new Map<string, PlanningShiftIntentKind>();
     for (const row of matrix.shift_intents ?? []) {
@@ -1060,6 +1169,17 @@ function MatrixCell({
 
   return (
     <div className={`grid ${dense ? "gap-1" : "gap-2"} ${readOnly ? "opacity-80" : ""}`}>
+      {emphasizeStoredDayComments && storedDayComment ? (
+        <div
+          className={`flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 font-semibold text-amber-950 ring-1 ring-amber-100 ${
+            dense ? "px-1 py-0.5 text-[0.6rem]" : "px-1.5 py-0.5 text-[0.65rem]"
+          }`}
+          title={storedDayComment}
+        >
+          <MessageSquareText aria-hidden className="shrink-0" size={dense ? 12 : 14} />
+          <span className="min-w-0 truncate">{t(locale, "wishesMatrixPlannerDayCommentCue")}</span>
+        </div>
+      ) : null}
       <select
         className={`min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${dense ? "px-1.5 py-1.5 text-[0.7rem]" : "px-2 py-2 text-xs"}`}
         disabled={readOnly}
@@ -1086,25 +1206,32 @@ function MatrixCell({
         </span>
       ) : null}
       {showCommentField ? (
-        <textarea
-          className={`resize-y rounded-lg border border-slate-200 text-xs ${dense ? "min-h-12 p-1.5" : "min-h-16 p-2"}`}
-          disabled={readOnly}
-          placeholder={t(locale, "cellComment")}
-          value={comment}
-          onChange={(event) => {
-            setComment(event.target.value);
-            setIsDirty(true);
-          }}
-          onBlur={() => {
-            if (!readOnly && isDirty) {
-              void onSave(memberId, cellDate, status, comment);
-              setIsDirty(false);
-            }
-            if (comment.trim() === "") {
-              setCommentDraftOpen(false);
-            }
-          }}
-        />
+        <>
+          {dayFeedbackAlwaysVisible && !readOnly ? (
+            <span className={`font-semibold text-slate-600 ${dense ? "text-[0.65rem]" : "text-xs"}`}>
+              {t(locale, "wishesDayFeedbackFieldLabel")}
+            </span>
+          ) : null}
+          <textarea
+            className={`resize-y rounded-lg border border-slate-200 text-xs ${dense ? "min-h-12 p-1.5" : "min-h-16 p-2"}`}
+            disabled={readOnly}
+            placeholder={t(locale, "cellComment")}
+            value={comment}
+            onChange={(event) => {
+              setComment(event.target.value);
+              setIsDirty(true);
+            }}
+            onBlur={() => {
+              if (!readOnly && isDirty) {
+                void onSave(memberId, cellDate, status, comment);
+                setIsDirty(false);
+              }
+              if (comment.trim() === "" && !dayFeedbackAlwaysVisible) {
+                setCommentDraftOpen(false);
+              }
+            }}
+          />
+        </>
       ) : readOnly ? null : (
         <button
           type="button"

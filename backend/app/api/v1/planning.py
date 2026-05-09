@@ -22,6 +22,8 @@ from app.services.planning import (
     delete_planning_period,
     list_planning_periods,
     publish_planning_period,
+    set_planning_period_to_draft,
+    set_planning_period_to_preliminary,
     unpublish_planning_period,
 )
 from app.services.roster_matrix import get_roster_matrix, reset_roster_slots_for_period
@@ -53,6 +55,34 @@ def post_publish_planning_period(
     user: User = Depends(get_current_planner),
 ):
     period = publish_planning_period(
+        db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+    )
+    if period is None:
+        raise HTTPException(status_code=404, detail="Planning period not found")
+    return period
+
+
+@router.post("/planning-periods/{planning_period_id}/preliminary", response_model=PlanningPeriodRead)
+def post_set_planning_period_preliminary(
+    planning_period_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    period = set_planning_period_to_preliminary(
+        db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+    )
+    if period is None:
+        raise HTTPException(status_code=404, detail="Planning period not found")
+    return period
+
+
+@router.post("/planning-periods/{planning_period_id}/draft", response_model=PlanningPeriodRead)
+def post_set_planning_period_draft(
+    planning_period_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    period = set_planning_period_to_draft(
         db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
     )
     if period is None:

@@ -55,6 +55,7 @@ def team_member_to_read(member: TeamMember) -> TeamMemberRead:
         email=member.email,
         employment_percentage=member.employment_percentage,
         notes=member.notes,
+        planning_preferences=member.planning_preferences,
         shift_group_ids=link_ids,
         user_id=member.user_id,
         is_active=member.is_active,

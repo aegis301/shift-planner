@@ -25,6 +25,7 @@ type RosterMatrixTeamMember = {
   last_name: string;
   email: string;
   employment_percentage: number;
+  planning_preferences?: string | null;
 };
 
 type MatrixDay = {
@@ -989,6 +990,7 @@ function RosterCell({
   }, [workloadMatrix.assignments, workloadMatrix.slots, slot.shift_template_id, slot.category]);
 
   const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
+  const hasDayComment = Boolean(planningCell?.comment?.trim());
   const status = planningCell?.status;
   const meta = status && isPlanningStatus(status) ? STATUS_META[status] : undefined;
   const hasUnavailableDay = status && isPlanningStatus(status) ? UNAVAILABLE_STATUSES.has(status) : false;
@@ -1322,13 +1324,14 @@ function RosterCell({
       </button>
       {menuPortal}
       {statsModalPortal}
-      {meta || duplicateSameDay ? (
+      {meta || duplicateSameDay || hasDayComment ? (
         <div className="flex flex-wrap items-center gap-1">
           {hasUnavailableDay ? <span className="text-xs font-semibold text-rose-700">{t(locale, "conflict")}</span> : null}
           {highlightNoGo ? <span className="text-xs font-semibold text-rose-700">{t(locale, "noGoShort")}</span> : null}
           {duplicateSameDay ? (
             <span className="text-xs font-semibold text-amber-900">{t(locale, "rosterDuplicateDayInline")}</span>
           ) : null}
+          {hasDayComment ? <span className="text-xs font-semibold text-sky-800">{t(locale, "dayCommentMarker")}</span> : null}
           {meta ? (
             <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 ${meta.color}`}>
               {t(locale, meta.label)}
