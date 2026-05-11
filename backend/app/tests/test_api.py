@@ -1168,6 +1168,494 @@ def test_delete_shift_variant_clears_generated_slots_and_assignments(client: Tes
     assert next_roster_matrix["assignments"] == []
 
 
+def test_shift_template_constraint_payload_roundtrip(client: TestClient):
+    login(client)
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "CONS",
+            "name_de": "Constraint Dienst",
+            "name_en": "Constraint duty",
+            "category": "other",
+            "constraints": [{"type": "no_additional_same_day", "severity": "error"}],
+        },
+    )
+    assert template.status_code == 200
+    assert template.json()["constraints"][0]["type"] == "no_additional_same_day"
+    assert template.json()["constraints"][0]["severity"] == "error"
+    variant = client.post(
+        f"/api/v1/shift-templates/{template.json()['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+            "constraints": [{"type": "min_rest_hours", "severity": "warning", "min_rest_hours": 11}],
+        },
+    )
+    assert variant.status_code == 200
+    assert variant.json()["constraints"][0]["type"] == "min_rest_hours"
+    patched_template = client.patch(
+        f"/api/v1/shift-templates/{template.json()['id']}",
+        json={"constraints": [{"type": "no_cross_day_into_unavailable_day", "severity": "info"}]},
+    )
+    assert patched_template.status_code == 200
+    patched_variant = client.patch(
+        f"/api/v1/shift-templates/variants/{variant.json()['id']}",
+        json={"constraints": [{"type": "min_rest_hours", "severity": "error", "min_rest_hours": 12}]},
+    )
+    assert patched_variant.status_code == 200
+    templates = client.get("/api/v1/shift-templates").json()
+    row = next(item for item in templates if item["id"] == template.json()["id"])
+    assert row["constraints"][0]["type"] == "no_cross_day_into_unavailable_day"
+    assert row["variants"][0]["constraints"][0]["severity"] == "error"
+
+
+def test_shift_template_constraint_legacy_enforcement_maps_to_severity(client: TestClient):
+    login(client)
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "LEGY",
+            "name_de": "Legacy",
+            "name_en": "Legacy",
+            "category": "other",
+            "constraints": [{"type": "no_additional_same_day", "enforcement": "block"}],
+        },
+    )
+    assert template.status_code == 200
+    assert template.json()["constraints"][0]["severity"] == "error"
+    assert "enforcement" not in template.json()["constraints"][0]
+
+
+def test_roster_assignment_allowed_when_same_day_constraint_is_info(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Info", "last_name": "Rule", "email": "info-rule@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "RINF", "name_de": "Regel", "name_en": "Rule", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 2,
+            "constraints": [{"type": "no_additional_same_day", "severity": "info"}],
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slots = [slot for slot in roster["slots"] if slot["slot_date"] == "2026-08-01" and slot["shift_template_id"] == template["id"]]
+    assert len(slots) == 2
+    assert client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slots[0]["id"], "team_member_id": member_id},
+    ).status_code == 200
+    second = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slots[1]["id"], "team_member_id": member_id},
+    )
+    assert second.status_code == 200
+
+
+def test_roster_assignment_blocked_by_same_day_constraint(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Rule", "last_name": "Block", "email": "rule-block@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "RBLK", "name_de": "Regel", "name_en": "Rule", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 2,
+            "constraints": [{"type": "no_additional_same_day", "severity": "error"}],
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slots = [slot for slot in roster["slots"] if slot["slot_date"] == "2026-07-01" and slot["shift_template_id"] == template["id"]]
+    assert len(slots) == 2
+    first = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slots[0]["id"], "team_member_id": member_id},
+    )
+    assert first.status_code == 200
+    blocked = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slots[1]["id"], "team_member_id": member_id},
+    )
+    assert blocked.status_code == 400
+    assert "no additional shift assignments" in blocked.json()["detail"].lower()
+
+
+def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Cross", "last_name": "Day", "email": "cross-day@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "CRS", "name_de": "Nacht", "name_en": "Night", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Nacht",
+            "start_day_class": "any",
+            "starts_at": "20:00:00",
+            "ends_at": "06:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+            "constraints": [{"type": "no_cross_day_into_unavailable_day", "severity": "warning"}],
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells",
+        json={"team_member_id": member_id, "cell_date": "2026-07-02", "status": "urlaub"},
+    )
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(row for row in roster["slots"] if row["slot_date"] == "2026-07-01" and row["shift_template_id"] == template["id"])
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": member_id},
+    )
+    assert assigned.status_code == 200
+    warnings = client.get(f"/api/v1/validation/{period_id}").json()
+    assert any(row["code"] == "ROSTER_CONSTRAINT_CROSS_DAY_UNAVAILABLE" for row in warnings)
+
+
+def test_validation_warns_for_max_assignments_per_month_constraint(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Limit", "last_name": "Monthly", "email": "limit-monthly@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "MMAX", "name_de": "Limit", "name_en": "Limit", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 3,
+            "constraints": [
+                {"type": "max_assignments_per_month", "severity": "warning", "max_assignments_per_month": 2}
+            ],
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slots = [row for row in roster["slots"] if row["slot_date"] == "2026-07-01" and row["shift_template_id"] == template["id"]]
+    assert len(slots) == 3
+    for slot in slots:
+        assigned = client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": slot["id"], "team_member_id": member_id},
+        )
+        assert assigned.status_code == 200
+    warnings = client.get(f"/api/v1/validation/{period_id}").json()
+    max_rows = [row for row in warnings if row["code"] == "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH"]
+    assert len(max_rows) == 1
+    assert max_rows[0]["team_member_id"] == member_id
+    assert max_rows[0]["date"] is None
+    vids = max_rows[0]["details"].get("violating_roster_slot_ids")
+    assert isinstance(vids, list) and len(vids) == 3
+
+
+def test_shift_coupling_constraint_rejects_self_paired_variant(client: TestClient):
+    login(client)
+    t1 = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "CSEL", "name_de": "Csel", "name_en": "Csel", "category": "other"},
+    ).json()
+    v1 = client.post(
+        f"/api/v1/shift-templates/{t1['id']}/variants",
+        json={
+            "label": "Solo",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    bad = client.patch(
+        f"/api/v1/shift-templates/variants/{v1['id']}",
+        json={
+            "constraints": [
+                {
+                    "type": "requires_coupled_shift",
+                    "severity": "warning",
+                    "paired_shift_variant_id": v1["id"],
+                    "partner_day_offset": 1,
+                }
+            ]
+        },
+    )
+    assert bad.status_code == 400
+
+
+def test_validation_warns_when_shift_coupling_partner_missing(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Coup", "last_name": "Warn", "email": "coupling-warn@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    t_plate = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "CPLW", "name_de": "Koppel", "name_en": "Couple", "category": "other"},
+    ).json()
+    v_early = client.post(
+        f"/api/v1/shift-templates/{t_plate['id']}/variants",
+        json={
+            "label": "Early",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "12:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    v_late = client.post(
+        f"/api/v1/shift-templates/{t_plate['id']}/variants",
+        json={
+            "label": "Late",
+            "start_day_class": "any",
+            "starts_at": "18:00:00",
+            "ends_at": "22:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    assert (
+        client.patch(
+            f"/api/v1/shift-templates/variants/{v_early['id']}",
+            json={
+                "constraints": [
+                    {
+                        "type": "requires_coupled_shift",
+                        "severity": "warning",
+                        "paired_shift_variant_id": v_late["id"],
+                        "partner_day_offset": 1,
+                    }
+                ]
+            },
+        ).status_code
+        == 200
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot_early = next(
+        row
+        for row in roster["slots"]
+        if row["slot_date"] == "2026-07-10" and row["shift_variant_id"] == v_early["id"]
+    )
+    assert (
+        client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": slot_early["id"], "team_member_id": member_id},
+        ).status_code
+        == 200
+    )
+    warnings = client.get(f"/api/v1/validation/{period_id}").json()
+    coup = [row for row in warnings if row["code"] == "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED"]
+    assert len(coup) == 1
+    assert coup[0]["severity"] == "warning"
+
+
+def test_roster_assignment_blocked_when_shift_coupling_error_without_partner(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Coup", "last_name": "Block", "email": "coupling-block@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    t_plate = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "CPLB", "name_de": "Koppel", "name_en": "Couple", "category": "other"},
+    ).json()
+    v_early = client.post(
+        f"/api/v1/shift-templates/{t_plate['id']}/variants",
+        json={
+            "label": "Early",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "12:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    v_late = client.post(
+        f"/api/v1/shift-templates/{t_plate['id']}/variants",
+        json={
+            "label": "Late",
+            "start_day_class": "any",
+            "starts_at": "18:00:00",
+            "ends_at": "22:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    ).json()
+    assert (
+        client.patch(
+            f"/api/v1/shift-templates/variants/{v_early['id']}",
+            json={
+                "constraints": [
+                    {
+                        "type": "requires_coupled_shift",
+                        "severity": "error",
+                        "paired_shift_variant_id": v_late["id"],
+                        "partner_day_offset": 1,
+                    }
+                ]
+            },
+        ).status_code
+        == 200
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot_early = next(
+        row
+        for row in roster["slots"]
+        if row["slot_date"] == "2026-07-15" and row["shift_variant_id"] == v_early["id"]
+    )
+    blocked = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot_early["id"], "team_member_id": member_id},
+    )
+    assert blocked.status_code == 400
+
+
+def test_validation_warns_consecutive_weekend_roster_assignments(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Week", "last_name": "Pair", "email": "week-pair@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "WEKP", "name_de": "Wochenende", "name_en": "Weekend", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Any",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    sid_mar7 = next(
+        row
+        for row in roster["slots"]
+        if row["slot_date"] == "2026-03-07" and row["shift_template_id"] == template["id"]
+    )
+    sid_mar14 = next(
+        row
+        for row in roster["slots"]
+        if row["slot_date"] == "2026-03-14" and row["shift_template_id"] == template["id"]
+    )
+    assert (
+        client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": sid_mar7["id"], "team_member_id": member_id},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": sid_mar14["id"], "team_member_id": member_id},
+        ).status_code
+        == 200
+    )
+    warnings = client.get(f"/api/v1/validation/{period_id}").json()
+    cons = [w for w in warnings if w["code"] == "ROSTER_CONSECUTIVE_WEEKENDS"]
+    assert len(cons) == 1
+    assert cons[0]["team_member_id"] == member_id
+    pairs = cons[0]["details"].get("pairs")
+    assert isinstance(pairs, list) and len(pairs) >= 1
+
+
+def test_validation_no_consecutive_weekend_when_weekends_not_adjacent(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Week", "last_name": "Skip", "email": "week-skip@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "WEKS", "name_de": "Wochenende", "name_en": "Weekend", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Any",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    sid_mar7 = next(
+        row
+        for row in roster["slots"]
+        if row["slot_date"] == "2026-03-07" and row["shift_template_id"] == template["id"]
+    )
+    sid_mar21 = next(
+        row
+        for row in roster["slots"]
+        if row["slot_date"] == "2026-03-21" and row["shift_template_id"] == template["id"]
+    )
+    assert (
+        client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": sid_mar7["id"], "team_member_id": member_id},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": sid_mar21["id"], "team_member_id": member_id},
+        ).status_code
+        == 200
+    )
+    warnings = client.get(f"/api/v1/validation/{period_id}").json()
+    assert not any(w["code"] == "ROSTER_CONSECUTIVE_WEEKENDS" for w in warnings)
+
+
 def test_delete_planning_period_removes_period_and_related_data(client: TestClient):
     login(client)
     team_member_id = client.post(

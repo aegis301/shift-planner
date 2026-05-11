@@ -164,6 +164,7 @@ class ShiftTemplate(Base):
     name_de: Mapped[str] = mapped_column(String(255))
     name_en: Mapped[str] = mapped_column(String(255))
     category: Mapped[str] = mapped_column(String(50))
+    constraints: Mapped[list] = mapped_column(JSON, default=list)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -187,6 +188,7 @@ class ShiftVariant(Base):
     ends_at: Mapped[time] = mapped_column(Time)
     end_day_offset: Mapped[int] = mapped_column(Integer, default=0)
     required_count: Mapped[int] = mapped_column(Integer, default=1)
+    constraints: Mapped[list] = mapped_column(JSON, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

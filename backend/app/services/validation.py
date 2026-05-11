@@ -1,10 +1,11 @@
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.models import PlanningCell, PlanningShiftIntent, RosterSlotAssignment, RuleConfig
 from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationWarning
+from app.services.constraints import evaluate_assignment_constraints, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
@@ -39,7 +40,112 @@ def _warning_in_shift_group_scope(
         rid = warning.details.get("roster_slot_id")
         if rid is not None and rid not in slot_ids:
             return False
+    if warning.code == "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH":
+        vids = warning.details.get("violating_roster_slot_ids")
+        if isinstance(vids, list) and vids:
+            ids_int = [x for x in vids if isinstance(x, int)]
+            if ids_int and not set(ids_int) & slot_ids:
+                return False
+            return True
+    if warning.code == "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED":
+        sids = warning.details.get("source_roster_slot_ids")
+        if isinstance(sids, list) and sids:
+            ids_int = [x for x in sids if isinstance(x, int)]
+            if ids_int and not set(ids_int) & slot_ids:
+                return False
+            return True
+    if warning.code == "ROSTER_CONSECUTIVE_WEEKENDS":
+        ids = warning.details.get("roster_slot_ids")
+        if isinstance(ids, list) and ids:
+            ids_int = [x for x in ids if isinstance(x, int)]
+            if ids_int and not set(ids_int) & slot_ids:
+                return False
+        return True
+    if warning.code.startswith("ROSTER_CONSTRAINT"):
+        rid = warning.details.get("roster_slot_id")
+        if rid is not None and rid not in slot_ids:
+            return False
     return True
+
+
+def _merge_max_assignments_per_month_warnings(warnings: list[ValidationWarning]) -> list[ValidationWarning]:
+    non_max: list[ValidationWarning] = []
+    max_bucket: dict[tuple[int | None, object, int, str], ValidationWarning] = {}
+    slot_ids_by_bucket: dict[tuple[int | None, object, int, str], set[int]] = defaultdict(set)
+    for w in warnings:
+        if w.code != "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH":
+            non_max.append(w)
+            continue
+        cap = w.details.get("max_assignments_per_month")
+        if not isinstance(cap, int):
+            non_max.append(w)
+            continue
+        key = (w.team_member_id, w.details.get("shift_template_id"), cap, w.severity)
+        rid = w.details.get("roster_slot_id")
+        if isinstance(rid, int):
+            slot_ids_by_bucket[key].add(rid)
+        if key not in max_bucket:
+            max_bucket[key] = w
+    merged_max: list[ValidationWarning] = []
+    for key, w in max_bucket.items():
+        slots = sorted(slot_ids_by_bucket.get(key, set()))
+        new_details: dict[str, object] = {**w.details}
+        new_details.pop("roster_slot_id", None)
+        new_details.pop("roster_slot_assignment_id", None)
+        if slots:
+            new_details["violating_roster_slot_ids"] = slots
+        merged_max.append(
+            ValidationWarning(
+                code=w.code,
+                severity=w.severity,
+                message="Team member exceeds the maximum monthly assignments allowed for this shift template.",
+                team_member_id=w.team_member_id,
+                date=None,
+                details=new_details,
+            )
+        )
+    return non_max + merged_max
+
+
+def _merge_coupled_shift_warnings(warnings: list[ValidationWarning]) -> list[ValidationWarning]:
+    non_coupled: list[ValidationWarning] = []
+    bucket: dict[tuple[int | None, object, object, object, str], ValidationWarning] = {}
+    source_ids_by_bucket: dict[tuple[int | None, object, object, object, str], set[int]] = defaultdict(set)
+    for w in warnings:
+        if w.code != "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED":
+            non_coupled.append(w)
+            continue
+        key = (
+            w.team_member_id,
+            w.details.get("shift_variant_id"),
+            w.details.get("paired_shift_variant_id"),
+            w.details.get("partner_date"),
+            w.severity,
+        )
+        rid = w.details.get("roster_slot_id")
+        if isinstance(rid, int):
+            source_ids_by_bucket[key].add(rid)
+        if key not in bucket:
+            bucket[key] = w
+    merged_coupled: list[ValidationWarning] = []
+    for key, w in bucket.items():
+        srcs = sorted(source_ids_by_bucket.get(key, set()))
+        new_details: dict[str, object] = {**w.details}
+        new_details.pop("roster_slot_id", None)
+        new_details.pop("roster_slot_assignment_id", None)
+        if srcs:
+            new_details["source_roster_slot_ids"] = srcs
+        merged_coupled.append(
+            ValidationWarning(
+                code=w.code,
+                severity=w.severity,
+                message="Constraint violation: required coupled shift assignment is missing.",
+                team_member_id=w.team_member_id,
+                date=None,
+                details=new_details,
+            )
+        )
+    return non_coupled + merged_coupled
 
 
 def validate_roster(
@@ -54,6 +160,8 @@ def validate_roster(
     _add_roster_slot_matrix_conflicts(warnings, slot_assignments, cells)
     _add_roster_template_no_go_conflicts(warnings, slot_assignments, intents)
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
+    _add_consecutive_weekend_warnings(warnings, slot_assignments)
+    _add_roster_constraint_conflicts(db, warnings, slot_assignments, cells)
     if shift_group_id is None:
         return warnings
     require_shift_group(db, shift_group_id, organization_id)
@@ -164,6 +272,60 @@ def _add_roster_template_no_go_conflicts(
             break
 
 
+def _weekend_anchor(slot_date: date) -> date | None:
+    wd = slot_date.weekday()
+    if wd == 5:
+        return slot_date
+    if wd == 6:
+        return slot_date - timedelta(days=1)
+    return None
+
+
+def _add_consecutive_weekend_warnings(
+    warnings: list[ValidationWarning],
+    assignments: list[RosterSlotAssignment],
+) -> None:
+    anchors_by_member: dict[int, set[date]] = defaultdict(set)
+    slots_by_member_anchor: dict[tuple[int, date], list[int]] = defaultdict(list)
+    for assignment in assignments:
+        slot = assignment.roster_slot
+        if slot is None:
+            continue
+        anchor = _weekend_anchor(slot.slot_date)
+        if anchor is None:
+            continue
+        anchors_by_member[assignment.team_member_id].add(anchor)
+        slots_by_member_anchor[(assignment.team_member_id, anchor)].append(slot.id)
+    for member_id, anchors in anchors_by_member.items():
+        ordered = sorted(anchors)
+        pairs: list[tuple[date, date]] = []
+        for i in range(len(ordered) - 1):
+            if ordered[i + 1] - ordered[i] == timedelta(days=7):
+                pairs.append((ordered[i], ordered[i + 1]))
+        if not pairs:
+            continue
+        slot_ids: set[int] = set()
+        for sat_a, sat_b in pairs:
+            slot_ids.update(slots_by_member_anchor.get((member_id, sat_a), []))
+            slot_ids.update(slots_by_member_anchor.get((member_id, sat_b), []))
+        warnings.append(
+            ValidationWarning(
+                code="ROSTER_CONSECUTIVE_WEEKENDS",
+                severity="warning",
+                message="Team member is assigned on two consecutive calendar weekends.",
+                team_member_id=member_id,
+                date=None,
+                details={
+                    "pairs": [
+                        {"first_weekend_saturday": a.isoformat(), "second_weekend_saturday": b.isoformat()}
+                        for a, b in pairs
+                    ],
+                    "roster_slot_ids": sorted(slot_ids),
+                },
+            )
+        )
+
+
 def _add_roster_slot_duplicate_day_warnings(
     warnings: list[ValidationWarning],
     assignments: list[RosterSlotAssignment],
@@ -187,3 +349,40 @@ def _add_roster_slot_duplicate_day_warnings(
                 },
             )
         )
+
+
+def _add_roster_constraint_conflicts(
+    db: Session,
+    warnings: list[ValidationWarning],
+    assignments: list[RosterSlotAssignment],
+    cells: list[PlanningCell],
+) -> None:
+    assignments_by_member: dict[int, list[RosterSlotAssignment]] = defaultdict(list)
+    for assignment in assignments:
+        assignments_by_member[assignment.team_member_id].append(assignment)
+    cells_by_member: dict[int, list[PlanningCell]] = defaultdict(list)
+    for cell in cells:
+        cells_by_member[cell.team_member_id].append(cell)
+    raw_constraint: list[ValidationWarning] = []
+    for assignment in assignments:
+        slot = assignment.roster_slot
+        if slot is None:
+            continue
+        resolved = resolve_slot_constraints(db, slot)
+        if not resolved:
+            continue
+        member_assignments = assignments_by_member.get(assignment.team_member_id, [])
+        member_cells = cells_by_member.get(assignment.team_member_id, [])
+        raw_constraint.extend(
+            evaluate_assignment_constraints(
+                db=db,
+                slot=slot,
+                team_member_id=assignment.team_member_id,
+                resolved_constraints=resolved,
+                assigned_slots_for_member=member_assignments,
+                planning_cells_for_member=member_cells,
+                assignment_id=assignment.id,
+            )
+        )
+    merged_constraints = _merge_max_assignments_per_month_warnings(raw_constraint)
+    warnings.extend(_merge_coupled_shift_warnings(merged_constraints))

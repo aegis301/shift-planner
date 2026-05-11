@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
-import { AlertTriangle, MoreVertical, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { FormEvent, ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Info, MoreVertical, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
@@ -38,6 +38,22 @@ function apiFailureUserMessage(locale: Locale, error: unknown): string {
 }
 type ShiftTemplateCategory = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
 type DayClass = "any" | "weekday" | "weekend" | "holiday";
+type ConstraintSeverity = "info" | "warning" | "error";
+type ShiftConstraintType =
+  | "no_additional_same_day"
+  | "min_rest_hours"
+  | "no_cross_day_into_unavailable_day"
+  | "max_assignments_per_month"
+  | "requires_coupled_shift";
+type ShiftConstraintRecord = {
+  type: ShiftConstraintType;
+  severity: ConstraintSeverity;
+  min_rest_hours?: number | null;
+  max_assignments_per_month?: number | null;
+  paired_shift_variant_id?: number | null;
+  partner_day_offset?: number;
+};
+
 type ShiftVariantRecord = {
   id: number;
   label: string;
@@ -47,6 +63,7 @@ type ShiftVariantRecord = {
   ends_at: string;
   end_day_offset: number;
   required_count: number;
+  constraints?: ShiftConstraintRecord[];
   is_active: boolean;
 };
 
@@ -58,6 +75,7 @@ type PendingVariantDraft = {
   starts_at: string;
   ends_at: string;
   required_count: number;
+  constraints: ShiftConstraintRecord[];
   is_active: boolean;
 };
 
@@ -69,6 +87,7 @@ type ShiftTemplateRecord = {
   category: ShiftTemplateCategory;
   display_order: number;
   is_active: boolean;
+  constraints?: ShiftConstraintRecord[];
   variants?: ShiftVariantRecord[];
 };
 
@@ -364,8 +383,396 @@ function categoryOptions(locale: Locale) {
   ));
 }
 
-function VariantEditFields({ variant, onRemove }: { variant: ShiftVariantRecord; onRemove: () => void }) {
+const SHIFT_CONSTRAINT_OPTIONS: { type: ShiftConstraintType; label: TranslationKey }[] = [
+  { type: "no_additional_same_day", label: "constraintNoAdditionalSameDay" },
+  { type: "min_rest_hours", label: "constraintMinRestHours" },
+  { type: "no_cross_day_into_unavailable_day", label: "constraintNoCrossDayIntoUnavailable" },
+  { type: "max_assignments_per_month", label: "constraintMaxAssignmentsPerMonth" },
+  { type: "requires_coupled_shift", label: "constraintRequiresCoupledShift" }
+];
+
+function flattenVariantOptions(
+  templates: ShiftTemplateRecord[],
+  excludeVariantId: number | null | undefined
+): { id: number; label: string }[] {
+  const out: { id: number; label: string }[] = [];
+  for (const tm of templates) {
+    for (const v of tm.variants ?? []) {
+      if (excludeVariantId != null && v.id === excludeVariantId) {
+        continue;
+      }
+      out.push({ id: v.id, label: `${tm.code} · ${v.label}` });
+    }
+  }
+  return out;
+}
+
+function constraintSeverityFromApiRow(row: AnyRecord): ConstraintSeverity {
+  const s = row.severity;
+  if (s === "info" || s === "warning" || s === "error") {
+    return s;
+  }
+  if (row.enforcement === "block") {
+    return "error";
+  }
+  return "warning";
+}
+
+function parseShiftConstraintList(raw: unknown): ShiftConstraintRecord[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: ShiftConstraintRecord[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as AnyRecord;
+    const type = row.type;
+    if (
+      type !== "no_additional_same_day" &&
+      type !== "min_rest_hours" &&
+      type !== "no_cross_day_into_unavailable_day" &&
+      type !== "max_assignments_per_month" &&
+      type !== "requires_coupled_shift"
+    ) {
+      continue;
+    }
+    const severity = constraintSeverityFromApiRow(row);
+    if (type === "min_rest_hours") {
+      const minRest = typeof row.min_rest_hours === "number" ? row.min_rest_hours : 11;
+      out.push({ type, severity, min_rest_hours: minRest });
+      continue;
+    }
+    if (type === "max_assignments_per_month") {
+      const maxM = typeof row.max_assignments_per_month === "number" ? row.max_assignments_per_month : 4;
+      out.push({ type, severity, max_assignments_per_month: maxM });
+      continue;
+    }
+    if (type === "requires_coupled_shift") {
+      const paired =
+        typeof row.paired_shift_variant_id === "number" && row.paired_shift_variant_id >= 1
+          ? row.paired_shift_variant_id
+          : null;
+      const offset =
+        typeof row.partner_day_offset === "number" && row.partner_day_offset >= -7 && row.partner_day_offset <= 7
+          ? row.partner_day_offset
+          : 1;
+      if (paired == null) {
+        continue;
+      }
+      out.push({ type, severity, paired_shift_variant_id: paired, partner_day_offset: offset });
+      continue;
+    }
+    out.push({ type, severity });
+  }
+  return out;
+}
+
+function setConstraintSeverity(
+  constraints: ShiftConstraintRecord[],
+  type: ShiftConstraintType,
+  severity: ConstraintSeverity
+): ShiftConstraintRecord[] {
+  return constraints.map((item) => (item.type === type ? { ...item, severity } : item));
+}
+
+function setConstraintMinRestHours(constraints: ShiftConstraintRecord[], value: number): ShiftConstraintRecord[] {
+  return constraints.map((item) =>
+    item.type === "min_rest_hours" ? { ...item, min_rest_hours: value } : item
+  );
+}
+
+function setConstraintMaxAssignments(constraints: ShiftConstraintRecord[], value: number): ShiftConstraintRecord[] {
+  return constraints.map((item) =>
+    item.type === "max_assignments_per_month" ? { ...item, max_assignments_per_month: value } : item
+  );
+}
+
+function setConstraintPairedVariant(
+  constraints: ShiftConstraintRecord[],
+  type: ShiftConstraintType,
+  paired_shift_variant_id: number
+): ShiftConstraintRecord[] {
+  return constraints.map((item) => (item.type === type ? { ...item, paired_shift_variant_id } : item));
+}
+
+function setConstraintPartnerDayOffset(
+  constraints: ShiftConstraintRecord[],
+  type: ShiftConstraintType,
+  partner_day_offset: number
+): ShiftConstraintRecord[] {
+  return constraints.map((item) => (item.type === type ? { ...item, partner_day_offset } : item));
+}
+
+type AddConstraintContext = { allTemplates: ShiftTemplateRecord[]; excludeVariantId?: number | null };
+
+function addConstraint(
+  constraints: ShiftConstraintRecord[],
+  type: ShiftConstraintType,
+  ctx?: AddConstraintContext
+): ShiftConstraintRecord[] {
+  if (constraints.some((item) => item.type === type)) {
+    return constraints;
+  }
+  if (type === "min_rest_hours") {
+    return [...constraints, { type, severity: "warning", min_rest_hours: 11 }];
+  }
+  if (type === "max_assignments_per_month") {
+    return [...constraints, { type, severity: "warning", max_assignments_per_month: 4 }];
+  }
+  if (type === "requires_coupled_shift") {
+    const opts = flattenVariantOptions(ctx?.allTemplates ?? [], ctx?.excludeVariantId);
+    const first = opts[0]?.id;
+    if (first == null) {
+      return constraints;
+    }
+    return [...constraints, { type, severity: "warning", paired_shift_variant_id: first, partner_day_offset: 1 }];
+  }
+  return [...constraints, { type, severity: "warning" }];
+}
+
+function removeConstraint(constraints: ShiftConstraintRecord[], type: ShiftConstraintType): ShiftConstraintRecord[] {
+  return constraints.filter((item) => item.type !== type);
+}
+
+const CONSTRAINT_SEVERITY_ORDER: ConstraintSeverity[] = ["info", "warning", "error"];
+
+function constraintSeverityButtonClass(severity: ConstraintSeverity, active: boolean): string {
+  const base =
+    "min-w-[4.25rem] flex-1 rounded-md px-2 py-2 text-center text-xs font-semibold ring-1 transition sm:min-w-[5rem] sm:text-sm";
+  if (severity === "info") {
+    return active
+      ? `${base} bg-sky-600 text-white ring-sky-700 shadow-sm`
+      : `${base} bg-white text-sky-900 ring-slate-200 hover:bg-sky-50 hover:ring-sky-300`;
+  }
+  if (severity === "warning") {
+    return active
+      ? `${base} bg-amber-500 text-amber-950 ring-amber-600 shadow-sm`
+      : `${base} bg-white text-amber-950 ring-slate-200 hover:bg-amber-50 hover:ring-amber-300`;
+  }
+  return active
+    ? `${base} bg-rose-600 text-white ring-rose-700 shadow-sm`
+    : `${base} bg-white text-rose-900 ring-slate-200 hover:bg-rose-50 hover:ring-rose-300`;
+}
+
+function RuleRowsEditor({
+  constraints,
+  onChange,
+  allTemplates,
+  excludeVariantId
+}: {
+  constraints: ShiftConstraintRecord[];
+  onChange: (next: ShiftConstraintRecord[]) => void;
+  allTemplates: ShiftTemplateRecord[];
+  excludeVariantId?: number | null;
+}) {
   const { locale } = useLocale();
+  const coupledFieldId = useId();
+  const partnerOffsetHintRef = useRef<HTMLDivElement>(null);
+  const [partnerOffsetHintOpen, setPartnerOffsetHintOpen] = useState(false);
+  const variantChoices = useMemo(
+    () => flattenVariantOptions(allTemplates, excludeVariantId ?? null),
+    [allTemplates, excludeVariantId]
+  );
+  useEffect(() => {
+    if (!partnerOffsetHintOpen) {
+      return;
+    }
+    const onDocMouseDown = (event: MouseEvent) => {
+      if (!partnerOffsetHintRef.current?.contains(event.target as Node)) {
+        setPartnerOffsetHintOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPartnerOffsetHintOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [partnerOffsetHintOpen]);
+  if (!constraints.length) {
+    return null;
+  }
+  return (
+    <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3">
+      {constraints.map((rule) => (
+        <div key={rule.type} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="min-w-0 flex-1 text-sm font-semibold text-slate-800">
+              {t(
+                locale,
+                SHIFT_CONSTRAINT_OPTIONS.find((option) => option.type === rule.type)?.label ?? "constraintRules"
+              )}
+            </p>
+            <div
+              className="flex flex-col gap-1.5"
+              role="group"
+              aria-label={t(locale, "constraintRuleSeverityGroup")}
+            >
+              <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                {CONSTRAINT_SEVERITY_ORDER.map((severity) => {
+                  const active = rule.severity === severity;
+                  const labelKey =
+                    severity === "info"
+                      ? "constraintSeverityInfo"
+                      : severity === "warning"
+                        ? "constraintSeverityWarning"
+                        : "constraintSeverityError";
+                  return (
+                    <button
+                      key={severity}
+                      type="button"
+                      aria-pressed={active}
+                      title={severity === "error" ? t(locale, "constraintSeverityErrorHint") : undefined}
+                      className={constraintSeverityButtonClass(severity, active)}
+                      onClick={() => onChange(setConstraintSeverity(constraints, rule.type, severity))}
+                    >
+                      {t(locale, labelKey)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
+              onClick={() => onChange(removeConstraint(constraints, rule.type))}
+              aria-label={t(locale, "removeRule")}
+              title={t(locale, "removeRule")}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+          {rule.type === "min_rest_hours" ? (
+            <input
+              className={`${inputClass} max-w-xs`}
+              type="number"
+              min={1}
+              max={48}
+              value={rule.min_rest_hours ?? 11}
+              onChange={(event) => onChange(setConstraintMinRestHours(constraints, Number(event.target.value) || 1))}
+            />
+          ) : null}
+          {rule.type === "max_assignments_per_month" ? (
+            <input
+              className={`${inputClass} max-w-xs`}
+              type="number"
+              min={1}
+              max={31}
+              value={rule.max_assignments_per_month ?? 4}
+              onChange={(event) => onChange(setConstraintMaxAssignments(constraints, Number(event.target.value) || 1))}
+            />
+          ) : null}
+          {rule.type === "requires_coupled_shift" ? (
+            variantChoices.length ? (
+              <div className="grid max-w-2xl gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                <Field label={t(locale, "constraintCoupledPartnerVariant")}>
+                  <select
+                    className={inputClass}
+                    value={String(rule.paired_shift_variant_id ?? variantChoices[0]?.id ?? "")}
+                    onChange={(event) => {
+                      const nextId = Number(event.target.value);
+                      if (Number.isFinite(nextId) && nextId >= 1) {
+                        onChange(setConstraintPairedVariant(constraints, rule.type, nextId));
+                      }
+                    }}
+                  >
+                    {variantChoices.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <div className="flex flex-col gap-1">
+                  <div className="relative inline-flex min-w-0 flex-col" ref={partnerOffsetHintRef}>
+                    <div className="flex items-center gap-1">
+                      <label
+                        className="text-xs font-medium text-slate-600"
+                        htmlFor={`${coupledFieldId}-${rule.type}-offset`}
+                      >
+                        {t(locale, "constraintPartnerDayOffsetLabel")}
+                      </label>
+                      <button
+                        type="button"
+                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-slate-600 outline-none ring-mint/20 transition focus:ring-4 ${
+                          partnerOffsetHintOpen
+                            ? "border-slate-300 bg-slate-50 text-slate-800 ring-1 ring-slate-200"
+                            : "border-slate-200 bg-white hover:bg-slate-50"
+                        }`}
+                        aria-expanded={partnerOffsetHintOpen}
+                        aria-controls={`${coupledFieldId}-offset-hint`}
+                        aria-label={t(locale, "constraintPartnerDayOffsetInfoButton")}
+                        onClick={() => setPartnerOffsetHintOpen((open) => !open)}
+                      >
+                        <Info size={15} strokeWidth={2} aria-hidden />
+                      </button>
+                    </div>
+                    {partnerOffsetHintOpen ? (
+                      <div
+                        id={`${coupledFieldId}-offset-hint`}
+                        role="region"
+                        aria-label={t(locale, "constraintPartnerDayOffsetHint")}
+                        className="absolute left-0 top-full z-30 mt-1 min-w-[14rem] max-w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-slate-700 shadow-soft ring-1 ring-slate-100"
+                      >
+                        {t(locale, "constraintPartnerDayOffsetHint")}
+                      </div>
+                    ) : null}
+                  </div>
+                  <input
+                    id={`${coupledFieldId}-${rule.type}-offset`}
+                    className={`${inputClass} h-9 w-14 shrink-0 tabular-nums`}
+                    type="number"
+                    min={-7}
+                    max={7}
+                    value={rule.partner_day_offset ?? 1}
+                    onChange={(event) => {
+                      const v = parseInt(event.target.value, 10);
+                      const clamped = Number.isNaN(v) ? 1 : Math.min(7, Math.max(-7, v));
+                      onChange(setConstraintPartnerDayOffset(constraints, rule.type, clamped));
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-amber-800">{t(locale, "constraintCoupledNoVariantsHint")}</p>
+            )
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VariantEditFields({
+  variant,
+  constraints,
+  onConstraintsChange,
+  onRemove,
+  allTemplates
+}: {
+  variant: ShiftVariantRecord;
+  constraints: ShiftConstraintRecord[];
+  onConstraintsChange: (next: ShiftConstraintRecord[]) => void;
+  onRemove: () => void;
+  allTemplates: ShiftTemplateRecord[];
+}) {
+  const { locale } = useLocale();
+  const [rulePickerOpen, setRulePickerOpen] = useState(false);
+  const [nextRuleType, setNextRuleType] = useState<ShiftConstraintType>(SHIFT_CONSTRAINT_OPTIONS[0].type);
+
+  function addRule() {
+    onConstraintsChange(
+      addConstraint(constraints, nextRuleType, { allTemplates, excludeVariantId: variant.id })
+    );
+    setRulePickerOpen(false);
+  }
 
   return (
     <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_auto]">
@@ -393,6 +800,45 @@ function VariantEditFields({ variant, onRemove }: { variant: ShiftVariantRecord;
       >
         <Trash2 size={16} />
       </button>
+      <div className="flex items-end justify-end">
+        <button
+          type="button"
+          className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
+          onClick={() => setRulePickerOpen((open) => !open)}
+        >
+          {t(locale, "addRule")}
+        </button>
+      </div>
+      {rulePickerOpen ? (
+        <div className="lg:col-span-full grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(16rem,1fr)_auto]">
+          <select
+            className={inputClass}
+            value={nextRuleType}
+            onChange={(event) => setNextRuleType(event.target.value as ShiftConstraintType)}
+          >
+            {SHIFT_CONSTRAINT_OPTIONS.map((option) => (
+              <option key={option.type} value={option.type}>
+                {t(locale, option.label)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-3 text-sm font-semibold text-white"
+            onClick={addRule}
+          >
+            {t(locale, "addRule")}
+          </button>
+        </div>
+      ) : null}
+      <div className="lg:col-span-full">
+        <RuleRowsEditor
+          constraints={constraints}
+          onChange={onConstraintsChange}
+          allTemplates={allTemplates}
+          excludeVariantId={variant.id}
+        />
+      </div>
     </div>
   );
 }
@@ -400,13 +846,17 @@ function VariantEditFields({ variant, onRemove }: { variant: ShiftVariantRecord;
 function PendingVariantFields({
   variant,
   onChange,
-  onRemove
+  onRemove,
+  allTemplates
 }: {
   variant: PendingVariantDraft;
   onChange: (next: PendingVariantDraft) => void;
   onRemove: () => void;
+  allTemplates: ShiftTemplateRecord[];
 }) {
   const { locale } = useLocale();
+  const [rulePickerOpen, setRulePickerOpen] = useState(false);
+  const [nextRuleType, setNextRuleType] = useState<ShiftConstraintType>(SHIFT_CONSTRAINT_OPTIONS[0].type);
 
   return (
     <div className="grid gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_auto]">
@@ -466,6 +916,13 @@ function PendingVariantFields({
         />
       </Field>
       <div className="flex h-11 items-center justify-end gap-2 self-end">
+        <button
+          type="button"
+          onClick={() => setRulePickerOpen((open) => !open)}
+          className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
+        >
+          {t(locale, "addRule")}
+        </button>
         <label className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
           <input
             type="checkbox"
@@ -483,6 +940,41 @@ function PendingVariantFields({
         >
           <Trash2 size={16} />
         </button>
+      </div>
+      {rulePickerOpen ? (
+        <div className="lg:col-span-full grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(16rem,1fr)_auto]">
+          <select
+            className={inputClass}
+            value={nextRuleType}
+            onChange={(event) => setNextRuleType(event.target.value as ShiftConstraintType)}
+          >
+            {SHIFT_CONSTRAINT_OPTIONS.map((option) => (
+              <option key={option.type} value={option.type}>
+                {t(locale, option.label)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-3 text-sm font-semibold text-white"
+            onClick={() => {
+              onChange({
+                ...variant,
+                constraints: addConstraint(variant.constraints, nextRuleType, { allTemplates, excludeVariantId: null })
+              });
+              setRulePickerOpen(false);
+            }}
+          >
+            {t(locale, "addRule")}
+          </button>
+        </div>
+      ) : null}
+      <div className="lg:col-span-full">
+        <RuleRowsEditor
+          constraints={variant.constraints}
+          onChange={(constraints) => onChange({ ...variant, constraints })}
+          allTemplates={allTemplates}
+        />
       </div>
     </div>
   );
@@ -531,10 +1023,12 @@ function VariantRows({ variants }: { variants: ShiftVariantRecord[] }) {
 
 function ShiftTemplateEditorModal({
   template,
+  allTemplates,
   onChanged,
   onClose
 }: {
   template: ShiftTemplateRecord;
+  allTemplates: ShiftTemplateRecord[];
   onChanged: () => Promise<void>;
   onClose: () => void;
 }) {
@@ -543,11 +1037,30 @@ function ShiftTemplateEditorModal({
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [removedVariantIds, setRemovedVariantIds] = useState<number[]>([]);
   const [pendingVariants, setPendingVariants] = useState<PendingVariantDraft[]>([]);
+  const [templateConstraints, setTemplateConstraints] = useState<ShiftConstraintRecord[]>(() =>
+    parseShiftConstraintList(template.constraints)
+  );
+  const [templateRulePickerOpen, setTemplateRulePickerOpen] = useState(false);
+  const [nextTemplateRuleType, setNextTemplateRuleType] = useState<ShiftConstraintType>(SHIFT_CONSTRAINT_OPTIONS[0].type);
+  const [variantConstraintsById, setVariantConstraintsById] = useState<Record<number, ShiftConstraintRecord[]>>(
+    () =>
+      Object.fromEntries(
+        (template.variants ?? []).map((variant) => [variant.id, parseShiftConstraintList(variant.constraints)])
+      )
+  );
   const [variantDeleteCandidate, setVariantDeleteCandidate] = useState<ShiftVariantRecord | null>(null);
   const [editorSaveError, setEditorSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     setEditorSaveError(null);
+    setTemplateConstraints(parseShiftConstraintList(template.constraints));
+    setTemplateRulePickerOpen(false);
+    setNextTemplateRuleType(SHIFT_CONSTRAINT_OPTIONS[0].type);
+    setVariantConstraintsById(
+      Object.fromEntries(
+        (template.variants ?? []).map((variant) => [variant.id, parseShiftConstraintList(variant.constraints)])
+      )
+    );
   }, [template.id]);
 
   function addPendingVariant() {
@@ -561,6 +1074,7 @@ function ShiftTemplateEditorModal({
         starts_at: "",
         ends_at: "",
         required_count: 1,
+        constraints: [],
         is_active: true
       }
     ]);
@@ -605,6 +1119,7 @@ function ShiftTemplateEditorModal({
           name_de: form.get("name_de"),
           name_en: form.get("name_en"),
           category: form.get("category"),
+          constraints: templateConstraints,
           is_active: form.get("is_active") === "on"
         })
       });
@@ -628,6 +1143,7 @@ function ShiftTemplateEditorModal({
           ends_at: endsAt,
           end_day_offset: inferEndDayOffset(startsAt, endsAt),
           required_count: Number(form.get(`variant_${variant.id}_required_count`)),
+          constraints: variantConstraintsById[variant.id] ?? [],
           is_active: form.get(`variant_${variant.id}_is_active`) === "on"
         })
       });
@@ -648,6 +1164,7 @@ function ShiftTemplateEditorModal({
           ends_at: variant.ends_at,
           end_day_offset: inferEndDayOffset(variant.starts_at, variant.ends_at),
           required_count: variant.required_count,
+          constraints: variant.constraints,
           is_active: variant.is_active
         })
       });
@@ -709,7 +1226,7 @@ function ShiftTemplateEditorModal({
             </button>
           </div>
         </div>
-        <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-[8rem_minmax(14rem,1fr)_minmax(14rem,1fr)_14rem_auto]">
+        <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-[8rem_minmax(14rem,1fr)_minmax(14rem,1fr)_14rem_auto_auto]">
           <Field label={t(locale, "code")}><input className={`${inputClass} w-full`} name="code" defaultValue={template.code} required /></Field>
           <Field label={t(locale, "germanName")}><input className={`${inputClass} w-full`} name="name_de" defaultValue={template.name_de} required /></Field>
           <Field label={t(locale, "englishName")}><input className={`${inputClass} w-full`} name="name_en" defaultValue={template.name_en} required /></Field>
@@ -718,12 +1235,58 @@ function ShiftTemplateEditorModal({
             <input name="is_active" type="checkbox" defaultChecked={template.is_active} />
             {t(locale, "isActive")}
           </label>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center justify-center self-end rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
+            onClick={() => setTemplateRulePickerOpen((open) => !open)}
+          >
+            {t(locale, "addRule")}
+          </button>
+        </div>
+        {templateRulePickerOpen ? (
+          <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(20rem,1fr)_auto]">
+            <select
+              className={inputClass}
+              value={nextTemplateRuleType}
+              onChange={(event) => setNextTemplateRuleType(event.target.value as ShiftConstraintType)}
+            >
+              {SHIFT_CONSTRAINT_OPTIONS.map((option) => (
+                <option key={option.type} value={option.type}>
+                  {t(locale, option.label)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-3 text-sm font-semibold text-white"
+              onClick={() => {
+                setTemplateConstraints((current) =>
+                  addConstraint(current, nextTemplateRuleType, { allTemplates })
+                );
+                setTemplateRulePickerOpen(false);
+              }}
+            >
+              {t(locale, "addRule")}
+            </button>
+          </div>
+        ) : null}
+        <div className="mt-3">
+          <RuleRowsEditor constraints={templateConstraints} onChange={setTemplateConstraints} allTemplates={allTemplates} />
         </div>
         <div className="mt-5 grid gap-3">
           <h3 className="text-sm font-semibold text-ink">{t(locale, "editVariants")}</h3>
           {visibleVariants.length ? (
             visibleVariants.map((variant) => (
-              <VariantEditFields key={variant.id} variant={variant} onRemove={() => setVariantDeleteCandidate(variant)} />
+              <VariantEditFields
+                key={variant.id}
+                variant={variant}
+                constraints={variantConstraintsById[variant.id] ?? []}
+                onConstraintsChange={(next) =>
+                  setVariantConstraintsById((current) => ({ ...current, [variant.id]: next }))
+                }
+                onRemove={() => setVariantDeleteCandidate(variant)}
+                allTemplates={allTemplates}
+              />
             ))
           ) : (
             <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500 ring-1 ring-slate-100">{t(locale, "noVariants")}</p>
@@ -738,6 +1301,7 @@ function ShiftTemplateEditorModal({
                 variant={variant}
                 onChange={(next) => updatePendingVariant(variant.uid, next)}
                 onRemove={() => removePendingVariant(variant.uid)}
+                allTemplates={allTemplates}
               />
             ))}
           </div>
@@ -809,7 +1373,15 @@ function ShiftTemplateEditorModal({
   );
 }
 
-function ShiftTemplateCard({ template, onChanged }: { template: ShiftTemplateRecord; onChanged: () => Promise<void> }) {
+function ShiftTemplateCard({
+  template,
+  allTemplates,
+  onChanged
+}: {
+  template: ShiftTemplateRecord;
+  allTemplates: ShiftTemplateRecord[];
+  onChanged: () => Promise<void>;
+}) {
   const { locale } = useLocale();
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const title = locale === "de" ? template.name_de : template.name_en;
@@ -852,7 +1424,14 @@ function ShiftTemplateCard({ template, onChanged }: { template: ShiftTemplateRec
         <VariantRows variants={template.variants ?? []} />
       </div>
     </article>
-    {isEditorOpen ? <ShiftTemplateEditorModal template={template} onChanged={onChanged} onClose={() => setIsEditorOpen(false)} /> : null}
+    {isEditorOpen ? (
+      <ShiftTemplateEditorModal
+        template={template}
+        allTemplates={allTemplates}
+        onChanged={onChanged}
+        onClose={() => setIsEditorOpen(false)}
+      />
+    ) : null}
     </>
   );
 }
@@ -868,7 +1447,7 @@ function ShiftTemplateList({ rows, onChanged }: { rows: AnyRecord[]; onChanged: 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       {templates.map((template) => (
-        <ShiftTemplateCard key={template.id} template={template} onChanged={onChanged} />
+        <ShiftTemplateCard key={template.id} template={template} allTemplates={templates} onChanged={onChanged} />
       ))}
     </div>
   );
@@ -1203,6 +1782,11 @@ export function ShiftTemplateForm() {
   const [previewYear, setPreviewYear] = useState(String(currentDate.getFullYear()));
   const [previewMonth, setPreviewMonth] = useState(String(currentDate.getMonth() + 1));
   const [createTemplateError, setCreateTemplateError] = useState<string | null>(null);
+  const [createTemplateConstraints, setCreateTemplateConstraints] = useState<ShiftConstraintRecord[]>([]);
+  const [createTemplateRulePickerOpen, setCreateTemplateRulePickerOpen] = useState(false);
+  const [nextCreateTemplateRuleType, setNextCreateTemplateRuleType] = useState<ShiftConstraintType>(
+    SHIFT_CONSTRAINT_OPTIONS[0].type
+  );
 
   const refresh = useCallback(async () => {
     setRows(await apiFetch<AnyRecord[]>("/api/v1/shift-templates"));
@@ -1223,7 +1807,8 @@ export function ShiftTemplateForm() {
           code: form.get("code"),
           name_de: form.get("name_de"),
           name_en: form.get("name_en"),
-          category: form.get("category")
+          category: form.get("category"),
+          constraints: createTemplateConstraints
         })
       });
     } catch (error) {
@@ -1233,6 +1818,9 @@ export function ShiftTemplateForm() {
     event.currentTarget.reset();
     setIsCreateTemplateModalOpen(false);
     setCreateTemplateError(null);
+    setCreateTemplateConstraints([]);
+    setCreateTemplateRulePickerOpen(false);
+    setNextCreateTemplateRuleType(SHIFT_CONSTRAINT_OPTIONS[0].type);
     await refresh();
   }
 
@@ -1256,6 +1844,9 @@ export function ShiftTemplateForm() {
                 type="button"
                 onClick={() => {
                   setCreateTemplateError(null);
+                  setCreateTemplateConstraints([]);
+                  setCreateTemplateRulePickerOpen(false);
+                  setNextCreateTemplateRuleType(SHIFT_CONSTRAINT_OPTIONS[0].type);
                   setIsCreateTemplateModalOpen(true);
                 }}
                 className="mt-3 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"
@@ -1323,11 +1914,59 @@ export function ShiftTemplateForm() {
               <Field label={t(locale, "germanName")}><input className={inputClass} name="name_de" required /></Field>
               <Field label={t(locale, "englishName")}><input className={inputClass} name="name_en" required /></Field>
             </div>
+            <div className="mt-4">
+              <button
+                type="button"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700"
+                onClick={() => setCreateTemplateRulePickerOpen((open) => !open)}
+              >
+                {t(locale, "addRule")}
+              </button>
+            </div>
+            {createTemplateRulePickerOpen ? (
+              <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(20rem,1fr)_auto]">
+                <select
+                  className={inputClass}
+                  value={nextCreateTemplateRuleType}
+                  onChange={(event) => setNextCreateTemplateRuleType(event.target.value as ShiftConstraintType)}
+                >
+                  {SHIFT_CONSTRAINT_OPTIONS.map((option) => (
+                    <option key={option.type} value={option.type}>
+                      {t(locale, option.label)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-3 text-sm font-semibold text-white"
+                  onClick={() => {
+                    setCreateTemplateConstraints((current) =>
+                      addConstraint(current, nextCreateTemplateRuleType, {
+                        allTemplates: rows.filter(isShiftTemplateRecord)
+                      })
+                    );
+                    setCreateTemplateRulePickerOpen(false);
+                  }}
+                >
+                  {t(locale, "addRule")}
+                </button>
+              </div>
+            ) : null}
+            <div className="mt-4">
+              <RuleRowsEditor
+                constraints={createTemplateConstraints}
+                onChange={setCreateTemplateConstraints}
+                allTemplates={rows.filter(isShiftTemplateRecord)}
+              />
+            </div>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setCreateTemplateError(null);
+                  setCreateTemplateConstraints([]);
+                  setCreateTemplateRulePickerOpen(false);
+                  setNextCreateTemplateRuleType(SHIFT_CONSTRAINT_OPTIONS[0].type);
                   setIsCreateTemplateModalOpen(false);
                 }}
                 className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
