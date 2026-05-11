@@ -164,7 +164,11 @@ export const dictionaries = {
     validationDetailConstraintCrossDayUnavailable:
       "Regel: Dienst darf nicht in einen blockierten Tag laufen (endet am {{endDay}}).",
     validationDetailConstraintMaxAssignmentsPerMonth:
-      "Regel: maximal {{max}} Dienste dieses Typs pro Monat; aktuell {{actual}}.",
+      "Regel: höchstens {{max}} Dienste vom Typ «{{shift}}» pro Monat; diese Person hat {{actual}}.",
+    validationDetailConstraintCoupledShift:
+      "Regel: Zu «{{source}}» gehört am {{partnerDate}} auch «{{partner}}» für dieselbe Person.",
+    validationDetailConsecutiveWeekends:
+      "Hinweis: Dienst an mindestens zwei aufeinanderfolgenden Kalender-Wochenenden (Sa. je Woche: {{ranges}}).",
     selectedMonth: "Ausgewählter Monat",
     wishesSection: "Wünsche",
     rosterSection: "Finaler Dienstplan",
@@ -228,8 +232,18 @@ export const dictionaries = {
     constraintMinRestHours: "Mindest-Ruhezeit nach diesem Dienst (Stunden)",
     constraintNoCrossDayIntoUnavailable: "Darf nicht in einen Tag mit Urlaub/Forschung/Lehre/Frei hineinlaufen",
     constraintMaxAssignmentsPerMonth: "Maximalzahl dieses Diensttyps pro Monat",
-    constraintEnforcementWarning: "Nur Warnung",
-    constraintEnforcementBlock: "Blockiert Zuweisung",
+    constraintRequiresCoupledShift: "Gekoppelter Folge-Dienst (andere Schichtvariante)",
+    constraintCoupledPartnerVariant: "Variante des Partner-Dienstes",
+    constraintPartnerDayOffsetLabel: "Tage-Offset",
+    constraintPartnerDayOffsetInfoButton: "Erklärung zu Tage-Offset ein- oder ausblenden",
+    constraintPartnerDayOffsetHint:
+      "Kalendertage zum Partner-Dienst relativ zum Quell-Dienst (z. B. 1 = nächster Kalendertag). Erlaubt −7 bis 7.",
+    constraintCoupledNoVariantsHint: "Keine anderen Schicht-Varianten verfügbar. Legen Sie zuerst weitere Varianten oder Vorlagen an.",
+    constraintRuleSeverityGroup: "Schweregrad",
+    constraintSeverityInfo: "Info",
+    constraintSeverityWarning: "Warnung",
+    constraintSeverityError: "Fehler",
+    constraintSeverityErrorHint: "Verhindert das Speichern einer Zuweisung für diese Schicht im Dienstplan.",
     addRule: "Regel hinzufügen",
     removeRule: "Regel entfernen",
     deleteShiftTemplate: "Dienstvorlage löschen",
@@ -631,7 +645,11 @@ export const dictionaries = {
     validationDetailConstraintCrossDayUnavailable:
       "Rule: shift must not continue into an unavailable day (ends on {{endDay}}).",
     validationDetailConstraintMaxAssignmentsPerMonth:
-      "Rule: maximum {{max}} assignments of this shift type per month; currently {{actual}}.",
+      "Rule: at most {{max}} shifts of type \"{{shift}}\" per month; this team member has {{actual}}.",
+    validationDetailConstraintCoupledShift:
+      "Rule: With \"{{source}}\" assigned, \"{{partner}}\" must also be assigned to the same person on {{partnerDate}}.",
+    validationDetailConsecutiveWeekends:
+      "Note: assigned on at least two consecutive calendar weekends (Saturdays: {{ranges}}).",
     selectedMonth: "Selected month",
     wishesSection: "Requests",
     rosterSection: "Final roster",
@@ -695,8 +713,18 @@ export const dictionaries = {
     constraintMinRestHours: "Minimum rest time after this shift (hours)",
     constraintNoCrossDayIntoUnavailable: "Must not run into a vacation/research/teaching/free day",
     constraintMaxAssignmentsPerMonth: "Maximum number of this shift type per month",
-    constraintEnforcementWarning: "Warning only",
-    constraintEnforcementBlock: "Block assignment",
+    constraintRequiresCoupledShift: "Coupled follow-on shift (other shift variant)",
+    constraintCoupledPartnerVariant: "Partner shift variant",
+    constraintPartnerDayOffsetLabel: "Day offset",
+    constraintPartnerDayOffsetInfoButton: "Show or hide day offset explanation",
+    constraintPartnerDayOffsetHint:
+      "Calendar days to the partner shift relative to the source shift (e.g. 1 = next calendar day). Allowed range −7 to 7.",
+    constraintCoupledNoVariantsHint: "No other shift variants available. Add more variants or templates first.",
+    constraintRuleSeverityGroup: "Severity",
+    constraintSeverityInfo: "Info",
+    constraintSeverityWarning: "Warning",
+    constraintSeverityError: "Error",
+    constraintSeverityErrorHint: "Prevents saving an assignment to this shift in the roster planner.",
     addRule: "Add rule",
     removeRule: "Remove rule",
     deleteShiftTemplate: "Delete shift template",

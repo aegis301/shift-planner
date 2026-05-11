@@ -467,10 +467,14 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <h2 className="text-xl font-semibold text-ink">{t(locale, "analysisSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
-      <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} />
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
     </section>
   ) : null;
+
+  const planningConflictSummary =
+    periodId && planningUi && !waitingForPlannerSession ? (
+      <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} />
+    ) : null;
 
   return (
     <div className="grid gap-6">
@@ -847,6 +851,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         viewMode === "stacked" ? (
           <>
             {wishesSection}
+            {planningConflictSummary}
             {rosterSection}
             {!teamMemberPortalUi ? analysisSection : null}
           </>
@@ -877,8 +882,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               ))}
             </div>
             {activeTab === "wishes" ? wishesSection : null}
-            {activeTab === "roster" ? rosterSection : null}
-            {activeTab === "analysis" ? analysisSection : null}
+            {activeTab === "roster" ? (
+              <>
+                {planningConflictSummary}
+                {rosterSection}
+              </>
+            ) : null}
+            {activeTab === "analysis" ? (
+              <>
+                {planningConflictSummary}
+                {analysisSection}
+              </>
+            ) : null}
           </div>
         )
       ) : (
@@ -894,6 +909,34 @@ function summarizeRosterSlot(slot: RosterMatrix["slots"][number], locale: Locale
   const name = locale === "de" ? slot.template_name_de : slot.template_name_en;
   const base = name || slot.label || slot.template_code || `#${slot.id}`;
   return slot.variant_label ? `${base} (${slot.variant_label})` : base;
+}
+
+function shiftVariantLabelFromMatrix(matrix: RosterMatrix, variantId: number, locale: Locale): string {
+  const slot = matrix.slots.find((row) => row.shift_variant_id === variantId);
+  if (slot) {
+    return summarizeRosterSlot(slot, locale);
+  }
+  return `#${variantId}`;
+}
+
+function shiftTypeLabelForMaxAssignmentsWarning(warning: ValidationWarning, matrix: RosterMatrix, locale: Locale): string {
+  const templateId = warning.details?.shift_template_id;
+  if (typeof templateId === "number") {
+    const summary = matrix.shift_templates?.find((row) => row.id === templateId);
+    if (summary) {
+      const name = locale === "de" ? summary.name_de : summary.name_en;
+      const label = name.trim() || summary.code;
+      return `${label} (${summary.code})`;
+    }
+  }
+  const slotIds = warning.details?.violating_roster_slot_ids as number[] | undefined;
+  const firstSlotId = Array.isArray(slotIds) && slotIds.length ? slotIds[0] : undefined;
+  const slot =
+    typeof firstSlotId === "number" ? matrix.slots.find((row) => row.id === firstSlotId) : undefined;
+  if (slot) {
+    return summarizeRosterSlot(slot, locale);
+  }
+  return "—";
 }
 
 function validationWarningDetailText(warning: ValidationWarning, matrix: RosterMatrix | null, locale: Locale): string | null {
@@ -953,9 +996,121 @@ function validationWarningDetailText(warning: ValidationWarning, matrix: RosterM
   if (warning.code === "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH") {
     const max = String(warning.details?.max_assignments_per_month ?? "—");
     const actual = String(warning.details?.actual_assignments_per_month ?? "—");
-    return t(locale, "validationDetailConstraintMaxAssignmentsPerMonth", { max, actual });
+    const shift = shiftTypeLabelForMaxAssignmentsWarning(warning, matrix, locale);
+    return t(locale, "validationDetailConstraintMaxAssignmentsPerMonth", { max, actual, shift });
+  }
+  if (warning.code === "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED") {
+    const pid = warning.details?.paired_shift_variant_id as number | undefined;
+    const partner = typeof pid === "number" ? shiftVariantLabelFromMatrix(matrix, pid, locale) : "—";
+    const partnerDate = String(warning.details?.partner_date ?? "—");
+    const sid = warning.details?.shift_variant_id as number | undefined;
+    const source = typeof sid === "number" ? shiftVariantLabelFromMatrix(matrix, sid, locale) : "—";
+    return t(locale, "validationDetailConstraintCoupledShift", { source, partner, partnerDate });
+  }
+  if (warning.code === "ROSTER_CONSECUTIVE_WEEKENDS") {
+    const raw = warning.details?.pairs;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return null;
+    }
+    const parts: string[] = [];
+    for (const item of raw) {
+      if (item && typeof item === "object") {
+        const row = item as { first_weekend_saturday?: string; second_weekend_saturday?: string };
+        if (row.first_weekend_saturday && row.second_weekend_saturday) {
+          parts.push(`${row.first_weekend_saturday} → ${row.second_weekend_saturday}`);
+        }
+      }
+    }
+    if (!parts.length) {
+      return null;
+    }
+    return t(locale, "validationDetailConsecutiveWeekends", { ranges: parts.join("; ") });
   }
   return null;
+}
+
+function rosterWarningSeverityRank(severity: ValidationWarning["severity"]): number {
+  if (severity === "error") {
+    return 2;
+  }
+  if (severity === "warning") {
+    return 1;
+  }
+  return 0;
+}
+
+function worstRosterWarningSeverity(warnings: ValidationWarning[]): ValidationWarning["severity"] {
+  let best = -1;
+  let picked: ValidationWarning["severity"] = "info";
+  for (const warning of warnings) {
+    const rank = rosterWarningSeverityRank(warning.severity);
+    if (rank > best) {
+      best = rank;
+      picked = warning.severity;
+    }
+  }
+  return picked;
+}
+
+function inlineValidationBadgeTone(warnings: ValidationWarning[]): "clear" | ValidationWarning["severity"] {
+  if (!warnings.length) {
+    return "clear";
+  }
+  return worstRosterWarningSeverity(warnings);
+}
+
+function inlineValidationBadgeClass(tone: ReturnType<typeof inlineValidationBadgeTone>): string {
+  if (tone === "clear") {
+    return "bg-emerald-100 text-emerald-800 ring-emerald-200";
+  }
+  if (tone === "error") {
+    return "bg-rose-100 text-rose-800 ring-rose-200";
+  }
+  if (tone === "warning") {
+    return "bg-amber-100 text-amber-900 ring-amber-200";
+  }
+  return "bg-sky-100 text-sky-900 ring-sky-200";
+}
+
+function inlineValidationRowTone(severity: ValidationWarning["severity"]): "info" | "warning" | "error" {
+  if (severity === "error" || severity === "warning" || severity === "info") {
+    return severity;
+  }
+  return "warning";
+}
+
+function inlineValidationRowClasses(tone: ReturnType<typeof inlineValidationRowTone>): {
+  wrap: string;
+  lead: string;
+  sep: string;
+  detail: string;
+  fallback: string;
+} {
+  if (tone === "error") {
+    return {
+      wrap: "rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200",
+      lead: "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-semibold text-rose-950",
+      sep: "text-rose-800/80",
+      detail: "text-xs font-medium leading-snug text-rose-900/95",
+      fallback: "text-xs leading-snug text-rose-900/90"
+    };
+  }
+  if (tone === "warning") {
+    return {
+      wrap: "rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-950 ring-1 ring-amber-200",
+      lead: "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-semibold text-amber-950",
+      sep: "text-amber-900/80",
+      detail: "text-xs font-medium leading-snug text-amber-950/95",
+      fallback: "text-xs leading-snug text-amber-950/90"
+    };
+  }
+  return {
+    wrap: "rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-950 ring-1 ring-sky-200",
+    lead: "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-semibold text-sky-950",
+    sep: "text-sky-900/80",
+    detail: "text-xs font-medium leading-snug text-sky-950/95",
+    fallback: "text-xs leading-snug text-sky-950/90"
+  };
 }
 
 function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatrix | null; warnings: ValidationWarning[] }) {
@@ -964,14 +1119,16 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
     (warning) =>
       warning.code.startsWith("ROSTER_MATRIX") ||
       warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT" ||
-      warning.code.startsWith("ROSTER_CONSTRAINT")
+      warning.code.startsWith("ROSTER_CONSTRAINT") ||
+      warning.code === "ROSTER_CONSECUTIVE_WEEKENDS"
   );
+  const badgeTone = inlineValidationBadgeTone(rosterWarnings);
   return (
     <Card>
       <div className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-ink">{t(locale, "conflictSummary")}</h2>
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${rosterWarnings.length ? "bg-rose-100 text-rose-800 ring-rose-200" : "bg-emerald-100 text-emerald-800 ring-emerald-200"}`}>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${inlineValidationBadgeClass(badgeTone)}`}>
             {rosterWarnings.length}
           </span>
         </div>
@@ -985,22 +1142,24 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
               const memberName = member ? teamMemberLabel(member) : null;
               const detail = validationWarningDetailText(warning, rosterMatrix, locale);
               const hasLead = Boolean(warning.date || memberName || warning.team_member_id != null);
+              const rowTone = inlineValidationRowTone(warning.severity);
+              const rowClass = inlineValidationRowClasses(rowTone);
               return (
                 <div
                   key={`${warning.code}-${warning.team_member_id}-${warning.date}-${index}`}
-                  className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200"
+                  className={rowClass.wrap}
                 >
                   {hasLead ? (
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-semibold text-rose-950">
+                    <div className={rowClass.lead}>
                       {warning.date ? <span className="tabular-nums">{warning.date}</span> : null}
-                      {warning.date && (memberName || warning.team_member_id != null) ? <span className="text-rose-800/80">·</span> : null}
+                      {warning.date && (memberName || warning.team_member_id != null) ? <span className={rowClass.sep}>·</span> : null}
                       {memberName ? <span>{memberName}</span> : warning.team_member_id != null ? <span>ID {warning.team_member_id}</span> : null}
                     </div>
                   ) : null}
                   {detail ? (
-                    <p className={`text-xs font-medium leading-snug text-rose-900/95 ${hasLead ? "mt-1" : ""}`}>{detail}</p>
+                    <p className={`${rowClass.detail} ${hasLead ? "mt-1" : ""}`}>{detail}</p>
                   ) : (
-                    <p className={`text-xs leading-snug text-rose-900/90 ${hasLead ? "mt-1" : ""}`}>{warning.message}</p>
+                    <p className={`${rowClass.fallback} ${hasLead ? "mt-1" : ""}`}>{warning.message}</p>
                   )}
                 </div>
               );

@@ -410,31 +410,66 @@ class ShiftGroupTemplateIdsPut(BaseModel):
 
 DayClass = Literal["any", "weekday", "weekend", "holiday"]
 ShiftTemplateCategory = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
-ConstraintEnforcement = Literal["warning", "block"]
+ConstraintSeverity = Literal["info", "warning", "error"]
 ShiftConstraintType = Literal[
     "no_additional_same_day",
     "min_rest_hours",
     "no_cross_day_into_unavailable_day",
     "max_assignments_per_month",
+    "requires_coupled_shift",
 ]
 
 
 class ShiftConstraint(BaseModel):
     type: ShiftConstraintType
-    enforcement: ConstraintEnforcement = "warning"
+    severity: ConstraintSeverity = "warning"
     min_rest_hours: int | None = Field(default=None, ge=1, le=48)
     max_assignments_per_month: int | None = Field(default=None, ge=1, le=31)
+    paired_shift_variant_id: int | None = Field(default=None, ge=1)
+    partner_day_offset: int = Field(default=1, ge=-7, le=7)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_enforcement(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        next_data = dict(data)
+        if "severity" in next_data:
+            next_data.pop("enforcement", None)
+            return next_data
+        enforcement = next_data.pop("enforcement", None)
+        if enforcement == "block":
+            next_data["severity"] = "error"
+        elif enforcement == "warning":
+            next_data["severity"] = "warning"
+        return next_data
 
     @model_validator(mode="after")
     def validate_min_rest_hours(self) -> Self:
-        if self.type == "min_rest_hours" and self.min_rest_hours is None:
-            raise ValueError("min_rest_hours is required for min_rest_hours constraints")
-        if self.type == "max_assignments_per_month" and self.max_assignments_per_month is None:
-            raise ValueError("max_assignments_per_month is required for max_assignments_per_month constraints")
-        if self.type != "min_rest_hours":
-            self.min_rest_hours = None
-        if self.type != "max_assignments_per_month":
+        if self.type == "min_rest_hours":
+            if self.min_rest_hours is None:
+                raise ValueError("min_rest_hours is required for min_rest_hours constraints")
             self.max_assignments_per_month = None
+            self.paired_shift_variant_id = None
+            self.partner_day_offset = 1
+            return self
+        if self.type == "max_assignments_per_month":
+            if self.max_assignments_per_month is None:
+                raise ValueError("max_assignments_per_month is required for max_assignments_per_month constraints")
+            self.min_rest_hours = None
+            self.paired_shift_variant_id = None
+            self.partner_day_offset = 1
+            return self
+        if self.type == "requires_coupled_shift":
+            if self.paired_shift_variant_id is None:
+                raise ValueError("paired_shift_variant_id is required for requires_coupled_shift constraints")
+            self.min_rest_hours = None
+            self.max_assignments_per_month = None
+            return self
+        self.min_rest_hours = None
+        self.max_assignments_per_month = None
+        self.paired_shift_variant_id = None
+        self.partner_day_offset = 1
         return self
 
 

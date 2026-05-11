@@ -51,7 +51,12 @@ def list_roster_slot_assignments(db: Session, *, planning_period_id: int) -> lis
     stmt = (
         select(RosterSlotAssignment)
         .join(RosterSlot)
-        .options(joinedload(RosterSlotAssignment.roster_slot), joinedload(RosterSlotAssignment.team_member))
+        .options(
+            joinedload(RosterSlotAssignment.roster_slot).joinedload(RosterSlot.planning_period),
+            joinedload(RosterSlotAssignment.roster_slot).joinedload(RosterSlot.shift_variant),
+            joinedload(RosterSlotAssignment.roster_slot).joinedload(RosterSlot.shift_template),
+            joinedload(RosterSlotAssignment.team_member),
+        )
         .where(RosterSlot.planning_period_id == planning_period_id)
         .order_by(RosterSlot.slot_date, RosterSlot.position, RosterSlot.shift_template_id, RosterSlot.shift_variant_id)
     )
@@ -228,7 +233,15 @@ def upsert_roster_slot_assignment(
     actor: str,
     source: str,
 ) -> RosterSlotAssignment:
-    slot = db.get(RosterSlot, payload.roster_slot_id)
+    slot = db.scalars(
+        select(RosterSlot)
+        .where(RosterSlot.id == payload.roster_slot_id)
+        .options(
+            joinedload(RosterSlot.planning_period),
+            joinedload(RosterSlot.shift_variant),
+            joinedload(RosterSlot.shift_template),
+        )
+    ).first()
     if slot is None:
         raise ValueError("Roster slot not found")
     require_planning_period_in_org(db, slot.planning_period_id, organization_id)
@@ -255,6 +268,7 @@ def upsert_roster_slot_assignment(
             if row.team_member_id == payload.team_member_id
         ]
         preflight_warnings = evaluate_assignment_constraints(
+            db=db,
             slot=slot,
             team_member_id=payload.team_member_id,
             resolved_constraints=resolved_constraints,

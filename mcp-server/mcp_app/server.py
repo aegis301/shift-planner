@@ -52,6 +52,7 @@ from app.services.shift_groups import (
     replace_group_shift_templates,
 )
 from app.services.shift_templates import (
+    ShiftConstraintInvalidError,
     ShiftTemplateCodeConflictError,
     create_shift_template,
     create_shift_variant,
@@ -217,7 +218,7 @@ def team_member_period_notes_filtered_resource(planning_period_id: int, shift_gr
 
 @mcp.tool
 def get_validation_warnings(planning_period_id: int, shift_group_id: int | None = None) -> list[dict[str, Any]]:
-    """Validate a planning period and return structured warnings. Optionally filter to one shift group."""
+    """Validate a planning period and return structured warnings (matrix, roster, no-go, duplicate day, consecutive weekends, template constraints). Optionally filter to one shift group."""
     with db_session() as db:
         return [
             warning.model_dump(mode="json")
@@ -348,7 +349,7 @@ def create_shift_template_tool(
     display_order: int = 0,
     constraints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Create a shift template. Requires MCP admin token."""
+    """Create a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift (paired_shift_variant_id, partner_day_offset, severity)."""
     require_token(token)
     with db_session() as db:
         try:
@@ -366,6 +367,8 @@ def create_shift_template_tool(
                 actor="mcp",
                 source="mcp",
             )
+        except ShiftConstraintInvalidError as exc:
+            raise ValueError(exc.message) from exc
         except ShiftTemplateCodeConflictError as exc:
             raise ValueError(f"Shift template code already exists: {exc.code}") from exc
         return serialize_model(template)
@@ -383,7 +386,7 @@ def update_shift_template_tool(
     is_active: bool | None = None,
     constraints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Update a shift template. Requires MCP admin token."""
+    """Update a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift."""
     require_token(token)
     with db_session() as db:
         try:
@@ -403,6 +406,8 @@ def update_shift_template_tool(
                 actor="mcp",
                 source="mcp",
             )
+        except ShiftConstraintInvalidError as exc:
+            raise ValueError(exc.message) from exc
         except ShiftTemplateCodeConflictError as exc:
             raise ValueError(f"Shift template code already exists: {exc.code}") from exc
         if template is None:
@@ -435,26 +440,29 @@ def create_shift_variant_tool(
     required_count: int = 1,
     constraints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Create a shift template variant. Requires MCP admin token."""
+    """Create a shift template variant. Requires MCP admin token. Constraints may include requires_coupled_shift (paired variant in same org; not self)."""
     require_token(token)
     with db_session() as db:
-        variant = create_shift_variant(
-            db,
-            shift_template_id,
-            ShiftVariantCreate(
-                label=label,
-                start_day_class=start_day_class,  # type: ignore[arg-type]
-                end_day_class=end_day_class,  # type: ignore[arg-type]
-                starts_at=time.fromisoformat(starts_at),
-                ends_at=time.fromisoformat(ends_at),
-                end_day_offset=end_day_offset,
-                required_count=required_count,
-                constraints=constraints or [],
-            ),
-            organization_id=mcp_organization_id(),
-            actor="mcp",
-            source="mcp",
-        )
+        try:
+            variant = create_shift_variant(
+                db,
+                shift_template_id,
+                ShiftVariantCreate(
+                    label=label,
+                    start_day_class=start_day_class,  # type: ignore[arg-type]
+                    end_day_class=end_day_class,  # type: ignore[arg-type]
+                    starts_at=time.fromisoformat(starts_at),
+                    ends_at=time.fromisoformat(ends_at),
+                    end_day_offset=end_day_offset,
+                    required_count=required_count,
+                    constraints=constraints or [],
+                ),
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+            )
+        except ShiftConstraintInvalidError as exc:
+            raise ValueError(exc.message) from exc
         if variant is None:
             raise ValueError("Shift template not found")
         return serialize_model(variant)
@@ -474,27 +482,30 @@ def update_shift_variant_tool(
     constraints: list[dict[str, Any]] | None = None,
     is_active: bool | None = None,
 ) -> dict[str, Any]:
-    """Update a shift template variant. Requires MCP admin token."""
+    """Update a shift template variant. Requires MCP admin token. Constraints may include requires_coupled_shift."""
     require_token(token)
     with db_session() as db:
-        variant = update_shift_variant(
-            db,
-            shift_variant_id,
-            ShiftVariantUpdate(
-                label=label,
-                start_day_class=start_day_class,  # type: ignore[arg-type]
-                end_day_class=end_day_class,  # type: ignore[arg-type]
-                starts_at=time.fromisoformat(starts_at) if starts_at else None,
-                ends_at=time.fromisoformat(ends_at) if ends_at else None,
-                end_day_offset=end_day_offset,
-                required_count=required_count,
-                constraints=constraints,
-                is_active=is_active,
-            ),
-            organization_id=mcp_organization_id(),
-            actor="mcp",
-            source="mcp",
-        )
+        try:
+            variant = update_shift_variant(
+                db,
+                shift_variant_id,
+                ShiftVariantUpdate(
+                    label=label,
+                    start_day_class=start_day_class,  # type: ignore[arg-type]
+                    end_day_class=end_day_class,  # type: ignore[arg-type]
+                    starts_at=time.fromisoformat(starts_at) if starts_at else None,
+                    ends_at=time.fromisoformat(ends_at) if ends_at else None,
+                    end_day_offset=end_day_offset,
+                    required_count=required_count,
+                    constraints=constraints,
+                    is_active=is_active,
+                ),
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+            )
+        except ShiftConstraintInvalidError as exc:
+            raise ValueError(exc.message) from exc
         if variant is None:
             raise ValueError("Shift variant not found")
         return serialize_model(variant)

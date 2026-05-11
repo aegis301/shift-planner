@@ -21,6 +21,7 @@ export type RosterWorkloadMatrixSlice = {
 export type RosterWorkloadWarning = {
   code: string;
   team_member_id: number | null;
+  severity?: "info" | "warning" | "error";
 };
 
 export type TeamMemberWorkloadRow = {
@@ -50,8 +51,12 @@ function rosterWarningCountsByMember(warnings: RosterWorkloadWarning[]): Map<num
     const rosterRelated =
       warning.code.startsWith("ROSTER_MATRIX") ||
       warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT" ||
-      warning.code.startsWith("ROSTER_CONSTRAINT");
+      warning.code.startsWith("ROSTER_CONSTRAINT") ||
+      warning.code === "ROSTER_CONSECUTIVE_WEEKENDS";
     if (!rosterRelated || warning.team_member_id == null) {
+      continue;
+    }
+    if ((warning.severity ?? "warning") === "info") {
       continue;
     }
     const id = warning.team_member_id;

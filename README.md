@@ -82,14 +82,17 @@ Team member month notes now store only month-specific summaries. Permanent prefe
 
 Shift templates are configured under Shift Types. A template has one or more variants that define applicability (`weekday`, `weekend`, `holiday`, or `any`), start/end times, overnight offsets, and required count. Holidays use the North Rhine-Westphalia German holiday calendar and behave like weekend rules unless explicit holiday variants exist.
 
-Templates and variants can each define constraints with per-rule enforcement (`warning` or `block`). Current rule types:
+Templates and variants can each define constraints with per-rule **`severity`**: `info`, `warning`, or `error` (`error` blocks roster assignment; the others do not). Requests may still send legacy **`enforcement`** (`warning` / `block`); it is normalized to severity. Current rule types:
 
 - `no_additional_same_day`
 - `min_rest_hours` (requires `min_rest_hours`)
 - `no_cross_day_into_unavailable_day`
 - `max_assignments_per_month` (requires `max_assignments_per_month`, counts same-template assignments in the selected month)
+- `requires_coupled_shift` (requires `paired_shift_variant_id`, optional `partner_day_offset` default `1`, range `-7`..`7`; same person must also be assigned to the partner variant on the offset calendar day **inside the same planning month**; outside the month the rule is skipped)
 
 These constraints are evaluated for assignment preflight and validation warnings through a shared backend rule engine.
+
+Validation also emits **`ROSTER_CONSECUTIVE_WEEKENDS`** (warning) when a team member is assigned on two consecutive calendar weekends (Saturday–Sunday pairs anchored by each weekend’s Saturday).
 
 The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a team member to that date/slot, and changes autosave. The team member picker shows a color dot for that person’s day-level wishes status and labels for wish/no-go on the slot’s template. Day-level unavailable statuses, template no-gos (unless Manual override is checked on the cell), and template/variant constraints are highlighted as conflicts.
 

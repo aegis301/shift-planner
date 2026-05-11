@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import RosterSlot, RosterSlotAssignment, ShiftTemplate, ShiftVariant
 from app.schemas import (
     GeneratedRosterSlotPreview,
+    ShiftConstraint,
     ShiftTemplateCreate,
     ShiftTemplateUpdate,
     ShiftVariantCreate,
@@ -21,6 +22,39 @@ class ShiftTemplateCodeConflictError(Exception):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+class ShiftConstraintInvalidError(Exception):
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
+def _constraint_models(raw: list | None) -> list[ShiftConstraint]:
+    return [ShiftConstraint.model_validate(row) for row in raw or []]
+
+
+def validate_shift_constraint_payloads(
+    db: Session,
+    constraints: list | None,
+    *,
+    organization_id: int,
+    owning_variant_id: int | None = None,
+) -> None:
+    for rule in _constraint_models(constraints):
+        if rule.type != "requires_coupled_shift":
+            continue
+        vid = rule.paired_shift_variant_id
+        if vid is None:
+            raise ShiftConstraintInvalidError("paired_shift_variant_id is required for requires_coupled_shift")
+        if owning_variant_id is not None and vid == owning_variant_id:
+            raise ShiftConstraintInvalidError("Coupled shift cannot reference the same variant as itself")
+        paired = db.get(ShiftVariant, vid)
+        if paired is None:
+            raise ShiftConstraintInvalidError("Paired shift variant not found")
+        template = db.get(ShiftTemplate, paired.shift_template_id)
+        if template is None or template.organization_id != organization_id:
+            raise ShiftConstraintInvalidError("Paired shift variant must belong to the same organization")
 
 
 def _shift_template_code_in_use(
@@ -92,6 +126,7 @@ def create_shift_template(
 ) -> ShiftTemplate:
     if _shift_template_code_in_use(db, payload.code, organization_id):
         raise ShiftTemplateCodeConflictError(payload.code)
+    validate_shift_constraint_payloads(db, payload.constraints, organization_id=organization_id)
     template = ShiftTemplate(**payload.model_dump(), organization_id=organization_id)
     db.add(template)
     db.flush()
@@ -112,6 +147,8 @@ def update_shift_template(
     if new_code is not None and new_code != template.code:
         if _shift_template_code_in_use(db, new_code, organization_id, exclude_template_id=template.id):
             raise ShiftTemplateCodeConflictError(new_code)
+    if "constraints" in data and data["constraints"] is not None:
+        validate_shift_constraint_payloads(db, data["constraints"], organization_id=organization_id)
     for key, value in data.items():
         setattr(template, key, value)
     record_audit(db, actor=actor, source=source, action="update", entity_type="shift_template", entity_id=template.id)
@@ -156,9 +193,13 @@ def create_shift_variant(
     template = db.get(ShiftTemplate, template_id)
     if template is None or template.organization_id != organization_id:
         return None
+    validate_shift_constraint_payloads(db, payload.constraints, organization_id=organization_id)
     variant = ShiftVariant(shift_template_id=template_id, **payload.model_dump())
     db.add(variant)
     db.flush()
+    validate_shift_constraint_payloads(
+        db, variant.constraints, organization_id=organization_id, owning_variant_id=variant.id
+    )
     record_audit(db, actor=actor, source=source, action="create", entity_type="shift_variant", entity_id=variant.id)
     db.commit()
     db.refresh(variant)
@@ -182,6 +223,9 @@ def update_shift_variant(
         return None
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(variant, key, value)
+    validate_shift_constraint_payloads(
+        db, variant.constraints, organization_id=organization_id, owning_variant_id=variant.id
+    )
     record_audit(db, actor=actor, source=source, action="update", entity_type="shift_variant", entity_id=variant.id)
     db.commit()
     db.refresh(variant)

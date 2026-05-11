@@ -16,6 +16,7 @@ from app.schemas import (
 )
 from app.services.authz import is_admin
 from app.services.shift_templates import (
+    ShiftConstraintInvalidError,
     ShiftTemplateCodeConflictError,
     create_shift_template,
     create_shift_variant,
@@ -50,6 +51,8 @@ def post_shift_template(
         return create_shift_template(
             db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
         )
+    except ShiftConstraintInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     except ShiftTemplateCodeConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -68,6 +71,8 @@ def patch_shift_template(
         template = update_shift_template(
             db, template_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
         )
+    except ShiftConstraintInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     except ShiftTemplateCodeConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -98,9 +103,12 @@ def post_shift_variant(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
-    variant = create_shift_variant(
-        db, template_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
-    )
+    try:
+        variant = create_shift_variant(
+            db, template_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+        )
+    except ShiftConstraintInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     if variant is None:
         raise HTTPException(status_code=404, detail="Shift template not found")
     return variant
@@ -113,9 +121,12 @@ def patch_shift_variant(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
-    variant = update_shift_variant(
-        db, variant_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
-    )
+    try:
+        variant = update_shift_variant(
+            db, variant_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+        )
+    except ShiftConstraintInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message) from exc
     if variant is None:
         raise HTTPException(status_code=404, detail="Shift variant not found")
     return variant

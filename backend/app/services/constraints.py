@@ -1,10 +1,11 @@
+import calendar
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, RosterSlot, RosterSlotAssignment, ShiftTemplate, ShiftVariant
+from app.models import PlanningCell, PlanningPeriod, RosterSlot, RosterSlotAssignment, ShiftTemplate, ShiftVariant
 from app.schemas import ShiftConstraint, UNAVAILABLE_STATUSES, ValidationWarning
 
 ConstraintSource = Literal["template", "variant"]
@@ -42,8 +43,11 @@ def resolve_slot_constraints(db: Session, slot: RosterSlot) -> list[ResolvedCons
     return out
 
 
-def _severity(enforcement: str) -> Literal["warning", "error"]:
-    return "error" if enforcement == "block" else "warning"
+def _team_slots_including_hypothetical(slot: RosterSlot, team_slots: list[RosterSlot]) -> list[RosterSlot]:
+    out = list(team_slots)
+    if not any(s.id == slot.id for s in out):
+        out.append(slot)
+    return out
 
 
 def _base_details(
@@ -51,12 +55,12 @@ def _base_details(
     slot: RosterSlot,
     source: ConstraintSource,
     constraint_type: str,
-    enforcement: str,
+    constraint_severity: str,
 ) -> dict[str, object]:
     return {
         "constraint_type": constraint_type,
         "constraint_source": source,
-        "enforcement": enforcement,
+        "constraint_severity": constraint_severity,
         "roster_slot_id": slot.id,
         "shift_template_id": slot.shift_template_id,
         "shift_variant_id": slot.shift_variant_id,
@@ -65,6 +69,7 @@ def _base_details(
 
 def evaluate_assignment_constraints(
     *,
+    db: Session,
     slot: RosterSlot,
     team_member_id: int,
     resolved_constraints: list[ResolvedConstraint],
@@ -85,7 +90,7 @@ def evaluate_assignment_constraints(
             slot=slot,
             source=resolved.source,
             constraint_type=rule.type,
-            enforcement=rule.enforcement,
+            constraint_severity=rule.severity,
         )
         if assignment_id is not None:
             details["roster_slot_assignment_id"] = assignment_id
@@ -95,7 +100,7 @@ def evaluate_assignment_constraints(
                 warnings.append(
                     ValidationWarning(
                         code="ROSTER_CONSTRAINT_SAME_DAY",
-                        severity=_severity(rule.enforcement),
+                        severity=rule.severity,
                         message="Constraint violation: no additional shift assignments allowed on this day.",
                         team_member_id=team_member_id,
                         date=slot.slot_date,
@@ -130,7 +135,7 @@ def evaluate_assignment_constraints(
                 warnings.append(
                     ValidationWarning(
                         code="ROSTER_CONSTRAINT_MIN_REST_HOURS",
-                        severity=_severity(rule.enforcement),
+                        severity=rule.severity,
                         message="Constraint violation: minimum rest time between shifts is not met.",
                         team_member_id=team_member_id,
                         date=slot.slot_date,
@@ -152,7 +157,7 @@ def evaluate_assignment_constraints(
                 warnings.append(
                     ValidationWarning(
                         code="ROSTER_CONSTRAINT_CROSS_DAY_UNAVAILABLE",
-                        severity=_severity(rule.enforcement),
+                        severity=rule.severity,
                         message="Constraint violation: shift crosses into an unavailable day.",
                         team_member_id=team_member_id,
                         date=end_day,
@@ -173,7 +178,7 @@ def evaluate_assignment_constraints(
                 warnings.append(
                     ValidationWarning(
                         code="ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH",
-                        severity=_severity(rule.enforcement),
+                        severity=rule.severity,
                         message="Constraint violation: maximum assignments per month for this shift template exceeded.",
                         team_member_id=team_member_id,
                         date=slot.slot_date,
@@ -185,11 +190,64 @@ def evaluate_assignment_constraints(
                     )
                 )
             continue
+        if rule.type == "requires_coupled_shift":
+            if rule.paired_shift_variant_id is None:
+                continue
+            paired_variant = db.get(ShiftVariant, rule.paired_shift_variant_id)
+            if paired_variant is None:
+                continue
+            period = slot.planning_period
+            if period is None:
+                period = db.get(PlanningPeriod, slot.planning_period_id)
+            if period is None:
+                continue
+            month_last = calendar.monthrange(period.year, period.month)[1]
+            bound_start = date(period.year, period.month, 1)
+            bound_end = date(period.year, period.month, month_last)
+            partner_date = slot.slot_date + timedelta(days=rule.partner_day_offset)
+            if partner_date < bound_start or partner_date > bound_end:
+                continue
+            source_variant = slot.shift_variant
+            if source_variant is None and slot.shift_variant_id is not None:
+                source_variant = db.get(ShiftVariant, slot.shift_variant_id)
+            source_rc = source_variant.required_count if source_variant is not None else 1
+            partner_rc = paired_variant.required_count
+            strict_position = not (source_rc == 1 and partner_rc == 1)
+            slots_for_member = _team_slots_including_hypothetical(slot, team_slots)
+            has_partner = False
+            for other in slots_for_member:
+                if other.id == slot.id:
+                    continue
+                if other.shift_variant_id != rule.paired_shift_variant_id:
+                    continue
+                if other.slot_date != partner_date:
+                    continue
+                if strict_position and other.position != slot.position:
+                    continue
+                has_partner = True
+                break
+            if not has_partner:
+                warnings.append(
+                    ValidationWarning(
+                        code="ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED",
+                        severity=rule.severity,
+                        message="Constraint violation: required coupled shift assignment is missing.",
+                        team_member_id=team_member_id,
+                        date=slot.slot_date,
+                        details={
+                            **details,
+                            "paired_shift_variant_id": rule.paired_shift_variant_id,
+                            "partner_date": partner_date.isoformat(),
+                            "partner_day_offset": rule.partner_day_offset,
+                        },
+                    )
+                )
+            continue
     return warnings
 
 
 def find_blocking_constraint(warnings: list[ValidationWarning]) -> ValidationWarning | None:
     for warning in warnings:
-        if warning.details.get("enforcement") == "block":
+        if warning.severity == "error":
             return warning
     return None
