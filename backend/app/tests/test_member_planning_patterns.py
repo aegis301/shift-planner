@@ -1,25 +1,21 @@
-from datetime import date, datetime, time, timezone
+"""Tests for member planning patterns."""
+from datetime import date, datetime, timezone
 
 import pytest
+from app.models import (Organization, PlanningCell, PlanningPeriod, RosterSlot,
+                        TeamMember, TeamMemberPlanningPattern)
+from app.models.base import Base
+from app.schemas import (AllowedCalendarWeekParityMemberPatternRule,
+                         AvoidTimeWindowMemberPatternRule,
+                         RecurringWeekdayStatusMemberPatternRule,
+                         TeamMemberPlanningPatternsReplace,
+                         TeamMemberPlanningPatternUpsertItem)
+from app.services.member_planning_patterns import (
+    evaluate_member_planning_patterns, read_organization_member_pattern_policy,
+    replace_team_member_planning_patterns, validate_pattern_severity)
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-
-from app.models import Organization, PlanningCell, PlanningPeriod, RosterSlot, TeamMember, TeamMemberPlanningPattern
-from app.models.base import Base
-from app.schemas import (
-    AvoidTimeWindowMemberPatternRule,
-    AllowedCalendarWeekParityMemberPatternRule,
-    RecurringWeekdayStatusMemberPatternRule,
-    TeamMemberPlanningPatternsReplace,
-    TeamMemberPlanningPatternUpsertItem,
-)
-from app.services.member_planning_patterns import (
-    evaluate_member_planning_patterns,
-    read_organization_member_pattern_policy,
-    replace_team_member_planning_patterns,
-    validate_pattern_severity,
-)
 
 
 @pytest.fixture()
