@@ -156,6 +156,53 @@ class TeamMember(Base):
     planning_patterns: Mapped[list["TeamMemberPlanningPattern"]] = relationship(
         back_populates="team_member", cascade="all, delete-orphan"
     )
+    property_values: Mapped[list["TeamMemberPropertyValue"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+
+
+class TeamMemberPropertyDefinition(Base):
+    __tablename__ = "team_member_property_definitions"
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_team_member_property_def_org_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    type: Mapped[str] = mapped_column(String(32))
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    editable_by_team_member: Mapped[bool] = mapped_column(Boolean, default=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    values: Mapped[list["TeamMemberPropertyValue"]] = relationship(
+        back_populates="property_definition", cascade="all, delete-orphan"
+    )
+
+
+class TeamMemberPropertyValue(Base):
+    __tablename__ = "team_member_property_values"
+    __table_args__ = (
+        UniqueConstraint("team_member_id", "property_definition_id", name="uq_team_member_property_value_member_def"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    property_definition_id: Mapped[int] = mapped_column(
+        ForeignKey("team_member_property_definitions.id", ondelete="CASCADE"), index=True
+    )
+    value: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped[TeamMember] = relationship(back_populates="property_values")
+    property_definition: Mapped[TeamMemberPropertyDefinition] = relationship(back_populates="values")
 
 
 class TeamMemberPlanningPattern(Base):

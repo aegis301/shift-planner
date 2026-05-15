@@ -38,6 +38,10 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 - Update MCP docs and tests when MCP-visible behavior changes.
 - Mutating MCP tools must require explicit authorization, currently through `MCP_ADMIN_TOKEN`.
 
+## Team member properties
+
+Admins manage org-scoped property definitions (`GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`) and per-member values (`GET|PUT /api/v1/team-members/{id}/property-values`). Types: `number`, `date`, `select`, `multi_select`, `text`. `editable_by_team_member` gates self-service writes on `/profile`. Business logic in `team_member_property_definitions.py` and `team_member_property_values.py`; MCP mirrors REST with admin token.
+
 ## Shift groups (Dienstgruppen)
 Team members (`TeamMember` rows) can belong to multiple shift groups; each group links to multiple shift templates. **Admins** may omit `shift_group_id` on planning reads/exports for a full-org view; the **wishes matrix** still returns `shift_templates`, `template_slot_days` (each row includes `shift_group_id`), and `shift_intents` so wish/no-go editing matches the filtered experience. **Planners** must supply `shift_group_id` (and it must appear in `user_shift_groups`). Roster assignment is rejected when the assignee does not share a group with the slot’s template (templates with no group remain assignable by any active `TeamMember`). Admin UI: `/shift-groups`; planning toolbar: shift group selector and `?shiftGroup=` URL param. Destructive **create/delete planning month** actions are admin-only in API and UI; mutating MCP tools remain admin-token gated.
 

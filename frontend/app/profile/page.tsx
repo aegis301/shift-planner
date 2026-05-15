@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
+import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -116,6 +117,9 @@ function ProfileContent() {
           </button>
           {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
         </form>
+      </Card>
+      <Card>
+        <TeamMemberPropertyValuesEditor teamMemberId={member.id} />
       </Card>
       <Card>
         <TeamMemberPlanningPatternsEditor teamMemberId={member.id} />

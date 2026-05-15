@@ -159,3 +159,35 @@ def assert_team_member_patterns_write(db: Session, user: User, team_member_id: i
     if member is not None and member.id == team_member_id:
         return
     raise PermissionError("Not allowed to edit planning patterns for this team member")
+
+
+def assert_team_member_property_values_read(db: Session, user: User, team_member_id: int) -> None:
+    if is_admin(user):
+        return
+    member = get_linked_team_member(db, user)
+    if member is not None and member.id == team_member_id:
+        return
+    raise PermissionError("Not allowed to read property values for this team member")
+
+
+def writable_property_definition_ids_for_user(db: Session, user: User, team_member_id: int) -> set[int] | None:
+    if is_admin(user):
+        return None
+    member = get_linked_team_member(db, user)
+    if member is None or member.id != team_member_id:
+        raise PermissionError("Not allowed to edit property values for this team member")
+    from app.models import TeamMemberPropertyDefinition
+    from sqlalchemy import select
+
+    rows = db.scalars(
+        select(TeamMemberPropertyDefinition.id).where(
+            TeamMemberPropertyDefinition.organization_id == user.organization_id,
+            TeamMemberPropertyDefinition.is_active.is_(True),
+            TeamMemberPropertyDefinition.editable_by_team_member.is_(True),
+        )
+    )
+    return set(rows.all())
+
+
+def assert_team_member_property_values_write(db: Session, user: User, team_member_id: int) -> set[int] | None:
+    return writable_property_definition_ids_for_user(db, user, team_member_id)

@@ -14,6 +14,10 @@ from app.schemas import (
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
     TeamMemberPlanningPatternUpsertItem,
+    TeamMemberPropertyDefinitionCreate,
+    TeamMemberPropertyDefinitionUpdate,
+    TeamMemberPropertyValuesReplace,
+    TeamMemberPropertyValueUpsertItem,
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
     PlanningPeriodCreate,
@@ -34,6 +38,17 @@ from app.services.member_planning_patterns import (
     read_organization_member_pattern_policy,
     replace_team_member_planning_patterns,
 )
+from app.services.team_member_property_definitions import (
+    create_team_member_property_definition,
+    delete_team_member_property_definition,
+    list_team_member_property_definitions,
+    update_team_member_property_definition,
+)
+from app.services.team_member_property_values import (
+    list_property_values_for_member,
+    replace_team_member_property_values,
+)
+from app.schemas.domain import TeamMemberPropertyDefinitionRead
 from app.models import Organization
 from app.services.matrix import (
     bulk_upsert_planning_cells,
@@ -233,6 +248,132 @@ def team_member_planning_patterns_resource(team_member_id: int) -> list[dict[str
             db, team_member_id=team_member_id, organization_id=mcp_organization_id()
         )
         return [pattern_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.resource("shift-planner://team-member-property-definitions")
+def team_member_property_definitions_resource() -> list[dict[str, Any]]:
+    """Return org-scoped team member property definitions (competency fields)."""
+    with db_session() as db:
+        rows = list_team_member_property_definitions(db, organization_id=mcp_organization_id())
+        return [TeamMemberPropertyDefinitionRead.model_validate(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.resource("shift-planner://team-members/{team_member_id}/property-values")
+def team_member_property_values_resource(team_member_id: int) -> list[dict[str, Any]]:
+    """Return property values for one team member (includes definition metadata)."""
+    with db_session() as db:
+        return [
+            row.model_dump(mode="json")
+            for row in list_property_values_for_member(
+                db, team_member_id=team_member_id, organization_id=mcp_organization_id()
+            )
+        ]
+
+
+@mcp.tool
+def create_team_member_property_definition_tool(
+    token: str,
+    name: str,
+    type: str,
+    options: list[str] | None = None,
+    editable_by_team_member: bool = True,
+    display_order: int = 0,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    """Create a team member property definition. Types: number, date, select, multi_select, text. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = create_team_member_property_definition(
+            db,
+            TeamMemberPropertyDefinitionCreate(
+                name=name,
+                type=type,
+                options=options or [],
+                editable_by_team_member=editable_by_team_member,
+                display_order=display_order,
+                is_active=is_active,
+            ),
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return TeamMemberPropertyDefinitionRead.model_validate(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_team_member_property_definition_tool(
+    token: str,
+    definition_id: int,
+    name: str | None = None,
+    type: str | None = None,
+    options: list[str] | None = None,
+    editable_by_team_member: bool | None = None,
+    display_order: int | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Update a team member property definition. Requires MCP admin token."""
+    require_token(token)
+    payload = TeamMemberPropertyDefinitionUpdate(
+        name=name,
+        type=type,
+        options=options,
+        editable_by_team_member=editable_by_team_member,
+        display_order=display_order,
+        is_active=is_active,
+    )
+    with db_session() as db:
+        row = update_team_member_property_definition(
+            db,
+            definition_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if row is None:
+            raise ValueError("Property definition not found")
+        return TeamMemberPropertyDefinitionRead.model_validate(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_team_member_property_definition_tool(token: str, definition_id: int) -> dict[str, bool]:
+    """Deactivate or delete a property definition. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        ok = delete_team_member_property_definition(
+            db,
+            definition_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if not ok:
+            raise ValueError("Property definition not found")
+        return {"deleted": True}
+
+
+@mcp.tool
+def replace_team_member_property_values_tool(
+    token: str,
+    team_member_id: int,
+    values: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace team member property values (partial upsert by property_definition_id). Requires MCP admin token."""
+    require_token(token)
+    payload = TeamMemberPropertyValuesReplace(
+        values=[TeamMemberPropertyValueUpsertItem.model_validate(item) for item in values]
+    )
+    with db_session() as db:
+        rows = replace_team_member_property_values(
+            db,
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            payload=payload,
+            actor="mcp",
+            source="mcp",
+            allow_definition_ids=None,
+        )
+        return [row.model_dump(mode="json") for row in rows]
 
 
 @mcp.tool

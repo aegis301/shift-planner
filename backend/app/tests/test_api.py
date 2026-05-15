@@ -2695,3 +2695,81 @@ def test_admin_member_pattern_policy_caps_error_severity(client: TestClient):
     )
     assert accepted.status_code == 200
     assert accepted.json()[0]["severity"] == "error"
+
+
+def test_team_member_property_definitions_admin_crud(client: TestClient):
+    login(client)
+    created = client.post(
+        "/api/v1/team-member-property-definitions",
+        json={
+            "name": "Training years",
+            "type": "number",
+            "options": [],
+            "editable_by_team_member": True,
+            "display_order": 0,
+            "is_active": True,
+        },
+    )
+    assert created.status_code == 201
+    definition_id = created.json()["id"]
+    listed = client.get("/api/v1/team-member-property-definitions")
+    assert listed.status_code == 200
+    assert any(row["id"] == definition_id for row in listed.json())
+    patched = client.patch(
+        f"/api/v1/team-member-property-definitions/{definition_id}",
+        json={"name": "Years in training"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["name"] == "Years in training"
+
+
+def test_team_member_property_values_member_self_service(team_member_client: TestClient):
+    login(team_member_client)
+    defn = team_member_client.post(
+        "/api/v1/team-member-property-definitions",
+        json={
+            "name": "Zusatz",
+            "type": "select",
+            "options": ["A", "B"],
+            "editable_by_team_member": True,
+        },
+    ).json()
+    login_team_member(team_member_client)
+    team_member_id = team_member_client.get("/api/v1/auth/me").json()["team_member_id"]
+    put = team_member_client.put(
+        f"/api/v1/team-members/{team_member_id}/property-values",
+        json={"values": [{"property_definition_id": defn["id"], "value": "A"}]},
+    )
+    assert put.status_code == 200
+    assert put.json()[0]["value"] == "A"
+    denied = team_member_client.post(
+        "/api/v1/team-member-property-definitions",
+        json={"name": "X", "type": "text"},
+    )
+    assert denied.status_code == 403
+
+
+def test_team_member_property_values_admin_only_field(team_member_client: TestClient):
+    login(team_member_client)
+    defn = team_member_client.post(
+        "/api/v1/team-member-property-definitions",
+        json={
+            "name": "Internal",
+            "type": "text",
+            "editable_by_team_member": False,
+        },
+    ).json()
+    login_team_member(team_member_client)
+    team_member_id = team_member_client.get("/api/v1/auth/me").json()["team_member_id"]
+    denied = team_member_client.put(
+        f"/api/v1/team-members/{team_member_id}/property-values",
+        json={"values": [{"property_definition_id": defn["id"], "value": "nope"}]},
+    )
+    assert denied.status_code == 403
+    login(team_member_client)
+    ok = team_member_client.put(
+        f"/api/v1/team-members/{team_member_id}/property-values",
+        json={"values": [{"property_definition_id": defn["id"], "value": "admin ok"}]},
+    )
+    assert ok.status_code == 200
+    assert ok.json()[0]["value"] == "admin ok"

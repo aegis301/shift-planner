@@ -9,6 +9,9 @@
 - **Admin UI + i18n:** Shift template create/edit and variant editors include reusable constraints controls with severity selection and rest-hours input, with DE/EN translations; planning conflict summary uses severity-colored rows and badge tone.
 - **MCP parity for shift configuration:** MCP tools now accept constraints on create and add update tools (**`update_shift_template_tool`**, **`update_shift_variant_tool`**) so MCP can manage constraints consistently with REST.
 
+## 2026-06-09
+- **Team member property definitions:** Admins define org-scoped competency fields (`number`, `date`, `select`, `multi_select`, `text`) via `GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`. Per-member values use `GET|PUT /api/v1/team-members/{id}/property-values`. `editable_by_team_member` controls whether linked members may write values on `/profile`. Admin UI: Organization → Team → Properties; values in staff member editor and profile. MCP resources and admin tools included.
+
 ## 2026-05-13
 - **Stacked avoid-time-window bands:** `avoid_time_window` rules use `windows[]` (each band: weekdays, times, anchor). Legacy flat JSON is still accepted. Roster validation matches any band; profile UI can add or remove bands within one pattern.
 - **Calendar week parity + wishes status:** `allowed_calendar_week_parity` rules include a **`status`** (same day-status values as recurring weekdays). For ISO weeks that do **not** match the rule’s parity, that status is written to wishes `planning_cells` with `source` `recurring_pattern` in draft and preliminary months (merged with recurring weekday rules by pattern order; manual cells preserved). Defaults to **`frei`** when omitted in stored JSON.

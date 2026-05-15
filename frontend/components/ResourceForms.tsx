@@ -6,6 +6,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
+import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
 import { useLocale } from "@/components/LocaleProvider";
 
 type AnyRecord = Record<string, unknown>;
@@ -1641,6 +1642,9 @@ export function TeamMemberEditorModal({
           </div>
         ) : null}
       </form>
+      <div className={embedded ? "mt-4" : "mt-4 px-1"}>
+        <TeamMemberPropertyValuesEditor teamMemberId={member.id} adminMode />
+      </div>
       <div className={embedded ? "mt-4" : "mt-4 px-1"}>
         <TeamMemberPlanningPatternsEditor teamMemberId={member.id} allowErrorSeverity={embedded} />
       </div>

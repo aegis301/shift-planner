@@ -8,13 +8,21 @@ from app.schemas import (
     TeamMemberCreate,
     TeamMemberPlanningPatternRead,
     TeamMemberPlanningPatternsReplace,
+    TeamMemberPropertyValueRead,
+    TeamMemberPropertyValuesReplace,
     TeamMemberRead,
     TeamMemberUpdate,
 )
 from app.services.authz import (
     assert_team_member_patterns_read,
     assert_team_member_patterns_write,
+    assert_team_member_property_values_read,
+    assert_team_member_property_values_write,
     is_admin,
+)
+from app.services.team_member_property_values import (
+    list_property_values_for_member,
+    replace_team_member_property_values,
 )
 from app.services.member_planning_patterns import (
     list_team_member_planning_patterns,
@@ -129,3 +137,95 @@ def put_team_member_planning_patterns(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return [pattern_to_read(row) for row in rows]
+
+
+@router.get("/{team_member_id}/property-values", response_model=list[TeamMemberPropertyValueRead])
+def get_team_member_property_values(
+    team_member_id: int,
+    active_definitions_only: bool = False,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        assert_team_member_property_values_read(db, user, team_member_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return list_property_values_for_member(
+        db,
+        team_member_id=team_member_id,
+        organization_id=user.organization_id,
+        active_definitions_only=active_definitions_only or not is_admin(user),
+    )
+
+
+@router.put("/{team_member_id}/property-values", response_model=list[TeamMemberPropertyValueRead])
+def put_team_member_property_values(
+    team_member_id: int,
+    payload: TeamMemberPropertyValuesReplace,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        allow_ids = assert_team_member_property_values_write(db, user, team_member_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        return replace_team_member_property_values(
+            db,
+            team_member_id=team_member_id,
+            organization_id=user.organization_id,
+            payload=payload,
+            actor=user.email,
+            source="rest",
+            allow_definition_ids=allow_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/{team_member_id}/property-values", response_model=list[TeamMemberPropertyValueRead])
+def get_team_member_property_values(
+    team_member_id: int,
+    active_definitions_only: bool = False,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        assert_team_member_property_values_read(db, user, team_member_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return list_property_values_for_member(
+        db,
+        team_member_id=team_member_id,
+        organization_id=user.organization_id,
+        active_definitions_only=active_definitions_only or not is_admin(user),
+    )
+
+
+@router.put("/{team_member_id}/property-values", response_model=list[TeamMemberPropertyValueRead])
+def put_team_member_property_values(
+    team_member_id: int,
+    payload: TeamMemberPropertyValuesReplace,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        allow_ids = assert_team_member_property_values_write(db, user, team_member_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        return replace_team_member_property_values(
+            db,
+            team_member_id=team_member_id,
+            organization_id=user.organization_id,
+            payload=payload,
+            actor=user.email,
+            source="rest",
+            allow_definition_ids=allow_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc

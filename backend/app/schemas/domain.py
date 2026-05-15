@@ -610,6 +610,97 @@ class OrganizationMemberPatternPolicyUpdate(BaseModel):
         return value
 
 
+TeamMemberPropertyType = Literal["number", "date", "select", "multi_select", "text"]
+_SELECT_PROPERTY_TYPES = frozenset({"select", "multi_select"})
+
+
+class TeamMemberPropertyDefinitionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    type: TeamMemberPropertyType
+    options: list[str] = Field(default_factory=list)
+    editable_by_team_member: bool = True
+    display_order: int = Field(default=0, ge=0, le=10_000)
+    is_active: bool = True
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _normalize_options(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("options must be a list")
+        return [str(item).strip() for item in value if str(item).strip()]
+
+    @model_validator(mode="after")
+    def _validate_options_for_type(self) -> Self:
+        if self.type in _SELECT_PROPERTY_TYPES:
+            if not self.options:
+                raise ValueError("options are required for select and multi_select property types")
+        elif self.options:
+            raise ValueError("options are only allowed for select and multi_select property types")
+        return self
+
+
+class TeamMemberPropertyDefinitionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    type: TeamMemberPropertyType | None = None
+    options: list[str] | None = None
+    editable_by_team_member: bool | None = None
+    display_order: int | None = Field(default=None, ge=0, le=10_000)
+    is_active: bool | None = None
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _normalize_options(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("options must be a list")
+        return [str(item).strip() for item in value if str(item).strip()]
+
+
+class TeamMemberPropertyDefinitionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    name: str
+    type: TeamMemberPropertyType
+    options: list[str] = Field(default_factory=list)
+    editable_by_team_member: bool
+    display_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TeamMemberPropertyValueUpsertItem(BaseModel):
+    property_definition_id: int
+    value: Any | None = None
+
+
+class TeamMemberPropertyValuesReplace(BaseModel):
+    values: list[TeamMemberPropertyValueUpsertItem] = Field(default_factory=list)
+
+
+class TeamMemberPropertyValueRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    organization_id: int
+    team_member_id: int
+    property_definition_id: int
+    value: Any | None = None
+    name: str
+    type: TeamMemberPropertyType
+    options: list[str] = Field(default_factory=list)
+    editable_by_team_member: bool
+    display_order: int
+    is_active: bool
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class ShiftVariantCreate(BaseModel):
     label: str = Field(min_length=1, max_length=255)
     start_day_class: DayClass = "any"
