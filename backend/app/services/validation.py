@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models import PlanningCell, PlanningShiftIntent, RosterSlotAssignment, RuleConfig
 from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationWarning
 from app.services.constraints import evaluate_assignment_constraints, resolve_slot_constraints
+from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_patterns_for_members
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
@@ -62,6 +63,10 @@ def _warning_in_shift_group_scope(
                 return False
         return True
     if warning.code.startswith("ROSTER_CONSTRAINT"):
+        rid = warning.details.get("roster_slot_id")
+        if rid is not None and rid not in slot_ids:
+            return False
+    if warning.code.startswith("MEMBER_PATTERN"):
         rid = warning.details.get("roster_slot_id")
         if rid is not None and rid not in slot_ids:
             return False
@@ -162,6 +167,7 @@ def validate_roster(
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
     _add_consecutive_weekend_warnings(warnings, slot_assignments)
     _add_roster_constraint_conflicts(db, warnings, slot_assignments, cells)
+    _add_member_pattern_conflicts(db, warnings, slot_assignments, organization_id)
     if shift_group_id is None:
         return warnings
     require_shift_group(db, shift_group_id, organization_id)
@@ -386,3 +392,29 @@ def _add_roster_constraint_conflicts(
         )
     merged_constraints = _merge_max_assignments_per_month_warnings(raw_constraint)
     warnings.extend(_merge_coupled_shift_warnings(merged_constraints))
+
+
+def _add_member_pattern_conflicts(
+    db: Session,
+    warnings: list[ValidationWarning],
+    assignments: list[RosterSlotAssignment],
+    organization_id: int,
+) -> None:
+    member_ids = {assignment.team_member_id for assignment in assignments}
+    patterns_by_member = list_patterns_for_members(db, organization_id=organization_id, team_member_ids=member_ids)
+    for assignment in assignments:
+        slot = assignment.roster_slot
+        if slot is None:
+            continue
+        member_patterns = patterns_by_member.get(assignment.team_member_id, [])
+        if not member_patterns:
+            continue
+        warnings.extend(
+            evaluate_member_planning_patterns(
+                db=db,
+                slot=slot,
+                team_member_id=assignment.team_member_id,
+                patterns=member_patterns,
+                assignment_id=assignment.id,
+            )
+        )

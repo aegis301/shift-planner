@@ -1007,6 +1007,23 @@ function validationWarningDetailText(warning: ValidationWarning, matrix: RosterM
     const source = typeof sid === "number" ? shiftVariantLabelFromMatrix(matrix, sid, locale) : "—";
     return t(locale, "validationDetailConstraintCoupledShift", { source, partner, partnerDate });
   }
+  if (warning.code === "MEMBER_PATTERN_AVOID_TIME_WINDOW") {
+    return t(locale, "validationDetailMemberPatternAvoidTimeWindow", {
+      label: String(warning.details?.pattern_label ?? "—"),
+      windowStart: String(warning.details?.window_start ?? "—"),
+      windowEnd: String(warning.details?.window_end ?? "—"),
+      weekday: String(warning.details?.weekday ?? "—"),
+      severity: String(warning.details?.constraint_severity ?? warning.severity)
+    });
+  }
+  if (warning.code === "MEMBER_PATTERN_WEEK_PARITY") {
+    return t(locale, "validationDetailMemberPatternWeekParity", {
+      label: String(warning.details?.pattern_label ?? "—"),
+      requiredParity: String(warning.details?.required_parity ?? "—"),
+      isoWeek: String(warning.details?.iso_week ?? "—"),
+      severity: String(warning.details?.constraint_severity ?? warning.severity)
+    });
+  }
   if (warning.code === "ROSTER_CONSECUTIVE_WEEKENDS") {
     const raw = warning.details?.pairs;
     if (!Array.isArray(raw) || raw.length === 0) {
@@ -1120,6 +1137,7 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
       warning.code.startsWith("ROSTER_MATRIX") ||
       warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT" ||
       warning.code.startsWith("ROSTER_CONSTRAINT") ||
+      warning.code.startsWith("MEMBER_PATTERN") ||
       warning.code === "ROSTER_CONSECUTIVE_WEEKENDS"
   );
   const badgeTone = inlineValidationBadgeTone(rosterWarnings);

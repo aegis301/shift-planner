@@ -2623,3 +2623,75 @@ def test_organization_delete_success():
             assert tc.get("/api/v1/auth/me").status_code == 401
     finally:
         app.dependency_overrides.clear()
+
+
+def _week_parity_pattern_payload(*, severity: str = "warning") -> dict:
+    return {
+        "patterns": [
+            {
+                "label": "Even weeks",
+                "is_active": True,
+                "severity": severity,
+                "display_order": 0,
+                "rule": {"type": "allowed_calendar_week_parity", "parity": "even"},
+            }
+        ]
+    }
+
+
+def test_team_member_planning_patterns_self_service(team_member_client: TestClient):
+    login_team_member(team_member_client)
+    team_member_id = team_member_client.get("/api/v1/auth/me").json()["team_member_id"]
+    response = team_member_client.put(
+        f"/api/v1/team-members/{team_member_id}/planning-patterns",
+        json=_week_parity_pattern_payload(),
+    )
+    assert response.status_code == 200
+    assert response.json()[0]["rule"]["parity"] == "even"
+    assert response.json()[0]["rule"]["status"] == "frei"
+    listed = team_member_client.get(f"/api/v1/team-members/{team_member_id}/planning-patterns")
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+
+def test_planner_planning_patterns_read_only(planner_client: TestClient):
+    login_planner(planner_client)
+    member_id = next(
+        member["id"]
+        for member in planner_client.get("/api/v1/team-members").json()
+        if member["email"] == "ingroup@example.com"
+    )
+    assert planner_client.get(f"/api/v1/team-members/{member_id}/planning-patterns").status_code == 200
+    denied = planner_client.put(
+        f"/api/v1/team-members/{member_id}/planning-patterns",
+        json=_week_parity_pattern_payload(),
+    )
+    assert denied.status_code == 403
+
+
+def test_admin_member_pattern_policy_caps_error_severity(client: TestClient):
+    login(client)
+    policy = client.get("/api/v1/organization/member-pattern-policy")
+    assert policy.status_code == 200
+    assert policy.json()["hard_types"] == []
+    team_member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Pat", "last_name": "Tern", "email": "pat@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    rejected = client.put(
+        f"/api/v1/team-members/{team_member_id}/planning-patterns",
+        json=_week_parity_pattern_payload(severity="error"),
+    )
+    assert rejected.status_code == 400
+    updated = client.patch(
+        "/api/v1/organization/member-pattern-policy",
+        json={"hard_types": ["allowed_calendar_week_parity"]},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["hard_types"] == ["allowed_calendar_week_parity"]
+    accepted = client.put(
+        f"/api/v1/team-members/{team_member_id}/planning-patterns",
+        json=_week_parity_pattern_payload(severity="error"),
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()[0]["severity"] == "error"

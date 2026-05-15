@@ -11,6 +11,9 @@ from app.schemas import (
     JoinRequestRead,
     OrganizationInviteCreate,
     OrganizationMembershipInviteRead,
+    OrganizationMemberPatternPolicy,
+    OrganizationMemberPatternPolicyRead,
+    OrganizationMemberPatternPolicyUpdate,
     OrganizationReadForAdmin,
     OrganizationStaffDirectoryRow,
     OrganizationUpdateInput,
@@ -35,6 +38,10 @@ from app.services.organization_invites import (
 from app.services.organization_lifecycle import delete_organization
 from app.services.organizations import update_organization_settings
 from app.services.organization_directory import list_organization_staff_directory
+from app.services.member_planning_patterns import (
+    read_organization_member_pattern_policy,
+    update_organization_member_pattern_policy,
+)
 from app.services.users import (
     admin_delete_organization_user,
     admin_set_organization_user_role,
@@ -116,6 +123,35 @@ def patch_organization_settings(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/member-pattern-policy", response_model=OrganizationMemberPatternPolicyRead)
+def get_member_pattern_policy(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> OrganizationMemberPatternPolicyRead:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return read_organization_member_pattern_policy(org)
+
+
+@router.patch("/member-pattern-policy", response_model=OrganizationMemberPatternPolicyRead)
+def patch_member_pattern_policy(
+    payload: OrganizationMemberPatternPolicyUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> OrganizationMemberPatternPolicyRead:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return update_organization_member_pattern_policy(
+        db,
+        org,
+        policy=OrganizationMemberPatternPolicy.model_validate(payload.model_dump()),
+        actor=user.email,
+        source="rest",
+    )
 
 
 @router.get("/join-requests", response_model=list[JoinRequestRead])

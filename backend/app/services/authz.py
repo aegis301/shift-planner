@@ -134,3 +134,28 @@ def use_team_member_filtered_matrix_view(db: Session, user: User) -> bool:
     if is_shift_planner_role(user) and get_linked_team_member(db, user) is not None:
         return True
     return False
+
+
+def assert_team_member_patterns_read(db: Session, user: User, team_member_id: int) -> None:
+    if is_admin(user):
+        return
+    if can_use_planning_ui(user):
+        from app.services.team_members import list_team_members_for_planner
+
+        allowed_ids = {member.id for member in list_team_members_for_planner(db, user)}
+        if team_member_id not in allowed_ids:
+            raise PermissionError("Team member is outside planner scope")
+        return
+    member = get_linked_team_member(db, user)
+    if member is not None and member.id == team_member_id:
+        return
+    raise PermissionError("Not allowed to read planning patterns for this team member")
+
+
+def assert_team_member_patterns_write(db: Session, user: User, team_member_id: int) -> None:
+    if is_admin(user):
+        return
+    member = get_linked_team_member(db, user)
+    if member is not None and member.id == team_member_id:
+        return
+    raise PermissionError("Not allowed to edit planning patterns for this team member")

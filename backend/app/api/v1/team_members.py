@@ -1,11 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin, get_current_planning_user
+from app.api.deps import get_current_admin, get_current_planning_user, get_current_user
 from app.db.session import get_db
-from app.models import User
-from app.schemas import TeamMemberCreate, TeamMemberRead, TeamMemberUpdate
-from app.services.authz import is_admin
+from app.models import Organization, User
+from app.schemas import (
+    TeamMemberCreate,
+    TeamMemberPlanningPatternRead,
+    TeamMemberPlanningPatternsReplace,
+    TeamMemberRead,
+    TeamMemberUpdate,
+)
+from app.services.authz import (
+    assert_team_member_patterns_read,
+    assert_team_member_patterns_write,
+    is_admin,
+)
+from app.services.member_planning_patterns import (
+    list_team_member_planning_patterns,
+    pattern_to_read,
+    read_organization_member_pattern_policy,
+    replace_team_member_planning_patterns,
+)
 from app.services.team_members import (
     create_team_member,
     delete_team_member,
@@ -69,3 +85,47 @@ def delete_team_member_endpoint(
             db, team_member_id, organization_id=user.organization_id, actor=user.email, source="rest"
         )
     }
+
+
+@router.get("/{team_member_id}/planning-patterns", response_model=list[TeamMemberPlanningPatternRead])
+def get_team_member_planning_patterns(
+    team_member_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        assert_team_member_patterns_read(db, user, team_member_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    rows = list_team_member_planning_patterns(db, team_member_id=team_member_id, organization_id=user.organization_id)
+    return [pattern_to_read(row) for row in rows]
+
+
+@router.put("/{team_member_id}/planning-patterns", response_model=list[TeamMemberPlanningPatternRead])
+def put_team_member_planning_patterns(
+    team_member_id: int,
+    payload: TeamMemberPlanningPatternsReplace,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        assert_team_member_patterns_write(db, user, team_member_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    policy = read_organization_member_pattern_policy(org)
+    try:
+        rows = replace_team_member_planning_patterns(
+            db,
+            team_member_id=team_member_id,
+            organization_id=user.organization_id,
+            payload=payload,
+            policy=policy,
+            actor=user.email,
+            source="rest",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return [pattern_to_read(row) for row in rows]

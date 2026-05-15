@@ -16,6 +16,7 @@ class Organization(Base):
     seat_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     billing_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     subscription_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    member_pattern_policy: Mapped[dict] = mapped_column(JSON, default=lambda: {"hard_types": []})
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
@@ -152,6 +153,28 @@ class TeamMember(Base):
     shift_group_links: Mapped[list["TeamMemberShiftGroup"]] = relationship(
         back_populates="team_member", cascade="all, delete-orphan"
     )
+    planning_patterns: Mapped[list["TeamMemberPlanningPattern"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+
+
+class TeamMemberPlanningPattern(Base):
+    __tablename__ = "team_member_planning_patterns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    rule: Mapped[dict] = mapped_column(JSON)
+    severity: Mapped[str] = mapped_column(String(20), default="warning")
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped[TeamMember] = relationship(back_populates="planning_patterns")
 
 
 class ShiftTemplate(Base):

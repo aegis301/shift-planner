@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Organization, PlanningPeriod, ShiftGroup
+from app.models import Organization, PlanningPeriod, ShiftGroup, TeamMember
 
 
 def get_organization(db: Session, organization_id: int) -> Organization | None:
@@ -35,3 +35,10 @@ def require_shift_group_in_org(db: Session, shift_group_id: int, organization_id
 
 def shift_group_ids_in_organization(db: Session, organization_id: int) -> set[int]:
     return set(db.scalars(select(ShiftGroup.id).where(ShiftGroup.organization_id == organization_id)).all())
+
+
+def require_team_member_in_org(db: Session, team_member_id: int, organization_id: int) -> TeamMember:
+    member = db.get(TeamMember, team_member_id)
+    if member is None or member.organization_id != organization_id:
+        raise ValueError("Team member not found")
+    return member

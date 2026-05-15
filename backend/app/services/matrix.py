@@ -4,7 +4,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, PlanningPeriod, PlanningShiftIntent, TeamMember, TeamMemberPeriodNote
+from app.models import PlanningCell, PlanningPeriod, PlanningShiftIntent, TeamMember, TeamMemberPeriodNote, TeamMemberPlanningPattern
 from app.schemas import (
     MatrixDay,
     MatrixTeamMember,
@@ -20,6 +20,7 @@ from app.schemas import (
     TeamMemberPeriodNoteUpsert,
 )
 from app.services.audit import record_audit
+from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     list_shift_groups,
@@ -483,3 +484,120 @@ def bulk_upsert_planning_shift_intents(
         db.refresh(row)
     return out
 
+
+RECURRING_PATTERN_CELL_SOURCE = "recurring_pattern"
+_OPEN_PERIOD_STATUSES = frozenset({"draft", "preliminary"})
+
+
+def _pattern_weekday_key(cell_date: date) -> str:
+    return ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[cell_date.weekday()]
+
+
+def apply_recurring_weekday_status_to_one_period(
+    db: Session,
+    *,
+    planning_period_id: int,
+    team_member_id: int,
+    organization_id: int,
+    patterns: list[TeamMemberPlanningPattern],
+    actor: str,
+    source: str,
+) -> None:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None or period.organization_id != organization_id:
+        return
+    if period.status not in _OPEN_PERIOD_STATUSES:
+        return
+    days_in_month = calendar.monthrange(period.year, period.month)[1]
+    for day in range(1, days_in_month + 1):
+        cell_date = date(period.year, period.month, day)
+        cell = db.scalar(
+            select(PlanningCell).where(
+                PlanningCell.planning_period_id == planning_period_id,
+                PlanningCell.team_member_id == team_member_id,
+                PlanningCell.cell_date == cell_date,
+            )
+        )
+        target = merge_recurring_pattern_cell_target(cell_date, patterns)
+        if target is not None:
+            if cell is None:
+                row = PlanningCell(
+                    planning_period_id=planning_period_id,
+                    team_member_id=team_member_id,
+                    cell_date=cell_date,
+                    status=target,
+                    comment=None,
+                    source=RECURRING_PATTERN_CELL_SOURCE,
+                )
+                db.add(row)
+                db.flush()
+                record_audit(
+                    db,
+                    actor=actor,
+                    source=source,
+                    action="create",
+                    entity_type="planning_cell",
+                    entity_id=row.id,
+                    details={
+                        "planning_period_id": planning_period_id,
+                        "team_member_id": team_member_id,
+                        "cell_date": cell_date.isoformat(),
+                        "status": target,
+                    },
+                )
+            elif cell.source == RECURRING_PATTERN_CELL_SOURCE:
+                if cell.status != target:
+                    cell.status = target
+                    db.flush()
+                    record_audit(
+                        db,
+                        actor=actor,
+                        source=source,
+                        action="update",
+                        entity_type="planning_cell",
+                        entity_id=cell.id,
+                        details={
+                            "planning_period_id": planning_period_id,
+                            "team_member_id": team_member_id,
+                            "cell_date": cell_date.isoformat(),
+                            "status": target,
+                        },
+                    )
+        elif cell is not None and cell.source == RECURRING_PATTERN_CELL_SOURCE:
+            cid = cell.id
+            record_audit(
+                db,
+                actor=actor,
+                source=source,
+                action="delete",
+                entity_type="planning_cell",
+                entity_id=cid,
+                details={"planning_period_id": planning_period_id, "team_member_id": team_member_id},
+            )
+            db.delete(cell)
+
+
+def sync_recurring_weekday_cells_for_member_open_periods(
+    db: Session,
+    *,
+    team_member_id: int,
+    organization_id: int,
+    patterns: list[TeamMemberPlanningPattern],
+    actor: str,
+    source: str,
+) -> None:
+    stmt = select(PlanningPeriod).where(
+        PlanningPeriod.organization_id == organization_id,
+        PlanningPeriod.status.in_(_OPEN_PERIOD_STATUSES),
+    )
+    for period in db.scalars(stmt):
+        apply_recurring_weekday_status_to_one_period(
+            db,
+            planning_period_id=period.id,
+            team_member_id=team_member_id,
+            organization_id=organization_id,
+            patterns=patterns,
+            actor=actor,
+            source=source,
+        )
+    db.commit()
