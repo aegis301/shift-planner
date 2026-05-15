@@ -55,6 +55,11 @@ def create_planning_period(
     record_audit(db, actor=actor, source=source, action="create", entity_type="planning_period", entity_id=period.id)
     db.commit()
     db.refresh(period)
+    from app.services.member_planning_patterns import sync_recurring_weekday_for_new_period
+
+    sync_recurring_weekday_for_new_period(
+        db, planning_period_id=period.id, organization_id=organization_id, actor=actor, source=source
+    )
     return period
 
 

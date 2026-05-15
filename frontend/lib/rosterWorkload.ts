@@ -52,6 +52,7 @@ function rosterWarningCountsByMember(warnings: RosterWorkloadWarning[]): Map<num
       warning.code.startsWith("ROSTER_MATRIX") ||
       warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT" ||
       warning.code.startsWith("ROSTER_CONSTRAINT") ||
+      warning.code.startsWith("MEMBER_PATTERN") ||
       warning.code === "ROSTER_CONSECUTIVE_WEEKENDS";
     if (!rosterRelated || warning.team_member_id == null) {
       continue;

@@ -13,6 +13,10 @@ import { t, type Locale } from "@/lib/i18n";
 
 type OrgSettings = { id: number; name: string; slug: string; plan_tier: string };
 
+type MemberPatternPolicy = {
+  hard_types: Array<"allowed_calendar_week_parity">;
+};
+
 type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string; is_active?: boolean };
 
 type MembershipInvite = {
@@ -72,6 +76,8 @@ export function OrganizationManagementPanel() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [memberPatternPolicy, setMemberPatternPolicy] = useState<MemberPatternPolicy>({ hard_types: [] });
+  const [patternPolicyMsg, setPatternPolicyMsg] = useState("");
 
   const orgName = org?.name ?? "";
 
@@ -112,6 +118,32 @@ export function OrganizationManagementPanel() {
       cancelled = true;
     };
   }, [loading, me, router]);
+
+  useEffect(() => {
+    if (loading || !isUserSession(me) || !me.capabilities.admin) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const policy = await apiFetch<MemberPatternPolicy>("/api/v1/organization/member-pattern-policy");
+        if (!cancelled) {
+          setMemberPatternPolicy({
+            hard_types: policy.hard_types.filter(
+              (item): item is "allowed_calendar_week_parity" => item === "allowed_calendar_week_parity"
+            )
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setMemberPatternPolicy({ hard_types: [] });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, me]);
 
   useEffect(() => {
     if (loading || !isUserSession(me) || !me.capabilities.admin) return;
@@ -220,6 +252,24 @@ export function OrganizationManagementPanel() {
     }
   }
 
+  async function saveMemberPatternPolicy() {
+    setPatternPolicyMsg("");
+    try {
+      const saved = await apiFetch<MemberPatternPolicy>("/api/v1/organization/member-pattern-policy", {
+        method: "PATCH",
+        body: JSON.stringify(memberPatternPolicy)
+      });
+      setMemberPatternPolicy(saved);
+      setPatternPolicyMsg(t(locale, "saved"));
+    } catch (e) {
+      if (e instanceof ApiError && typeof e.detail === "string") {
+        setPatternPolicyMsg(e.detail);
+      } else {
+        setPatternPolicyMsg(t(locale, "orgManagementInviteError"));
+      }
+    }
+  }
+
   async function submitDeleteOrg() {
     if (!org) return;
     setDeleteBusy(true);
@@ -267,6 +317,35 @@ export function OrganizationManagementPanel() {
           <p className="mt-1 font-mono text-sm text-slate-600">{org.slug}</p>
         </Card>
       ) : null}
+      <Card>
+        <h2 className="text-lg font-semibold text-ink">{t(locale, "memberPatternPolicyTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-600">{t(locale, "memberPatternPolicyHelp")}</p>
+        <p className="mt-2 text-sm text-slate-600">{t(locale, "memberPatternPolicyAvoidTimeWindowInfo")}</p>
+        <div className="mt-4 grid gap-2 text-sm text-slate-800">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={memberPatternPolicy.hard_types.includes("allowed_calendar_week_parity")}
+              onChange={() =>
+                setMemberPatternPolicy((prev) => ({
+                  hard_types: prev.hard_types.includes("allowed_calendar_week_parity")
+                    ? prev.hard_types.filter((item) => item !== "allowed_calendar_week_parity")
+                    : [...prev.hard_types, "allowed_calendar_week_parity"]
+                }))
+              }
+            />
+            {t(locale, "memberPatternPolicyHardWeekParity")}
+          </label>
+        </div>
+        <button
+          type="button"
+          className="mt-4 inline-flex h-10 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white"
+          onClick={() => void saveMemberPatternPolicy()}
+        >
+          {t(locale, "save")}
+        </button>
+        {patternPolicyMsg ? <p className="mt-2 text-sm text-emerald-700">{patternPolicyMsg}</p> : null}
+      </Card>
       <Card>
         <div className="flex items-center gap-2">
           <UserPlus className="text-emerald-700" aria-hidden />

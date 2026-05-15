@@ -9,6 +9,13 @@
 - **Admin UI + i18n:** Shift template create/edit and variant editors include reusable constraints controls with severity selection and rest-hours input, with DE/EN translations; planning conflict summary uses severity-colored rows and badge tone.
 - **MCP parity for shift configuration:** MCP tools now accept constraints on create and add update tools (**`update_shift_template_tool`**, **`update_shift_variant_tool`**) so MCP can manage constraints consistently with REST.
 
+## 2026-05-13
+- **Stacked avoid-time-window bands:** `avoid_time_window` rules use `windows[]` (each band: weekdays, times, anchor). Legacy flat JSON is still accepted. Roster validation matches any band; profile UI can add or remove bands within one pattern.
+- **Calendar week parity + wishes status:** `allowed_calendar_week_parity` rules include a **`status`** (same day-status values as recurring weekdays). For ISO weeks that do **not** match the rule’s parity, that status is written to wishes `planning_cells` with `source` `recurring_pattern` in draft and preliminary months (merged with recurring weekday rules by pattern order; manual cells preserved). Defaults to **`frei`** when omitted in stored JSON.
+
+## 2026-05-12
+- **Recurring member planning patterns:** `GET/PUT /api/v1/team-members/{id}/planning-patterns` supports `avoid_time_window` (always info-only on roster; never a blocking org “hard” type; **multiple time windows per pattern** via `windows[]`), `allowed_calendar_week_parity` (`MEMBER_PATTERN_WEEK_PARITY`; org policy may allow `error`), and `recurring_weekday_status` (writes wishes `planning_cells` with `source` `recurring_pattern` for draft and preliminary months; manual cells preserved; new months synced on create). `GET/PATCH /api/v1/organization/member-pattern-policy` only toggles hard enforcement for calendar-week parity.
+
 ## 2026-05-08
 - **Planning period lifecycle:** Added explicit 3-state status flow for planning months (`draft`, `preliminary`, `published`) with dedicated transition endpoints `POST /api/v1/planning-periods/{id}/draft`, `POST /api/v1/planning-periods/{id}/preliminary`, and `POST /api/v1/planning-periods/{id}/publish` (legacy `unpublish` now maps to `preliminary`).
 - **Team-member visibility and wishes gating:** Team-member roster reads and roster XLSX/PDF exports stay allowed in `preliminary` and `published`; team-member wishes API writes (cells, intents, bulk, clear, month notes) are allowed in `draft` and `preliminary` and blocked in `published`. My-planning shows a preliminary banner; planners see an amber wishes-matrix cue when a day cell has stored feedback text.

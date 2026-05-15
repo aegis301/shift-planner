@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { Card, Field, inputClass } from "@/components/Card";
+import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -78,43 +79,48 @@ function ProfileContent() {
   }
 
   return (
-    <Card>
-      <h1 className="text-2xl font-semibold text-ink">{t(locale, "profileTitle")}</h1>
-      <p className="mt-2 text-sm text-slate-600">{t(locale, "profileHelp")}</p>
-      <p className="mt-2 text-sm text-slate-700">
-        <span className="font-semibold">{t(locale, "id")}:</span> {member.id}
-      </p>
-      <form className="mt-6 grid max-w-lg gap-4" onSubmit={submit}>
-        <Field label={t(locale, "firstName")}>
-          <input className={inputClass} name="first_name" defaultValue={member.first_name} required />
-        </Field>
-        <Field label={t(locale, "lastName")}>
-          <input className={inputClass} name="last_name" defaultValue={member.last_name} required />
-        </Field>
-        <Field label={t(locale, "email")}>
-          <input className={inputClass} name="email" type="email" defaultValue={member.email} required />
-        </Field>
-        <Field label={t(locale, "employment")}>
-          <input className={inputClass} name="employment_percentage" type="number" min={1} max={100} defaultValue={member.employment_percentage} />
-        </Field>
-        <Field label={t(locale, "planningPreferencesField")}>
-          <textarea
-            className={`${inputClass} min-h-32`}
-            name="planning_preferences"
-            defaultValue={member.planning_preferences ?? ""}
-            rows={5}
-          />
-        </Field>
-        <p className="text-xs text-slate-500">{t(locale, "planningPreferencesMatrixHelp")}</p>
-        <Field label={t(locale, "notes")}>
-          <input className={inputClass} name="notes" defaultValue={member.notes ?? ""} />
-        </Field>
-        <button type="submit" className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white">
-          {t(locale, "save")}
-        </button>
-        {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
-      </form>
-    </Card>
+    <div className="grid gap-6">
+      <Card>
+        <h1 className="text-2xl font-semibold text-ink">{t(locale, "profileTitle")}</h1>
+        <p className="mt-2 text-sm text-slate-600">{t(locale, "profileHelp")}</p>
+        <p className="mt-2 text-sm text-slate-700">
+          <span className="font-semibold">{t(locale, "id")}:</span> {member.id}
+        </p>
+        <form className="mt-6 grid max-w-lg gap-4" onSubmit={submit}>
+          <Field label={t(locale, "firstName")}>
+            <input className={inputClass} name="first_name" defaultValue={member.first_name} required />
+          </Field>
+          <Field label={t(locale, "lastName")}>
+            <input className={inputClass} name="last_name" defaultValue={member.last_name} required />
+          </Field>
+          <Field label={t(locale, "email")}>
+            <input className={inputClass} name="email" type="email" defaultValue={member.email} required />
+          </Field>
+          <Field label={t(locale, "employment")}>
+            <input className={inputClass} name="employment_percentage" type="number" min={1} max={100} defaultValue={member.employment_percentage} />
+          </Field>
+          <Field label={t(locale, "planningPreferencesField")}>
+            <textarea
+              className={`${inputClass} min-h-32`}
+              name="planning_preferences"
+              defaultValue={member.planning_preferences ?? ""}
+              rows={5}
+            />
+          </Field>
+          <p className="text-xs text-slate-500">{t(locale, "planningPreferencesMatrixHelp")}</p>
+          <Field label={t(locale, "notes")}>
+            <input className={inputClass} name="notes" defaultValue={member.notes ?? ""} />
+          </Field>
+          <button type="submit" className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white">
+            {t(locale, "save")}
+          </button>
+          {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
+        </form>
+      </Card>
+      <Card>
+        <TeamMemberPlanningPatternsEditor teamMemberId={member.id} />
+      </Card>
+    </div>
   );
 }
 

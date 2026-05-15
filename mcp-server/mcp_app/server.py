@@ -12,6 +12,8 @@ from app.models import ShiftGroup
 from app.schemas import (
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
+    TeamMemberPlanningPatternsReplace,
+    TeamMemberPlanningPatternUpsertItem,
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
     PlanningPeriodCreate,
@@ -26,6 +28,13 @@ from app.schemas import (
     ShiftVariantUpdate,
 )
 from app.services.team_members import create_team_member, delete_team_member, list_team_members
+from app.services.member_planning_patterns import (
+    list_team_member_planning_patterns,
+    pattern_to_read,
+    read_organization_member_pattern_policy,
+    replace_team_member_planning_patterns,
+)
+from app.models import Organization
 from app.services.matrix import (
     bulk_upsert_planning_cells,
     bulk_upsert_planning_shift_intents,
@@ -216,9 +225,19 @@ def team_member_period_notes_filtered_resource(planning_period_id: int, shift_gr
         ]
 
 
+@mcp.resource("shift-planner://team-members/{team_member_id}/planning-patterns")
+def team_member_planning_patterns_resource(team_member_id: int) -> list[dict[str, Any]]:
+    """Return recurring planning patterns for one team member."""
+    with db_session() as db:
+        rows = list_team_member_planning_patterns(
+            db, team_member_id=team_member_id, organization_id=mcp_organization_id()
+        )
+        return [pattern_to_read(row).model_dump(mode="json") for row in rows]
+
+
 @mcp.tool
 def get_validation_warnings(planning_period_id: int, shift_group_id: int | None = None) -> list[dict[str, Any]]:
-    """Validate a planning period and return structured warnings (matrix, roster, no-go, duplicate day, consecutive weekends, template constraints). Optionally filter to one shift group."""
+    """Validate a planning period and return structured warnings (matrix, roster, no-go, duplicate day, consecutive weekends, template constraints, member planning patterns). Optionally filter to one shift group."""
     with db_session() as db:
         return [
             warning.model_dump(mode="json")
@@ -678,6 +697,34 @@ def save_team_member_period_note_tool(
             source="mcp",
         )
         return serialize_model(note)
+
+
+@mcp.tool
+def replace_team_member_planning_patterns_tool(
+    token: str,
+    team_member_id: int,
+    patterns: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace recurring planning patterns for a team member (avoid_time_window with one or more `windows` bands, allowed_calendar_week_parity with optional `status` for wishes on non-matching ISO weeks, recurring_weekday_status). Avoid time window is always stored and evaluated as info-only. recurring_weekday_status and week-parity `status` write wishes-matrix cells for draft and preliminary months (source recurring_pattern; merged by pattern order; manual cells are not overwritten). Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        policy = read_organization_member_pattern_policy(org)
+        payload = TeamMemberPlanningPatternsReplace(
+            patterns=[TeamMemberPlanningPatternUpsertItem.model_validate(item) for item in patterns]
+        )
+        rows = replace_team_member_planning_patterns(
+            db,
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            payload=payload,
+            policy=policy,
+            actor="mcp",
+            source="mcp",
+        )
+        return [pattern_to_read(row).model_dump(mode="json") for row in rows]
 
 
 @mcp.tool

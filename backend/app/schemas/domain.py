@@ -2,7 +2,7 @@ from datetime import date as date_type
 from datetime import datetime, time
 from typing import Annotated, Any, Literal, Self, Union
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 PlanningCellStatus = Literal["urlaub", "forschung", "lehre", "frei"]
 PlanningPeriodStatus = Literal["draft", "preliminary", "published"]
@@ -471,6 +471,143 @@ class ShiftConstraint(BaseModel):
         self.paired_shift_variant_id = None
         self.partner_day_offset = 1
         return self
+
+
+PatternWeekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+MemberPatternRuleType = Literal["avoid_time_window", "allowed_calendar_week_parity", "recurring_weekday_status"]
+MemberPatternHardType = Literal["allowed_calendar_week_parity"]
+TimeWindowAnchor = Literal["slot_start_day", "any_overlap_day"]
+
+
+class AvoidTimeWindowBand(BaseModel):
+    weekdays: list[PatternWeekday] = Field(min_length=1)
+    window_start: time
+    window_end: time
+    match_mode: Literal["overlap"] = "overlap"
+    anchor: TimeWindowAnchor = "any_overlap_day"
+
+
+class AvoidTimeWindowMemberPatternRule(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["avoid_time_window"] = "avoid_time_window"
+    match_mode: Literal["overlap"] = "overlap"
+    windows: list[AvoidTimeWindowBand] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_flat_window_to_windows(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if data.get("type") != "avoid_time_window":
+            return data
+        if data.get("windows"):
+            return data
+        weekdays = data.get("weekdays")
+        window_start = data.get("window_start")
+        window_end = data.get("window_end")
+        if weekdays and window_start is not None and window_end is not None:
+            rest = {k: v for k, v in data.items() if k not in ("weekdays", "window_start", "window_end", "anchor")}
+            rest["windows"] = [
+                {
+                    "weekdays": weekdays,
+                    "window_start": window_start,
+                    "window_end": window_end,
+                    "match_mode": data.get("match_mode", "overlap"),
+                    "anchor": data.get("anchor", "any_overlap_day"),
+                }
+            ]
+            return rest
+        return data
+
+
+class AllowedCalendarWeekParityMemberPatternRule(BaseModel):
+    type: Literal["allowed_calendar_week_parity"] = "allowed_calendar_week_parity"
+    parity: Literal["even", "odd"]
+    status: PlanningCellStatus = "frei"
+
+
+class RecurringWeekdayStatusMemberPatternRule(BaseModel):
+    type: Literal["recurring_weekday_status"] = "recurring_weekday_status"
+    weekdays: list[PatternWeekday] = Field(min_length=1)
+    status: PlanningCellStatus
+
+
+MemberPlanningPatternRule = Annotated[
+    AvoidTimeWindowMemberPatternRule
+    | AllowedCalendarWeekParityMemberPatternRule
+    | RecurringWeekdayStatusMemberPatternRule,
+    Field(discriminator="type"),
+]
+
+
+class OrganizationMemberPatternPolicy(BaseModel):
+    hard_types: list[MemberPatternHardType] = Field(default_factory=list)
+
+    @field_validator("hard_types", mode="before")
+    @classmethod
+    def _only_parity_hard_types(cls, value: object) -> object:
+        if not value:
+            return []
+        allowed = {"allowed_calendar_week_parity"}
+        if isinstance(value, list):
+            return [item for item in value if item in allowed]
+        return value
+
+
+class TeamMemberPlanningPatternUpsertItem(BaseModel):
+    label: str = Field(min_length=1, max_length=255)
+    is_active: bool = True
+    rule: MemberPlanningPatternRule
+    severity: ConstraintSeverity = "warning"
+    display_order: int = Field(default=0, ge=0, le=10_000)
+
+
+class TeamMemberPlanningPatternsReplace(BaseModel):
+    patterns: list[TeamMemberPlanningPatternUpsertItem] = Field(default_factory=list)
+
+
+class TeamMemberPlanningPatternRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    team_member_id: int
+    label: str
+    is_active: bool
+    rule: dict[str, Any]
+    severity: ConstraintSeverity
+    display_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class OrganizationMemberPatternPolicyRead(BaseModel):
+    hard_types: list[MemberPatternHardType] = Field(default_factory=list)
+
+    @field_validator("hard_types", mode="before")
+    @classmethod
+    def _filter_hard_types_read(cls, value: object) -> object:
+        if not value:
+            return []
+        allowed = {"allowed_calendar_week_parity"}
+        if isinstance(value, list):
+            return [item for item in value if item in allowed]
+        return value
+
+
+class OrganizationMemberPatternPolicyUpdate(BaseModel):
+    hard_types: list[MemberPatternHardType] = Field(default_factory=list)
+
+    @field_validator("hard_types", mode="before")
+    @classmethod
+    def _filter_hard_types_update(cls, value: object) -> object:
+        if not value:
+            return []
+        allowed = {"allowed_calendar_week_parity"}
+        if isinstance(value, list):
+            return [item for item in value if item in allowed]
+        return value
 
 
 class ShiftVariantCreate(BaseModel):

@@ -8,6 +8,7 @@ from mcp_app.server import (
     delete_shift_variant_tool,
     delete_team_member_tool,
     regenerate_planning_period_roster_tool,
+    replace_team_member_planning_patterns_tool,
     require_token,
     upsert_planning_cell_tool,
     upsert_roster_slot_assignment_tool,
@@ -42,6 +43,11 @@ def test_roster_slot_assignment_tool_rejects_invalid_token_before_db_access():
             roster_slot_id=1,
             team_member_id=1,
         )
+
+
+def test_replace_planning_patterns_tool_rejects_invalid_token_before_db_access():
+    with pytest.raises(PermissionError):
+        replace_team_member_planning_patterns_tool(token="wrong-token", team_member_id=1, patterns=[])
 
 
 def test_shift_template_tool_rejects_invalid_token_before_db_access():
