@@ -11,6 +11,7 @@
 
 ## 2026-06-09
 - **Team member property definitions:** Admins define org-scoped competency fields (`number`, `date`, `select`, `multi_select`, `text`) via `GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`. Per-member values use `GET|PUT /api/v1/team-members/{id}/property-values`. `editable_by_team_member` controls whether linked members may write values on `/profile`. Admin UI: Organization → Team → Properties; values in staff member editor and profile. MCP resources and admin tools included.
+- **Shift constraints vs. team properties:** New template/variant constraint type **`team_member_property_requirement`** with JSON **`property_requirement`** (`all` / `any` / `atom` tree, validated against active definitions). Roster preflight and **`GET /api/v1/validation/{id}`** emit **`ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES`**; **`error`** severity blocks assignment like other hard rules. Admin shift template UI includes an AND/OR builder; planning conflict copy in DE/EN. MCP create/update shift tools accept the same `constraints` payloads as REST.
 
 ## 2026-05-13
 - **Stacked avoid-time-window bands:** `avoid_time_window` rules use `windows[]` (each band: weekdays, times, anchor). Legacy flat JSON is still accepted. Roster validation matches any band; profile UI can add or remove bands within one pattern.

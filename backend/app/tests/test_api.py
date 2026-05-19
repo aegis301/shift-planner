@@ -1550,6 +1550,137 @@ def test_roster_assignment_blocked_when_shift_coupling_error_without_partner(cli
     assert blocked.status_code == 400
 
 
+def test_roster_property_requirement_warning_allows_assign_and_surfaces_in_validation(client: TestClient):
+    login(client)
+    defn = client.post(
+        "/api/v1/team-member-property-definitions",
+        json={"name": "Training year", "type": "number"},
+    ).json()
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Prop",
+            "last_name": "ReqWarn",
+            "email": "prop-req-warn@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    assert (
+        client.put(
+            f"/api/v1/team-members/{member_id}/property-values",
+            json={"values": [{"property_definition_id": defn["id"], "value": 1}]},
+        ).status_code
+        == 200
+    )
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "PREW", "name_de": "PropReq", "name_en": "PropReq", "category": "other"},
+    ).json()
+    prop_req = {
+        "type": "team_member_property_requirement",
+        "severity": "warning",
+        "property_requirement": {
+            "kind": "all",
+            "items": [
+                {
+                    "kind": "atom",
+                    "property_definition_id": defn["id"],
+                    "op": "gte",
+                    "value": 3,
+                }
+            ],
+        },
+    }
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Main",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+            "constraints": [prop_req],
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2027, "month": 4}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(
+        row for row in roster["slots"] if row["slot_date"] == "2027-04-01" and row["shift_template_id"] == template["id"]
+    )
+    assert (
+        client.put(
+            "/api/v1/roster-matrix/assignments",
+            json={"roster_slot_id": slot["id"], "team_member_id": member_id},
+        ).status_code
+        == 200
+    )
+    warnings = client.get(f"/api/v1/validation/{period_id}").json()
+    hits = [w for w in warnings if w["code"] == "ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES"]
+    assert len(hits) == 1
+    assert hits[0]["severity"] == "warning"
+
+
+def test_roster_property_requirement_error_blocks_assignment(client: TestClient):
+    login(client)
+    defn = client.post(
+        "/api/v1/team-member-property-definitions",
+        json={"name": "Seniority", "type": "number"},
+    ).json()
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Prop",
+            "last_name": "ReqBlock",
+            "email": "prop-req-block@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    assert (
+        client.put(
+            f"/api/v1/team-members/{member_id}/property-values",
+            json={"values": [{"property_definition_id": defn["id"], "value": 1}]},
+        ).status_code
+        == 200
+    )
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "PREQ", "name_de": "Block", "name_en": "Block", "category": "other"},
+    ).json()
+    prop_req = {
+        "type": "team_member_property_requirement",
+        "severity": "error",
+        "property_requirement": {
+            "kind": "atom",
+            "property_definition_id": defn["id"],
+            "op": "gte",
+            "value": 5,
+        },
+    }
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Senior",
+            "start_day_class": "any",
+            "starts_at": "09:00:00",
+            "ends_at": "17:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+            "constraints": [prop_req],
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2027, "month": 5}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(
+        row for row in roster["slots"] if row["slot_date"] == "2027-05-01" and row["shift_template_id"] == template["id"]
+    )
+    blocked = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": member_id},
+    )
+    assert blocked.status_code == 400
+
+
 def test_validation_warns_consecutive_weekend_roster_assignments(client: TestClient):
     login(client)
     member_id = client.post(

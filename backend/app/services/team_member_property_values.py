@@ -135,6 +135,41 @@ def list_property_values_for_member(
     ]
 
 
+def property_value_dict_for_member(
+    db: Session,
+    *,
+    team_member_id: int,
+    organization_id: int,
+) -> dict[int, Any]:
+    rows = db.scalars(
+        select(TeamMemberPropertyValue).where(
+            TeamMemberPropertyValue.team_member_id == team_member_id,
+            TeamMemberPropertyValue.organization_id == organization_id,
+        )
+    ).all()
+    return {row.property_definition_id: row.value for row in rows}
+
+
+def property_value_maps_for_members(
+    db: Session,
+    *,
+    organization_id: int,
+    team_member_ids: set[int],
+) -> dict[int, dict[int, Any]]:
+    if not team_member_ids:
+        return {}
+    rows = db.scalars(
+        select(TeamMemberPropertyValue).where(
+            TeamMemberPropertyValue.organization_id == organization_id,
+            TeamMemberPropertyValue.team_member_id.in_(team_member_ids),
+        )
+    ).all()
+    out: dict[int, dict[int, Any]] = {}
+    for row in rows:
+        out.setdefault(row.team_member_id, {})[row.property_definition_id] = row.value
+    return out
+
+
 def replace_team_member_property_values(
     db: Session,
     *,

@@ -89,6 +89,7 @@ Templates and variants can each define constraints with per-rule **`severity`**:
 - `no_cross_day_into_unavailable_day`
 - `max_assignments_per_month` (requires `max_assignments_per_month`, counts same-template assignments in the selected month)
 - `requires_coupled_shift` (requires `paired_shift_variant_id`, optional `partner_day_offset` default `1`, range `-7`..`7`; same person must also be assigned to the partner variant on the offset calendar day **inside the same planning month**; outside the month the rule is skipped)
+- `team_member_property_requirement` (requires JSON **`property_requirement`**: nested **`all`** / **`any`** / **`atom`** nodes; atoms reference **`team_member_property_definitions`** with typed operators such as `gte` on numbers or `one_of` on select; missing values fail the expression; validation code **`ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES`**; you may add **multiple** such rules per template or variant)
 
 These constraints are evaluated for assignment preflight and validation warnings through a shared backend rule engine.
 

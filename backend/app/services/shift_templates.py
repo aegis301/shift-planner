@@ -16,6 +16,10 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.holidays import classify_day
+from app.services.team_member_property_requirements import (
+    TeamMemberPropertyRequirementError,
+    validate_property_requirement_expr,
+)
 
 
 class ShiftTemplateCodeConflictError(Exception):
@@ -42,6 +46,16 @@ def validate_shift_constraint_payloads(
     owning_variant_id: int | None = None,
 ) -> None:
     for rule in _constraint_models(constraints):
+        if rule.type == "team_member_property_requirement":
+            if rule.property_requirement is None:
+                raise ShiftConstraintInvalidError("property_requirement is required for team_member_property_requirement")
+            try:
+                validate_property_requirement_expr(
+                    db, rule.property_requirement, organization_id=organization_id
+                )
+            except TeamMemberPropertyRequirementError as exc:
+                raise ShiftConstraintInvalidError(str(exc)) from exc
+            continue
         if rule.type != "requires_coupled_shift":
             continue
         vid = rule.paired_shift_variant_id

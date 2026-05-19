@@ -3,6 +3,12 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, MoreVertical, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { ApiError, apiFetch } from "@/lib/api";
+import {
+  defaultPropertyRequirementExpr,
+  TeamMemberPropertyRequirementConstraintEditor,
+  type PropertyDefinitionBrief,
+  type PropertyRequirementExpr
+} from "@/components/TeamMemberPropertyRequirementConstraintEditor";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
@@ -46,14 +52,17 @@ type ShiftConstraintType =
   | "min_rest_hours"
   | "no_cross_day_into_unavailable_day"
   | "max_assignments_per_month"
-  | "requires_coupled_shift";
+  | "requires_coupled_shift"
+  | "team_member_property_requirement";
 type ShiftConstraintRecord = {
+  constraintInstanceId: string;
   type: ShiftConstraintType;
   severity: ConstraintSeverity;
   min_rest_hours?: number | null;
   max_assignments_per_month?: number | null;
   paired_shift_variant_id?: number | null;
   partner_day_offset?: number;
+  property_requirement?: PropertyRequirementExpr;
 };
 
 type ShiftVariantRecord = {
@@ -390,8 +399,54 @@ const SHIFT_CONSTRAINT_OPTIONS: { type: ShiftConstraintType; label: TranslationK
   { type: "min_rest_hours", label: "constraintMinRestHours" },
   { type: "no_cross_day_into_unavailable_day", label: "constraintNoCrossDayIntoUnavailable" },
   { type: "max_assignments_per_month", label: "constraintMaxAssignmentsPerMonth" },
-  { type: "requires_coupled_shift", label: "constraintRequiresCoupledShift" }
+  { type: "requires_coupled_shift", label: "constraintRequiresCoupledShift" },
+  { type: "team_member_property_requirement", label: "constraintTeamMemberPropertyRequirement" }
 ];
+
+function newConstraintInstanceId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `c_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function parsePropertyRequirement(raw: unknown): PropertyRequirementExpr | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const row = raw as AnyRecord;
+  const kind = row.kind;
+  if (kind === "atom") {
+    const id = typeof row.property_definition_id === "number" ? row.property_definition_id : Number(row.property_definition_id);
+    if (!Number.isFinite(id) || id < 1) {
+      return null;
+    }
+    return {
+      kind: "atom",
+      property_definition_id: id,
+      op: typeof row.op === "string" && row.op ? row.op : "eq",
+      value: row.value
+    };
+  }
+  if (kind === "all" || kind === "any") {
+    const itemsRaw = row.items;
+    if (!Array.isArray(itemsRaw)) {
+      return null;
+    }
+    const items: PropertyRequirementExpr[] = [];
+    for (const item of itemsRaw) {
+      const parsed = parsePropertyRequirement(item);
+      if (parsed) {
+        items.push(parsed);
+      }
+    }
+    if (!items.length) {
+      return null;
+    }
+    return { kind, items };
+  }
+  return null;
+}
 
 function flattenVariantOptions(
   templates: ShiftTemplateRecord[],
@@ -436,19 +491,21 @@ function parseShiftConstraintList(raw: unknown): ShiftConstraintRecord[] {
       type !== "min_rest_hours" &&
       type !== "no_cross_day_into_unavailable_day" &&
       type !== "max_assignments_per_month" &&
-      type !== "requires_coupled_shift"
+      type !== "requires_coupled_shift" &&
+      type !== "team_member_property_requirement"
     ) {
       continue;
     }
     const severity = constraintSeverityFromApiRow(row);
+    const constraintInstanceId = newConstraintInstanceId();
     if (type === "min_rest_hours") {
       const minRest = typeof row.min_rest_hours === "number" ? row.min_rest_hours : 11;
-      out.push({ type, severity, min_rest_hours: minRest });
+      out.push({ constraintInstanceId, type, severity, min_rest_hours: minRest });
       continue;
     }
     if (type === "max_assignments_per_month") {
       const maxM = typeof row.max_assignments_per_month === "number" ? row.max_assignments_per_month : 4;
-      out.push({ type, severity, max_assignments_per_month: maxM });
+      out.push({ constraintInstanceId, type, severity, max_assignments_per_month: maxM });
       continue;
     }
     if (type === "requires_coupled_shift") {
@@ -463,65 +520,108 @@ function parseShiftConstraintList(raw: unknown): ShiftConstraintRecord[] {
       if (paired == null) {
         continue;
       }
-      out.push({ type, severity, paired_shift_variant_id: paired, partner_day_offset: offset });
+      out.push({ constraintInstanceId, type, severity, paired_shift_variant_id: paired, partner_day_offset: offset });
       continue;
     }
-    out.push({ type, severity });
+    if (type === "team_member_property_requirement") {
+      const pr = parsePropertyRequirement(row.property_requirement);
+      if (!pr) {
+        continue;
+      }
+      out.push({ constraintInstanceId, type, severity, property_requirement: pr });
+      continue;
+    }
+    out.push({ constraintInstanceId, type, severity });
   }
   return out;
 }
 
-function setConstraintSeverity(
-  constraints: ShiftConstraintRecord[],
-  type: ShiftConstraintType,
-  severity: ConstraintSeverity
-): ShiftConstraintRecord[] {
-  return constraints.map((item) => (item.type === type ? { ...item, severity } : item));
+function shiftConstraintsToApi(constraints: ShiftConstraintRecord[]): unknown[] {
+  return constraints.map((c) => {
+    const base: Record<string, unknown> = { type: c.type, severity: c.severity };
+    if (c.type === "min_rest_hours") {
+      base.min_rest_hours = c.min_rest_hours ?? 11;
+      return base;
+    }
+    if (c.type === "max_assignments_per_month") {
+      base.max_assignments_per_month = c.max_assignments_per_month ?? 4;
+      return base;
+    }
+    if (c.type === "requires_coupled_shift") {
+      base.paired_shift_variant_id = c.paired_shift_variant_id;
+      base.partner_day_offset = c.partner_day_offset ?? 1;
+      return base;
+    }
+    if (c.type === "team_member_property_requirement" && c.property_requirement) {
+      base.property_requirement = c.property_requirement;
+      return base;
+    }
+    return base;
+  });
 }
 
-function setConstraintMinRestHours(constraints: ShiftConstraintRecord[], value: number): ShiftConstraintRecord[] {
+function setConstraintSeverity(
+  constraints: ShiftConstraintRecord[],
+  constraintInstanceId: string,
+  severity: ConstraintSeverity
+): ShiftConstraintRecord[] {
+  return constraints.map((item) => (item.constraintInstanceId === constraintInstanceId ? { ...item, severity } : item));
+}
+
+function setConstraintMinRestHours(constraints: ShiftConstraintRecord[], constraintInstanceId: string, value: number): ShiftConstraintRecord[] {
   return constraints.map((item) =>
-    item.type === "min_rest_hours" ? { ...item, min_rest_hours: value } : item
+    item.constraintInstanceId === constraintInstanceId ? { ...item, min_rest_hours: value } : item
   );
 }
 
-function setConstraintMaxAssignments(constraints: ShiftConstraintRecord[], value: number): ShiftConstraintRecord[] {
+function setConstraintMaxAssignments(constraints: ShiftConstraintRecord[], constraintInstanceId: string, value: number): ShiftConstraintRecord[] {
   return constraints.map((item) =>
-    item.type === "max_assignments_per_month" ? { ...item, max_assignments_per_month: value } : item
+    item.constraintInstanceId === constraintInstanceId ? { ...item, max_assignments_per_month: value } : item
   );
 }
 
 function setConstraintPairedVariant(
   constraints: ShiftConstraintRecord[],
-  type: ShiftConstraintType,
+  constraintInstanceId: string,
   paired_shift_variant_id: number
 ): ShiftConstraintRecord[] {
-  return constraints.map((item) => (item.type === type ? { ...item, paired_shift_variant_id } : item));
+  return constraints.map((item) => (item.constraintInstanceId === constraintInstanceId ? { ...item, paired_shift_variant_id } : item));
 }
 
 function setConstraintPartnerDayOffset(
   constraints: ShiftConstraintRecord[],
-  type: ShiftConstraintType,
+  constraintInstanceId: string,
   partner_day_offset: number
 ): ShiftConstraintRecord[] {
-  return constraints.map((item) => (item.type === type ? { ...item, partner_day_offset } : item));
+  return constraints.map((item) => (item.constraintInstanceId === constraintInstanceId ? { ...item, partner_day_offset } : item));
 }
 
-type AddConstraintContext = { allTemplates: ShiftTemplateRecord[]; excludeVariantId?: number | null };
+function setConstraintPropertyRequirement(
+  constraints: ShiftConstraintRecord[],
+  constraintInstanceId: string,
+  property_requirement: PropertyRequirementExpr
+): ShiftConstraintRecord[] {
+  return constraints.map((item) =>
+    item.constraintInstanceId === constraintInstanceId ? { ...item, property_requirement } : item
+  );
+}
+
+type AddConstraintContext = { allTemplates: ShiftTemplateRecord[]; excludeVariantId?: number | null; propertyDefinitions: PropertyDefinitionBrief[] };
 
 function addConstraint(
   constraints: ShiftConstraintRecord[],
   type: ShiftConstraintType,
   ctx?: AddConstraintContext
 ): ShiftConstraintRecord[] {
-  if (constraints.some((item) => item.type === type)) {
+  if (type !== "team_member_property_requirement" && constraints.some((item) => item.type === type)) {
     return constraints;
   }
+  const constraintInstanceId = newConstraintInstanceId();
   if (type === "min_rest_hours") {
-    return [...constraints, { type, severity: "warning", min_rest_hours: 11 }];
+    return [...constraints, { constraintInstanceId, type, severity: "warning", min_rest_hours: 11 }];
   }
   if (type === "max_assignments_per_month") {
-    return [...constraints, { type, severity: "warning", max_assignments_per_month: 4 }];
+    return [...constraints, { constraintInstanceId, type, severity: "warning", max_assignments_per_month: 4 }];
   }
   if (type === "requires_coupled_shift") {
     const opts = flattenVariantOptions(ctx?.allTemplates ?? [], ctx?.excludeVariantId);
@@ -529,13 +629,28 @@ function addConstraint(
     if (first == null) {
       return constraints;
     }
-    return [...constraints, { type, severity: "warning", paired_shift_variant_id: first, partner_day_offset: 1 }];
+    return [
+      ...constraints,
+      { constraintInstanceId, type, severity: "warning", paired_shift_variant_id: first, partner_day_offset: 1 }
+    ];
   }
-  return [...constraints, { type, severity: "warning" }];
+  if (type === "team_member_property_requirement") {
+    const defs = ctx?.propertyDefinitions ?? [];
+    return [
+      ...constraints,
+      {
+        constraintInstanceId,
+        type,
+        severity: "warning",
+        property_requirement: defaultPropertyRequirementExpr(defs)
+      }
+    ];
+  }
+  return [...constraints, { constraintInstanceId, type, severity: "warning" }];
 }
 
-function removeConstraint(constraints: ShiftConstraintRecord[], type: ShiftConstraintType): ShiftConstraintRecord[] {
-  return constraints.filter((item) => item.type !== type);
+function removeConstraint(constraints: ShiftConstraintRecord[], constraintInstanceId: string): ShiftConstraintRecord[] {
+  return constraints.filter((item) => item.constraintInstanceId !== constraintInstanceId);
 }
 
 const CONSTRAINT_SEVERITY_ORDER: ConstraintSeverity[] = ["info", "warning", "error"];
@@ -562,12 +677,14 @@ function RuleRowsEditor({
   constraints,
   onChange,
   allTemplates,
-  excludeVariantId
+  excludeVariantId,
+  propertyDefinitions
 }: {
   constraints: ShiftConstraintRecord[];
   onChange: (next: ShiftConstraintRecord[]) => void;
   allTemplates: ShiftTemplateRecord[];
   excludeVariantId?: number | null;
+  propertyDefinitions: PropertyDefinitionBrief[];
 }) {
   const { locale } = useLocale();
   const coupledFieldId = useId();
@@ -604,7 +721,7 @@ function RuleRowsEditor({
   return (
     <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3">
       {constraints.map((rule) => (
-        <div key={rule.type} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div key={rule.constraintInstanceId} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <p className="min-w-0 flex-1 text-sm font-semibold text-slate-800">
               {t(
@@ -633,7 +750,7 @@ function RuleRowsEditor({
                       aria-pressed={active}
                       title={severity === "error" ? t(locale, "constraintSeverityErrorHint") : undefined}
                       className={constraintSeverityButtonClass(severity, active)}
-                      onClick={() => onChange(setConstraintSeverity(constraints, rule.type, severity))}
+                      onClick={() => onChange(setConstraintSeverity(constraints, rule.constraintInstanceId, severity))}
                     >
                       {t(locale, labelKey)}
                     </button>
@@ -644,7 +761,7 @@ function RuleRowsEditor({
             <button
               type="button"
               className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
-              onClick={() => onChange(removeConstraint(constraints, rule.type))}
+              onClick={() => onChange(removeConstraint(constraints, rule.constraintInstanceId))}
               aria-label={t(locale, "removeRule")}
               title={t(locale, "removeRule")}
             >
@@ -658,7 +775,9 @@ function RuleRowsEditor({
               min={1}
               max={48}
               value={rule.min_rest_hours ?? 11}
-              onChange={(event) => onChange(setConstraintMinRestHours(constraints, Number(event.target.value) || 1))}
+              onChange={(event) =>
+                onChange(setConstraintMinRestHours(constraints, rule.constraintInstanceId, Number(event.target.value) || 1))
+              }
             />
           ) : null}
           {rule.type === "max_assignments_per_month" ? (
@@ -668,7 +787,9 @@ function RuleRowsEditor({
               min={1}
               max={31}
               value={rule.max_assignments_per_month ?? 4}
-              onChange={(event) => onChange(setConstraintMaxAssignments(constraints, Number(event.target.value) || 1))}
+              onChange={(event) =>
+                onChange(setConstraintMaxAssignments(constraints, rule.constraintInstanceId, Number(event.target.value) || 1))
+              }
             />
           ) : null}
           {rule.type === "requires_coupled_shift" ? (
@@ -681,7 +802,7 @@ function RuleRowsEditor({
                     onChange={(event) => {
                       const nextId = Number(event.target.value);
                       if (Number.isFinite(nextId) && nextId >= 1) {
-                        onChange(setConstraintPairedVariant(constraints, rule.type, nextId));
+                        onChange(setConstraintPairedVariant(constraints, rule.constraintInstanceId, nextId));
                       }
                     }}
                   >
@@ -697,7 +818,7 @@ function RuleRowsEditor({
                     <div className="flex items-center gap-1">
                       <label
                         className="text-xs font-medium text-slate-600"
-                        htmlFor={`${coupledFieldId}-${rule.type}-offset`}
+                        htmlFor={`${coupledFieldId}-${rule.constraintInstanceId}-offset`}
                       >
                         {t(locale, "constraintPartnerDayOffsetLabel")}
                       </label>
@@ -728,7 +849,7 @@ function RuleRowsEditor({
                     ) : null}
                   </div>
                   <input
-                    id={`${coupledFieldId}-${rule.type}-offset`}
+                    id={`${coupledFieldId}-${rule.constraintInstanceId}-offset`}
                     className={`${inputClass} h-9 w-14 shrink-0 tabular-nums`}
                     type="number"
                     min={-7}
@@ -737,7 +858,7 @@ function RuleRowsEditor({
                     onChange={(event) => {
                       const v = parseInt(event.target.value, 10);
                       const clamped = Number.isNaN(v) ? 1 : Math.min(7, Math.max(-7, v));
-                      onChange(setConstraintPartnerDayOffset(constraints, rule.type, clamped));
+                      onChange(setConstraintPartnerDayOffset(constraints, rule.constraintInstanceId, clamped));
                     }}
                   />
                 </div>
@@ -745,6 +866,15 @@ function RuleRowsEditor({
             ) : (
               <p className="text-xs text-amber-800">{t(locale, "constraintCoupledNoVariantsHint")}</p>
             )
+          ) : null}
+          {rule.type === "team_member_property_requirement" && rule.property_requirement ? (
+            <TeamMemberPropertyRequirementConstraintEditor
+              value={rule.property_requirement}
+              definitions={propertyDefinitions}
+              onChange={(next) =>
+                onChange(setConstraintPropertyRequirement(constraints, rule.constraintInstanceId, next))
+              }
+            />
           ) : null}
         </div>
       ))}
@@ -766,12 +896,17 @@ function VariantEditFields({
   allTemplates: ShiftTemplateRecord[];
 }) {
   const { locale } = useLocale();
+  const propertyDefinitions = useTeamMemberPropertyDefinitions();
   const [rulePickerOpen, setRulePickerOpen] = useState(false);
   const [nextRuleType, setNextRuleType] = useState<ShiftConstraintType>(SHIFT_CONSTRAINT_OPTIONS[0].type);
 
   function addRule() {
     onConstraintsChange(
-      addConstraint(constraints, nextRuleType, { allTemplates, excludeVariantId: variant.id })
+      addConstraint(constraints, nextRuleType, {
+        allTemplates,
+        excludeVariantId: variant.id,
+        propertyDefinitions
+      })
     );
     setRulePickerOpen(false);
   }
@@ -839,6 +974,7 @@ function VariantEditFields({
           onChange={onConstraintsChange}
           allTemplates={allTemplates}
           excludeVariantId={variant.id}
+          propertyDefinitions={propertyDefinitions}
         />
       </div>
     </div>
@@ -857,6 +993,7 @@ function PendingVariantFields({
   allTemplates: ShiftTemplateRecord[];
 }) {
   const { locale } = useLocale();
+  const propertyDefinitions = useTeamMemberPropertyDefinitions();
   const [rulePickerOpen, setRulePickerOpen] = useState(false);
   const [nextRuleType, setNextRuleType] = useState<ShiftConstraintType>(SHIFT_CONSTRAINT_OPTIONS[0].type);
 
@@ -962,7 +1099,11 @@ function PendingVariantFields({
             onClick={() => {
               onChange({
                 ...variant,
-                constraints: addConstraint(variant.constraints, nextRuleType, { allTemplates, excludeVariantId: null })
+                constraints: addConstraint(variant.constraints, nextRuleType, {
+                  allTemplates,
+                  excludeVariantId: null,
+                  propertyDefinitions
+                })
               });
               setRulePickerOpen(false);
             }}
@@ -976,6 +1117,7 @@ function PendingVariantFields({
           constraints={variant.constraints}
           onChange={(constraints) => onChange({ ...variant, constraints })}
           allTemplates={allTemplates}
+          propertyDefinitions={propertyDefinitions}
         />
       </div>
     </div>
@@ -1023,6 +1165,27 @@ function VariantRows({ variants }: { variants: ShiftVariantRecord[] }) {
   );
 }
 
+function useTeamMemberPropertyDefinitions(): PropertyDefinitionBrief[] {
+  const [defs, setDefs] = useState<PropertyDefinitionBrief[]>([]);
+  useEffect(() => {
+    void apiFetch<{ id: number; name: string; type: string; options?: string[] }[]>(
+      "/api/v1/team-member-property-definitions?active_only=true"
+    )
+      .then((rows) =>
+        setDefs(
+          rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            type: row.type,
+            options: Array.isArray(row.options) ? row.options : []
+          }))
+        )
+      )
+      .catch(() => setDefs([]));
+  }, []);
+  return defs;
+}
+
 function ShiftTemplateEditorModal({
   template,
   allTemplates,
@@ -1035,6 +1198,7 @@ function ShiftTemplateEditorModal({
   onClose: () => void;
 }) {
   const { locale } = useLocale();
+  const propertyDefinitions = useTeamMemberPropertyDefinitions();
   const title = locale === "de" ? template.name_de : template.name_en;
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [removedVariantIds, setRemovedVariantIds] = useState<number[]>([]);
@@ -1121,7 +1285,7 @@ function ShiftTemplateEditorModal({
           name_de: form.get("name_de"),
           name_en: form.get("name_en"),
           category: form.get("category"),
-          constraints: templateConstraints,
+          constraints: shiftConstraintsToApi(templateConstraints),
           is_active: form.get("is_active") === "on"
         })
       });
@@ -1145,7 +1309,7 @@ function ShiftTemplateEditorModal({
           ends_at: endsAt,
           end_day_offset: inferEndDayOffset(startsAt, endsAt),
           required_count: Number(form.get(`variant_${variant.id}_required_count`)),
-          constraints: variantConstraintsById[variant.id] ?? [],
+          constraints: shiftConstraintsToApi(variantConstraintsById[variant.id] ?? []),
           is_active: form.get(`variant_${variant.id}_is_active`) === "on"
         })
       });
@@ -1166,7 +1330,7 @@ function ShiftTemplateEditorModal({
           ends_at: variant.ends_at,
           end_day_offset: inferEndDayOffset(variant.starts_at, variant.ends_at),
           required_count: variant.required_count,
-          constraints: variant.constraints,
+          constraints: shiftConstraintsToApi(variant.constraints),
           is_active: variant.is_active
         })
       });
@@ -1263,7 +1427,7 @@ function ShiftTemplateEditorModal({
               className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-3 text-sm font-semibold text-white"
               onClick={() => {
                 setTemplateConstraints((current) =>
-                  addConstraint(current, nextTemplateRuleType, { allTemplates })
+                  addConstraint(current, nextTemplateRuleType, { allTemplates, propertyDefinitions })
                 );
                 setTemplateRulePickerOpen(false);
               }}
@@ -1273,7 +1437,12 @@ function ShiftTemplateEditorModal({
           </div>
         ) : null}
         <div className="mt-3">
-          <RuleRowsEditor constraints={templateConstraints} onChange={setTemplateConstraints} allTemplates={allTemplates} />
+          <RuleRowsEditor
+            constraints={templateConstraints}
+            onChange={setTemplateConstraints}
+            allTemplates={allTemplates}
+            propertyDefinitions={propertyDefinitions}
+          />
         </div>
         <div className="mt-5 grid gap-3">
           <h3 className="text-sm font-semibold text-ink">{t(locale, "editVariants")}</h3>
@@ -1795,6 +1964,7 @@ export function ShiftTemplateForm() {
   const [nextCreateTemplateRuleType, setNextCreateTemplateRuleType] = useState<ShiftConstraintType>(
     SHIFT_CONSTRAINT_OPTIONS[0].type
   );
+  const propertyDefinitions = useTeamMemberPropertyDefinitions();
 
   const refresh = useCallback(async () => {
     setRows(await apiFetch<AnyRecord[]>("/api/v1/shift-templates"));
@@ -1816,7 +1986,7 @@ export function ShiftTemplateForm() {
           name_de: form.get("name_de"),
           name_en: form.get("name_en"),
           category: form.get("category"),
-          constraints: createTemplateConstraints
+          constraints: shiftConstraintsToApi(createTemplateConstraints)
         })
       });
     } catch (error) {
@@ -1950,7 +2120,8 @@ export function ShiftTemplateForm() {
                   onClick={() => {
                     setCreateTemplateConstraints((current) =>
                       addConstraint(current, nextCreateTemplateRuleType, {
-                        allTemplates: rows.filter(isShiftTemplateRecord)
+                        allTemplates: rows.filter(isShiftTemplateRecord),
+                        propertyDefinitions
                       })
                     );
                     setCreateTemplateRulePickerOpen(false);
@@ -1965,6 +2136,7 @@ export function ShiftTemplateForm() {
                 constraints={createTemplateConstraints}
                 onChange={setCreateTemplateConstraints}
                 allTemplates={rows.filter(isShiftTemplateRecord)}
+                propertyDefinitions={propertyDefinitions}
               />
             </div>
             <div className="mt-4 flex flex-wrap justify-end gap-2">

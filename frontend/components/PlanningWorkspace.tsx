@@ -919,6 +919,59 @@ function shiftVariantLabelFromMatrix(matrix: RosterMatrix, variantId: number, lo
   return `#${variantId}`;
 }
 
+const PROPERTY_REQ_OP_KEYS: Record<string, TranslationKey> = {
+  eq: "propertyReqOpEq",
+  neq: "propertyReqOpNeq",
+  gte: "propertyReqOpGte",
+  lte: "propertyReqOpLte",
+  before: "propertyReqOpBefore",
+  after: "propertyReqOpAfter",
+  contains: "propertyReqOpContains",
+  one_of: "propertyReqOpOneOf",
+  contains_all: "propertyReqOpContainsAll",
+  contains_any: "propertyReqOpContainsAny",
+  eq_set: "propertyReqOpEqSet"
+};
+
+function formatPropertyRequirementValue(value: unknown, locale: Locale): string {
+  if (value === null || value === undefined) {
+    return t(locale, "emptyValue");
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join(", ");
+  }
+  return String(value);
+}
+
+function teamMemberPropertyViolationDetailText(warning: ValidationWarning, locale: Locale): string {
+  const raw = warning.details?.violations;
+  if (!Array.isArray(raw) || !raw.length) {
+    return t(locale, "validationDetailConstraintTeamMemberProperties");
+  }
+  const lines: string[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const property = String(row.property_name ?? "—");
+    const op = typeof row.op === "string" ? row.op : "";
+    const opKey = PROPERTY_REQ_OP_KEYS[op];
+    const opLabel = opKey ? t(locale, opKey) : op;
+    const required = formatPropertyRequirementValue(row.required_value, locale);
+    if (row.missing === true) {
+      lines.push(t(locale, "validationDetailPropertyViolationMissing", { property, op: opLabel, required }));
+    } else {
+      const actual = formatPropertyRequirementValue(row.actual_value, locale);
+      lines.push(t(locale, "validationDetailPropertyViolationMismatch", { property, op: opLabel, required, actual }));
+    }
+  }
+  if (!lines.length) {
+    return t(locale, "validationDetailConstraintTeamMemberProperties");
+  }
+  return lines.join(" · ");
+}
+
 function shiftTypeLabelForMaxAssignmentsWarning(warning: ValidationWarning, matrix: RosterMatrix, locale: Locale): string {
   const templateId = warning.details?.shift_template_id;
   if (typeof templateId === "number") {
@@ -1006,6 +1059,9 @@ function validationWarningDetailText(warning: ValidationWarning, matrix: RosterM
     const sid = warning.details?.shift_variant_id as number | undefined;
     const source = typeof sid === "number" ? shiftVariantLabelFromMatrix(matrix, sid, locale) : "—";
     return t(locale, "validationDetailConstraintCoupledShift", { source, partner, partnerDate });
+  }
+  if (warning.code === "ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES") {
+    return teamMemberPropertyViolationDetailText(warning, locale);
   }
   if (warning.code === "MEMBER_PATTERN_AVOID_TIME_WINDOW") {
     return t(locale, "validationDetailMemberPatternAvoidTimeWindow", {

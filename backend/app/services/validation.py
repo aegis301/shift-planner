@@ -10,6 +10,7 @@ from app.services.member_planning_patterns import evaluate_member_planning_patte
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
+from app.services.team_member_property_values import property_value_maps_for_members
 from app.services.tenancy import require_planning_period_in_org
 
 
@@ -166,7 +167,7 @@ def validate_roster(
     _add_roster_template_no_go_conflicts(warnings, slot_assignments, intents)
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
     _add_consecutive_weekend_warnings(warnings, slot_assignments)
-    _add_roster_constraint_conflicts(db, warnings, slot_assignments, cells)
+    _add_roster_constraint_conflicts(db, warnings, slot_assignments, cells, organization_id)
     _add_member_pattern_conflicts(db, warnings, slot_assignments, organization_id)
     if shift_group_id is None:
         return warnings
@@ -362,6 +363,7 @@ def _add_roster_constraint_conflicts(
     warnings: list[ValidationWarning],
     assignments: list[RosterSlotAssignment],
     cells: list[PlanningCell],
+    organization_id: int,
 ) -> None:
     assignments_by_member: dict[int, list[RosterSlotAssignment]] = defaultdict(list)
     for assignment in assignments:
@@ -369,6 +371,8 @@ def _add_roster_constraint_conflicts(
     cells_by_member: dict[int, list[PlanningCell]] = defaultdict(list)
     for cell in cells:
         cells_by_member[cell.team_member_id].append(cell)
+    member_ids = {assignment.team_member_id for assignment in assignments}
+    value_maps = property_value_maps_for_members(db, organization_id=organization_id, team_member_ids=member_ids)
     raw_constraint: list[ValidationWarning] = []
     for assignment in assignments:
         slot = assignment.roster_slot
@@ -379,6 +383,7 @@ def _add_roster_constraint_conflicts(
             continue
         member_assignments = assignments_by_member.get(assignment.team_member_id, [])
         member_cells = cells_by_member.get(assignment.team_member_id, [])
+        prop_values = value_maps.get(assignment.team_member_id, {})
         raw_constraint.extend(
             evaluate_assignment_constraints(
                 db=db,
@@ -388,6 +393,7 @@ def _add_roster_constraint_conflicts(
                 assigned_slots_for_member=member_assignments,
                 planning_cells_for_member=member_cells,
                 assignment_id=assignment.id,
+                member_property_values=prop_values,
             )
         )
     merged_constraints = _merge_max_assignments_per_month_warnings(raw_constraint)

@@ -26,6 +26,7 @@ from app.services.shift_groups import (
     shift_template_ids_in_shift_group,
     team_member_may_cover_template,
 )
+from app.services.team_member_property_values import property_value_dict_for_member
 from app.services.tenancy import require_planning_period_in_org
 from app.services.shift_templates import generate_slots_for_month, list_shift_templates
 
@@ -257,6 +258,13 @@ def upsert_roster_slot_assignment(
     ):
         raise ValueError("Team member marked this shift template as a no-go on that day")
     resolved_constraints = resolve_slot_constraints(db, slot)
+    period = slot.planning_period
+    if period is None:
+        period = db.get(PlanningPeriod, slot.planning_period_id)
+    org_id = period.organization_id if period is not None else organization_id
+    member_property_values = property_value_dict_for_member(
+        db, team_member_id=payload.team_member_id, organization_id=org_id
+    )
     member_assignments = [
         row
         for row in list_roster_slot_assignments(db, planning_period_id=slot.planning_period_id)
@@ -277,6 +285,7 @@ def upsert_roster_slot_assignment(
                 resolved_constraints=resolved_constraints,
                 assigned_slots_for_member=member_assignments,
                 planning_cells_for_member=member_cells,
+                member_property_values=member_property_values,
             )
         )
     member_patterns = list_team_member_planning_patterns(

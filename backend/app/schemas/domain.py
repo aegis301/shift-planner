@@ -411,12 +411,54 @@ class ShiftGroupTemplateIdsPut(BaseModel):
 DayClass = Literal["any", "weekday", "weekend", "holiday"]
 ShiftTemplateCategory = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
 ConstraintSeverity = Literal["info", "warning", "error"]
+
+_PROPERTY_REQUIREMENT_MAX_ITEMS = 32
+_PROPERTY_REQUIREMENT_MAX_DEPTH = 8
+_PROPERTY_REQUIREMENT_MAX_NODES = 64
+
+
+class TeamMemberPropertyRequirementAtom(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["atom"] = "atom"
+    property_definition_id: int = Field(ge=1)
+    op: str = Field(min_length=1, max_length=32)
+    value: Any
+
+
+class TeamMemberPropertyRequirementAll(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["all"] = "all"
+    items: list["TeamMemberPropertyRequirementExpr"] = Field(
+        min_length=1, max_length=_PROPERTY_REQUIREMENT_MAX_ITEMS
+    )
+
+
+class TeamMemberPropertyRequirementAny(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["any"] = "any"
+    items: list["TeamMemberPropertyRequirementExpr"] = Field(
+        min_length=1, max_length=_PROPERTY_REQUIREMENT_MAX_ITEMS
+    )
+
+
+TeamMemberPropertyRequirementExpr = Annotated[
+    Union[TeamMemberPropertyRequirementAll, TeamMemberPropertyRequirementAny, TeamMemberPropertyRequirementAtom],
+    Field(discriminator="kind"),
+]
+
+TeamMemberPropertyRequirementAll.model_rebuild()
+TeamMemberPropertyRequirementAny.model_rebuild()
+
 ShiftConstraintType = Literal[
     "no_additional_same_day",
     "min_rest_hours",
     "no_cross_day_into_unavailable_day",
     "max_assignments_per_month",
     "requires_coupled_shift",
+    "team_member_property_requirement",
 ]
 
 
@@ -427,6 +469,7 @@ class ShiftConstraint(BaseModel):
     max_assignments_per_month: int | None = Field(default=None, ge=1, le=31)
     paired_shift_variant_id: int | None = Field(default=None, ge=1)
     partner_day_offset: int = Field(default=1, ge=-7, le=7)
+    property_requirement: TeamMemberPropertyRequirementExpr | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -452,6 +495,7 @@ class ShiftConstraint(BaseModel):
             self.max_assignments_per_month = None
             self.paired_shift_variant_id = None
             self.partner_day_offset = 1
+            self.property_requirement = None
             return self
         if self.type == "max_assignments_per_month":
             if self.max_assignments_per_month is None:
@@ -459,17 +503,28 @@ class ShiftConstraint(BaseModel):
             self.min_rest_hours = None
             self.paired_shift_variant_id = None
             self.partner_day_offset = 1
+            self.property_requirement = None
             return self
         if self.type == "requires_coupled_shift":
             if self.paired_shift_variant_id is None:
                 raise ValueError("paired_shift_variant_id is required for requires_coupled_shift constraints")
             self.min_rest_hours = None
             self.max_assignments_per_month = None
+            self.property_requirement = None
+            return self
+        if self.type == "team_member_property_requirement":
+            if self.property_requirement is None:
+                raise ValueError("property_requirement is required for team_member_property_requirement constraints")
+            self.min_rest_hours = None
+            self.max_assignments_per_month = None
+            self.paired_shift_variant_id = None
+            self.partner_day_offset = 1
             return self
         self.min_rest_hours = None
         self.max_assignments_per_month = None
         self.paired_shift_variant_id = None
         self.partner_day_offset = 1
+        self.property_requirement = None
         return self
 
 

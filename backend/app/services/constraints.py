@@ -5,8 +5,21 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, PlanningPeriod, RosterSlot, RosterSlotAssignment, ShiftTemplate, ShiftVariant
+from app.models import (
+    PlanningCell,
+    PlanningPeriod,
+    RosterSlot,
+    RosterSlotAssignment,
+    ShiftTemplate,
+    ShiftVariant,
+    TeamMemberPropertyDefinition,
+)
 from app.schemas import ShiftConstraint, UNAVAILABLE_STATUSES, ValidationWarning
+from app.services.team_member_property_requirements import (
+    collect_property_requirement_violations,
+    evaluate_property_requirement_expr,
+    load_property_definitions_map,
+)
 
 ConstraintSource = Literal["template", "variant"]
 
@@ -76,6 +89,7 @@ def evaluate_assignment_constraints(
     assigned_slots_for_member: list[RosterSlotAssignment],
     planning_cells_for_member: list[PlanningCell],
     assignment_id: int | None = None,
+    member_property_values: dict[int, object],
 ) -> list[ValidationWarning]:
     warnings: list[ValidationWarning] = []
     team_slots = [row.roster_slot for row in assigned_slots_for_member if row.roster_slot is not None]
@@ -84,6 +98,13 @@ def evaluate_assignment_constraints(
         for row in planning_cells_for_member
         if row.status in UNAVAILABLE_STATUSES
     }
+    defs_map: dict[int, TeamMemberPropertyDefinition] = {}
+    if any(r.rule.type == "team_member_property_requirement" for r in resolved_constraints):
+        period = slot.planning_period
+        if period is None:
+            period = db.get(PlanningPeriod, slot.planning_period_id)
+        if period is not None:
+            defs_map = load_property_definitions_map(db, organization_id=period.organization_id)
     for resolved in resolved_constraints:
         rule = resolved.rule
         details = _base_details(
@@ -240,6 +261,26 @@ def evaluate_assignment_constraints(
                             "partner_date": partner_date.isoformat(),
                             "partner_day_offset": rule.partner_day_offset,
                         },
+                    )
+                )
+            continue
+        if rule.type == "team_member_property_requirement":
+            if rule.property_requirement is None:
+                continue
+            ok = evaluate_property_requirement_expr(rule.property_requirement, member_property_values, defs_map)
+            if not ok:
+                prop_details = dict(details)
+                prop_details["violations"] = collect_property_requirement_violations(
+                    rule.property_requirement, member_property_values, defs_map
+                )
+                warnings.append(
+                    ValidationWarning(
+                        code="ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES",
+                        severity=rule.severity,
+                        message="Constraint violation: team member does not meet property requirements for this shift.",
+                        team_member_id=team_member_id,
+                        date=slot.slot_date,
+                        details=prop_details,
                     )
                 )
             continue
