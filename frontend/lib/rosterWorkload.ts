@@ -1,4 +1,5 @@
 import { slotTouchesWeekendOrNrwHoliday } from "@/lib/nrwCalendar";
+import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 
 export type RosterWorkloadMatrixSlice = {
   slots: {
@@ -14,6 +15,7 @@ export type RosterWorkloadMatrixSlice = {
     id: number;
     first_name: string;
     last_name: string;
+    nickname?: string | null;
     employment_percentage: number;
   }[];
 };
@@ -41,8 +43,12 @@ export function formatWorkloadPeriodLabel(period: { year: number; month: number 
   return `${period.year}-${String(period.month).padStart(2, "0")}`;
 }
 
-function teamMemberLabel(member: { first_name: string; last_name: string }): string {
-  return `${member.first_name} ${member.last_name}`.trim();
+function teamMemberLabel(member: {
+  first_name: string;
+  last_name: string;
+  nickname?: string | null;
+}): string {
+  return teamMemberPlanningDisplayName(member);
 }
 
 function rosterWarningCountsByMember(warnings: RosterWorkloadWarning[]): Map<number, number> {

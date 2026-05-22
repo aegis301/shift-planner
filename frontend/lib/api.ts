@@ -3,7 +3,7 @@ function normalizeApiBase(): string {
   if (raw === "") {
     return "";
   }
-  const base = raw ?? "http://localhost:8000";
+  const base = raw ?? "http://localhost:18180";
   return base.replace(/\/$/, "");
 }
 

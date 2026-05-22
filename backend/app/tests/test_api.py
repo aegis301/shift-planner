@@ -160,6 +160,50 @@ def test_me_team_member_for_admin_with_linked_profile(client: TestClient):
     assert tm.json()["email"] == "admin-linked-self@example.com"
 
 
+def test_team_member_nickname_profile_and_matrix(client: TestClient):
+    login(client)
+    me = client.get("/api/v1/auth/me").json()
+    uid = me["id"]
+    created = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Nick",
+            "last_name": "Mustermann",
+            "nickname": "NM",
+            "email": "nick-matrix@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [],
+            "user_id": uid,
+        },
+    )
+    assert created.status_code == 200
+    member_id = created.json()["id"]
+    patched = client.patch(
+        "/api/v1/auth/me/team-member",
+        json={"nickname": "  Planner  "},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["nickname"] == "Planner"
+    period = client.post(
+        "/api/v1/planning-periods",
+        json={"year": 2030, "month": 6},
+    )
+    assert period.status_code == 200
+    period_id = period.json()["id"]
+    wishes = client.get(f"/api/v1/matrix/{period_id}")
+    assert wishes.status_code == 200
+    member_row = next(
+        row for row in wishes.json()["team_members"] if row["id"] == member_id
+    )
+    assert member_row["nickname"] == "Planner"
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}")
+    assert roster.status_code == 200
+    roster_member = next(
+        row for row in roster.json()["team_members"] if row["id"] == member_id
+    )
+    assert roster_member["nickname"] == "Planner"
+
+
 def test_login_without_organization_slug_when_email_unique(client: TestClient):
     response = client.post(
         "/api/v1/auth/login",

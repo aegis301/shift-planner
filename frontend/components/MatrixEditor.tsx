@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Download, ListChecks, MessageSquarePlus, MessageSquareText, RefreshCw, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
+import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
@@ -38,6 +39,7 @@ type MatrixTeamMember = {
   id: number;
   first_name: string;
   last_name: string;
+  nickname?: string | null;
   email: string;
   employment_percentage: number;
   planning_preferences?: string | null;
@@ -158,7 +160,7 @@ function formatDate(locale: Locale, value: string) {
 }
 
 function teamMemberLabel(member: MatrixTeamMember): string {
-  return `${member.first_name} ${member.last_name}`.trim();
+  return teamMemberPlanningDisplayName(member);
 }
 
 function shiftGroupQuery(shiftGroupId?: string) {

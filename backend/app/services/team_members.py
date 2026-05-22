@@ -12,6 +12,15 @@ from app.services.tenancy import get_organization
 _MISSING = object()
 
 
+def planning_display_name(*, nickname: str | None, last_name: str) -> str:
+    nick = (nickname or "").strip()
+    return nick if nick else last_name.strip()
+
+
+def team_member_planning_display_name(member: TeamMember) -> str:
+    return planning_display_name(nickname=member.nickname, last_name=member.last_name)
+
+
 def list_team_members(db: Session, *, organization_id: int, active_only: bool = False) -> list[TeamMember]:
     stmt = (
         select(TeamMember)
@@ -52,6 +61,7 @@ def team_member_to_read(member: TeamMember) -> TeamMemberRead:
         id=member.id,
         first_name=member.first_name,
         last_name=member.last_name,
+        nickname=member.nickname,
         email=member.email,
         employment_percentage=member.employment_percentage,
         notes=member.notes,

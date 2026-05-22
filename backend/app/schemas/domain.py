@@ -330,9 +330,19 @@ class ApproveJoinLinkTeamMemberBody(BaseModel):
     team_member_id: int
 
 
+def _normalize_optional_nickname(value: object) -> object:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    return text if text else None
+
+
 class TeamMemberCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
+    nickname: str | None = Field(default=None, max_length=64)
     email: EmailStr
     employment_percentage: int = Field(default=100, ge=1, le=100)
     notes: str | None = None
@@ -340,10 +350,16 @@ class TeamMemberCreate(BaseModel):
     shift_group_ids: list[int] = Field(default_factory=list)
     user_id: int | None = None
 
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def _nickname_create(cls, value: object) -> object:
+        return _normalize_optional_nickname(value)
+
 
 class TeamMemberUpdate(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=255)
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
+    nickname: str | None = Field(default=None, max_length=64)
     email: EmailStr | None = None
     employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
@@ -352,14 +368,25 @@ class TeamMemberUpdate(BaseModel):
     shift_group_ids: list[int] | None = None
     user_id: int | None = None
 
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def _nickname_update(cls, value: object) -> object:
+        return _normalize_optional_nickname(value)
+
 
 class TeamMemberSelfUpdate(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=255)
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
+    nickname: str | None = Field(default=None, max_length=64)
     email: EmailStr | None = None
     employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
     planning_preferences: str | None = None
+
+    @field_validator("nickname", mode="before")
+    @classmethod
+    def _nickname_self(cls, value: object) -> object:
+        return _normalize_optional_nickname(value)
 
 
 class TeamMemberRead(TeamMemberCreate):
@@ -964,6 +991,7 @@ class MatrixTeamMember(BaseModel):
     id: int
     first_name: str
     last_name: str
+    nickname: str | None = None
     email: EmailStr
     employment_percentage: int
     planning_preferences: str | None = None

@@ -28,6 +28,7 @@ import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrix
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
+import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type PlanningPeriod = {
@@ -58,8 +59,8 @@ type DestructiveAction =
 
 type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
 
-function teamMemberLabel(member: { first_name: string; last_name: string }): string {
-  return `${member.first_name} ${member.last_name}`.trim();
+function teamMemberLabel(member: { first_name: string; last_name: string; nickname?: string | null }): string {
+  return teamMemberPlanningDisplayName(member);
 }
 
 function monthLabel(period: PlanningPeriod | undefined) {

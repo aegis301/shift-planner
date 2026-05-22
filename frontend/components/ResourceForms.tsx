@@ -106,6 +106,7 @@ export type TeamMemberRecord = {
   id: number;
   first_name: string;
   last_name: string;
+  nickname?: string | null;
   email: string;
   employment_percentage: number;
   notes: string | null;
@@ -129,6 +130,7 @@ const FIELD_LABEL_MAP: Partial<Record<string, TranslationKey>> = {
   id: "id",
   first_name: "firstName",
   last_name: "lastName",
+  nickname: "nickname",
   email: "email",
   employment_percentage: "employment",
   notes: "notes",
@@ -1659,6 +1661,7 @@ export function TeamMemberEditorModal({
       body: JSON.stringify({
         first_name: form.get("first_name"),
         last_name: form.get("last_name"),
+        nickname: form.get("nickname") || null,
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
@@ -1727,6 +1730,10 @@ export function TeamMemberEditorModal({
         <div className="grid gap-4 md:grid-cols-2">
           <Field label={t(locale, "firstName")}><input className={inputClass} name="first_name" defaultValue={member.first_name} required /></Field>
           <Field label={t(locale, "lastName")}><input className={inputClass} name="last_name" defaultValue={member.last_name} required /></Field>
+          <Field label={t(locale, "nickname")}>
+            <input className={inputClass} name="nickname" maxLength={64} defaultValue={member.nickname ?? ""} />
+            <p className="mt-1 text-xs text-slate-500">{t(locale, "nicknameHelp")}</p>
+          </Field>
           <Field label={t(locale, "email")}><input className={inputClass} name="email" type="email" defaultValue={member.email} required /></Field>
           <Field label={t(locale, "employment")}><input className={inputClass} name="employment_percentage" type="number" min="1" max="100" defaultValue={member.employment_percentage} /></Field>
           <Field label={t(locale, "planningPreferencesField")}>
@@ -1847,6 +1854,7 @@ export function TeamMemberCreateModal({
       body: JSON.stringify({
         first_name: form.get("first_name"),
         last_name: form.get("last_name"),
+        nickname: form.get("nickname") || null,
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
@@ -1881,6 +1889,10 @@ export function TeamMemberCreateModal({
           </Field>
           <Field label={t(locale, "lastName")}>
             <input className={inputClass} name="last_name" required />
+          </Field>
+          <Field label={t(locale, "nickname")}>
+            <input className={inputClass} name="nickname" maxLength={64} />
+            <p className="mt-1 text-xs text-slate-500">{t(locale, "nicknameHelp")}</p>
           </Field>
           <Field label={t(locale, "email")}>
             <input className={inputClass} name="email" type="email" required />

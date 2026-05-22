@@ -152,6 +152,7 @@ def get_planning_matrix(
                 id=m.id,
                 first_name=m.first_name,
                 last_name=m.last_name,
+                nickname=m.nickname,
                 email=m.email,
                 employment_percentage=m.employment_percentage,
                 planning_preferences=m.planning_preferences,

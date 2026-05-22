@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     mcp_admin_token: str = "change-me-mcp-token"
     mcp_organization_id: int | None = None
     default_organization_id: int = 1
-    backend_cors_origins: str = "http://localhost:3000"
+    backend_cors_origins: str = "http://localhost:18130"
     session_cookie_secure: bool = False
 
     @property

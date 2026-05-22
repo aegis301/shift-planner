@@ -11,6 +11,7 @@ import {
   type RosterWorkloadWarning
 } from "@/lib/rosterWorkload";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
+import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
@@ -23,6 +24,7 @@ type RosterMatrixTeamMember = {
   id: number;
   first_name: string;
   last_name: string;
+  nickname?: string | null;
   email: string;
   employment_percentage: number;
   planning_preferences?: string | null;
@@ -134,7 +136,7 @@ function formatDate(locale: Locale, value: string) {
 }
 
 function teamMemberLabel(member: RosterMatrixTeamMember): string {
-  return `${member.first_name} ${member.last_name}`.trim();
+  return teamMemberPlanningDisplayName(member);
 }
 
 function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): boolean {
@@ -143,8 +145,10 @@ function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): 
     return true;
   }
   const label = teamMemberLabel(member).toLowerCase();
+  const nick = (member.nickname ?? "").trim().toLowerCase();
   return (
     label.includes(q) ||
+    nick.includes(q) ||
     member.first_name.toLowerCase().includes(q) ||
     member.last_name.toLowerCase().includes(q) ||
     member.email.toLowerCase().includes(q)

@@ -14,6 +14,7 @@ type TeamMemberRead = {
   id: number;
   first_name: string;
   last_name: string;
+  nickname: string | null;
   email: string;
   employment_percentage: number;
   notes: string | null;
@@ -57,6 +58,7 @@ function ProfileContent() {
       body: JSON.stringify({
         first_name: form.get("first_name"),
         last_name: form.get("last_name"),
+        nickname: form.get("nickname") || null,
         email: form.get("email"),
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes") || null,
@@ -93,6 +95,10 @@ function ProfileContent() {
           </Field>
           <Field label={t(locale, "lastName")}>
             <input className={inputClass} name="last_name" defaultValue={member.last_name} required />
+          </Field>
+          <Field label={t(locale, "nickname")}>
+            <input className={inputClass} name="nickname" maxLength={64} defaultValue={member.nickname ?? ""} />
+            <p className="mt-1 text-xs text-slate-500">{t(locale, "nicknameHelp")}</p>
           </Field>
           <Field label={t(locale, "email")}>
             <input className={inputClass} name="email" type="email" defaultValue={member.email} required />

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.services.export_colors import MemberPastelPalette, member_pastel_palette
 from app.services.matrix import get_planning_matrix
 from app.services.roster_matrix import get_roster_matrix
+from app.services.team_members import planning_display_name
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,13 @@ class RosterExportTable:
 
 def _team_member_label(member: Any) -> str:
     return f"{member.first_name} {member.last_name}".strip()
+
+
+def _planning_member_label(member: Any) -> str:
+    return planning_display_name(
+        nickname=getattr(member, "nickname", None),
+        last_name=getattr(member, "last_name", ""),
+    )
 
 
 def _period_label(year: int, month: int) -> str:
@@ -147,7 +155,7 @@ def build_roster_export_table(
                 continue
             row_cells.append(
                 RosterExportCell(
-                    member_name=_team_member_label(member),
+                    member_name=_planning_member_label(member),
                     palette=member_pastel_palette(member.id),
                 )
             )
@@ -213,7 +221,7 @@ def build_roster_export_table_by_template(
         if member is None:
             continue
         col_idx = slot_to_column[slot.id]
-        entry_label = _team_member_label(member)
+        entry_label = _planning_member_label(member)
         entries.setdefault((slot.slot_date, col_idx), []).append(
             RosterExportCell(member_name=entry_label, palette=member_pastel_palette(member.id))
         )
@@ -247,7 +255,7 @@ def export_matrix_csv(
     cells = {(cell.cell_date, cell.team_member_id): cell for cell in matrix.cells}
     buffer = StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(["date", *[_team_member_label(m) for m in matrix.team_members]])
+    writer.writerow(["date", *[_planning_member_label(m) for m in matrix.team_members]])
     for day in matrix.days:
         row = [day.date.isoformat()]
         for member in matrix.team_members:
@@ -286,7 +294,7 @@ def export_roster_matrix_csv(
                     slot.label or "",
                     slot.starts_at.isoformat() if slot.starts_at else "",
                     slot.ends_at.isoformat() if slot.ends_at else "",
-                    _team_member_label(member) if member else "",
+                    _planning_member_label(member) if member else "",
                     slot.template_code or "",
                     slot.variant_label or "",
                     slot.category or "",

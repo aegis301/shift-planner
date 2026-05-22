@@ -140,6 +140,7 @@ class TeamMember(Base):
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     first_name: Mapped[str] = mapped_column(String(255))
     last_name: Mapped[str] = mapped_column(String(255))
+    nickname: Mapped[str | None] = mapped_column(String(64))
     email: Mapped[str] = mapped_column(String(255), index=True)
     employment_percentage: Mapped[int] = mapped_column(Integer, default=100)
     notes: Mapped[str | None] = mapped_column(Text)
