@@ -9,6 +9,10 @@
 - **Admin UI + i18n:** Shift template create/edit and variant editors include reusable constraints controls with severity selection and rest-hours input, with DE/EN translations; planning conflict summary uses severity-colored rows and badge tone.
 - **MCP parity for shift configuration:** MCP tools now accept constraints on create and add update tools (**`update_shift_template_tool`**, **`update_shift_variant_tool`**) so MCP can manage constraints consistently with REST.
 
+## 2026-06-10
+- **Local dev host ports:** Docker Compose defaults use `18130` (frontend), `18180` (backend), and `18181` (MCP) on the host instead of `3000` / `8000` / `8001`; configure via `FRONTEND_HOST_PORT`, `BACKEND_HOST_PORT`, and `MCP_HOST_PORT` in `.env`.
+- **Team member nickname:** Optional `team_members.nickname` (Alembic `202606100001`); editable on `/profile` and admin team-member forms. Planning wishes matrix, final roster, validation/workload labels, and roster/matrix exports use nickname when set, otherwise last name.
+
 ## 2026-06-09
 - **Team member property definitions:** Admins define org-scoped competency fields (`number`, `date`, `select`, `multi_select`, `text`) via `GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`. Per-member values use `GET|PUT /api/v1/team-members/{id}/property-values`. `editable_by_team_member` controls whether linked members may write values on `/profile`. Admin UI: Organization → Team → Properties; values in staff member editor and profile. MCP resources and admin tools included.
 - **Shift constraints vs. team properties:** New template/variant constraint type **`team_member_property_requirement`** with JSON **`property_requirement`** (`all` / `any` / `atom` tree, validated against active definitions). Roster preflight and **`GET /api/v1/validation/{id}`** emit **`ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES`**; **`error`** severity blocks assignment like other hard rules. Admin shift template UI includes an AND/OR builder; planning conflict copy in DE/EN. MCP create/update shift tools accept the same `constraints` payloads as REST.

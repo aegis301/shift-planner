@@ -13,16 +13,28 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Services:
+Services (host ports default to uncommon values to reduce clashes with other local apps; override via `.env`):
 
-- Frontend: <http://localhost:3000>
-- Backend: <http://localhost:8000>
-- Backend health: <http://localhost:8000/health>
-- API docs: <http://localhost:8000/docs>
-- MCP service: <http://localhost:8001/mcp> when run through Docker Compose.
-- Postgres: localhost:5433 on the host, `postgres:5432` inside Docker Compose.
+- Frontend: <http://localhost:18130> (`FRONTEND_HOST_PORT`)
+- Backend: <http://localhost:18180> (`BACKEND_HOST_PORT`)
+- Backend health: <http://localhost:18180/health>
+- API docs: <http://localhost:18180/docs>
+- MCP service: <http://localhost:18181/mcp> (`MCP_HOST_PORT`) when run through Docker Compose.
+- Postgres: localhost:5433 on the host (`POSTGRES_HOST_PORT`), `postgres:5432` inside Docker Compose.
+
+If you change `FRONTEND_HOST_PORT` or `BACKEND_HOST_PORT`, update `BACKEND_CORS_ORIGINS` and `NEXT_PUBLIC_API_BASE_URL` in `.env` to match.
 
 Docker Compose development uses bind mounts for the backend, frontend, and MCP code. The frontend runs Next.js dev mode with hot reload, and the backend runs Uvicorn with reload. The MCP container may need a restart after MCP server code changes.
+
+## Cloudflare Tunnel for local dev
+
+To reach the dev stack from outside your machine (without publishing host ports on the LAN), run a named tunnel after `docker compose up`. Configure the `dev-tunnel` ingress in your Cloudflare / `cloudflared` config to forward to local services (typically the frontend at `http://localhost:18130`; add a second ingress for the backend at `http://localhost:18180` if the browser calls the API on a separate hostname).
+
+```bash
+cloudflared tunnel --protocol http2 run dev-tunnel
+```
+
+If the public hostname differs from `localhost`, set `BACKEND_CORS_ORIGINS` and `NEXT_PUBLIC_API_BASE_URL` in `.env` to your tunnel URL(s) so the browser can call the API and receive session cookies.
 
 ## Production deployment
 
@@ -39,11 +51,11 @@ alembic upgrade head
 python -m app.scripts.seed_admin
 python -m app.scripts.seed_team_member_users
 python -m app.scripts.seed_planner_user
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 18180
 pytest
 ```
 
-If your machine already runs Postgres on port `5432`, keep `POSTGRES_HOST_PORT=5433` in `.env`. The backend and MCP containers still use `postgres:5432` internally.
+If your machine already runs Postgres on port `5432`, keep `POSTGRES_HOST_PORT=5433` in `.env`. The backend and MCP containers still use `postgres:5432` internally. Containers still listen on `8000` / `3000` / `8001` internally; only the published host ports use `18180` / `18130` / `18181` by default.
 
 ## Frontend Development
 
@@ -96,6 +108,8 @@ These constraints are evaluated for assignment preflight and validation warnings
 Team members may also define recurring **planning patterns** on their profile or via `GET/PUT /api/v1/team-members/{id}/planning-patterns`: `avoid_time_window` (always non-blocking info hints on roster; **stack several weekday+time bands** in `windows[]`), `allowed_calendar_week_parity` (ISO week parity for roster checks; optional **`status`** writes wishes `planning_cells` with `source` `recurring_pattern` on all days in ISO weeks that **do not** match the chosen parity—same open-month and manual-cell rules as recurring weekdays; org policy may allow `error` on roster), and `recurring_weekday_status` (weekdays plus a wishes day status). Recurring weekday and week-parity wishes materialization is merged by pattern **`display_order`** (later patterns override earlier ones on the same day). New planning months pick up these rules when the month is created. Organization admins choose whether calendar-week parity may use blocking `error` via `GET/PATCH /api/v1/organization/member-pattern-policy` (time windows cannot be hard errors).
 
 **Team member properties (competencies):** Admins define custom fields per organization at `GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions` (types: `number`, `date`, `select`, `multi_select`, `text`; options required for select types). Values are stored per team member at `GET|PUT /api/v1/team-members/{id}/property-values`. Each definition may set `editable_by_team_member` so linked members can maintain their own values on `/profile` while admins edit all fields in the staff directory. UI: Organization → Team → Properties; values appear in the team member editor and profile.
+
+**Team member nickname:** Optional `team_members.nickname` is editable on `/profile` (`PATCH /api/v1/auth/me/team-member`) and by admins on `TeamMember` CRUD. Wishes matrix, final roster, planning validation/workload, and roster exports show **nickname** when set, otherwise **last name** (compact column headers). Staff directory and admin lists still use full first + last name.
 
 Validation also emits **`ROSTER_CONSECUTIVE_WEEKENDS`** (warning) when a team member is assigned on two consecutive calendar weekends (Saturday–Sunday pairs anchored by each weekend’s Saturday).
 

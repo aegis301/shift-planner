@@ -32,6 +32,16 @@ Run admin and team-member seed scripts manually when needed (see root [README.md
 
 If the machine has no public inbound ports (CGNAT, strict firewall), run **Cloudflare Tunnel** (`cloudflared`) on the server instead of exposing 80/443, and point the tunnel at `http://caddy:80` on the Compose network (or omit the `caddy` service and point the tunnel at `frontend:3000` / `backend:8000` if you split routing in Cloudflare).
 
+## Cloudflare Tunnel (local development)
+
+For local Docker Compose dev, use a named tunnel to expose localhost (see root [README.md](../README.md#cloudflare-tunnel-for-local-dev) for host ports). Start the stack, then run:
+
+```bash
+cloudflared tunnel --protocol http2 run dev-tunnel
+```
+
+Point the `dev-tunnel` ingress at `http://localhost:18130` (frontend) and, if needed, `http://localhost:18180` (backend). Update `BACKEND_CORS_ORIGINS` and `NEXT_PUBLIC_API_BASE_URL` in `.env` when using a public tunnel hostname.
+
 ## Cloudflare (DNS you control)
 
 1. Create an **A** (or **AAAA**) record for your app hostname to the server’s public IP, **or** create a Tunnel and use the tunnel’s **CNAME** target.
