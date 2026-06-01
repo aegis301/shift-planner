@@ -1,15 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Download, ListChecks, MessageSquarePlus, MessageSquareText, RefreshCw, Save, X } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight, Download, ListChecks, MessageSquarePlus, MessageSquareText, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale } from "@/lib/i18n";
 import {
   activePlanningDayStatusDefinitions,
-  badgeClassForPlanningDayStatusCode,
-  labelForPlanningDayStatusCode,
   planningDayStatusBadgeClass,
   planningDayStatusByCode,
   planningDayStatusLabel,
@@ -17,6 +15,7 @@ import {
 } from "@/lib/planningDayStatus";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 
 type PlanningShiftIntentKind = "wish" | "no_go";
 
@@ -118,23 +117,26 @@ function normalizePlanningStatus(value: string | undefined, definitions: Plannin
   return planningDayStatusByCode(definitions).has(value) ? value : "";
 }
 
-function statusMeta(status: string, definitions: PlanningDayStatusDefinition[], locale: Locale) {
-  const row = planningDayStatusByCode(definitions).get(status);
-  if (!row) {
-    return null;
+function intentTemplateRowsForGroup(matrix: PlanningMatrix, shiftGroupId?: string): IntentTemplateRow[] {
+  const templates = matrix.shift_templates ?? [];
+  const byId = new Map(templates.map((item) => [item.id, item]));
+  const parsedGroupId = shiftGroupId ? Number(shiftGroupId) : Number.NaN;
+  if (!Number.isNaN(parsedGroupId) && shiftGroupId) {
+    return templates
+      .filter((item) => item.is_active)
+      .map((item) => ({ templateId: item.id, shiftGroupId: parsedGroupId }))
+      .sort((a, b) => {
+        const nameA = byId.get(a.templateId)?.name ?? "";
+        const nameB = byId.get(b.templateId)?.name ?? "";
+        return (
+          nameA.localeCompare(nameB, undefined, { sensitivity: "base" }) || a.templateId - b.templateId
+        );
+      });
   }
-  return {
-    value: row.code,
-    label: planningDayStatusLabel(row, locale),
-    color: planningDayStatusBadgeClass(row.color_preset)
-  };
-}
-
-function intentTemplateRowsForDate(matrix: PlanningMatrix, cellDate: string): IntentTemplateRow[] {
   const seen = new Set<string>();
   const out: IntentTemplateRow[] = [];
   for (const row of matrix.template_slot_days ?? []) {
-    if (row.cell_date !== cellDate || row.shift_group_id == null) {
+    if (row.shift_group_id == null) {
       continue;
     }
     const key = `${row.shift_template_id}:${row.shift_group_id}`;
@@ -144,8 +146,46 @@ function intentTemplateRowsForDate(matrix: PlanningMatrix, cellDate: string): In
     seen.add(key);
     out.push({ templateId: row.shift_template_id, shiftGroupId: row.shift_group_id });
   }
-  out.sort((a, b) => a.templateId - b.templateId || a.shiftGroupId - b.shiftGroupId);
-  return out;
+  return out.sort((a, b) => {
+    const nameA = byId.get(a.templateId)?.name ?? "";
+    const nameB = byId.get(b.templateId)?.name ?? "";
+    return nameA.localeCompare(nameB, undefined, { sensitivity: "base" }) || a.templateId - b.templateId;
+  });
+}
+
+function splitMonthIntoWeeks(days: MatrixDay[]): MatrixDay[][] {
+  if (!days.length) {
+    return [];
+  }
+  const weeks: MatrixDay[][] = [];
+  let week: MatrixDay[] = [];
+  for (const day of days) {
+    const dow = new Date(`${day.date}T12:00:00`).getDay();
+    const isoDow = dow === 0 ? 7 : dow;
+    if (week.length > 0 && isoDow === 1) {
+      weeks.push(week);
+      week = [];
+    }
+    week.push(day);
+  }
+  if (week.length) {
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+function formatWeekRangeLabel(locale: Locale, days: MatrixDay[]): string {
+  if (!days.length) {
+    return "";
+  }
+  const first = days[0].date;
+  const last = days[days.length - 1].date;
+  const fmt = new Intl.DateTimeFormat(locale === "de" ? "de-DE" : "en-GB", { day: "numeric", month: "short" });
+  return `${fmt.format(new Date(`${first}T12:00:00`))} – ${fmt.format(new Date(`${last}T12:00:00`))}`;
+}
+
+function countDaysWithStatus(cellMap: Map<string, PlanningCell>, memberId: number, days: MatrixDay[]): number {
+  return days.filter((day) => Boolean(cellMap.get(`${day.date}:${memberId}`)?.status)).length;
 }
 
 function templateLabel(matrix: PlanningMatrix, templateId: number, locale: Locale): string {
@@ -206,8 +246,23 @@ export function MatrixEditor({
   const [message, setMessage] = useState("");
   const [savingCells, setSavingCells] = useState(0);
   const [isMemberCommentModalOpen, setIsMemberCommentModalOpen] = useState(false);
+  const [weekIndex, setWeekIndex] = useState(0);
+  const [daySheet, setDaySheet] = useState<{ date: string; memberId: number } | null>(null);
+  const isNarrow = useMediaQuery("(max-width: 1023px)");
 
   const groupQuery = useMemo(() => shiftGroupQuery(shiftGroupId), [shiftGroupId]);
+  const monthWeeks = useMemo(() => (matrix ? splitMonthIntoWeeks(matrix.days) : []), [matrix]);
+
+  useEffect(() => {
+    if (weekIndex >= monthWeeks.length && monthWeeks.length > 0) {
+      setWeekIndex(0);
+    }
+  }, [monthWeeks.length, weekIndex]);
+
+  useEffect(() => {
+    setWeekIndex(0);
+    setDaySheet(null);
+  }, [matrix?.planning_period.id, shiftGroupId]);
   const emphasizeStoredDayComments = editableMemberId == null;
 
   const cellMap = useMemo(() => {
@@ -505,23 +560,106 @@ export function MatrixEditor({
       {matrix ? (
         <>
           {compact ? (
-            <PlanningDenseMatrix
-              matrix={matrix}
-              cellMap={cellMap}
-              onSave={saveCell}
-              locale={locale}
-              onOpenNote={setNoteMember}
-              onSaveIntent={saveIntent}
-              editableMemberId={editableMemberId}
-              readOnly={readOnly}
-              emphasizeStoredDayComments={emphasizeStoredDayComments}
-              dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
-              intentStatsByMember={intentStatsByMember}
-              wishesResponseToggleEnabled={editableMemberId == null}
-              wishesResponseReceived={(memberId) => notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false}
-              onToggleWishesResponse={toggleWishesAcknowledged}
-              hasMonthlyComment={(memberId) => Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())}
-            />
+            <>
+              {isNarrow && matrix.team_members.length > 1 ? (
+                <PlannerCompactMobile
+                  matrix={matrix}
+                  cellMap={cellMap}
+                  onSave={saveCell}
+                  locale={locale}
+                  onOpenNote={setNoteMember}
+                  onSaveIntent={saveIntent}
+                  shiftGroupId={shiftGroupId}
+                  editableMemberId={editableMemberId}
+                  readOnly={readOnly}
+                  emphasizeStoredDayComments={emphasizeStoredDayComments}
+                  dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+                  intentStatsByMember={intentStatsByMember}
+                  wishesResponseToggleEnabled={editableMemberId == null}
+                  wishesResponseReceived={(memberId) =>
+                    notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false
+                  }
+                  onToggleWishesResponse={toggleWishesAcknowledged}
+                  hasMonthlyComment={(memberId) =>
+                    Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())
+                  }
+                  activeMemberId={activeMemberId}
+                  onActiveMemberIdChange={setActiveMemberId}
+                  weekIndex={weekIndex}
+                  onWeekIndexChange={setWeekIndex}
+                  daySheet={daySheet}
+                  onOpenDaySheet={(date, memberId) => setDaySheet({ date, memberId })}
+                  onCloseDaySheet={() => setDaySheet(null)}
+                />
+              ) : isNarrow && matrix.team_members.length === 1 ? (
+                <div className="grid gap-3 lg:hidden">
+                  <MatrixWeekNav
+                    locale={locale}
+                    weekIndex={weekIndex}
+                    weekCount={monthWeeks.length}
+                    weekLabel={formatWeekRangeLabel(locale, monthWeeks[weekIndex] ?? matrix.days)}
+                    onPrev={() => setWeekIndex((value) => Math.max(0, value - 1))}
+                    onNext={() => setWeekIndex((value) => Math.min(monthWeeks.length - 1, value + 1))}
+                  />
+                  {matrix.team_members[0] ? (
+                    <MatrixProgressHeader
+                      locale={locale}
+                      memberId={matrix.team_members[0].id}
+                      days={matrix.days}
+                      cellMap={cellMap}
+                      intentStats={intentStatsByMember.get(matrix.team_members[0].id)}
+                    />
+                  ) : null}
+                  <MobileMatrix
+                    matrix={matrix}
+                    days={monthWeeks[weekIndex] ?? matrix.days}
+                    cellMap={cellMap}
+                    onSave={saveCell}
+                    locale={locale}
+                    onOpenNote={setNoteMember}
+                    onSaveIntent={saveIntent}
+                    shiftGroupId={shiftGroupId}
+                    editableMemberId={editableMemberId}
+                    readOnly={readOnly}
+                    emphasizeStoredDayComments={emphasizeStoredDayComments}
+                    dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+                    intentStatsByMember={intentStatsByMember}
+                    hasMonthlyComment={(memberId) =>
+                      Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())
+                    }
+                    hideMemberHeaders
+                    daySheet={daySheet}
+                    onOpenDaySheet={(date, memberId) => setDaySheet({ date, memberId })}
+                    onCloseDaySheet={() => setDaySheet(null)}
+                    showShellClass={false}
+                  />
+                </div>
+              ) : null}
+              <div className={isNarrow ? "hidden lg:block" : undefined}>
+                <PlanningDenseMatrix
+                  matrix={matrix}
+                  cellMap={cellMap}
+                  onSave={saveCell}
+                  locale={locale}
+                  onOpenNote={setNoteMember}
+                  onSaveIntent={saveIntent}
+                  shiftGroupId={shiftGroupId}
+                  editableMemberId={editableMemberId}
+                  readOnly={readOnly}
+                  emphasizeStoredDayComments={emphasizeStoredDayComments}
+                  dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+                  intentStatsByMember={intentStatsByMember}
+                  wishesResponseToggleEnabled={editableMemberId == null}
+                  wishesResponseReceived={(memberId) =>
+                    notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false
+                  }
+                  onToggleWishesResponse={toggleWishesAcknowledged}
+                  hasMonthlyComment={(memberId) =>
+                    Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())
+                  }
+                />
+              </div>
+            </>
           ) : (
             <>
               <DesktopMatrix
@@ -531,15 +669,20 @@ export function MatrixEditor({
                 locale={locale}
                 onOpenNote={setNoteMember}
                 onSaveIntent={saveIntent}
+                shiftGroupId={shiftGroupId}
                 editableMemberId={editableMemberId}
                 readOnly={readOnly}
                 emphasizeStoredDayComments={emphasizeStoredDayComments}
                 dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                 intentStatsByMember={intentStatsByMember}
                 wishesResponseToggleEnabled={editableMemberId == null}
-                wishesResponseReceived={(memberId) => notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false}
+                wishesResponseReceived={(memberId) =>
+                  notes.find((item) => item.team_member_id === memberId)?.wishes_response_received ?? false
+                }
                 onToggleWishesResponse={toggleWishesAcknowledged}
-                hasMonthlyComment={(memberId) => Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())}
+                hasMonthlyComment={(memberId) =>
+                  Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())
+                }
               />
               <MobileMatrix
                 matrix={matrix}
@@ -548,12 +691,15 @@ export function MatrixEditor({
                 locale={locale}
                 onOpenNote={setNoteMember}
                 onSaveIntent={saveIntent}
+                shiftGroupId={shiftGroupId}
                 editableMemberId={editableMemberId}
                 readOnly={readOnly}
                 emphasizeStoredDayComments={emphasizeStoredDayComments}
                 dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
                 intentStatsByMember={intentStatsByMember}
-                hasMonthlyComment={(memberId) => Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())}
+                hasMonthlyComment={(memberId) =>
+                  Boolean(notes.find((item) => item.team_member_id === memberId)?.summary?.trim())
+                }
               />
             </>
           )}
@@ -653,6 +799,234 @@ function MonthlyCommentModal({
   );
 }
 
+type MatrixCellUiMode = "dense" | "default" | "mobile";
+
+function MatrixWeekNav({
+  locale,
+  weekIndex,
+  weekCount,
+  weekLabel,
+  onPrev,
+  onNext
+}: {
+  locale: Locale;
+  weekIndex: number;
+  weekCount: number;
+  weekLabel: string;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  if (weekCount <= 1) {
+    return null;
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
+      <button
+        type="button"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 disabled:opacity-40"
+        disabled={weekIndex <= 0}
+        onClick={onPrev}
+        aria-label={t(locale, "matrixWeekPrev")}
+      >
+        <ChevronLeft size={18} />
+      </button>
+      <span className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-ink">{weekLabel}</span>
+      <button
+        type="button"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700 disabled:opacity-40"
+        disabled={weekIndex >= weekCount - 1}
+        onClick={onNext}
+        aria-label={t(locale, "matrixWeekNext")}
+      >
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  );
+}
+
+function MatrixProgressHeader({
+  locale,
+  memberId,
+  days,
+  cellMap,
+  intentStats
+}: {
+  locale: Locale;
+  memberId: number;
+  days: MatrixDay[];
+  cellMap: Map<string, PlanningCell>;
+  intentStats?: TeamMemberIntentStats;
+}) {
+  const filled = countDaysWithStatus(cellMap, memberId, days);
+  return (
+    <p className="text-xs text-slate-600">
+      {t(locale, "matrixProgressDays", { filled: String(filled), total: String(days.length) })}
+      {intentStats && (intentStats.wish > 0 || intentStats.noGo > 0) ? (
+        <>
+          {" · "}
+          {t(locale, "matrixProgressIntents", {
+            wish: String(intentStats.wish),
+            noGo: String(intentStats.noGo)
+          })}
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+function MatrixMemberChips({
+  members,
+  activeMemberId,
+  locale,
+  intentStatsByMember,
+  onSelect,
+  onOpenNote,
+  wishesResponseToggleEnabled,
+  wishesResponseReceived,
+  onToggleWishesResponse,
+  hasMonthlyComment,
+  readOnly,
+  editableMemberId
+}: {
+  members: MatrixTeamMember[];
+  activeMemberId: number | null;
+  locale: Locale;
+  intentStatsByMember: Map<number, TeamMemberIntentStats>;
+  onSelect: (id: number) => void;
+  onOpenNote: (member: MatrixTeamMember) => void;
+  wishesResponseToggleEnabled: boolean;
+  wishesResponseReceived: (memberId: number) => boolean;
+  onToggleWishesResponse: (memberId: number) => void | Promise<void>;
+  hasMonthlyComment: (memberId: number) => boolean;
+  readOnly: boolean;
+  editableMemberId?: number;
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {members.map((member) => {
+        const active = member.id === activeMemberId;
+        const stats = intentStatsByMember.get(member.id);
+        return (
+          <div
+            key={member.id}
+            className={`flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1 ${
+              active ? "border-ink bg-ink text-white" : "border-slate-200 bg-white text-ink"
+            }`}
+          >
+            <button type="button" className="max-w-[8rem] truncate text-xs font-semibold" onClick={() => onSelect(member.id)}>
+              {teamMemberLabel(member)}
+            </button>
+            {stats && (stats.wish > 0 || stats.noGo > 0) ? (
+              <span className={`text-[0.6rem] ${active ? "text-white/80" : "text-slate-500"}`}>
+                {stats.wish}/{stats.noGo}
+              </span>
+            ) : null}
+            {wishesResponseToggleEnabled ? (
+              <button
+                type="button"
+                className={`inline-flex h-6 w-6 items-center justify-center rounded border ${
+                  wishesResponseReceived(member.id)
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : active
+                      ? "border-white/40 text-white"
+                      : "border-slate-200 text-slate-500"
+                }`}
+                disabled={editableMemberId != null && member.id !== editableMemberId}
+                onClick={() => void onToggleWishesResponse(member.id)}
+                aria-label={t(locale, "wishesResponseAcknowledged")}
+              >
+                <ListChecks size={12} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={`inline-flex h-6 w-6 items-center justify-center rounded border ${
+                hasMonthlyComment(member.id)
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : active
+                    ? "border-white/40 text-white"
+                    : "border-slate-200 text-coral"
+              }`}
+              disabled={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
+              onClick={() => onOpenNote(member)}
+              aria-label={t(locale, "teamMemberPeriodNotes")}
+            >
+              <MessageSquareText size={12} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DayEditSheet({
+  open,
+  onClose,
+  locale,
+  cellDate,
+  memberId,
+  matrix,
+  cell,
+  shiftGroupId,
+  readOnly,
+  onSave,
+  onSaveIntent,
+  dayFeedbackAlwaysVisible
+}: {
+  open: boolean;
+  onClose: () => void;
+  locale: Locale;
+  cellDate: string;
+  memberId: number;
+  matrix: PlanningMatrix;
+  cell?: PlanningCell;
+  shiftGroupId?: string;
+  readOnly: boolean;
+  onSave: (memberId: number, cellDate: string, status: string, comment?: string | null) => Promise<void>;
+  onSaveIntent: SaveMatrixIntentFn;
+  dayFeedbackAlwaysVisible: boolean;
+}) {
+  if (!open) {
+    return null;
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/30 px-0 py-0 backdrop-blur-sm lg:items-center lg:px-4 lg:py-6">
+      <div className="flex max-h-[min(90dvh,90svh)] w-full flex-col rounded-t-xl bg-white shadow-soft ring-1 ring-slate-200 lg:max-w-lg lg:rounded-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <h2 className="text-base font-semibold text-ink">
+            {t(locale, "matrixDaySheetTitle")} · {formatDate(locale, cellDate)}
+          </h2>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600"
+            onClick={onClose}
+            aria-label={t(locale, "close")}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="overflow-auto p-4">
+          <MatrixCell
+            matrix={matrix}
+            cell={cell}
+            memberId={memberId}
+            cellDate={cellDate}
+            onSave={onSave}
+            locale={locale}
+            uiMode="mobile"
+            shiftGroupId={shiftGroupId}
+            onSaveIntent={onSaveIntent}
+            readOnly={readOnly}
+            dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+            commentInSheetOnly={false}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlanningDenseMatrix({
   matrix,
   cellMap,
@@ -660,6 +1034,7 @@ function PlanningDenseMatrix({
   onOpenNote,
   locale,
   onSaveIntent,
+  shiftGroupId,
   editableMemberId,
   readOnly,
   emphasizeStoredDayComments,
@@ -676,6 +1051,7 @@ function PlanningDenseMatrix({
   onOpenNote: (member: MatrixTeamMember) => void;
   locale: Locale;
   onSaveIntent: SaveMatrixIntentFn;
+  shiftGroupId?: string;
   editableMemberId?: number;
   readOnly: boolean;
   emphasizeStoredDayComments: boolean;
@@ -769,17 +1145,19 @@ function PlanningDenseMatrix({
               {matrix.team_members.map((member) => (
                 <td key={member.id} className="border-b border-slate-100 p-1.5 align-top">
                   <MatrixCell
-                    dense
                     matrix={matrix}
                     cell={cellMap.get(`${day.date}:${member.id}`)}
                     memberId={member.id}
                     cellDate={day.date}
                     onSave={onSave}
                     locale={locale}
+                    uiMode="dense"
+                    shiftGroupId={shiftGroupId}
                     onSaveIntent={onSaveIntent}
                     readOnly={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
                     emphasizeStoredDayComments={emphasizeStoredDayComments}
                     dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+                    useIntentSegments
                   />
                 </td>
               ))}
@@ -798,6 +1176,7 @@ function DesktopMatrix({
   onOpenNote,
   locale,
   onSaveIntent,
+  shiftGroupId,
   editableMemberId,
   readOnly,
   emphasizeStoredDayComments,
@@ -814,6 +1193,7 @@ function DesktopMatrix({
   onOpenNote: (member: MatrixTeamMember) => void;
   locale: Locale;
   onSaveIntent: SaveMatrixIntentFn;
+  shiftGroupId?: string;
   editableMemberId?: number;
   readOnly: boolean;
   emphasizeStoredDayComments: boolean;
@@ -915,6 +1295,8 @@ function DesktopMatrix({
                       cellDate={day.date}
                       onSave={onSave}
                       locale={locale}
+                      uiMode="default"
+                      shiftGroupId={shiftGroupId}
                       onSaveIntent={onSaveIntent}
                       readOnly={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
                       emphasizeStoredDayComments={emphasizeStoredDayComments}
@@ -933,17 +1315,179 @@ function DesktopMatrix({
 
 function MobileMatrix({
   matrix,
+  days,
   cellMap,
   onSave,
   onOpenNote,
   locale,
   onSaveIntent,
+  shiftGroupId,
   editableMemberId,
   readOnly,
   emphasizeStoredDayComments,
   dayFeedbackAlwaysVisible,
   intentStatsByMember,
   hasMonthlyComment,
+  hideMemberHeaders,
+  weekNav,
+  progressHeader,
+  daySheet,
+  onOpenDaySheet,
+  onCloseDaySheet,
+  showShellClass = true,
+}: {
+  matrix: PlanningMatrix;
+  days?: MatrixDay[];
+  cellMap: Map<string, PlanningCell>;
+  onSave: (memberId: number, cellDate: string, status: string, comment?: string | null) => Promise<void>;
+  onOpenNote: (member: MatrixTeamMember) => void;
+  locale: Locale;
+  onSaveIntent: SaveMatrixIntentFn;
+  shiftGroupId?: string;
+  editableMemberId?: number;
+  readOnly: boolean;
+  emphasizeStoredDayComments: boolean;
+  dayFeedbackAlwaysVisible: boolean;
+  intentStatsByMember: Map<number, TeamMemberIntentStats>;
+  hasMonthlyComment: (memberId: number) => boolean;
+  hideMemberHeaders?: boolean;
+  weekNav?: ReactNode;
+  progressHeader?: ReactNode;
+  daySheet?: { date: string; memberId: number } | null;
+  onOpenDaySheet?: (date: string, memberId: number) => void;
+  onCloseDaySheet?: () => void;
+  showShellClass?: boolean;
+}) {
+  const visibleDays = days ?? matrix.days;
+  const member = matrix.team_members[0];
+
+  return (
+    <div className={`grid gap-3 ${showShellClass ? "lg:hidden" : ""}`}>
+      {weekNav}
+      {progressHeader}
+      {visibleDays.map((day) => (
+        <Card key={day.date}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-ink">{formatDate(locale, day.date)}</h2>
+            {onOpenDaySheet && member ? (
+              <button
+                type="button"
+                className="inline-flex h-9 items-center justify-center gap-1 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-700"
+                onClick={() => onOpenDaySheet(day.date, member.id)}
+              >
+                <Pencil size={14} />
+                {t(locale, "matrixEditDay")}
+              </button>
+            ) : null}
+          </div>
+          <div className="grid gap-3">
+            {matrix.team_members.map((row) => (
+              <div key={row.id} className="grid gap-2 rounded-lg border border-slate-200 p-3">
+                {!hideMemberHeaders ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700">{teamMemberLabel(row)}</p>
+                      {(() => {
+                        const stats = intentStatsByMember.get(row.id);
+                        if (!stats || (!stats.wish && !stats.noGo)) {
+                          return null;
+                        }
+                        return (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900 ring-1 ring-sky-200">
+                              {t(locale, "wishShort")}: {stats.wish}
+                            </span>
+                            <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900 ring-1 ring-rose-200">
+                              {t(locale, "noGoShort")}: {stats.noGo}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <button
+                      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                        hasMonthlyComment(row.id)
+                          ? "border-amber-300 bg-amber-50 text-amber-800"
+                          : "border-slate-200 bg-white text-coral"
+                      }`}
+                      disabled={readOnly || (editableMemberId != null && row.id !== editableMemberId)}
+                      onClick={() => onOpenNote(row)}
+                      title={t(locale, "teamMemberPeriodNotes")}
+                      type="button"
+                    >
+                      <MessageSquareText aria-hidden size={16} />
+                    </button>
+                  </div>
+                ) : null}
+                <MatrixCell
+                  matrix={matrix}
+                  cell={cellMap.get(`${day.date}:${row.id}`)}
+                  memberId={row.id}
+                  cellDate={day.date}
+                  onSave={onSave}
+                  locale={locale}
+                  uiMode="mobile"
+                  shiftGroupId={shiftGroupId}
+                  onSaveIntent={onSaveIntent}
+                  readOnly={readOnly || (editableMemberId != null && row.id !== editableMemberId)}
+                  emphasizeStoredDayComments={emphasizeStoredDayComments}
+                  dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+                  commentInSheetOnly={Boolean(dayFeedbackAlwaysVisible && hideMemberHeaders && onOpenDaySheet)}
+                  onOpenDayEdit={
+                    onOpenDaySheet ? () => onOpenDaySheet(day.date, row.id) : undefined
+                  }
+                  useIntentSegments
+                  useStatusChips
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ))}
+      {daySheet && onCloseDaySheet ? (
+        <DayEditSheet
+          open
+          onClose={onCloseDaySheet}
+          locale={locale}
+          cellDate={daySheet.date}
+          memberId={daySheet.memberId}
+          matrix={matrix}
+          cell={cellMap.get(`${daySheet.date}:${daySheet.memberId}`)}
+          shiftGroupId={shiftGroupId}
+          readOnly={readOnly || (editableMemberId != null && daySheet.memberId !== editableMemberId)}
+          onSave={onSave}
+          onSaveIntent={onSaveIntent}
+          dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PlannerCompactMobile({
+  matrix,
+  cellMap,
+  onSave,
+  onOpenNote,
+  locale,
+  onSaveIntent,
+  shiftGroupId,
+  editableMemberId,
+  readOnly,
+  emphasizeStoredDayComments,
+  dayFeedbackAlwaysVisible,
+  intentStatsByMember,
+  wishesResponseToggleEnabled,
+  wishesResponseReceived,
+  onToggleWishesResponse,
+  hasMonthlyComment,
+  activeMemberId,
+  onActiveMemberIdChange,
+  weekIndex,
+  onWeekIndexChange,
+  daySheet,
+  onOpenDaySheet,
+  onCloseDaySheet,
 }: {
   matrix: PlanningMatrix;
   cellMap: Map<string, PlanningCell>;
@@ -951,72 +1495,91 @@ function MobileMatrix({
   onOpenNote: (member: MatrixTeamMember) => void;
   locale: Locale;
   onSaveIntent: SaveMatrixIntentFn;
+  shiftGroupId?: string;
   editableMemberId?: number;
   readOnly: boolean;
   emphasizeStoredDayComments: boolean;
   dayFeedbackAlwaysVisible: boolean;
   intentStatsByMember: Map<number, TeamMemberIntentStats>;
+  wishesResponseToggleEnabled: boolean;
+  wishesResponseReceived: (memberId: number) => boolean;
+  onToggleWishesResponse: (memberId: number) => void | Promise<void>;
   hasMonthlyComment: (memberId: number) => boolean;
+  activeMemberId: number | null;
+  onActiveMemberIdChange: (id: number) => void;
+  weekIndex: number;
+  onWeekIndexChange: (index: number) => void;
+  daySheet: { date: string; memberId: number } | null;
+  onOpenDaySheet: (date: string, memberId: number) => void;
+  onCloseDaySheet: () => void;
 }) {
+  const member = matrix.team_members.find((row) => row.id === activeMemberId) ?? matrix.team_members[0];
+  const memberId = member?.id ?? 0;
+  const filteredMatrix = useMemo(
+    () => ({
+      ...matrix,
+      team_members: member ? [member] : []
+    }),
+    [matrix, member]
+  );
+  const monthWeeks = useMemo(() => splitMonthIntoWeeks(matrix.days), [matrix.days]);
+  const weekDays = monthWeeks[weekIndex] ?? matrix.days;
+  const weekLabel = formatWeekRangeLabel(locale, weekDays);
+
   return (
-    <div className="grid gap-4 lg:hidden">
-      {matrix.days.map((day) => (
-        <Card key={day.date}>
-          <h2 className="mb-3 text-base font-semibold text-ink">{formatDate(locale, day.date)}</h2>
-          <div className="grid gap-3">
-            {matrix.team_members.map((member) => (
-              <div key={member.id} className="grid gap-2 rounded-lg border border-slate-200 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">{teamMemberLabel(member)}</p>
-                    {(() => {
-                      const stats = intentStatsByMember.get(member.id);
-                      if (!stats || (!stats.wish && !stats.noGo)) {
-                        return null;
-                      }
-                      return (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900 ring-1 ring-sky-200">
-                            {t(locale, "wishShort")}: {stats.wish}
-                          </span>
-                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900 ring-1 ring-rose-200">
-                            {t(locale, "noGoShort")}: {stats.noGo}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <button
-                    className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      hasMonthlyComment(member.id)
-                        ? "border-amber-300 bg-amber-50 text-amber-800"
-                        : "border-slate-200 bg-white text-coral"
-                    }`}
-                    disabled={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
-                    onClick={() => onOpenNote(member)}
-                    title={t(locale, "teamMemberPeriodNotes")}
-                    type="button"
-                  >
-                    <MessageSquareText aria-hidden size={16} />
-                  </button>
-                </div>
-                <MatrixCell
-                  matrix={matrix}
-                  cell={cellMap.get(`${day.date}:${member.id}`)}
-                  memberId={member.id}
-                  cellDate={day.date}
-                  onSave={onSave}
-                  locale={locale}
-                  onSaveIntent={onSaveIntent}
-                  readOnly={readOnly || (editableMemberId != null && member.id !== editableMemberId)}
-                  emphasizeStoredDayComments={emphasizeStoredDayComments}
-                  dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
-                />
-              </div>
-            ))}
-          </div>
-        </Card>
-      ))}
+    <div className="grid gap-3 lg:hidden">
+      <MatrixMemberChips
+        members={matrix.team_members}
+        activeMemberId={memberId}
+        locale={locale}
+        intentStatsByMember={intentStatsByMember}
+        onSelect={onActiveMemberIdChange}
+        onOpenNote={onOpenNote}
+        wishesResponseToggleEnabled={wishesResponseToggleEnabled}
+        wishesResponseReceived={wishesResponseReceived}
+        onToggleWishesResponse={onToggleWishesResponse}
+        hasMonthlyComment={hasMonthlyComment}
+        readOnly={readOnly}
+        editableMemberId={editableMemberId}
+      />
+      <MatrixWeekNav
+        locale={locale}
+        weekIndex={weekIndex}
+        weekCount={monthWeeks.length}
+        weekLabel={weekLabel}
+        onPrev={() => onWeekIndexChange(Math.max(0, weekIndex - 1))}
+        onNext={() => onWeekIndexChange(Math.min(monthWeeks.length - 1, weekIndex + 1))}
+      />
+      {member ? (
+        <MatrixProgressHeader
+          locale={locale}
+          memberId={memberId}
+          days={matrix.days}
+          cellMap={cellMap}
+          intentStats={intentStatsByMember.get(memberId)}
+        />
+      ) : null}
+      <MobileMatrix
+        matrix={filteredMatrix}
+        days={weekDays}
+        cellMap={cellMap}
+        onSave={onSave}
+        onOpenNote={onOpenNote}
+        locale={locale}
+        onSaveIntent={onSaveIntent}
+        shiftGroupId={shiftGroupId}
+        editableMemberId={editableMemberId}
+        readOnly={readOnly}
+        emphasizeStoredDayComments={emphasizeStoredDayComments}
+        dayFeedbackAlwaysVisible={dayFeedbackAlwaysVisible}
+        intentStatsByMember={intentStatsByMember}
+        hasMonthlyComment={hasMonthlyComment}
+        hideMemberHeaders
+        daySheet={daySheet}
+        onOpenDaySheet={onOpenDaySheet}
+        onCloseDaySheet={onCloseDaySheet}
+        showShellClass={false}
+      />
     </div>
   );
 }
@@ -1109,11 +1672,16 @@ function MatrixCell({
   cellDate,
   onSave,
   locale,
-  dense = false,
+  uiMode = "default",
+  shiftGroupId,
   onSaveIntent,
   readOnly = false,
   emphasizeStoredDayComments = false,
-  dayFeedbackAlwaysVisible = false
+  dayFeedbackAlwaysVisible = false,
+  useStatusChips = false,
+  useIntentSegments = false,
+  commentInSheetOnly = false,
+  onOpenDayEdit
 }: {
   matrix: PlanningMatrix;
   cell?: PlanningCell;
@@ -1121,22 +1689,32 @@ function MatrixCell({
   cellDate: string;
   onSave: (memberId: number, cellDate: string, status: string, comment?: string | null) => Promise<void>;
   locale: Locale;
-  dense?: boolean;
+  uiMode?: MatrixCellUiMode;
+  shiftGroupId?: string;
   onSaveIntent: SaveMatrixIntentFn;
   readOnly?: boolean;
   emphasizeStoredDayComments?: boolean;
   dayFeedbackAlwaysVisible?: boolean;
+  useStatusChips?: boolean;
+  useIntentSegments?: boolean;
+  commentInSheetOnly?: boolean;
+  onOpenDayEdit?: () => void;
 }) {
+  const dense = uiMode === "dense";
   const dayStatuses = activePlanningDayStatusDefinitions(matrix.day_status_definitions ?? []);
   const [status, setStatus] = useState(() => normalizePlanningStatus(cell?.status, dayStatuses));
   const [comment, setComment] = useState(cell?.comment ?? "");
   const [commentDraftOpen, setCommentDraftOpen] = useState(false);
-  const meta = statusMeta(status, dayStatuses, locale);
   const [isDirty, setIsDirty] = useState(false);
   const hasComment = comment.trim().length > 0;
   const showCommentField =
-    Boolean(dayFeedbackAlwaysVisible && !readOnly) || hasComment || commentDraftOpen;
+    !commentInSheetOnly &&
+    (Boolean(dayFeedbackAlwaysVisible && !readOnly) || hasComment || commentDraftOpen);
   const storedDayComment = (cell?.comment ?? "").trim();
+  const controlClass = `min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${
+    dense ? "px-1.5 py-1.5 text-[0.7rem]" : uiMode === "mobile" ? "px-2 py-2.5 text-sm" : "px-2 py-2 text-xs"
+  }`;
+
   const intentMap = useMemo(() => {
     const map = new Map<string, PlanningShiftIntentKind>();
     for (const row of matrix.shift_intents ?? []) {
@@ -1147,30 +1725,29 @@ function MatrixCell({
     }
     return map;
   }, [matrix.shift_intents, memberId, cellDate]);
-  const intentRows = useMemo(() => intentTemplateRowsForDate(matrix, cellDate), [matrix, cellDate]);
+
+  const intentRows = useMemo(
+    () => intentTemplateRowsForGroup(matrix, shiftGroupId),
+    [matrix, shiftGroupId]
+  );
+
   const intentOptions = useMemo(() => {
     const templateIdCounts = new Map<number, number>();
     for (const row of intentRows) {
       templateIdCounts.set(row.templateId, (templateIdCounts.get(row.templateId) ?? 0) + 1);
     }
-    return intentRows.map(({ templateId, shiftGroupId }) => {
+    return intentRows.map(({ templateId, shiftGroupId: gid }) => {
       const base = templateLabel(matrix, templateId, locale);
-      const groupSuffix = (templateIdCounts.get(templateId) ?? 0) > 1 ? ` · #${shiftGroupId}` : "";
-      const kind = intentMap.get(`${cellDate}:${memberId}:${templateId}:${shiftGroupId}`);
-      const kindSuffix =
-        kind === "wish"
-          ? ` · ${t(locale, "wishShort")}`
-          : kind === "no_go"
-            ? ` · ${t(locale, "noGoShort")}`
-            : "";
+      const groupSuffix = (templateIdCounts.get(templateId) ?? 0) > 1 ? ` · #${gid}` : "";
       return {
-        key: `${templateId}-${shiftGroupId}`,
+        key: `${templateId}-${gid}`,
         templateId,
-        shiftGroupId,
-        label: `${base}${groupSuffix}${kindSuffix}`
+        shiftGroupId: gid,
+        label: `${base}${groupSuffix}`
       };
     });
-  }, [cellDate, intentMap, intentRows, locale, matrix, memberId]);
+  }, [intentRows, locale, matrix]);
+
   const [selectedIntentKey, setSelectedIntentKey] = useState("");
   const showIntents = Boolean(matrix.shift_templates?.length && intentOptions.length);
   const selectedIntent = intentOptions.find((row) => row.key === selectedIntentKey);
@@ -1219,30 +1796,67 @@ function MatrixCell({
           <span className="min-w-0 truncate">{t(locale, "wishesMatrixPlannerDayCommentCue")}</span>
         </div>
       ) : null}
-      <select
-        className={`min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${dense ? "px-1.5 py-1.5 text-[0.7rem]" : "px-2 py-2 text-xs"}`}
-        disabled={readOnly}
-        value={status}
-        onChange={(event) => {
-          const nextStatus = event.target.value;
-          setStatus(nextStatus);
-          setIsDirty(false);
-          void onSave(memberId, cellDate, nextStatus, comment);
-        }}
-      >
-        <option value="">{t(locale, "emptyValue")}</option>
-        {dayStatuses.map((item) => (
-          <option key={item.code} value={item.code}>
-            {planningDayStatusLabel(item, locale)}
-          </option>
-        ))}
-      </select>
-      {meta ? (
-        <span
-          className={`inline-flex w-fit rounded-full font-semibold ring-1 ${meta.color} ${dense ? "px-1.5 py-0.5 text-[0.65rem]" : "px-2 py-1 text-xs"}`}
+      {useStatusChips ? (
+        <div className="flex gap-1 overflow-x-auto pb-0.5">
+          <button
+            type="button"
+            disabled={readOnly}
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
+              !status ? "bg-ink text-white ring-ink" : "bg-white text-slate-600 ring-slate-200"
+            }`}
+            onClick={() => {
+              setStatus("");
+              void onSave(memberId, cellDate, "", comment);
+            }}
+          >
+            {t(locale, "emptyValue")}
+          </button>
+          {dayStatuses.map((item) => (
+            <button
+              key={item.code}
+              type="button"
+              disabled={readOnly}
+              className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${planningDayStatusBadgeClass(item.color_preset)} ${
+                status === item.code ? "ring-2 ring-ink" : ""
+              }`}
+              onClick={() => {
+                setStatus(item.code);
+                void onSave(memberId, cellDate, item.code, comment);
+              }}
+            >
+              {planningDayStatusLabel(item, locale)}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <select
+          className={controlClass}
+          disabled={readOnly}
+          value={status}
+          onChange={(event) => {
+            const nextStatus = event.target.value;
+            setStatus(nextStatus);
+            setIsDirty(false);
+            void onSave(memberId, cellDate, nextStatus, comment);
+          }}
         >
-          {meta.label}
-        </span>
+          <option value="">{t(locale, "emptyValue")}</option>
+          {dayStatuses.map((item) => (
+            <option key={item.code} value={item.code}>
+              {planningDayStatusLabel(item, locale)}
+            </option>
+          ))}
+        </select>
+      )}
+      {commentInSheetOnly && onOpenDayEdit && !readOnly ? (
+        <button
+          type="button"
+          className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700"
+          onClick={onOpenDayEdit}
+        >
+          <Pencil size={14} />
+          {t(locale, "matrixEditDay")}
+        </button>
       ) : null}
       {showCommentField ? (
         <>
@@ -1271,7 +1885,7 @@ function MatrixCell({
             }}
           />
         </>
-      ) : readOnly ? null : (
+      ) : commentInSheetOnly ? null : readOnly ? null : (
         <button
           type="button"
           className={`inline-flex w-fit items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 ${dense ? "h-7 w-7 p-0" : "h-9 w-9 p-0"}`}
@@ -1285,7 +1899,7 @@ function MatrixCell({
       {showIntents && selectedIntent ? (
         <div className={`grid ${dense ? "gap-1 pt-0.5" : "gap-1.5 pt-1"}`}>
           <select
-            className={`min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${dense ? "px-1.5 py-1.5 text-[0.7rem]" : "px-2 py-2 text-xs"}`}
+            className={controlClass}
             disabled={readOnly}
             value={selectedIntentKey}
             aria-label={t(locale, "shiftTemplate")}
@@ -1297,28 +1911,75 @@ function MatrixCell({
               </option>
             ))}
           </select>
-          <select
-            className={`min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${dense ? "px-1.5 py-1.5 text-[0.7rem]" : "px-2 py-2 text-xs"}`}
-            disabled={readOnly}
-            value={selectedIntentKind ?? ""}
-            aria-label={t(locale, "matrixCellShiftIntent")}
-            onChange={(event) => {
-              const next = event.target.value;
-              const kind: PlanningShiftIntentKind | null =
-                next === "wish" || next === "no_go" ? next : null;
-              void onSaveIntent(
-                memberId,
-                cellDate,
-                selectedIntent.templateId,
-                kind,
-                selectedIntent.shiftGroupId
-              );
-            }}
-          >
-            <option value="">{t(locale, "emptyValue")}</option>
-            <option value="wish">{t(locale, "wish")}</option>
-            <option value="no_go">{t(locale, "noGo")}</option>
-          </select>
+          {useIntentSegments ? (
+            <div className="flex overflow-hidden rounded-lg border border-slate-200">
+              {(
+                [
+                  { value: "", label: t(locale, "emptyValue") },
+                  { value: "wish", label: t(locale, "wishShort") },
+                  { value: "no_go", label: t(locale, "noGoShort") }
+                ] as const
+              ).map((segment) => {
+                const active = (selectedIntentKind ?? "") === segment.value;
+                const tone =
+                  segment.value === "wish"
+                    ? active
+                      ? "bg-sky-200 text-sky-950"
+                      : "bg-sky-50 text-sky-900"
+                    : segment.value === "no_go"
+                      ? active
+                        ? "bg-rose-200 text-rose-950"
+                        : "bg-rose-50 text-rose-900"
+                      : active
+                        ? "bg-slate-200 text-ink"
+                        : "bg-white text-slate-600";
+                return (
+                  <button
+                    key={segment.value || "clear"}
+                    type="button"
+                    disabled={readOnly}
+                    className={`min-h-9 flex-1 px-1 text-[0.65rem] font-semibold disabled:opacity-40 ${tone} ${dense ? "" : "text-xs"}`}
+                    onClick={() => {
+                      const kind: PlanningShiftIntentKind | null =
+                        segment.value === "wish" || segment.value === "no_go" ? segment.value : null;
+                      void onSaveIntent(
+                        memberId,
+                        cellDate,
+                        selectedIntent.templateId,
+                        kind,
+                        selectedIntent.shiftGroupId
+                      );
+                    }}
+                  >
+                    {segment.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <select
+              className={controlClass}
+              disabled={readOnly}
+              value={selectedIntentKind ?? ""}
+              aria-label={t(locale, "matrixCellShiftIntent")}
+              onChange={(event) => {
+                const next = event.target.value;
+                const kind: PlanningShiftIntentKind | null =
+                  next === "wish" || next === "no_go" ? next : null;
+                void onSaveIntent(
+                  memberId,
+                  cellDate,
+                  selectedIntent.templateId,
+                  kind,
+                  selectedIntent.shiftGroupId
+                );
+              }}
+            >
+              <option value="">{t(locale, "emptyValue")}</option>
+              <option value="wish">{t(locale, "wish")}</option>
+              <option value="no_go">{t(locale, "noGo")}</option>
+            </select>
+          )}
         </div>
       ) : null}
     </div>
