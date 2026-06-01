@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     default_organization_id: int = 1
     backend_cors_origins: str = "http://localhost:18130"
     session_cookie_secure: bool = False
+    session_cookie_domain: str | None = None
 
     @property
     def cors_origins(self) -> list[str]:
@@ -27,6 +28,13 @@ class Settings(BaseSettings):
     @field_validator("mcp_organization_id", mode="before")
     @classmethod
     def _mcp_org_id_empty_as_none(cls, v: object) -> object:
+        if v == "" or v is None:
+            return None
+        return v
+
+    @field_validator("session_cookie_domain", mode="before")
+    @classmethod
+    def _session_cookie_domain_empty_as_none(cls, v: object) -> object:
         if v == "" or v is None:
             return None
         return v

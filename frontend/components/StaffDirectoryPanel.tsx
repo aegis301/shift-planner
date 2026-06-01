@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { ContactRound, Plus, RefreshCw, X } from "lucide-react";
-import { Card } from "@/components/Card";
+import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -47,7 +47,12 @@ type StaffActionModal =
       toRole: StaffAssignableRole;
     }
   | { kind: "unlink"; rowKey: string; row: StaffDirectoryRow }
-  | { kind: "remove"; rowKey: string; userId: number };
+  | { kind: "remove"; rowKey: string; userId: number }
+  | { kind: "resetPassword"; rowKey: string; userId: number; email: string };
+
+function loginUserIdForRow(r: StaffDirectoryRow): number | null {
+  return r.user_id ?? r.linked_user_id;
+}
 
 function rowKeyOf(r: StaffDirectoryRow): string {
   return `${r.email}\t${r.team_member_id ?? ""}\t${r.user_id ?? ""}\t${r.linked_user_id ?? ""}`;
@@ -125,6 +130,8 @@ export function StaffDirectoryPanel() {
   const [detailRow, setDetailRow] = useState<StaffDirectoryRow | null>(null);
   const [detailMemberRecord, setDetailMemberRecord] = useState<TeamMemberRecord | null | undefined>(undefined);
   const [createOpen, setCreateOpen] = useState(false);
+  const [resetPasswordNew, setResetPasswordNew] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
 
   const reloadDirectory = useCallback(async (): Promise<StaffDirectoryRow[]> => {
     try {
@@ -200,6 +207,16 @@ export function StaffDirectoryPanel() {
   async function confirmStaffModal() {
     if (confirmModal == null) return;
     const modal = confirmModal;
+    if (modal.kind === "resetPassword") {
+      if (resetPasswordNew.length < 8) {
+        setActionError(t(locale, "orgStaffModalResetTooShort"));
+        return;
+      }
+      if (resetPasswordNew !== resetPasswordConfirm) {
+        setActionError(t(locale, "orgStaffModalResetMismatch"));
+        return;
+      }
+    }
     setConfirmModal(null);
     setActionError(null);
     setBusyRowKey(modal.rowKey);
@@ -216,6 +233,16 @@ export function StaffDirectoryPanel() {
           method: "PATCH",
           body: JSON.stringify({ user_id: null }),
         });
+      } else if (modal.kind === "resetPassword") {
+        await apiFetch(`/api/v1/organization/users/${modal.userId}/reset-password`, {
+          method: "POST",
+          body: JSON.stringify({
+            password: resetPasswordNew,
+            password_confirm: resetPasswordConfirm,
+          }),
+        });
+        setResetPasswordNew("");
+        setResetPasswordConfirm("");
       } else {
         await apiFetch(`/api/v1/organization/users/${modal.userId}`, { method: "DELETE" });
       }
@@ -264,6 +291,37 @@ export function StaffDirectoryPanel() {
     modalBody = <p className="text-sm text-slate-600">{t(locale, "orgStaffModalRemoveBody")}</p>;
     confirmClass =
       "inline-flex h-10 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-semibold text-white";
+  } else if (confirmModal?.kind === "resetPassword") {
+    modalTitle = t(locale, "orgStaffModalResetTitle");
+    modalBody = (
+      <div className="grid gap-3">
+        <p className="text-sm text-slate-600">
+          {t(locale, "orgStaffModalResetBody", { email: confirmModal.email })}
+        </p>
+        <Field label={t(locale, "orgStaffModalResetNewLabel")}>
+          <input
+            className={inputClass}
+            type="password"
+            minLength={8}
+            autoComplete="new-password"
+            value={resetPasswordNew}
+            onChange={(e) => setResetPasswordNew(e.target.value)}
+          />
+        </Field>
+        <Field label={t(locale, "orgStaffModalResetConfirmLabel")}>
+          <input
+            className={inputClass}
+            type="password"
+            minLength={8}
+            autoComplete="new-password"
+            value={resetPasswordConfirm}
+            onChange={(e) => setResetPasswordConfirm(e.target.value)}
+          />
+        </Field>
+      </div>
+    );
+    confirmClass =
+      "inline-flex h-10 items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white";
   }
 
   const detailKey = detailRow ? rowKeyOf(detailRow) : null;
@@ -282,6 +340,9 @@ export function StaffDirectoryPanel() {
       r.linked_user_id != null &&
       r.linked_user_id !== myId &&
       (r.user_id == null || r.user_id !== r.linked_user_id);
+    const loginUserId = loginUserIdForRow(r);
+    const canResetPassword = loginUserId != null && loginUserId !== myId;
+    const isSelfLogin = loginUserId === myId;
     const emailRoleSelectValue =
       r.user_role != null && isStaffAssignableRole(r.user_role) ? r.user_role : OTHER_ROLE_VALUE;
     const linkedRoleSelectValue =
@@ -400,6 +461,28 @@ export function StaffDirectoryPanel() {
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-3">
+          {canResetPassword ? (
+            <button
+              type="button"
+              disabled={detailBusy || confirmModal != null}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm disabled:opacity-50"
+              onClick={() => {
+                setActionError(null);
+                setResetPasswordNew("");
+                setResetPasswordConfirm("");
+                setConfirmModal({
+                  kind: "resetPassword",
+                  rowKey,
+                  userId: loginUserId,
+                  email: r.email,
+                });
+              }}
+            >
+              {t(locale, "orgStaffResetPassword")}
+            </button>
+          ) : isSelfLogin ? (
+            <span className="text-xs text-slate-400">{t(locale, "orgStaffResetPasswordSelfHint")}</span>
+          ) : null}
           {canUnlinkTeamMember ? (
             <button
               type="button"

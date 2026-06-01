@@ -20,6 +20,7 @@ from app.schemas import (
     AddOrganizationMembershipInput,
     AuthLoginResponse,
     AuthMeResponse,
+    ChangePasswordInput,
     CreateOrganizationMembershipInput,
     DeleteAccountInput,
     JoinRequestRead,
@@ -62,10 +63,23 @@ from app.services.users import (
     authenticate_login,
     build_account_session_read,
     build_user_read,
+    change_own_account_password,
     delete_own_account,
     switch_membership_by_organization_slug,
     update_self_team_member_profile,
 )
+
+
+def _session_cookie_kwargs() -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "path": "/",
+        "httponly": True,
+        "samesite": "lax",
+        "secure": settings.session_cookie_secure,
+    }
+    if settings.session_cookie_domain:
+        kwargs["domain"] = settings.session_cookie_domain
+    return kwargs
 
 
 def _set_user_session_cookie(response: Response, user_id: int) -> None:
@@ -73,10 +87,7 @@ def _set_user_session_cookie(response: Response, user_id: int) -> None:
         "shift_planner_session",
         create_user_session_token(user_id),
         max_age=SESSION_MAX_AGE_SECONDS,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=settings.session_cookie_secure,
+        **_session_cookie_kwargs(),
     )
 
 
@@ -85,20 +96,14 @@ def _set_account_session_cookie(response: Response, account_id: int) -> None:
         "shift_planner_session",
         create_account_session_token(account_id),
         max_age=SESSION_MAX_AGE_SECONDS,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=settings.session_cookie_secure,
+        **_session_cookie_kwargs(),
     )
 
 
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
         "shift_planner_session",
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=settings.session_cookie_secure,
+        **_session_cookie_kwargs(),
     )
 
 
@@ -289,6 +294,24 @@ def post_register_join_organization(
 def logout(response: Response) -> dict[str, bool]:
     _clear_session_cookie(response)
     return {"ok": True}
+
+
+@router.post("/me/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def post_change_password(
+    payload: ChangePasswordInput,
+    db: Session = Depends(get_db),
+    holder: User | Account = Depends(get_current_session_holder),
+) -> None:
+    account = holder if isinstance(holder, Account) else holder.account
+    try:
+        change_own_account_password(
+            db,
+            account=account,
+            current_password=payload.current_password,
+            new_password=payload.password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/delete-account", status_code=status.HTTP_204_NO_CONTENT)

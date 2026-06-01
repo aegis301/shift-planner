@@ -133,6 +133,29 @@ class DeleteAccountInput(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class AdminResetUserPasswordInput(BaseModel):
+    password: str = Field(min_length=8, max_length=256)
+    password_confirm: str = Field(min_length=8, max_length=256)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> Self:
+        if self.password != self.password_confirm:
+            raise ValueError("passwords_do_not_match")
+        return self
+
+
+class ChangePasswordInput(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
+    password_confirm: str = Field(min_length=8, max_length=256)
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> Self:
+        if self.password != self.password_confirm:
+            raise ValueError("passwords_do_not_match")
+        return self
+
+
 class OrganizationLookupResponse(BaseModel):
     slug: str
     name: str
@@ -1075,3 +1098,141 @@ class AuditLogRead(BaseModel):
     entity_id: str | None
     details: dict[str, Any]
     created_at: datetime
+
+
+class ShiftCategoryCount(BaseModel):
+    category: str
+    count: int
+
+
+class MonthCategorySeries(BaseModel):
+    year: int
+    month: int
+    categories: list[ShiftCategoryCount]
+
+
+class ShiftTemplateCount(BaseModel):
+    shift_template_id: int
+    template_code: str | None = None
+    template_name_de: str | None = None
+    template_name_en: str | None = None
+    count: int
+
+
+class MonthTemplateSeries(BaseModel):
+    year: int
+    month: int
+    templates: list[ShiftTemplateCount]
+
+
+class DashboardPeriodCard(BaseModel):
+    period_id: int
+    year: int
+    month: int
+    status: str
+    slot_count: int
+    assigned_count: int
+    unassigned_count: int
+    validation_errors: int = 0
+    validation_warnings: int = 0
+
+
+class DashboardValidationCodeCount(BaseModel):
+    code: str
+    count: int
+    severity: Literal["warning", "error"]
+
+
+class DashboardWorkloadRow(BaseModel):
+    team_member_id: int
+    name: str
+    employment_percentage: int
+    total: int
+    on_call_duty: int
+    standby_duty: int
+    late_duty: int
+    other: int
+    weekend_holiday_shifts: int
+    conflicts: int
+
+
+class DashboardStaffSnapshot(BaseModel):
+    linked_ok: int = 0
+    team_member_only: int = 0
+    login_unlinked: int = 0
+    linked_wrong_user: int = 0
+    linked_foreign_user: int = 0
+    login_only: int = 0
+
+
+class DashboardKpiCounts(BaseModel):
+    active_team_members: int
+    active_shift_groups: int
+    active_shift_templates: int
+    pending_join_requests: int
+
+
+class DashboardPeriodStatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class DashboardWishesDayStatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class DashboardUpcomingSlot(BaseModel):
+    slot_date: date_type
+    template_code: str | None
+    template_name_de: str | None
+    template_name_en: str | None
+    starts_at: datetime | None
+    ends_at: datetime | None
+    category: str | None = None
+    variant_label: str | None = None
+    day_class: str | None = None
+    period_year: int | None = None
+    period_month: int | None = None
+
+
+class AdminDashboardRead(BaseModel):
+    year: int
+    shift_group_id: int | None = None
+    kpis: DashboardKpiCounts
+    staff_snapshot: DashboardStaffSnapshot
+    period_status_counts: list[DashboardPeriodStatusCount]
+    periods: list[DashboardPeriodCard]
+    year_shift_distribution: list[MonthCategorySeries]
+    current_period: DashboardPeriodCard | None = None
+
+
+class PlannerDashboardRead(BaseModel):
+    year: int
+    shift_group_id: int | None = None
+    shift_group_code: str
+    shift_group_name_de: str
+    shift_group_name_en: str
+    shift_group_member_count: int
+    current_period: DashboardPeriodCard | None
+    periods: list[DashboardPeriodCard]
+    current_month_categories: list[ShiftCategoryCount]
+    workload_rows: list[DashboardWorkloadRow]
+    unassigned_slots: int
+    validation_by_code: list[DashboardValidationCodeCount]
+    wishes_response_percent: int
+    wishes_responded_count: int
+    wishes_total_count: int
+
+
+class TeamMemberDashboardRead(BaseModel):
+    year: int
+    shift_group_id: int | None = None
+    team_member_id: int
+    periods: list[DashboardPeriodCard]
+    shifts_by_month: list[MonthTemplateSeries]
+    current_period: DashboardPeriodCard | None
+    wishes_day_statuses: list[DashboardWishesDayStatusCount]
+    my_validation_errors: int
+    my_validation_warnings: int
+    upcoming_slots: list[DashboardUpcomingSlot]

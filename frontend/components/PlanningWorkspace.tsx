@@ -167,6 +167,13 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }, [searchParams]);
 
   useEffect(() => {
+    const fromUrl = searchParams.get("period");
+    if (fromUrl) {
+      setPeriodId(fromUrl);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!planningUi || !userMe) {
       return;
     }
@@ -295,10 +302,15 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const refreshPeriods = useCallback(async () => {
     const next = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
     setPeriods(next);
+    const fromUrl = searchParams.get("period");
+    if (fromUrl && next.some((row) => String(row.id) === fromUrl)) {
+      setPeriodId(fromUrl);
+      return;
+    }
     if (!periodId && next[0]) {
       setPeriodId(String(next[0].id));
     }
-  }, [periodId]);
+  }, [periodId, searchParams]);
 
   useEffect(() => {
     if (waitingForTeamMemberSession || waitingForPlannerSession) {

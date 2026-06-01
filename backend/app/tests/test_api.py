@@ -2352,6 +2352,112 @@ def test_admin_delete_own_organization_user_rejected(client: TestClient):
     assert response.status_code == 400
 
 
+def test_admin_reset_user_password(team_member_client: TestClient):
+    login(team_member_client)
+    uid = next(
+        u["id"]
+        for u in team_member_client.get("/api/v1/organization/users").json()
+        if u["email"] == "doc@example.com"
+    )
+    assert (
+        team_member_client.post(
+            f"/api/v1/organization/users/{uid}/reset-password",
+            json={"password": "resetpass9", "password_confirm": "resetpass9"},
+        ).status_code
+        == 204
+    )
+    team_member_client.post("/api/v1/auth/logout")
+    assert (
+        team_member_client.post(
+            "/api/v1/auth/login",
+            json={"email": "doc@example.com", "password": "resetpass9"},
+        ).status_code
+        == 200
+    )
+
+
+def test_admin_reset_own_password_rejected(client: TestClient):
+    login(client)
+    me = client.get("/api/v1/auth/me").json()
+    response = client.post(
+        f"/api/v1/organization/users/{me['id']}/reset-password",
+        json={"password": "newpass12", "password_confirm": "newpass12"},
+    )
+    assert response.status_code == 400
+
+
+def test_team_member_cannot_reset_password(team_member_client: TestClient):
+    login_team_member(team_member_client)
+    response = team_member_client.post(
+        "/api/v1/organization/users/1/reset-password",
+        json={"password": "newpass12", "password_confirm": "newpass12"},
+    )
+    assert response.status_code == 403
+
+
+def test_reset_password_confirm_mismatch(team_member_client: TestClient):
+    login(team_member_client)
+    uid = next(
+        u["id"]
+        for u in team_member_client.get("/api/v1/organization/users").json()
+        if u["email"] == "doc@example.com"
+    )
+    response = team_member_client.post(
+        f"/api/v1/organization/users/{uid}/reset-password",
+        json={"password": "newpass12", "password_confirm": "otherpass12"},
+    )
+    assert response.status_code == 422
+
+
+def test_change_password(client: TestClient):
+    login(client)
+    assert (
+        client.post(
+            "/api/v1/auth/me/change-password",
+            json={
+                "current_password": "secret",
+                "password": "newsecret1",
+                "password_confirm": "newsecret1",
+            },
+        ).status_code
+        == 204
+    )
+    client.post("/api/v1/auth/logout")
+    assert (
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@example.com", "password": "newsecret1"},
+        ).status_code
+        == 200
+    )
+
+
+def test_change_password_wrong_current(client: TestClient):
+    login(client)
+    response = client.post(
+        "/api/v1/auth/me/change-password",
+        json={
+            "current_password": "wrong",
+            "password": "newsecret1",
+            "password_confirm": "newsecret1",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_change_password_confirm_mismatch(client: TestClient):
+    login(client)
+    response = client.post(
+        "/api/v1/auth/me/change-password",
+        json={
+            "current_password": "secret",
+            "password": "newsecret1",
+            "password_confirm": "othersecret1",
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_admin_patch_team_member_unlink_user_id(team_member_client: TestClient):
     login(team_member_client)
     rows = team_member_client.get("/api/v1/team-members").json()

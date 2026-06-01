@@ -95,6 +95,9 @@ def ensure_admin_user(db: Session, *, email: str, password: str) -> User:
     org = ensure_default_organization(db)
     existing = get_user_in_organization(db, email, org.id)
     if existing:
+        existing.account.hashed_password = hash_password(password)
+        db.commit()
+        db.refresh(existing)
         return existing
     acc = Account(email=email.lower(), hashed_password=hash_password(password), locale="de")
     db.add(acc)
@@ -288,6 +291,58 @@ def admin_set_organization_user_role(db: Session, *, actor: User, target_user_id
     if out is None:
         raise ValueError("User not found")
     return out
+
+
+def admin_reset_account_password(
+    db: Session, *, actor: User, target_user_id: int, new_password: str
+) -> None:
+    if not is_admin(actor):
+        raise ValueError("Admin only")
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise ValueError("User not found")
+    if target.organization_id != actor.organization_id:
+        raise ValueError("User not in this organization")
+    if target.id == actor.id:
+        raise ValueError("Cannot reset your own password here; use account settings")
+    if not target.is_active:
+        raise ValueError("User is not active")
+    account = target.account
+    account.hashed_password = hash_password(new_password)
+    record_audit(
+        db,
+        actor=actor.email,
+        source="rest",
+        action="admin_reset_user_password",
+        entity_type="user",
+        entity_id=target.id,
+        details={
+            "organization_id": target.organization_id,
+            "target_email": target.email,
+            "account_id": account.id,
+        },
+    )
+    db.commit()
+
+
+def change_own_account_password(
+    db: Session, *, account: Account, current_password: str, new_password: str
+) -> None:
+    if not verify_password(current_password, account.hashed_password):
+        raise ValueError("Invalid password")
+    if current_password == new_password:
+        raise ValueError("New password must differ from current password")
+    account.hashed_password = hash_password(new_password)
+    record_audit(
+        db,
+        actor=account.email,
+        source="rest",
+        action="change_account_password",
+        entity_type="account",
+        entity_id=str(account.id),
+        details={},
+    )
+    db.commit()
 
 
 def admin_delete_organization_user(db: Session, *, actor: User, target_user_id: int) -> None:

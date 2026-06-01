@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-06-11
+- **Password recovery (no email):** Org admins reset another member’s login password from Team → staff directory (`POST /api/v1/organization/users/{id}/reset-password`). Password is stored on global **`Account`** and applies to all organizations for that email. Signed-in users change their own password in Settings (`POST /api/v1/auth/me/change-password`). Login page directs users to contact an administrator. MCP tool **`reset_organization_user_password_tool`**.
+
 ## 2026-05-09
 - **Consecutive weekend roster hint:** Validation warns planners when a team member has final-roster work on two consecutive calendar weekends (`ROSTER_CONSECUTIVE_WEEKENDS`); planning conflict summary and workload conflict counts include it.
 - **Shift coupling (variant-level):** New constraint type **`requires_coupled_shift`** with **`paired_shift_variant_id`** and **`partner_day_offset`** (same org, not self); unidirectional check that the same team member is also assigned to the partner variant on **`slot_date + offset`** when that date falls in the planning month. Validation code **`ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED`**; duplicate rows merged like max-per-month noise. Admin shift-type UI + planning validation detail copy; REST/MCP accept the same JSON payloads.
@@ -10,6 +13,9 @@
 - **MCP parity for shift configuration:** MCP tools now accept constraints on create and add update tools (**`update_shift_template_tool`**, **`update_shift_variant_tool`**) so MCP can manage constraints consistently with REST.
 
 ## 2026-06-10
+- **Role-based dashboard:** `/` shows tabbed dashboards (admin / planner / team member) gated by `capabilities`, with Recharts visualizations. New APIs: `GET /api/v1/dashboard/admin`, `/planner`, `/team-member`. MCP read resource `shift-planner://dashboard/admin`.
+- **Dashboard “All” shift groups:** Planner and team-member dashboard tabs default to aggregated stats across all accessible shift groups; optional group filter in the toolbar.
+- **Team member upcoming shifts table:** Team-member dashboard lists all assigned roster shifts from today onward (preliminary and published months) in a sortable table with date, shift, time, and category.
 - **Local dev host ports:** Docker Compose defaults use `18130` (frontend), `18180` (backend), and `18181` (MCP) on the host instead of `3000` / `8000` / `8001`; configure via `FRONTEND_HOST_PORT`, `BACKEND_HOST_PORT`, and `MCP_HOST_PORT` in `.env`.
 - **Team member nickname:** Optional `team_members.nickname` (Alembic `202606100001`); editable on `/profile` and admin team-member forms. Planning wishes matrix, final roster, validation/workload labels, and roster/matrix exports use nickname when set, otherwise last name.
 

@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Bot, Building2, Languages, Trash2 } from "lucide-react";
+import { Bot, Building2, KeyRound, Languages, Trash2 } from "lucide-react";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { Card, Field, inputClass } from "@/components/Card";
 import { OrganizationPendingInvitesCard } from "@/components/OrganizationPendingInvitesCard";
@@ -43,6 +43,9 @@ function SettingsContent() {
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinLookup, setJoinLookup] = useState<LookupResult | null | undefined>(undefined);
   const [switchBusySlug, setSwitchBusySlug] = useState<string | null>(null);
+  const [changePasswordMsg, setChangePasswordMsg] = useState("");
+  const [changePasswordOk, setChangePasswordOk] = useState(false);
+  const [changePasswordBusy, setChangePasswordBusy] = useState(false);
 
   async function runJoinLookup(slug: string) {
     const s = slug.trim();
@@ -146,6 +149,36 @@ function SettingsContent() {
       }
     } finally {
       setCreateBusy(false);
+    }
+  }
+
+  async function submitChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setChangePasswordMsg("");
+    setChangePasswordOk(false);
+    const form = new FormData(event.currentTarget);
+    const password = String(form.get("change_password_new") ?? "");
+    const passwordConfirm = String(form.get("change_password_confirm") ?? "");
+    if (password !== passwordConfirm) {
+      setChangePasswordMsg(t(locale, "changePasswordMismatch"));
+      return;
+    }
+    setChangePasswordBusy(true);
+    try {
+      await apiFetch("/api/v1/auth/me/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          current_password: String(form.get("change_password_current") ?? ""),
+          password,
+          password_confirm: passwordConfirm,
+        }),
+      });
+      setChangePasswordOk(true);
+      (event.currentTarget as HTMLFormElement).reset();
+    } catch (err) {
+      setChangePasswordMsg(messageFromApiError(locale, err));
+    } finally {
+      setChangePasswordBusy(false);
     }
   }
 
@@ -339,6 +372,61 @@ function SettingsContent() {
                     {joinMsg ? <p className="text-sm text-red-600">{joinMsg}</p> : null}
                   </form>
                 </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+      {me ? (
+        <div className="md:col-span-2">
+          <Card>
+            <div className="flex items-start gap-4">
+              <KeyRound className="shrink-0 text-emerald-700" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-semibold text-ink">{t(locale, "changePasswordTitle")}</h2>
+                <p className="mt-2 text-sm text-slate-600">{t(locale, "changePasswordIntro")}</p>
+                <form className="mt-4 grid max-w-md gap-3" onSubmit={(e) => void submitChangePassword(e)}>
+                  <Field label={t(locale, "changePasswordCurrentLabel")}>
+                    <input
+                      className={inputClass}
+                      name="change_password_current"
+                      type="password"
+                      required
+                      autoComplete="current-password"
+                    />
+                  </Field>
+                  <Field label={t(locale, "changePasswordNewLabel")}>
+                    <input
+                      className={inputClass}
+                      name="change_password_new"
+                      type="password"
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                  <Field label={t(locale, "changePasswordConfirmLabel")}>
+                    <input
+                      className={inputClass}
+                      name="change_password_confirm"
+                      type="password"
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                    />
+                  </Field>
+                  <button
+                    type="submit"
+                    disabled={changePasswordBusy}
+                    className="h-11 rounded-lg bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {t(locale, "changePasswordSubmit")}
+                  </button>
+                  {changePasswordOk ? (
+                    <p className="text-sm text-emerald-800">{t(locale, "changePasswordSuccess")}</p>
+                  ) : null}
+                  {changePasswordMsg ? <p className="text-sm text-red-600">{changePasswordMsg}</p> : null}
+                </form>
               </div>
             </div>
           </Card>

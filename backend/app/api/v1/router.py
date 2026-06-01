@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    dashboard,
     matrix,
     organization_admin,
     organizations_public,
@@ -22,6 +23,7 @@ api_router.include_router(team_member_property_definitions.router)
 api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)
 api_router.include_router(planning.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(matrix.router)
 api_router.include_router(roster_matrix.router)
 api_router.include_router(roster_matrix.export_router)

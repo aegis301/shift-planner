@@ -17,6 +17,7 @@ from app.schemas import (
     OrganizationReadForAdmin,
     OrganizationStaffDirectoryRow,
     OrganizationUpdateInput,
+    AdminResetUserPasswordInput,
     OrganizationUserRead,
     OrganizationUserRolePatch,
 )
@@ -44,6 +45,7 @@ from app.services.member_planning_patterns import (
 )
 from app.services.users import (
     admin_delete_organization_user,
+    admin_reset_account_password,
     admin_set_organization_user_role,
     list_organization_users,
 )
@@ -88,6 +90,21 @@ def patch_organization_user_role(
 ) -> OrganizationUserRead:
     try:
         return admin_set_organization_user_role(db, actor=user, target_user_id=target_user_id, role=payload.role)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/users/{target_user_id}/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+def post_organization_user_reset_password(
+    target_user_id: int,
+    payload: AdminResetUserPasswordInput,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> None:
+    try:
+        admin_reset_account_password(
+            db, actor=user, target_user_id=target_user_id, new_password=payload.password
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

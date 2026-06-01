@@ -4,11 +4,12 @@ import os
 from typing import Any
 
 from fastmcp import FastMCP
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models import ShiftGroup
+from app.models import ShiftGroup, User
 from app.schemas import (
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
@@ -87,6 +88,8 @@ from app.services.shift_templates import (
     update_shift_template,
     update_shift_variant,
 )
+from app.services.authz import ROLE_ADMIN
+from app.services.users import admin_reset_account_password
 from app.services.validation import validate_roster
 
 mcp = FastMCP("Shift Planner")
@@ -161,6 +164,15 @@ def planning_periods_resource() -> list[dict[str, Any]]:
         return [
             serialize_model(period) for period in list_planning_periods(db, organization_id=mcp_organization_id())
         ]
+
+
+@mcp.resource("shift-planner://dashboard/admin")
+def dashboard_admin_resource() -> dict[str, Any]:
+    """Organization admin dashboard aggregates (KPIs, planning pipeline, year shift distribution)."""
+    from app.services.dashboard import get_admin_dashboard
+
+    with db_session() as db:
+        return get_admin_dashboard(db, organization_id=mcp_organization_id()).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://shift-groups")
@@ -919,6 +931,37 @@ def delete_shift_variant_tool(token: str, shift_variant_id: int) -> dict[str, bo
                 db, shift_variant_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
             )
         }
+
+
+@mcp.tool
+def reset_organization_user_password_tool(
+    token: str,
+    target_user_id: int,
+    password: str,
+    password_confirm: str,
+) -> dict[str, bool]:
+    """Reset login password for a user in the MCP target organization. Requires MCP admin token."""
+    require_token(token)
+    if password != password_confirm:
+        raise ValueError("passwords_do_not_match")
+    if len(password) < 8:
+        raise ValueError("password_too_short")
+    with db_session() as db:
+        actor = db.scalar(
+            select(User)
+            .where(
+                User.organization_id == mcp_organization_id(),
+                User.role == ROLE_ADMIN,
+                User.is_active.is_(True),
+            )
+            .order_by(User.id)
+        )
+        if actor is None:
+            raise ValueError("No admin user in MCP target organization")
+        admin_reset_account_password(
+            db, actor=actor, target_user_id=target_user_id, new_password=password
+        )
+        return {"ok": True}
 
 
 if __name__ == "__main__":

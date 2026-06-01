@@ -60,6 +60,7 @@ function LoginContent() {
         <Link href="/register" className="text-sm font-medium text-emerald-800 underline">
           {t(locale, "registerPageTitle")}
         </Link>
+        <p className="text-xs text-slate-500">{t(locale, "loginForgotPasswordHint")}</p>
         <p className="text-xs text-slate-500">{t(locale, "loginRemovedAccountHint")}</p>
         {message ? <p className="text-sm text-slate-600">{message}</p> : null}
       </form>
