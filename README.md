@@ -86,7 +86,7 @@ Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and
 
 Use `/planning` for the planner workflow and `/my-planning` for linked team members. One selected planning month controls wishes, final roster assignment, inline validation, CSV exports, and workload stats. The planner page supports both a full stacked view and a tabbed view for Wishes, Roster, and Analysis.
 
-Wishes matrix day statuses (each blocks any roster assignment on that day for the team member): `urlaub`, `forschung`, `lehre`, `frei`.
+Wishes matrix **day statuses** are configured per organization (`GET|POST|PATCH|DELETE /api/v1/planning-day-status-definitions`; admin UI **Team** → **Tagesstatus**). Each status has a stable `code`, DE/EN labels, a color preset, and `blocks_roster_assignment` (when true, roster assignment on that day is blocked). New orgs start with `urlaub`, `forschung`, `lehre`, and `frei`.
 
 `GET /api/v1/matrix/{id}` always returns `shift_templates`, `template_slot_days`, and `shift_intents` for wish/no-go editing: **with** `shift_group_id`, they are limited to that group; **without** it (admin full-org view), templates are every template linked to any shift group, each `template_slot_days` row includes `shift_group_id`, and intents list all rows for team members in the matrix. Use `PUT /api/v1/matrix/{id}/shift-intents/bulk` with `{ "intents": [ { "team_member_id", "cell_date", "shift_group_id", "shift_template_id", "kind": "wish" | "no_go" | null } ] }` — `kind` null removes that intent row.
 

@@ -55,8 +55,7 @@ def test_shift_template_tool_rejects_invalid_token_before_db_access():
         create_shift_template_tool(
             token="wrong-token",
             code="RD",
-            name_de="Rufdienst",
-            name_en="Stand-by duty",
+            name="Rufdienst",
             category="rufdienst",
         )
 

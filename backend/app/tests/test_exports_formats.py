@@ -44,7 +44,7 @@ def test_build_roster_export_table_contains_assignee(monkeypatch):
     assert "SPR1" in table.columns[0].title
     assert table.rows[0].weekday == "So"
     assert table.rows[0].cells[0] is not None
-    assert table.rows[0].cells[0].member_name == "Lena Balitzki"
+    assert table.rows[0].cells[0].member_name == "Balitzki"
 
 
 def test_build_roster_export_table_by_template_groups_variants(monkeypatch):
@@ -55,7 +55,7 @@ def test_build_roster_export_table_by_template_groups_variants(monkeypatch):
             SimpleNamespace(id=1, first_name="Lena", last_name="Balitzki"),
             SimpleNamespace(id=2, first_name="Moritz", last_name="Mertes"),
         ],
-        shift_templates=[SimpleNamespace(id=10, code="SPR1", name_de="Springer 1")],
+        shift_templates=[SimpleNamespace(id=10, code="SPR1", name="Springer 1")],
         slots=[
             SimpleNamespace(
                 id=3,
@@ -94,5 +94,5 @@ def test_build_roster_export_table_by_template_groups_variants(monkeypatch):
     assert len(table.columns) == 1
     assert "SPR1" in table.columns[0].title
     assert table.rows[0].cells[0] is not None
-    assert "Lena Balitzki" in table.rows[0].cells[0].member_name
-    assert "Moritz Mertes" in table.rows[0].cells[0].member_name
+    assert "Balitzki" in table.rows[0].cells[0].member_name
+    assert "Mertes" in table.rows[0].cells[0].member_name

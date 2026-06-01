@@ -89,7 +89,7 @@ def team_member_client():
         )
         db.add(linked_member)
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="tmportal_sg", name_de="Portal SG", name_en="Portal SG", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="tmportal_sg", name="Portal SG", display_order=0)
         db.add(sg)
         db.flush()
         db.add(TeamMemberShiftGroup(team_member_id=linked_member.id, shift_group_id=sg.id))
@@ -376,7 +376,7 @@ def test_auth_me_admin_organization_shift_groups_reflects_org(client: TestClient
     assert empty["organization_shift_groups"] == []
     r = client.post(
         "/api/v1/shift-groups",
-        json={"code": "g-me", "name_de": "Gm", "name_en": "Gm", "display_order": 0, "is_active": True},
+        json={"code": "g-me", "name": "Gm", "display_order": 0, "is_active": True},
     )
     assert r.status_code == 200
     gid = r.json()["id"]
@@ -806,8 +806,7 @@ def test_roster_validation_no_go_conflict(client: TestClient):
         "/api/v1/shift-templates",
         json={
             "code": "N",
-            "name_de": "Nachtdienst",
-            "name_en": "Night shift",
+            "name": "Nachtdienst",
             "category": "other",
         },
     ).json()
@@ -929,8 +928,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
         "/api/v1/shift-templates",
         json={
             "code": "T",
-            "name_de": "Tagdienst",
-            "name_en": "Day shift",
+            "name": "Tagdienst",
             "category": "other",
         },
     ).json()
@@ -970,7 +968,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     assert csv_response.status_code == 200
     assert "2026-07-11" in csv_response.text
     assert "Tagdienst" in csv_response.text
-    assert "Roster TeamMember" in csv_response.text
+    assert "TeamMember" in csv_response.text
     assert "final geplant" not in csv_response.text
 
     clear_response = client.post("/api/v1/roster-matrix/assignments/clear", json={"roster_slot_id": slot["id"]})
@@ -993,8 +991,7 @@ def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
         "/api/v1/shift-templates",
         json={
             "code": "EX",
-            "name_de": "Exportdienst",
-            "name_en": "Export shift",
+            "name": "Exportdienst",
             "category": "other",
         },
     ).json()
@@ -1039,9 +1036,9 @@ def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
 
 def test_create_shift_template_rejects_duplicate_code(client: TestClient):
     login(client)
-    body = {"code": "DUPX", "name_de": "Eins", "name_en": "One", "category": "other"}
+    body = {"code": "DUPX", "name": "Eins", "category": "other"}
     assert client.post("/api/v1/shift-templates", json=body).status_code == 200
-    conflict = client.post("/api/v1/shift-templates", json={**body, "name_de": "Zwei"})
+    conflict = client.post("/api/v1/shift-templates", json={**body, "name": "Zwei"})
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "SHIFT_TEMPLATE_CODE_TAKEN"
     assert conflict.json()["detail"]["value"] == "DUPX"
@@ -1051,11 +1048,11 @@ def test_patch_shift_template_rejects_duplicate_code(client: TestClient):
     login(client)
     first = client.post(
         "/api/v1/shift-templates",
-        json={"code": "P1", "name_de": "a", "name_en": "a", "category": "other"},
+        json={"code": "P1", "name": "a", "category": "other"},
     ).json()
     client.post(
         "/api/v1/shift-templates",
-        json={"code": "P2", "name_de": "b", "name_en": "b", "category": "other"},
+        json={"code": "P2", "name": "b", "category": "other"},
     )
     conflict = client.patch(f"/api/v1/shift-templates/{first['id']}", json={"code": "P2"})
     assert conflict.status_code == 409
@@ -1068,8 +1065,7 @@ def test_shift_template_variants_holidays_and_generated_slots(client: TestClient
         "/api/v1/shift-templates",
         json={
             "code": "BD",
-            "name_de": "Bereitschaftsdienst",
-            "name_en": "On-call duty",
+            "name": "Bereitschaftsdienst",
             "category": "bereitschaftsdienst",
         },
     ).json()
@@ -1135,8 +1131,7 @@ def test_regenerate_roster_slots_clears_assignments_and_updates_slots(client: Te
         "/api/v1/shift-templates",
         json={
             "code": "RESET",
-            "name_de": "Resetdienst",
-            "name_en": "Reset duty",
+            "name": "Resetdienst",
             "category": "other",
         },
     ).json()
@@ -1178,8 +1173,7 @@ def test_delete_shift_variant_clears_generated_slots_and_assignments(client: Tes
         "/api/v1/shift-templates",
         json={
             "code": "VD",
-            "name_de": "Variantendienst",
-            "name_en": "Variant duty",
+            "name": "Variantendienst",
             "category": "other",
         },
     ).json()
@@ -1218,8 +1212,7 @@ def test_shift_template_constraint_payload_roundtrip(client: TestClient):
         "/api/v1/shift-templates",
         json={
             "code": "CONS",
-            "name_de": "Constraint Dienst",
-            "name_en": "Constraint duty",
+            "name": "Constraint Dienst",
             "category": "other",
             "constraints": [{"type": "no_additional_same_day", "severity": "error"}],
         },
@@ -1263,8 +1256,7 @@ def test_shift_template_constraint_legacy_enforcement_maps_to_severity(client: T
         "/api/v1/shift-templates",
         json={
             "code": "LEGY",
-            "name_de": "Legacy",
-            "name_en": "Legacy",
+            "name": "Legacy",
             "category": "other",
             "constraints": [{"type": "no_additional_same_day", "enforcement": "block"}],
         },
@@ -1282,7 +1274,7 @@ def test_roster_assignment_allowed_when_same_day_constraint_is_info(client: Test
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "RINF", "name_de": "Regel", "name_en": "Rule", "category": "other"},
+        json={"code": "RINF", "name": "Regel", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1319,7 +1311,7 @@ def test_roster_assignment_blocked_by_same_day_constraint(client: TestClient):
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "RBLK", "name_de": "Regel", "name_en": "Rule", "category": "other"},
+        json={"code": "RBLK", "name": "Regel", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1358,7 +1350,7 @@ def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClien
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "CRS", "name_de": "Nacht", "name_en": "Night", "category": "other"},
+        json={"code": "CRS", "name": "Nacht", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1396,7 +1388,7 @@ def test_validation_warns_for_max_assignments_per_month_constraint(client: TestC
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "MMAX", "name_de": "Limit", "name_en": "Limit", "category": "other"},
+        json={"code": "MMAX", "name": "Limit", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1435,7 +1427,7 @@ def test_shift_coupling_constraint_rejects_self_paired_variant(client: TestClien
     login(client)
     t1 = client.post(
         "/api/v1/shift-templates",
-        json={"code": "CSEL", "name_de": "Csel", "name_en": "Csel", "category": "other"},
+        json={"code": "CSEL", "name": "Csel", "category": "other"},
     ).json()
     v1 = client.post(
         f"/api/v1/shift-templates/{t1['id']}/variants",
@@ -1472,7 +1464,7 @@ def test_validation_warns_when_shift_coupling_partner_missing(client: TestClient
     ).json()["id"]
     t_plate = client.post(
         "/api/v1/shift-templates",
-        json={"code": "CPLW", "name_de": "Koppel", "name_en": "Couple", "category": "other"},
+        json={"code": "CPLW", "name": "Koppel", "category": "other"},
     ).json()
     v_early = client.post(
         f"/api/v1/shift-templates/{t_plate['id']}/variants",
@@ -1540,7 +1532,7 @@ def test_roster_assignment_blocked_when_shift_coupling_error_without_partner(cli
     ).json()["id"]
     t_plate = client.post(
         "/api/v1/shift-templates",
-        json={"code": "CPLB", "name_de": "Koppel", "name_en": "Couple", "category": "other"},
+        json={"code": "CPLB", "name": "Koppel", "category": "other"},
     ).json()
     v_early = client.post(
         f"/api/v1/shift-templates/{t_plate['id']}/variants",
@@ -1618,7 +1610,7 @@ def test_roster_property_requirement_warning_allows_assign_and_surfaces_in_valid
     )
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "PREW", "name_de": "PropReq", "name_en": "PropReq", "category": "other"},
+        json={"code": "PREW", "name": "PropReq", "category": "other"},
     ).json()
     prop_req = {
         "type": "team_member_property_requirement",
@@ -1689,7 +1681,7 @@ def test_roster_property_requirement_error_blocks_assignment(client: TestClient)
     )
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "PREQ", "name_de": "Block", "name_en": "Block", "category": "other"},
+        json={"code": "PREQ", "name": "Block", "category": "other"},
     ).json()
     prop_req = {
         "type": "team_member_property_requirement",
@@ -1733,7 +1725,7 @@ def test_validation_warns_consecutive_weekend_roster_assignments(client: TestCli
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "WEKP", "name_de": "Wochenende", "name_en": "Weekend", "category": "other"},
+        json={"code": "WEKP", "name": "Wochenende", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1788,7 +1780,7 @@ def test_validation_no_consecutive_weekend_when_weekends_not_adjacent(client: Te
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "WEKS", "name_de": "Wochenende", "name_en": "Weekend", "category": "other"},
+        json={"code": "WEKS", "name": "Wochenende", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1869,8 +1861,7 @@ def test_delete_shift_template_clears_generated_slots_and_assignments(client: Te
         "/api/v1/shift-templates",
         json={
             "code": "DEL",
-            "name_de": "Löschdienst",
-            "name_en": "Delete duty",
+            "name": "Löschdienst",
             "category": "other",
         },
     ).json()
@@ -1943,7 +1934,7 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     ).json()
     template = client.post(
         "/api/v1/shift-templates",
-        json={"code": "SGT", "name_de": "Sg Test", "name_en": "Sg Test", "category": "other"},
+        json={"code": "SGT", "name": "Sg Test", "category": "other"},
     ).json()
     client.post(
         f"/api/v1/shift-templates/{template['id']}/variants",
@@ -1958,7 +1949,7 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     )
     group = client.post(
         "/api/v1/shift-groups",
-        json={"code": "SG", "name_de": "Gruppe", "name_en": "Group", "display_order": 0},
+        json={"code": "SG", "name": "Gruppe", "display_order": 0},
     ).json()
     gid = group["id"]
     client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": [member_in["id"]]})
@@ -2054,7 +2045,7 @@ def planner_client():
         _seed_membership(db, "admin@example.com", "secret", 1, "admin")
         planner_user = _seed_membership(db, "planner@example.com", "plannersecret", 1, ROLE_PLANNER)
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="sg1", name_de="SG", name_en="SG", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="sg1", name="SG", display_order=0)
         db.add(sg)
         db.flush()
         db.add(UserShiftGroup(user_id=planner_user.id, shift_group_id=sg.id))
@@ -2107,7 +2098,7 @@ def test_planner_cannot_post_shift_template(planner_client: TestClient):
     login_planner(planner_client)
     response = planner_client.post(
         "/api/v1/shift-templates",
-        json={"code": "X", "name_de": "X", "name_en": "X", "category": "other"},
+        json={"code": "X", "name": "X", "category": "other"},
     )
     assert response.status_code == 403
 
@@ -2170,8 +2161,7 @@ def test_team_member_published_roster_binary_export_requires_scope(team_member_c
         "/api/v1/shift-templates",
         json={
             "code": "TMPDF",
-            "name_de": "Teamdienst",
-            "name_en": "Team shift",
+            "name": "Teamdienst",
             "category": "other",
         },
     ).json()
@@ -2258,8 +2248,7 @@ def test_planner_published_roster_binary_exports_require_shift_group(planner_cli
         "/api/v1/shift-templates",
         json={
             "code": "PLX",
-            "name_de": "Planerdienst",
-            "name_en": "Planner shift",
+            "name": "Planerdienst",
             "category": "other",
         },
     ).json()
@@ -2514,7 +2503,7 @@ def test_organization_membership_invite_planner_flow():
         db.add(Organization(id=1, name="Host Org", slug="host-org", plan_tier="team"))
         db.add(Organization(id=2, name="Other Org", slug="other-org", plan_tier="team"))
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="g1", name="G1", display_order=0)
         db.add(sg)
         db.flush()
         acc_inv = Account(email="invitee@example.com", hashed_password=hash_password("invpw"))
@@ -2598,7 +2587,7 @@ def test_organization_invite_revoke():
     with TestingSessionLocal() as db:
         db.add(Organization(id=1, name="R", slug="org-r", plan_tier="team"))
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="g1", name="G1", display_order=0)
         db.add(sg)
         db.flush()
         acc = Account(email="revoke_target@example.com", hashed_password=hash_password("x"))
@@ -2646,7 +2635,7 @@ def test_organization_membership_invite_team_member_minimal_accept_with_body():
         db.add(Organization(id=1, name="Host Org", slug="host-org", plan_tier="team"))
         db.add(Organization(id=2, name="Other Org", slug="other-org", plan_tier="team"))
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="g1", name="G1", display_order=0)
         db.add(sg)
         db.flush()
         acc_inv = Account(email="tmmin@example.com", hashed_password=hash_password("invpw"))
@@ -2719,7 +2708,7 @@ def test_organization_membership_invite_team_member_precreated_accept_without_bo
         db.add(Organization(id=1, name="Host Org", slug="host-org", plan_tier="team"))
         db.add(Organization(id=2, name="Other Org", slug="other-org", plan_tier="team"))
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="g1", name="G1", display_order=0)
         db.add(sg)
         db.flush()
         acc_inv = Account(email="preacc@example.com", hashed_password=hash_password("invpw"))
@@ -2784,7 +2773,7 @@ def test_organization_invite_revoke_deletes_precreated_team_member():
     with TestingSessionLocal() as db:
         db.add(Organization(id=1, name="R", slug="org-rv", plan_tier="team"))
         db.flush()
-        sg = ShiftGroup(organization_id=1, code="g1", name_de="G1", name_en="G1", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="g1", name="G1", display_order=0)
         db.add(sg)
         db.flush()
         acc = Account(email="preclean@example.com", hashed_password=hash_password("x"))

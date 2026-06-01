@@ -1,6 +1,10 @@
 # Changelog
 
+## 2026-06-12
+- **Single name for org-defined entities:** Shift groups, shift templates, and planning day status definitions now use one `name` or `label` field instead of paired `name_de`/`name_en` or `label_de`/`label_en`. Alembic `202606120001` backfills from the former German column when both existed. REST, roster/dashboard payloads (`template_name`, `shift_group_name`), exports, and MCP tools use the unified shape. UI forms and planning surfaces show org names as entered; the DE/EN locale switch remains for system copy only.
+
 ## 2026-06-11
+- **Configurable planning day status (Tagesstatus):** Organizations manage wishes-matrix day statuses with a single label, color presets, display order, active flag, and per-status **blocks roster assignment**. REST `GET|POST|PATCH|DELETE /api/v1/planning-day-status-definitions`; matrix and roster responses include `day_status_definitions`. Admin UI under **Team** → **Tagesstatus**. Migration seeds former defaults (`urlaub`, `forschung`, `lehre`, `frei`) for existing orgs.
 - **Password recovery (no email):** Org admins reset another member’s login password from Team → staff directory (`POST /api/v1/organization/users/{id}/reset-password`). Password is stored on global **`Account`** and applies to all organizations for that email. Signed-in users change their own password in Settings (`POST /api/v1/auth/me/change-password`). Login page directs users to contact an administrator. MCP tool **`reset_organization_user_password_tool`**.
 
 ## 2026-05-09

@@ -4,11 +4,25 @@ from typing import Annotated, Any, Literal, Self, Union
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-PlanningCellStatus = Literal["urlaub", "forschung", "lehre", "frei"]
 PlanningPeriodStatus = Literal["draft", "preliminary", "published"]
 
 PLANNED_DUTY_STATUSES: set[str] = set()
-UNAVAILABLE_STATUSES = {"urlaub", "forschung", "lehre", "frei"}
+
+PlanningDayStatusColorPreset = Literal[
+    "rose",
+    "violet",
+    "amber",
+    "slate",
+    "emerald",
+    "sky",
+    "cyan",
+    "orange",
+    "lime",
+    "fuchsia",
+    "zinc",
+    "indigo",
+    "teal",
+]
 
 PlanningShiftIntentKind = Literal["wish", "no_go"]
 
@@ -18,8 +32,7 @@ class UserShiftGroupBrief(BaseModel):
 
     id: int
     code: str
-    name_de: str
-    name_en: str
+    name: str
     is_active: bool = True
 
 
@@ -318,8 +331,7 @@ class ShiftGroupInviteOption(BaseModel):
 
     id: int
     code: str
-    name_de: str
-    name_en: str
+    name: str
     is_active: bool = True
 
 
@@ -422,16 +434,14 @@ class TeamMemberRead(TeamMemberCreate):
 
 class ShiftGroupCreate(BaseModel):
     code: str = Field(min_length=1, max_length=50)
-    name_de: str = Field(min_length=1, max_length=255)
-    name_en: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=255)
     display_order: int = 0
     is_active: bool = True
 
 
 class ShiftGroupUpdate(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=50)
-    name_de: str | None = Field(default=None, min_length=1, max_length=255)
-    name_en: str | None = Field(default=None, min_length=1, max_length=255)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
     display_order: int | None = None
     is_active: bool | None = None
 
@@ -441,8 +451,7 @@ class ShiftGroupRead(BaseModel):
 
     id: int
     code: str
-    name_de: str
-    name_en: str
+    name: str
     display_order: int
     is_active: bool
     created_at: datetime
@@ -629,13 +638,13 @@ class AvoidTimeWindowMemberPatternRule(BaseModel):
 class AllowedCalendarWeekParityMemberPatternRule(BaseModel):
     type: Literal["allowed_calendar_week_parity"] = "allowed_calendar_week_parity"
     parity: Literal["even", "odd"]
-    status: PlanningCellStatus = "frei"
+    status: str = "frei"
 
 
 class RecurringWeekdayStatusMemberPatternRule(BaseModel):
     type: Literal["recurring_weekday_status"] = "recurring_weekday_status"
     weekdays: list[PatternWeekday] = Field(min_length=1)
-    status: PlanningCellStatus
+    status: str
 
 
 MemberPlanningPatternRule = Annotated[
@@ -779,6 +788,36 @@ class TeamMemberPropertyDefinitionRead(BaseModel):
     updated_at: datetime
 
 
+class PlanningDayStatusDefinitionCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    label: str = Field(min_length=1, max_length=64)
+    color_preset: PlanningDayStatusColorPreset
+    blocks_roster_assignment: bool = True
+    is_active: bool = True
+
+
+class PlanningDayStatusDefinitionUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=64)
+    color_preset: PlanningDayStatusColorPreset | None = None
+    blocks_roster_assignment: bool | None = None
+    is_active: bool | None = None
+
+
+class PlanningDayStatusDefinitionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    code: str
+    label: str
+    color_preset: PlanningDayStatusColorPreset
+    blocks_roster_assignment: bool
+    display_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class TeamMemberPropertyValueUpsertItem(BaseModel):
     property_definition_id: int
     value: Any | None = None
@@ -840,8 +879,7 @@ class ShiftVariantRead(ShiftVariantCreate):
 
 class ShiftTemplateCreate(BaseModel):
     code: str = Field(min_length=1, max_length=50)
-    name_de: str
-    name_en: str
+    name: str = Field(min_length=1, max_length=255)
     category: ShiftTemplateCategory = "bereitschaftsdienst"
     display_order: int = 0
     constraints: list[ShiftConstraint] = Field(default_factory=list)
@@ -849,8 +887,7 @@ class ShiftTemplateCreate(BaseModel):
 
 class ShiftTemplateUpdate(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=50)
-    name_de: str | None = None
-    name_en: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
     category: ShiftTemplateCategory | None = None
     display_order: int | None = None
     constraints: list[ShiftConstraint] | None = None
@@ -874,8 +911,7 @@ class GeneratedRosterSlotPreview(BaseModel):
     day_class: str
     template_id: int
     template_code: str
-    template_name_de: str
-    template_name_en: str
+    template_name: str
     variant_id: int
     variant_label: str
     category: str
@@ -915,8 +951,7 @@ class RosterSlotRead(BaseModel):
     ends_at: datetime | None = None
     day_class: str | None = None
     template_code: str | None = None
-    template_name_de: str | None = None
-    template_name_en: str | None = None
+    template_name: str | None = None
     variant_label: str | None = None
     category: str | None = None
     source: str
@@ -947,7 +982,7 @@ class RosterSlotAssignmentRead(RosterSlotAssignmentUpsert):
 class PlanningCellBase(BaseModel):
     team_member_id: int
     cell_date: date_type
-    status: PlanningCellStatus
+    status: str = Field(min_length=1, max_length=32)
     comment: str | None = None
     source: str = "manual"
 
@@ -955,7 +990,7 @@ class PlanningCellBase(BaseModel):
 class PlanningCellUpsert(BaseModel):
     team_member_id: int
     cell_date: date_type
-    status: PlanningCellStatus
+    status: str = Field(min_length=1, max_length=32)
     comment: str | None = None
 
 
@@ -1030,6 +1065,7 @@ class PlanningMatrixRead(BaseModel):
     team_members: list[MatrixTeamMember]
     days: list[MatrixDay]
     cells: list[PlanningCellRead]
+    day_status_definitions: list[PlanningDayStatusDefinitionRead] = Field(default_factory=list)
     shift_templates: list[ShiftTemplateRead] = Field(default_factory=list)
     shift_intents: list[PlanningShiftIntentRead] = Field(default_factory=list)
     template_slot_days: list[MatrixTemplateSlotDay] = Field(default_factory=list)
@@ -1043,6 +1079,7 @@ class RosterMatrixRead(BaseModel):
     slots: list[RosterSlotRead]
     assignments: list[RosterSlotAssignmentRead]
     planning_cells: list[PlanningCellRead]
+    day_status_definitions: list[PlanningDayStatusDefinitionRead] = Field(default_factory=list)
     shift_intents: list[PlanningShiftIntentRead] = Field(default_factory=list)
 
 
@@ -1114,8 +1151,7 @@ class MonthCategorySeries(BaseModel):
 class ShiftTemplateCount(BaseModel):
     shift_template_id: int
     template_code: str | None = None
-    template_name_de: str | None = None
-    template_name_en: str | None = None
+    template_name: str | None = None
     count: int
 
 
@@ -1185,8 +1221,7 @@ class DashboardWishesDayStatusCount(BaseModel):
 class DashboardUpcomingSlot(BaseModel):
     slot_date: date_type
     template_code: str | None
-    template_name_de: str | None
-    template_name_en: str | None
+    template_name: str | None
     starts_at: datetime | None
     ends_at: datetime | None
     category: str | None = None
@@ -1211,8 +1246,7 @@ class PlannerDashboardRead(BaseModel):
     year: int
     shift_group_id: int | None = None
     shift_group_code: str
-    shift_group_name_de: str
-    shift_group_name_en: str
+    shift_group_name: str
     shift_group_member_count: int
     current_period: DashboardPeriodCard | None
     periods: list[DashboardPeriodCard]

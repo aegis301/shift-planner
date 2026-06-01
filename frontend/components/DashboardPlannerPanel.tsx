@@ -24,9 +24,7 @@ export function DashboardPlannerPanel({
   const groupLabel =
     data.shift_group_id == null
       ? t(locale, "allShiftGroupsLabel")
-      : locale === "de"
-        ? data.shift_group_name_de || data.shift_group_code
-        : data.shift_group_name_en || data.shift_group_code;
+      : data.shift_group_name || data.shift_group_code;
   const validationChart = data.validation_by_code.map((row) => ({
     name: row.code,
     value: row.count,

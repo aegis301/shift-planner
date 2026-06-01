@@ -36,12 +36,18 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
               (p === TEAM_BASE || p === `${TEAM_BASE}/` || p.startsWith(`${TEAM_BASE}/members`)) &&
               !p.startsWith(`${TEAM_BASE}/requests`) &&
               !p.startsWith(`${TEAM_BASE}/organization`) &&
-              !p.startsWith(`${TEAM_BASE}/properties`),
+              !p.startsWith(`${TEAM_BASE}/properties`) &&
+              !p.startsWith(`${TEAM_BASE}/day-statuses`),
           },
           {
             href: `${TEAM_BASE}/properties`,
             labelKey: "teamMemberPropertiesNav",
             isActive: (p) => p.startsWith(`${TEAM_BASE}/properties`),
+          },
+          {
+            href: `${TEAM_BASE}/day-statuses`,
+            labelKey: "planningDayStatusNav",
+            isActive: (p) => p.startsWith(`${TEAM_BASE}/day-statuses`),
           },
           {
             href: `${TEAM_BASE}/requests`,

@@ -14,7 +14,8 @@ from app.models import (
     ShiftVariant,
     TeamMemberPropertyDefinition,
 )
-from app.schemas import ShiftConstraint, UNAVAILABLE_STATUSES, ValidationWarning
+from app.schemas import ShiftConstraint, ValidationWarning
+from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.team_member_property_requirements import (
     collect_property_requirement_violations,
     evaluate_property_requirement_expr,
@@ -93,10 +94,14 @@ def evaluate_assignment_constraints(
 ) -> list[ValidationWarning]:
     warnings: list[ValidationWarning] = []
     team_slots = [row.roster_slot for row in assigned_slots_for_member if row.roster_slot is not None]
+    period = slot.planning_period
+    if period is None:
+        period = db.get(PlanningPeriod, slot.planning_period_id)
+    organization_id = period.organization_id if period is not None else 0
     unavailable_days = {
         row.cell_date
         for row in planning_cells_for_member
-        if row.status in UNAVAILABLE_STATUSES
+        if cell_status_blocks_roster_assignment(db, organization_id=organization_id, status=row.status)
     }
     defs_map: dict[int, TeamMemberPropertyDefinition] = {}
     if any(r.rule.type == "team_member_property_requirement" for r in resolved_constraints):

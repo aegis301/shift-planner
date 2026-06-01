@@ -89,8 +89,7 @@ class GeneratedSlot:
     day_class: str
     template_id: int
     template_code: str
-    template_name_de: str
-    template_name_en: str
+    template_name: str
     variant_id: int
     variant_label: str
     category: str
@@ -102,7 +101,7 @@ def list_shift_templates(db: Session, *, organization_id: int, active_only: bool
         select(ShiftTemplate)
         .options(joinedload(ShiftTemplate.variants))
         .where(ShiftTemplate.organization_id == organization_id)
-        .order_by(ShiftTemplate.name_de, ShiftTemplate.code)
+        .order_by(ShiftTemplate.name, ShiftTemplate.code)
     )
     if active_only:
         stmt = stmt.where(ShiftTemplate.is_active.is_(True))
@@ -326,7 +325,7 @@ def generate_slots_for_month(db: Session, *, year: int, month: int, organization
                     ends_at = ends_at + timedelta(days=1)
                 time_label = f"{variant.starts_at.strftime('%H:%M')}-{variant.ends_at.strftime('%H:%M')}"
                 for position in range(1, variant.required_count + 1):
-                    label = f"{template.name_de} {time_label}"
+                    label = f"{template.name} {time_label}"
                     if variant.required_count > 1:
                         label = f"{label} #{position}"
                     generated.append(
@@ -338,8 +337,7 @@ def generate_slots_for_month(db: Session, *, year: int, month: int, organization
                             day_class=start_class,
                             template_id=template.id,
                             template_code=template.code,
-                            template_name_de=template.name_de,
-                            template_name_en=template.name_en,
+                            template_name=template.name,
                             variant_id=variant.id,
                             variant_label=variant.label,
                             category=template.category,

@@ -16,20 +16,10 @@ import {
   monthTemplateSeriesForYear,
   myPlanningDeepLink,
 } from "@/lib/dashboard";
-import type { Locale, TranslationKey } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
-
-function wishStatusLabel(locale: Locale, status: string): string {
-  const map: Record<string, TranslationKey> = {
-    urlaub: "urlaub",
-    forschung: "forschung",
-    lehre: "lehre",
-    frei: "frei",
-    empty: "dashboardWishesEmpty",
-  };
-  const key = map[status];
-  return key ? t(locale, key) : status;
-}
+import { apiFetch } from "@/lib/api";
+import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 
 function defaultCategoryMonth(data: TeamMemberDashboard): number {
   return data.current_period?.month ?? new Date().getMonth() + 1;
@@ -45,6 +35,13 @@ export function DashboardMemberPanel({
   shiftGroupId: string;
 }) {
   const [categoryMonth, setCategoryMonth] = useState(() => defaultCategoryMonth(data));
+  const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
+
+  useEffect(() => {
+    void apiFetch<PlanningDayStatusDefinition[]>("/api/v1/planning-day-status-definitions?active_only=true")
+      .then(setDayStatusDefinitions)
+      .catch(() => setDayStatusDefinitions([]));
+  }, []);
   const shiftsByMonth = useMemo(
     () => monthTemplateSeriesForYear(data.year, data.shifts_by_month),
     [data.year, data.shifts_by_month]
@@ -62,7 +59,10 @@ export function DashboardMemberPanel({
     return row?.templates ?? [];
   }, [categoryMonth, shiftsByMonth]);
   const wishesChart = data.wishes_day_statuses.map((row) => ({
-    name: wishStatusLabel(locale, row.status),
+    name:
+      row.status === "empty"
+        ? t(locale, "dashboardWishesEmpty")
+        : labelForPlanningDayStatusCode(row.status, dayStatusDefinitions, locale),
     value: row.count,
   }));
   const fill = data.current_period ? fillPercent(data.current_period) : 0;

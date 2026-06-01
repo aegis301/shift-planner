@@ -6,11 +6,16 @@ import { Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import {
+  activePlanningDayStatusDefinitions,
+  labelForPlanningDayStatusCode,
+  planningDayStatusLabel,
+  type PlanningDayStatusDefinition
+} from "@/lib/planningDayStatus";
 
 type PatternWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 type ConstraintSeverity = "info" | "warning" | "error";
 type MemberPatternType = "avoid_time_window" | "allowed_calendar_week_parity" | "recurring_weekday_status";
-type MatrixDayStatusOption = "urlaub" | "forschung" | "lehre" | "frei";
 type TimeWindowAnchorOption = "any_overlap_day" | "slot_start_day";
 
 type AvoidTimeWindowBand = {
@@ -30,13 +35,13 @@ type AvoidTimeWindowRule = {
 type AllowedCalendarWeekParityRule = {
   type: "allowed_calendar_week_parity";
   parity: "even" | "odd";
-  status: MatrixDayStatusOption;
+  status: string;
 };
 
 type RecurringWeekdayStatusRule = {
   type: "recurring_weekday_status";
   weekdays: PatternWeekday[];
-  status: MatrixDayStatusOption;
+  status: string;
 };
 
 type MemberPlanningPatternRule = AvoidTimeWindowRule | AllowedCalendarWeekParityRule | RecurringWeekdayStatusRule;
@@ -70,13 +75,6 @@ const WEEKDAY_LABEL_KEYS: Record<PatternWeekday, TranslationKey> = {
   sun: "weekdaySunShort"
 };
 
-const MATRIX_STATUS_KEYS: Record<MatrixDayStatusOption, TranslationKey> = {
-  urlaub: "urlaub",
-  forschung: "forschung",
-  lehre: "lehre",
-  frei: "frei"
-};
-
 function avoidBandExpansionKey(rowIndex: number, bandIndex: number): string {
   return `${rowIndex}-${bandIndex}`;
 }
@@ -107,7 +105,16 @@ function patternTypeLabel(locale: Locale, rule: MemberPlanningPatternRule): stri
   return t(locale, "memberPlanningPatternTypeWeekParity");
 }
 
-function summarizePatternCardDetails(locale: Locale, row: PlanningPatternRow): string {
+function defaultDayStatusCode(definitions: PlanningDayStatusDefinition[]): string {
+  const active = activePlanningDayStatusDefinitions(definitions);
+  return active[0]?.code ?? "frei";
+}
+
+function summarizePatternCardDetails(
+  locale: Locale,
+  row: PlanningPatternRow,
+  definitions: PlanningDayStatusDefinition[]
+): string {
   const rule = row.rule;
   const activePart = row.is_active
     ? t(locale, "memberPlanningPatternCardSummaryActive")
@@ -117,11 +124,11 @@ function summarizePatternCardDetails(locale: Locale, row: PlanningPatternRow): s
   }
   if (rule.type === "recurring_weekday_status") {
     const days = summarizeAvoidBandWeekdays(locale, rule.weekdays);
-    const status = t(locale, MATRIX_STATUS_KEYS[rule.status]);
+    const status = labelForPlanningDayStatusCode(rule.status, definitions, locale);
     return `${days} · ${status} · ${activePart}`;
   }
   const parity = t(locale, rule.parity === "even" ? "memberPlanningPatternParityEven" : "memberPlanningPatternParityOdd");
-  const status = t(locale, MATRIX_STATUS_KEYS[rule.status]);
+  const status = labelForPlanningDayStatusCode(rule.status, definitions, locale);
   const sev = t(
     locale,
     row.severity === "error"
@@ -143,7 +150,12 @@ function defaultAvoidBand(weekdays: PatternWeekday[] = ["sat"]): AvoidTimeWindow
   };
 }
 
-function normalizePlanningRuleFromApi(rule: unknown): MemberPlanningPatternRule {
+function normalizePlanningRuleFromApi(
+  rule: unknown,
+  definitions: PlanningDayStatusDefinition[]
+): MemberPlanningPatternRule {
+  const fallbackStatus = defaultDayStatusCode(definitions);
+  const allowedCodes = new Set(definitions.map((row) => row.code));
   if (rule && typeof rule === "object" && "type" in rule && (rule as { type: string }).type === "avoid_time_window") {
     const r = rule as Record<string, unknown>;
     if (Array.isArray(r.windows) && r.windows.length > 0) {
@@ -168,22 +180,21 @@ function normalizePlanningRuleFromApi(rule: unknown): MemberPlanningPatternRule 
   if (rule && typeof rule === "object" && "type" in rule && (rule as { type: string }).type === "allowed_calendar_week_parity") {
     const r = rule as Record<string, unknown>;
     const parity = (r.parity === "odd" ? "odd" : "even") as "even" | "odd";
-    const rawStatus = r.status as MatrixDayStatusOption | undefined;
-    const status: MatrixDayStatusOption =
-      rawStatus && (Object.keys(MATRIX_STATUS_KEYS) as MatrixDayStatusOption[]).includes(rawStatus) ? rawStatus : "frei";
+    const rawStatus = typeof r.status === "string" ? r.status : undefined;
+    const status = rawStatus && allowedCodes.has(rawStatus) ? rawStatus : fallbackStatus;
     return { type: "allowed_calendar_week_parity", parity, status };
   }
   return rule as MemberPlanningPatternRule;
 }
 
-function defaultPatternRow(type: MemberPatternType): PlanningPatternRow {
+function defaultPatternRow(type: MemberPatternType, defaultStatus: string): PlanningPatternRow {
   if (type === "allowed_calendar_week_parity") {
     return {
       label: "",
       is_active: true,
       severity: "warning",
       display_order: 0,
-      rule: { type: "allowed_calendar_week_parity", parity: "even", status: "frei" }
+      rule: { type: "allowed_calendar_week_parity", parity: "even", status: defaultStatus }
     };
   }
   if (type === "recurring_weekday_status") {
@@ -192,7 +203,7 @@ function defaultPatternRow(type: MemberPatternType): PlanningPatternRow {
       is_active: true,
       severity: "info",
       display_order: 0,
-      rule: { type: "recurring_weekday_status", weekdays: ["wed"], status: "frei" }
+      rule: { type: "recurring_weekday_status", weekdays: ["wed"], status: defaultStatus }
     };
   }
   return {
@@ -208,14 +219,17 @@ function defaultPatternRow(type: MemberPatternType): PlanningPatternRow {
   };
 }
 
-function toEditableRows(rows: PlanningPatternRead[]): PlanningPatternRow[] {
+function toEditableRows(
+  rows: PlanningPatternRead[],
+  definitions: PlanningDayStatusDefinition[]
+): PlanningPatternRow[] {
   return rows.map((row, index) => ({
     serverId: row.id,
     label: row.label,
     is_active: row.is_active,
     severity: row.severity,
     display_order: row.display_order ?? index,
-    rule: normalizePlanningRuleFromApi(row.rule)
+    rule: normalizePlanningRuleFromApi(row.rule, definitions)
   }));
 }
 
@@ -260,8 +274,11 @@ export function TeamMemberPlanningPatternsEditor({
 }) {
   const { locale } = useLocale();
   const [rows, setRows] = useState<PlanningPatternRow[]>([]);
+  const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const dayStatuses = activePlanningDayStatusDefinitions(dayStatusDefinitions);
+  const defaultStatusCode = defaultDayStatusCode(dayStatusDefinitions);
   const [expandedAvoidBands, setExpandedAvoidBands] = useState<Set<string>>(() => new Set());
   const [collapsedPatternCards, setCollapsedPatternCards] = useState<Set<string>>(() => new Set());
   const rowsRef = useRef<PlanningPatternRow[]>([]);
@@ -279,7 +296,7 @@ export function TeamMemberPlanningPatternsEditor({
         method: "PUT",
         body: JSON.stringify(buildPayload(current, locale))
       });
-      const next = toEditableRows(saved);
+      const next = toEditableRows(saved, dayStatusDefinitions);
       rowsRef.current = next;
       setRows(next);
       setMessage("");
@@ -290,7 +307,7 @@ export function TeamMemberPlanningPatternsEditor({
         setMessage(t(locale, "orgManagementInviteError"));
       }
     }
-  }, [teamMemberId, locale, readOnly]);
+  }, [teamMemberId, locale, readOnly, dayStatusDefinitions]);
 
   const flushPersistRef = useRef(flushPersist);
   flushPersistRef.current = flushPersist;
@@ -325,13 +342,19 @@ export function TeamMemberPlanningPatternsEditor({
     setLoading(true);
     try {
       const next = await apiFetch<PlanningPatternRead[]>(`/api/v1/team-members/${teamMemberId}/planning-patterns`);
-      const mapped = toEditableRows(next);
+      const mapped = toEditableRows(next, dayStatusDefinitions);
       rowsRef.current = mapped;
       setRows(mapped);
     } finally {
       setLoading(false);
     }
-  }, [teamMemberId]);
+  }, [teamMemberId, dayStatusDefinitions]);
+
+  useEffect(() => {
+    void apiFetch<PlanningDayStatusDefinition[]>("/api/v1/planning-day-status-definitions?active_only=true")
+      .then(setDayStatusDefinitions)
+      .catch(() => setDayStatusDefinitions([]));
+  }, []);
 
   useEffect(() => {
     void loadPatterns();
@@ -469,7 +492,7 @@ export function TeamMemberPlanningPatternsEditor({
                   </span>
                   <span className="min-w-0 flex-1 text-sm leading-snug text-slate-800">
                     <span className="font-semibold">{patternTypeLabel(locale, rule)}</span>
-                    <span className="text-slate-600"> · {summarizePatternCardDetails(locale, row)}</span>
+                    <span className="text-slate-600"> · {summarizePatternCardDetails(locale, row, dayStatusDefinitions)}</span>
                   </span>
                 </button>
                 {readOnly ? null : (
@@ -567,7 +590,7 @@ export function TeamMemberPlanningPatternsEditor({
                     });
                     commitRows(
                       rowsRef.current.map((r, rowIndex) =>
-                        rowIndex === index ? { ...defaultPatternRow(type), serverId: r.serverId } : r
+                        rowIndex === index ? { ...defaultPatternRow(type, defaultStatusCode), serverId: r.serverId } : r
                       )
                     );
                   }}
@@ -768,13 +791,13 @@ export function TeamMemberPlanningPatternsEditor({
                         updateRule(index, {
                           type: "recurring_weekday_status",
                           weekdays: rule.weekdays,
-                          status: event.target.value as MatrixDayStatusOption
+                          status: event.target.value
                         })
                       }
                     >
-                      {(Object.keys(MATRIX_STATUS_KEYS) as MatrixDayStatusOption[]).map((status) => (
-                        <option key={status} value={status}>
-                          {t(locale, MATRIX_STATUS_KEYS[status])}
+                      {dayStatuses.map((status) => (
+                        <option key={status.code} value={status.code}>
+                          {planningDayStatusLabel(status, locale)}
                         </option>
                       ))}
                     </select>
@@ -810,13 +833,13 @@ export function TeamMemberPlanningPatternsEditor({
                         updateRule(index, {
                           type: "allowed_calendar_week_parity",
                           parity: rule.parity,
-                          status: event.target.value as MatrixDayStatusOption
+                          status: event.target.value
                         })
                       }
                     >
-                      {(Object.keys(MATRIX_STATUS_KEYS) as MatrixDayStatusOption[]).map((status) => (
-                        <option key={status} value={status}>
-                          {t(locale, MATRIX_STATUS_KEYS[status])}
+                      {dayStatuses.map((status) => (
+                        <option key={status.code} value={status.code}>
+                          {planningDayStatusLabel(status, locale)}
                         </option>
                       ))}
                     </select>
@@ -834,7 +857,7 @@ export function TeamMemberPlanningPatternsEditor({
           <button
             type="button"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-            onClick={() => commitRows([...rowsRef.current, defaultPatternRow("avoid_time_window")])}
+            onClick={() => commitRows([...rowsRef.current, defaultPatternRow("avoid_time_window", defaultStatusCode)])}
           >
             <Plus size={16} />
             {t(locale, "memberPlanningPatternAdd")}

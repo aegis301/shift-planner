@@ -29,8 +29,7 @@ def _shift_group_read(group: ShiftGroup) -> ShiftGroupRead:
     return ShiftGroupRead(
         id=group.id,
         code=group.code,
-        name_de=group.name_de,
-        name_en=group.name_en,
+        name=group.name,
         display_order=group.display_order,
         is_active=group.is_active,
         created_at=group.created_at,

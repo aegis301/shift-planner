@@ -542,8 +542,7 @@ def get_planner_dashboard(
         year=selected_year,
         shift_group_id=shift_group_id,
         shift_group_code=group.code if group is not None else "",
-        shift_group_name_de=group.name_de if group is not None else "",
-        shift_group_name_en=group.name_en if group is not None else "",
+        shift_group_name=group.name if group is not None else "",
         shift_group_member_count=len(allowed),
         current_period=current_card,
         periods=period_cards,
@@ -582,8 +581,7 @@ def _member_shifts_by_month(
             PlanningPeriod.month,
             ShiftTemplate.id,
             ShiftTemplate.code,
-            ShiftTemplate.name_de,
-            ShiftTemplate.name_en,
+            ShiftTemplate.name,
             func.count(RosterSlotAssignment.id),
         )
         .join(RosterSlot, RosterSlot.id == RosterSlotAssignment.roster_slot_id)
@@ -599,19 +597,17 @@ def _member_shifts_by_month(
             PlanningPeriod.month,
             ShiftTemplate.id,
             ShiftTemplate.code,
-            ShiftTemplate.name_de,
-            ShiftTemplate.name_en,
+            ShiftTemplate.name,
         )
         .order_by(PlanningPeriod.month, ShiftTemplate.code)
     )
     by_month: dict[int, list[ShiftTemplateCount]] = defaultdict(list)
-    for month, template_id, code, name_de, name_en, count in db.execute(stmt).all():
+    for month, template_id, code, template_name, count in db.execute(stmt).all():
         by_month[int(month)].append(
             ShiftTemplateCount(
                 shift_template_id=int(template_id),
                 template_code=code,
-                template_name_de=name_de,
-                template_name_en=name_en,
+                template_name=template_name,
                 count=int(count),
             )
         )
@@ -659,8 +655,7 @@ def _member_upcoming_shifts(
             DashboardUpcomingSlot(
                 slot_date=slot.slot_date,
                 template_code=template.code if template else None,
-                template_name_de=template.name_de if template else None,
-                template_name_en=template.name_en if template else None,
+                template_name=template.name if template else None,
                 starts_at=slot.starts_at,
                 ends_at=slot.ends_at,
                 category=template.category if template else None,

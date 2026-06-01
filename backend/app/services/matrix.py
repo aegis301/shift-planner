@@ -13,11 +13,17 @@ from app.schemas import (
     PlanningCellClear,
     PlanningCellRead,
     PlanningCellUpsert,
+    PlanningDayStatusDefinitionRead,
     PlanningMatrixRead,
     PlanningShiftIntentBulkUpsert,
     PlanningShiftIntentRead,
     ShiftTemplateRead,
     TeamMemberPeriodNoteUpsert,
+)
+from app.services.planning_day_status_definitions import (
+    assert_valid_planning_cell_status,
+    ensure_default_planning_day_statuses,
+    list_planning_day_status_definitions,
 )
 from app.services.audit import record_audit
 from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
@@ -145,6 +151,13 @@ def get_planning_matrix(
             for row in all_intents
             if row.team_member_id in allowed_team_member_ids and row.shift_group_id in active_gids
         ]
+    ensure_default_planning_day_statuses(db, organization_id=organization_id)
+    day_status_definitions = [
+        PlanningDayStatusDefinitionRead.model_validate(row)
+        for row in list_planning_day_status_definitions(
+            db, organization_id=organization_id, active_only=True
+        )
+    ]
     return PlanningMatrixRead(
         planning_period=period,
         team_members=[
@@ -161,6 +174,7 @@ def get_planning_matrix(
         ],
         days=days,
         cells=[PlanningCellRead.model_validate(cell) for cell in cells],
+        day_status_definitions=day_status_definitions,
         shift_templates=shift_templates_out,
         shift_intents=shift_intents_out,
         template_slot_days=template_slot_days,
@@ -177,6 +191,8 @@ def upsert_planning_cell(
     source: str,
 ) -> PlanningCell:
     period = _require_period_org(db, planning_period_id, organization_id)
+    normalized_status = payload.status.strip().lower()
+    assert_valid_planning_cell_status(db, organization_id=organization_id, status=normalized_status)
     if not _cell_date_in_period(period, payload.cell_date):
         raise ValueError("Cell date is outside the planning period month")
     cell = db.scalar(
@@ -233,6 +249,7 @@ def bulk_upsert_planning_cells(
 ) -> list[PlanningCell]:
     period = _require_period_org(db, planning_period_id, organization_id)
     for cell_payload in payload.cells:
+        assert_valid_planning_cell_status(db, organization_id=organization_id, status=cell_payload.status)
         if not _cell_date_in_period(period, cell_payload.cell_date):
             raise ValueError("Cell date is outside the planning period month")
     cells = [
@@ -253,6 +270,7 @@ def _upsert_planning_cell_no_commit(
     actor: str,
     source: str,
 ) -> PlanningCell:
+    normalized_status = payload.status.strip().lower()
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
@@ -265,14 +283,14 @@ def _upsert_planning_cell_no_commit(
             planning_period_id=planning_period_id,
             team_member_id=payload.team_member_id,
             cell_date=payload.cell_date,
-            status=payload.status,
+            status=normalized_status,
             comment=payload.comment,
             source=source,
         )
         db.add(cell)
         action = "create"
     else:
-        cell.status = payload.status
+        cell.status = normalized_status
         cell.comment = payload.comment
         cell.source = source
         action = "update"

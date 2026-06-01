@@ -17,7 +17,7 @@ type MemberPatternPolicy = {
   hard_types: Array<"allowed_calendar_week_parity">;
 };
 
-type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string; is_active?: boolean };
+type ShiftGroupOption = { id: number; code: string; name: string; is_active?: boolean };
 
 type MembershipInvite = {
   id: number;
@@ -36,7 +36,7 @@ type MembershipInvite = {
 };
 
 function groupLabel(locale: Locale, g: ShiftGroupOption): string {
-  return locale === "de" ? g.name_de : g.name_en;
+  return g.name;
 }
 
 function groupRowLabel(locale: Locale, g: ShiftGroupOption): string {

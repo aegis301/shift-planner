@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Organization
 from app.services.audit import record_audit
+from app.services.planning_day_status_definitions import ensure_default_planning_day_statuses
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
@@ -45,6 +46,7 @@ def create_organization_record(
     org = Organization(name=name.strip(), slug=slug, plan_tier=plan_tier)
     db.add(org)
     db.flush()
+    ensure_default_planning_day_statuses(db, organization_id=org.id)
     return org
 
 

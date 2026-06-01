@@ -72,13 +72,13 @@ def _slot_column_title(slot: Any) -> str:
 def _template_column_title(template: Any, fallback_slot: Any | None = None) -> str:
     if template is not None:
         code = getattr(template, "code", None)
-        name_de = getattr(template, "name_de", None)
-        if code and name_de:
-            return f"{code} - {name_de}"
+        name = getattr(template, "name", None)
+        if code and name:
+            return f"{code} - {name}"
         if code:
             return code
-        if name_de:
-            return name_de
+        if name:
+            return name
     if fallback_slot is None:
         return "Shift type"
     return fallback_slot.template_code or fallback_slot.label or "Shift type"

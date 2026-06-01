@@ -18,8 +18,7 @@ export type ShiftCategoryCount = { category: string; count: number };
 export type ShiftTemplateCount = {
   shift_template_id: number;
   template_code: string | null;
-  template_name_de: string | null;
-  template_name_en: string | null;
+  template_name: string | null;
   count: number;
 };
 
@@ -62,8 +61,7 @@ export type PlannerDashboard = {
   year: number;
   shift_group_id: number | null;
   shift_group_code: string;
-  shift_group_name_de: string;
-  shift_group_name_en: string;
+  shift_group_name: string;
   shift_group_member_count: number;
   current_period: DashboardPeriodCard | null;
   periods: DashboardPeriodCard[];
@@ -100,8 +98,7 @@ export type TeamMemberDashboard = {
   upcoming_slots: {
     slot_date: string;
     template_code: string | null;
-    template_name_de: string | null;
-    template_name_en: string | null;
+    template_name: string | null;
     starts_at: string | null;
     ends_at: string | null;
     category: string | null;
@@ -146,7 +143,7 @@ export function monthTemplateSeriesForYear(year: number, series: MonthTemplateSe
 }
 
 export function shiftTemplateChartLabel(locale: Locale, row: ShiftTemplateCount): string {
-  const name = (locale === "de" ? row.template_name_de : row.template_name_en)?.trim();
+  const name = (row.template_name)?.trim();
   if (name) {
     return row.template_code ? `${name} (${row.template_code})` : name;
   }

@@ -107,8 +107,7 @@ def create_shift_group(
     group = ShiftGroup(
         organization_id=organization_id,
         code=payload.code,
-        name_de=payload.name_de,
-        name_en=payload.name_en,
+        name=payload.name.strip(),
         display_order=payload.display_order,
         is_active=payload.is_active,
     )

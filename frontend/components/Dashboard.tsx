@@ -22,7 +22,7 @@ import { t } from "@/lib/i18n";
 
 type DashboardTab = "admin" | "planner" | "member";
 
-type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
+type ShiftGroupOption = { id: number; code: string; name: string };
 
 export function Dashboard() {
   const { locale } = useLocale();
@@ -97,8 +97,7 @@ export function Dashboard() {
           (userMe.planner_shift_groups ?? []).map((g) => ({
             id: g.id,
             code: g.code,
-            name_de: g.name_de,
-            name_en: g.name_en,
+            name: g.name,
           }))
         );
       }
@@ -109,8 +108,7 @@ export function Dashboard() {
         userMe.shift_groups.map((g) => ({
           id: g.id,
           code: g.code,
-          name_de: g.name_de,
-          name_en: g.name_en,
+          name: g.name,
         }))
       );
     }
@@ -255,7 +253,7 @@ export function Dashboard() {
             <option value="">{t(locale, "allShiftGroupsLabel")}</option>
             {shiftGroups.map((group) => (
               <option key={group.id} value={String(group.id)}>
-                {locale === "de" ? group.name_de : group.name_en} ({group.code})
+                {group.name} ({group.code})
               </option>
             ))}
           </select>

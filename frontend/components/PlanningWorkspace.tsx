@@ -29,6 +29,7 @@ import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
+import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type PlanningPeriod = {
@@ -57,7 +58,7 @@ type DestructiveAction =
   | "status-preliminary"
   | "status-published";
 
-type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
+type ShiftGroupOption = { id: number; code: string; name: string };
 
 function teamMemberLabel(member: { first_name: string; last_name: string; nickname?: string | null }): string {
   return teamMemberPlanningDisplayName(member);
@@ -113,8 +114,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
+  const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
+
+  useEffect(() => {
+    if (!userMe) {
+      return;
+    }
+    void apiFetch<PlanningDayStatusDefinition[]>("/api/v1/planning-day-status-definitions?active_only=true")
+      .then(setDayStatusDefinitions)
+      .catch(() => setDayStatusDefinitions([]));
+  }, [userMe]);
 
   useEffect(() => {
     if (sessionLoading || !me) {
@@ -185,8 +196,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       (userMe.planner_shift_groups ?? []).map((g) => ({
         id: g.id,
         code: g.code,
-        name_de: g.name_de,
-        name_en: g.name_en
+        name: g.name
       }))
     );
   }, [planningUi, userMe]);
@@ -199,8 +209,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       userMe.shift_groups.map((g) => ({
         id: g.id,
         code: g.code,
-        name_de: g.name_de,
-        name_en: g.name_en
+        name: g.name
       }))
     );
   }, [userMe, variant]);
@@ -486,7 +495,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
 
   const planningConflictSummary =
     periodId && planningUi && !waitingForPlannerSession ? (
-      <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} />
+      <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} dayStatusDefinitions={dayStatusDefinitions} />
     ) : null;
 
   return (
@@ -516,7 +525,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   {adminUi ? <option value="">{t(locale, "allShiftGroupsLabel")}</option> : null}
                   {shiftGroups.map((group) => (
                     <option key={group.id} value={String(group.id)}>
-                      {locale === "de" ? group.name_de : group.name_en} ({group.code})
+                      {group.name} ({group.code})
                     </option>
                   ))}
                 </select>
@@ -677,7 +686,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               <p className="mt-1 text-sky-900">{t(locale, "myPlanningPreliminaryBannerBody")}</p>
             </div>
           ) : null}
-          <PlanningDayStatusLegend locale={locale} />
+          <PlanningDayStatusLegend locale={locale} definitions={dayStatusDefinitions} />
         </div>
       </Card>
 
@@ -919,7 +928,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
 }
 
 function summarizeRosterSlot(slot: RosterMatrix["slots"][number], locale: Locale): string {
-  const name = locale === "de" ? slot.template_name_de : slot.template_name_en;
+  const name = slot.template_name;
   const base = name || slot.label || slot.template_code || `#${slot.id}`;
   return slot.variant_label ? `${base} (${slot.variant_label})` : base;
 }
@@ -990,7 +999,7 @@ function shiftTypeLabelForMaxAssignmentsWarning(warning: ValidationWarning, matr
   if (typeof templateId === "number") {
     const summary = matrix.shift_templates?.find((row) => row.id === templateId);
     if (summary) {
-      const name = locale === "de" ? summary.name_de : summary.name_en;
+      const name = summary.name;
       const label = name.trim() || summary.code;
       return `${label} (${summary.code})`;
     }
@@ -1005,7 +1014,12 @@ function shiftTypeLabelForMaxAssignmentsWarning(warning: ValidationWarning, matr
   return "—";
 }
 
-function validationWarningDetailText(warning: ValidationWarning, matrix: RosterMatrix | null, locale: Locale): string | null {
+function validationWarningDetailText(
+  warning: ValidationWarning,
+  matrix: RosterMatrix | null,
+  locale: Locale,
+  dayStatusDefinitions: PlanningDayStatusDefinition[]
+): string | null {
   if (!matrix) {
     return null;
   }
@@ -1024,8 +1038,7 @@ function validationWarningDetailText(warning: ValidationWarning, matrix: RosterM
   }
   if (warning.code === "ROSTER_MATRIX_UNAVAILABLE_CONFLICT") {
     const st = String(warning.details?.unavailable_status ?? "");
-    const wishLabel =
-      st === "urlaub" || st === "forschung" || st === "lehre" || st === "frei" ? t(locale, st as TranslationKey) : st;
+    const wishLabel = labelForPlanningDayStatusCode(st, dayStatusDefinitions, locale);
     const slotId = warning.details?.roster_slot_id as number | undefined;
     const slot = slotId != null ? matrix.slots.find((s) => s.id === slotId) : undefined;
     const slotLabel = slot ? summarizeRosterSlot(slot, locale) : "—";
@@ -1199,7 +1212,15 @@ function inlineValidationRowClasses(tone: ReturnType<typeof inlineValidationRowT
   };
 }
 
-function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatrix | null; warnings: ValidationWarning[] }) {
+function InlineValidation({
+  rosterMatrix,
+  warnings,
+  dayStatusDefinitions
+}: {
+  rosterMatrix: RosterMatrix | null;
+  warnings: ValidationWarning[];
+  dayStatusDefinitions: PlanningDayStatusDefinition[];
+}) {
   const { locale } = useLocale();
   const rosterWarnings = warnings.filter(
     (warning) =>
@@ -1227,7 +1248,7 @@ function InlineValidation({ rosterMatrix, warnings }: { rosterMatrix: RosterMatr
                   ? rosterMatrix?.team_members.find((row) => row.id === warning.team_member_id)
                   : null;
               const memberName = member ? teamMemberLabel(member) : null;
-              const detail = validationWarningDetailText(warning, rosterMatrix, locale);
+              const detail = validationWarningDetailText(warning, rosterMatrix, locale, dayStatusDefinitions);
               const hasLead = Boolean(warning.date || memberName || warning.team_member_id != null);
               const rowTone = inlineValidationRowTone(warning.severity);
               const rowClass = inlineValidationRowClasses(rowTone);

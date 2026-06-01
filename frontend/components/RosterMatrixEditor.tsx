@@ -12,11 +12,17 @@ import {
 } from "@/lib/rosterWorkload";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
-import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { t, type Locale } from "@/lib/i18n";
+import {
+  planningDayStatusBadgeClass,
+  planningDayStatusByCode,
+  planningDayStatusLabel,
+  planningDayStatusSolidClass,
+  rosterBlocksForPlanningDayStatusCode,
+  type PlanningDayStatusDefinition
+} from "@/lib/planningDayStatus";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
-
-type PlanningStatus = "urlaub" | "forschung" | "lehre" | "frei";
 
 type ShiftIntentKind = "wish" | "no_go";
 
@@ -57,8 +63,7 @@ type RosterSlot = {
   ends_at: string | null;
   day_class: string | null;
   template_code: string | null;
-  template_name_de: string | null;
-  template_name_en: string | null;
+  template_name: string | null;
   variant_label: string | null;
   category: SlotCategory | null;
 };
@@ -66,8 +71,7 @@ type RosterSlot = {
 type ShiftTemplateSummary = {
   id: number;
   code: string;
-  name_de: string;
-  name_en: string;
+  name: string;
   category: SlotCategory;
   display_order: number;
   is_active: boolean;
@@ -104,28 +108,9 @@ export type RosterMatrix = {
   slots: RosterSlot[];
   assignments: RosterSlotAssignment[];
   planning_cells: PlanningCell[];
+  day_status_definitions: PlanningDayStatusDefinition[];
   shift_intents: RosterShiftIntent[];
 };
-
-const DAY_STATUS_DOT: Record<PlanningStatus, string> = {
-  urlaub: "bg-rose-500",
-  forschung: "bg-violet-500",
-  lehre: "bg-amber-500",
-  frei: "bg-slate-400"
-};
-
-const STATUS_META: Record<PlanningStatus, { label: TranslationKey; color: string }> = {
-  urlaub: { label: "urlaub", color: "bg-rose-100 text-rose-800 ring-rose-200" },
-  forschung: { label: "forschung", color: "bg-violet-100 text-violet-800 ring-violet-200" },
-  lehre: { label: "lehre", color: "bg-amber-100 text-amber-800 ring-amber-200" },
-  frei: { label: "frei", color: "bg-slate-100 text-slate-700 ring-slate-200" }
-};
-
-const UNAVAILABLE_STATUSES = new Set<PlanningStatus>(["urlaub", "forschung", "lehre", "frei"]);
-
-function isPlanningStatus(value: string | undefined): value is PlanningStatus {
-  return value === "urlaub" || value === "forschung" || value === "lehre" || value === "frei";
-}
 
 function formatDate(locale: Locale, value: string) {
   return new Intl.DateTimeFormat(locale === "de" ? "de-DE" : "en-GB", {
@@ -243,7 +228,7 @@ function categoryLabel(locale: Locale, category: SlotCategory): string {
   return t(locale, "other");
 }
 
-function buildTemplateColumns(matrix: RosterMatrix): ShiftTemplateSummary[] {
+function buildTemplateColumns(matrix: RosterMatrix, locale: Locale): ShiftTemplateSummary[] {
   const usedTemplateIds = new Set<number>();
   for (const slot of matrix.slots) {
     if (slot.shift_template_id !== null) {
@@ -255,7 +240,7 @@ function buildTemplateColumns(matrix: RosterMatrix): ShiftTemplateSummary[] {
   const templatesById = new Map(shiftTemplates.map((template) => [template.id, template]));
   const ordered: ShiftTemplateSummary[] = [...shiftTemplates]
     .filter((template) => usedTemplateIds.has(template.id))
-    .sort((a, b) => a.display_order - b.display_order || a.name_de.localeCompare(b.name_de) || a.code.localeCompare(b.code));
+    .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name) || a.code.localeCompare(b.code));
 
   const missingIds = [...usedTemplateIds].filter((id) => !templatesById.has(id));
   for (const id of missingIds.sort((a, b) => a - b)) {
@@ -263,8 +248,7 @@ function buildTemplateColumns(matrix: RosterMatrix): ShiftTemplateSummary[] {
     ordered.push({
       id,
       code: sample?.template_code ?? String(id),
-      name_de: sample?.template_name_de ?? String(id),
-      name_en: sample?.template_name_en ?? String(id),
+      name: sample?.template_name ?? String(id),
       category: sample?.category ?? "other",
       display_order: 0,
       is_active: true
@@ -275,8 +259,7 @@ function buildTemplateColumns(matrix: RosterMatrix): ShiftTemplateSummary[] {
     ordered.push({
       id: -1,
       code: "?",
-      name_de: t("de", "unknownShiftTemplate"),
-      name_en: t("en", "unknownShiftTemplate"),
+      name: t(locale, "unknownShiftTemplate"),
       category: "other",
       display_order: 9999,
       is_active: true
@@ -383,7 +366,7 @@ export function RosterMatrixEditor({
     return map;
   }, [matrix]);
 
-  const templateColumns = useMemo(() => (matrix ? buildTemplateColumns(matrix) : []), [matrix]);
+  const templateColumns = useMemo(() => (matrix ? buildTemplateColumns(matrix, locale) : []), [matrix, locale]);
 
   const activePeriodId = controlledPeriodId ?? periodId;
 
@@ -649,7 +632,7 @@ function DesktopRosterMatrix({
                 <th key={template.id} className="sticky top-0 z-20 min-w-[11rem] border-b border-slate-200 bg-white p-2 text-left align-bottom">
                   <div className="grid gap-1">
                     <p className="text-xs font-semibold text-ink">
-                      {locale === "de" ? template.name_de : template.name_en}
+                      {template.name}
                     </p>
                     <div className="flex flex-wrap items-center gap-1">
                       <span className="rounded-md bg-ink px-2 py-0.5 font-mono text-[0.65rem] font-semibold text-white">{template.code}</span>
@@ -696,6 +679,7 @@ function DesktopRosterMatrix({
                                   workloadMatrix={workloadMatrix}
                                   workloadWarnings={workloadWarnings}
                                   planningPeriodLabel={planningPeriodLabel}
+                                  dayStatusDefinitions={matrix.day_status_definitions ?? []}
                                 />
                               </div>
                             );
@@ -753,6 +737,7 @@ function DesktopRosterMatrix({
                         workloadMatrix={workloadMatrix}
                         workloadWarnings={workloadWarnings}
                         planningPeriodLabel={planningPeriodLabel}
+                        dayStatusDefinitions={matrix.day_status_definitions ?? []}
                       />
                     </div>
                   ))}
@@ -817,7 +802,7 @@ function MobileRosterMatrix({
                         <th key={template.id} className="sticky top-0 z-10 min-w-[10.5rem] border-b border-slate-200 bg-white px-2 pb-2 text-left align-bottom shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <div className="grid gap-1">
                             <p className="text-xs font-semibold text-ink">
-                              {locale === "de" ? template.name_de : template.name_en}
+                              {template.name}
                             </p>
                             <div className="flex flex-wrap items-center gap-1">
                               <span className="rounded-md bg-ink px-2 py-0.5 font-mono text-[0.65rem] font-semibold text-white">{template.code}</span>
@@ -854,6 +839,7 @@ function MobileRosterMatrix({
                                       workloadMatrix={workloadMatrix}
                                       workloadWarnings={workloadWarnings}
                                       planningPeriodLabel={planningPeriodLabel}
+                                      dayStatusDefinitions={matrix.day_status_definitions ?? []}
                                     />
                                   </div>
                                 );
@@ -898,6 +884,7 @@ function MobileRosterMatrix({
                       workloadMatrix={workloadMatrix}
                       workloadWarnings={workloadWarnings}
                       planningPeriodLabel={planningPeriodLabel}
+                      dayStatusDefinitions={matrix.day_status_definitions ?? []}
                     />
                 </div>
             ))}
@@ -909,7 +896,7 @@ function MobileRosterMatrix({
 }
 
 function SlotHeader({ slot, locale }: { slot: RosterSlot; locale: Locale }) {
-  const label = locale === "de" ? slot.template_name_de : slot.template_name_en;
+  const label = slot.template_name;
   return (
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
@@ -936,6 +923,7 @@ function RosterCell({
   workloadMatrix,
   workloadWarnings,
   planningPeriodLabel,
+  dayStatusDefinitions,
 }: {
   slot: RosterSlot;
   members: RosterMatrixTeamMember[];
@@ -949,6 +937,7 @@ function RosterCell({
   workloadMatrix: RosterWorkloadMatrixSlice;
   workloadWarnings: RosterWorkloadWarning[];
   planningPeriodLabel: string;
+  dayStatusDefinitions: PlanningDayStatusDefinition[];
 }) {
   const [memberId, setMemberId] = useState<number | "">(assignment?.team_member_id ?? "");
   const [open, setOpen] = useState(false);
@@ -996,8 +985,11 @@ function RosterCell({
   const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
   const hasDayComment = Boolean(planningCell?.comment?.trim());
   const status = planningCell?.status;
-  const meta = status && isPlanningStatus(status) ? STATUS_META[status] : undefined;
-  const hasUnavailableDay = status && isPlanningStatus(status) ? UNAVAILABLE_STATUSES.has(status) : false;
+  const statusRow = status ? planningDayStatusByCode(dayStatusDefinitions).get(status) : undefined;
+  const meta = statusRow
+    ? { color: planningDayStatusBadgeClass(statusRow.color_preset), label: planningDayStatusLabel(statusRow, locale) }
+    : undefined;
+  const hasUnavailableDay = status ? rosterBlocksForPlanningDayStatusCode(status, dayStatusDefinitions) : false;
   const selectedMember = members.find((member) => member.id === memberId);
   const selectedNoGo =
     memberId && templateId
@@ -1150,7 +1142,8 @@ function RosterCell({
               {filteredMembers.map((member) => {
                 const cell = planningCellMap.get(`${slot.slot_date}:${member.id}`);
                 const st = cell?.status;
-                const dotClass = st && isPlanningStatus(st) ? DAY_STATUS_DOT[st] : "bg-slate-300";
+                const stRow = st ? planningDayStatusByCode(dayStatusDefinitions).get(st) : undefined;
+                const dotClass = stRow ? planningDayStatusSolidClass(stRow.color_preset) : "bg-slate-300";
                 const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
                 const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
                 const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
@@ -1310,8 +1303,8 @@ function RosterCell({
         }}
       >
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          {memberId && status && isPlanningStatus(status) ? (
-            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DAY_STATUS_DOT[status]}`} aria-hidden />
+          {memberId && statusRow ? (
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${planningDayStatusSolidClass(statusRow.color_preset)}`} aria-hidden />
           ) : (
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-300" aria-hidden />
           )}
@@ -1338,7 +1331,7 @@ function RosterCell({
           {hasDayComment ? <span className="text-xs font-semibold text-sky-800">{t(locale, "dayCommentMarker")}</span> : null}
           {meta ? (
             <span className={`inline-flex w-fit rounded-full px-2 py-1 text-xs font-semibold ring-1 ${meta.color}`}>
-              {t(locale, meta.label)}
+              {meta.label}
             </span>
           ) : null}
         </div>

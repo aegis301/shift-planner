@@ -93,8 +93,7 @@ type PendingVariantDraft = {
 type ShiftTemplateRecord = {
   id: number;
   code: string;
-  name_de: string;
-  name_en: string;
+  name: string;
   category: ShiftTemplateCategory;
   display_order: number;
   is_active: boolean;
@@ -117,7 +116,7 @@ export type TeamMemberRecord = {
   user_id?: number | null;
 };
 
-type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string };
+type ShiftGroupOption = { id: number; code: string; name: string };
 
 const SHIFT_TEMPLATE_CATEGORIES: { value: ShiftTemplateCategory; label: TranslationKey }[] = [
   { value: "bereitschaftsdienst", label: "onCallDutyCategory" },
@@ -138,8 +137,7 @@ const FIELD_LABEL_MAP: Partial<Record<string, TranslationKey>> = {
   is_active: "isActive",
   created_at: "createdAt",
   code: "code",
-  name_de: "germanName",
-  name_en: "englishName",
+  name: "name",
   starts_at: "start",
   ends_at: "end",
   category: "category",
@@ -227,20 +225,6 @@ function cardTitle(row: AnyRecord, locale: Locale): string {
   if (typeof row.name === "string" && row.name.trim()) {
     return row.name;
   }
-  const de = row.name_de;
-  const en = row.name_en;
-  if (typeof de === "string" && de.trim()) {
-    if (locale === "de") {
-      return de;
-    }
-    if (typeof en === "string" && en.trim()) {
-      return en;
-    }
-    return de;
-  }
-  if (typeof en === "string" && en.trim()) {
-    return en;
-  }
   if (typeof row.message === "string" && row.message.trim()) {
     return row.message;
   }
@@ -305,8 +289,7 @@ function isShiftTemplateRecord(row: AnyRecord): row is ShiftTemplateRecord {
   return (
     typeof row.id === "number" &&
     typeof row.code === "string" &&
-    typeof row.name_de === "string" &&
-    typeof row.name_en === "string" &&
+    typeof row.name === "string" &&
     typeof row.category === "string" &&
     Array.isArray(row.variants)
   );
@@ -1201,7 +1184,7 @@ function ShiftTemplateEditorModal({
 }) {
   const { locale } = useLocale();
   const propertyDefinitions = useTeamMemberPropertyDefinitions();
-  const title = locale === "de" ? template.name_de : template.name_en;
+  const title = template.name;
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [removedVariantIds, setRemovedVariantIds] = useState<number[]>([]);
   const [pendingVariants, setPendingVariants] = useState<PendingVariantDraft[]>([]);
@@ -1284,8 +1267,7 @@ function ShiftTemplateEditorModal({
         method: "PATCH",
         body: JSON.stringify({
           code: form.get("code"),
-          name_de: form.get("name_de"),
-          name_en: form.get("name_en"),
+          name: form.get("name"),
           category: form.get("category"),
           constraints: shiftConstraintsToApi(templateConstraints),
           is_active: form.get("is_active") === "on"
@@ -1394,10 +1376,9 @@ function ShiftTemplateEditorModal({
             </button>
           </div>
         </div>
-        <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-[8rem_minmax(14rem,1fr)_minmax(14rem,1fr)_14rem_auto_auto]">
+        <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-[8rem_minmax(14rem,1fr)_14rem_auto_auto]">
           <Field label={t(locale, "code")}><input className={`${inputClass} w-full`} name="code" defaultValue={template.code} required /></Field>
-          <Field label={t(locale, "germanName")}><input className={`${inputClass} w-full`} name="name_de" defaultValue={template.name_de} required /></Field>
-          <Field label={t(locale, "englishName")}><input className={`${inputClass} w-full`} name="name_en" defaultValue={template.name_en} required /></Field>
+          <Field label={t(locale, "name")}><input className={`${inputClass} w-full`} name="name" defaultValue={template.name} required /></Field>
           <Field label={t(locale, "category")}><select className={`${inputClass} w-full`} name="category" defaultValue={template.category}>{categoryOptions(locale)}</select></Field>
           <label className="flex h-11 items-center gap-2 self-end rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
             <input name="is_active" type="checkbox" defaultChecked={template.is_active} />
@@ -1557,8 +1538,8 @@ function ShiftTemplateCard({
 }) {
   const { locale } = useLocale();
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const title = locale === "de" ? template.name_de : template.name_en;
-  const subtitle = locale === "de" ? template.name_en : template.name_de;
+  const title = template.name;
+  const subtitle = template.name;
 
   return (
     <>
@@ -1782,7 +1763,7 @@ export function TeamMemberEditorModal({
                   }}
                 />
                 <span className="font-mono text-xs">{group.code}</span>
-                {locale === "de" ? group.name_de : group.name_en}
+                {group.name}
               </label>
             ))}
           </div>
@@ -1938,7 +1919,7 @@ export function TeamMemberCreateModal({
                   }}
                 />
                 <span className="font-mono text-xs">{group.code}</span>
-                {locale === "de" ? group.name_de : group.name_en}
+                {group.name}
               </label>
             ))}
           </div>
@@ -1995,8 +1976,7 @@ export function ShiftTemplateForm() {
         method: "POST",
         body: JSON.stringify({
           code: form.get("code"),
-          name_de: form.get("name_de"),
-          name_en: form.get("name_en"),
+          name: form.get("name"),
           category: form.get("category"),
           constraints: shiftConstraintsToApi(createTemplateConstraints)
         })
@@ -2101,8 +2081,7 @@ export function ShiftTemplateForm() {
                   ))}
                 </select>
               </Field>
-              <Field label={t(locale, "germanName")}><input className={inputClass} name="name_de" required /></Field>
-              <Field label={t(locale, "englishName")}><input className={inputClass} name="name_en" required /></Field>
+              <Field label={t(locale, "name")}><input className={inputClass} name="name" required /></Field>
             </div>
             <div className="mt-4">
               <button

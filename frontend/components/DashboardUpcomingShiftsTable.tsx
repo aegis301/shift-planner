@@ -19,7 +19,7 @@ function dayClassLabel(locale: Locale, dayClass: string): string {
 }
 
 function templateLabel(locale: Locale, slot: UpcomingSlot): string {
-  const name = locale === "de" ? slot.template_name_de : slot.template_name_en;
+  const name = slot.template_name;
   const base = name ?? slot.template_code ?? "—";
   return slot.variant_label ? `${base} · ${slot.variant_label}` : base;
 }

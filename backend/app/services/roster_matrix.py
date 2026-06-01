@@ -9,6 +9,7 @@ from app.schemas import (
     MatrixDay,
     MatrixTeamMember,
     PlanningCellRead,
+    PlanningDayStatusDefinitionRead,
     PlanningShiftIntentRead,
     RosterMatrixRead,
     RosterSlotAssignmentClear,
@@ -19,6 +20,10 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
+from app.services.planning_day_status_definitions import (
+    ensure_default_planning_day_statuses,
+    list_planning_day_status_definitions,
+)
 from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_team_member_planning_patterns
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
@@ -158,6 +163,13 @@ def get_roster_matrix(
         shift_intents = [
             row for row in shift_intents if row.shift_group_id == shift_group_id and row.team_member_id in allowed_team_member_ids
         ]
+    ensure_default_planning_day_statuses(db, organization_id=organization_id)
+    day_status_definitions = [
+        PlanningDayStatusDefinitionRead.model_validate(row)
+        for row in list_planning_day_status_definitions(
+            db, organization_id=organization_id, active_only=True
+        )
+    ]
     return RosterMatrixRead(
         planning_period=period,
         team_members=[
@@ -177,6 +189,7 @@ def get_roster_matrix(
         slots=[_read_slot(slot) for slot in slots],
         assignments=[RosterSlotAssignmentRead.model_validate(assignment) for assignment in assignments],
         planning_cells=[PlanningCellRead.model_validate(cell) for cell in planning_cells],
+        day_status_definitions=day_status_definitions,
         shift_intents=shift_intents,
     )
 
@@ -196,8 +209,7 @@ def _read_slot(slot: RosterSlot) -> RosterSlotRead:
         ends_at=slot.ends_at,
         day_class=slot.day_class,
         template_code=template.code if template else None,
-        template_name_de=template.name_de if template else None,
-        template_name_en=template.name_en if template else None,
+        template_name=template.name if template else None,
         variant_label=variant.label if variant else None,
         category=template.category if template else None,
         source=slot.source,

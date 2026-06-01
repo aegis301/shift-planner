@@ -438,8 +438,7 @@ def create_team_member_tool(
 def create_shift_group_tool(
     token: str,
     code: str,
-    name_de: str,
-    name_en: str,
+    name: str,
     display_order: int = 0,
     is_active: bool = True,
 ) -> dict[str, Any]:
@@ -448,7 +447,7 @@ def create_shift_group_tool(
     with db_session() as db:
         group = create_shift_group(
             db,
-            ShiftGroupCreate(code=code, name_de=name_de, name_en=name_en, display_order=display_order, is_active=is_active),
+            ShiftGroupCreate(code=code, name=name, display_order=display_order, is_active=is_active),
             organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
@@ -515,8 +514,7 @@ def delete_team_member_tool(token: str, team_member_id: int) -> dict[str, bool]:
 def create_shift_template_tool(
     token: str,
     code: str,
-    name_de: str,
-    name_en: str,
+    name: str,
     category: str = "bereitschaftsdienst",
     display_order: int = 0,
     constraints: list[dict[str, Any]] | None = None,
@@ -529,8 +527,7 @@ def create_shift_template_tool(
                 db,
                 ShiftTemplateCreate(
                     code=code,
-                    name_de=name_de,
-                    name_en=name_en,
+                    name=name,
                     category=category,  # type: ignore[arg-type]
                     display_order=display_order,
                     constraints=constraints or [],
@@ -551,8 +548,7 @@ def update_shift_template_tool(
     token: str,
     shift_template_id: int,
     code: str | None = None,
-    name_de: str | None = None,
-    name_en: str | None = None,
+    name: str | None = None,
     category: str | None = None,
     display_order: int | None = None,
     is_active: bool | None = None,
@@ -567,8 +563,7 @@ def update_shift_template_tool(
                 shift_template_id,
                 ShiftTemplateUpdate(
                     code=code,
-                    name_de=name_de,
-                    name_en=name_en,
+                    name=name,
                     category=category,  # type: ignore[arg-type]
                     display_order=display_order,
                     is_active=is_active,

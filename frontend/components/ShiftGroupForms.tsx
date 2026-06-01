@@ -11,8 +11,7 @@ import { useLocale } from "@/components/LocaleProvider";
 type ShiftGroupRecord = {
   id: number;
   code: string;
-  name_de: string;
-  name_en: string;
+  name: string;
   display_order: number;
   is_active: boolean;
   created_at: string;
@@ -21,14 +20,14 @@ type ShiftGroupRecord = {
 };
 
 type TeamMemberOption = { id: number; first_name: string; last_name: string };
-type TemplateOption = { id: number; code: string; name_de: string; name_en: string };
+type TemplateOption = { id: number; code: string; name: string };
 
 function teamMemberLabel(option: TeamMemberOption): string {
   return `${option.first_name} ${option.last_name}`.trim();
 }
 
 function groupLabel(locale: Locale, group: ShiftGroupRecord) {
-  return locale === "de" ? group.name_de : group.name_en;
+  return group.name;
 }
 
 function ShiftGroupTeamMemberPicker({
@@ -177,8 +176,7 @@ function ShiftGroupEditorModal({
     const form = new FormData(event.currentTarget);
     const body = {
       code: String(form.get("code")),
-      name_de: String(form.get("name_de")),
-      name_en: String(form.get("name_en")),
+      name: String(form.get("name")),
       display_order: Number(form.get("display_order")),
       is_active: form.get("is_active") === "on"
     };
@@ -219,8 +217,7 @@ function ShiftGroupEditorModal({
         <div className="grid gap-4 md:grid-cols-2">
           <Field label={t(locale, "code")}><input className={inputClass} name="code" defaultValue={group?.code ?? ""} required /></Field>
           <Field label={t(locale, "displayOrder")}><input className={inputClass} name="display_order" type="number" defaultValue={group?.display_order ?? 0} /></Field>
-          <Field label={t(locale, "germanName")}><input className={inputClass} name="name_de" defaultValue={group?.name_de ?? ""} required /></Field>
-          <Field label={t(locale, "englishName")}><input className={inputClass} name="name_en" defaultValue={group?.name_en ?? ""} required /></Field>
+          <Field label={t(locale, "name")}><input className={inputClass} name="name" defaultValue={group?.name ?? ""} required /></Field>
           <label className="inline-flex h-11 items-center gap-2 rounded-lg bg-white px-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 md:col-span-2">
             <input name="is_active" type="checkbox" defaultChecked={group?.is_active ?? true} />
             {t(locale, "isActive")}
@@ -254,7 +251,7 @@ function ShiftGroupEditorModal({
                     }}
                   />
                   <span className="font-mono text-xs">{template.code}</span>
-                  <span>{locale === "de" ? template.name_de : template.name_en}</span>
+                  <span>{template.name}</span>
                 </label>
               ))}
             </div>
@@ -286,11 +283,11 @@ export function ShiftGroupForm() {
     const [nextGroups, nextTeamMembers, nextTemplates] = await Promise.all([
       apiFetch<ShiftGroupRecord[]>("/api/v1/shift-groups"),
       apiFetch<Array<{ id: number; first_name: string; last_name: string }>>("/api/v1/team-members?active_only=true"),
-      apiFetch<Array<{ id: number; code: string; name_de: string; name_en: string }>>("/api/v1/shift-templates")
+      apiFetch<Array<{ id: number; code: string; name: string }>>("/api/v1/shift-templates")
     ]);
     setGroups(nextGroups);
     setTeamMemberOptions(nextTeamMembers.map((m) => ({ id: m.id, first_name: m.first_name, last_name: m.last_name })));
-    setTemplates(nextTemplates.map((row) => ({ id: row.id, code: row.code, name_de: row.name_de, name_en: row.name_en })));
+    setTemplates(nextTemplates.map((row) => ({ id: row.id, code: row.code, name: row.name})));
   }, []);
 
   useEffect(() => {

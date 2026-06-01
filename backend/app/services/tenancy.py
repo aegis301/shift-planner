@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Organization, PlanningPeriod, ShiftGroup, TeamMember
+from app.services.planning_day_status_definitions import ensure_default_planning_day_statuses
 
 
 def get_organization(db: Session, organization_id: int) -> Organization | None:
@@ -14,6 +15,8 @@ def ensure_default_organization(db: Session) -> Organization:
         return org
     org = Organization(id=1, name="Default", slug="default", plan_tier="team")
     db.add(org)
+    db.flush()
+    ensure_default_planning_day_statuses(db, organization_id=org.id)
     db.commit()
     db.refresh(org)
     return org

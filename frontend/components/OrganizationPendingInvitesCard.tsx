@@ -12,7 +12,7 @@ import { t, type Locale } from "@/lib/i18n";
 
 type OrgBrief = { id: number; name: string; slug: string; plan_tier: string };
 
-type ShiftGroupOption = { id: number; code: string; name_de: string; name_en: string; is_active?: boolean };
+type ShiftGroupOption = { id: number; code: string; name: string; is_active?: boolean };
 
 type PendingInvite = {
   id: number;
@@ -38,7 +38,7 @@ function roleLabel(locale: Locale, role: string): string {
 }
 
 function groupOptLabel(locale: Locale, g: ShiftGroupOption): string {
-  const name = locale === "de" ? g.name_de : g.name_en;
+  const name = g.name;
   const base = `${g.code} — ${name}`;
   if (g.is_active === false) {
     return `${base} (${t(locale, "orgManagementShiftGroupInactiveTag")})`;

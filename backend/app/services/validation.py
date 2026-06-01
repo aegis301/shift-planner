@@ -4,7 +4,8 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import PlanningCell, PlanningShiftIntent, RosterSlotAssignment, RuleConfig
-from app.schemas import PLANNED_DUTY_STATUSES, UNAVAILABLE_STATUSES, ValidationWarning
+from app.schemas import PLANNED_DUTY_STATUSES, ValidationWarning
+from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.constraints import evaluate_assignment_constraints, resolve_slot_constraints
 from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_patterns_for_members
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
@@ -162,8 +163,8 @@ def validate_roster(
     cells = list_planning_cells(db, planning_period_id=planning_period_id)
     slot_assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     intents = list_planning_shift_intents(db, planning_period_id=planning_period_id)
-    _add_matrix_conflicts(warnings, cells)
-    _add_roster_slot_matrix_conflicts(warnings, slot_assignments, cells)
+    _add_matrix_conflicts(db, warnings, cells, organization_id=organization_id)
+    _add_roster_slot_matrix_conflicts(db, warnings, slot_assignments, cells, organization_id=organization_id)
     _add_roster_template_no_go_conflicts(warnings, slot_assignments, intents)
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
     _add_consecutive_weekend_warnings(warnings, slot_assignments)
@@ -186,12 +187,14 @@ def validate_roster(
     ]
 
 
-def _add_matrix_conflicts(warnings: list[ValidationWarning], cells: list[PlanningCell]) -> None:
+def _add_matrix_conflicts(
+    db: Session, warnings: list[ValidationWarning], cells: list[PlanningCell], *, organization_id: int
+) -> None:
     duties = [cell for cell in cells if cell.status in PLANNED_DUTY_STATUSES]
     unavailable = {
         (cell.team_member_id, cell.cell_date): cell
         for cell in cells
-        if cell.status in UNAVAILABLE_STATUSES
+        if cell_status_blocks_roster_assignment(db, organization_id=organization_id, status=cell.status)
     }
     for duty in duties:
         conflict = unavailable.get((duty.team_member_id, duty.cell_date))
@@ -209,14 +212,17 @@ def _add_matrix_conflicts(warnings: list[ValidationWarning], cells: list[Plannin
 
 
 def _add_roster_slot_matrix_conflicts(
+    db: Session,
     warnings: list[ValidationWarning],
     assignments: list[RosterSlotAssignment],
     cells: list[PlanningCell],
+    *,
+    organization_id: int,
 ) -> None:
     unavailable = {
         (cell.team_member_id, cell.cell_date): cell
         for cell in cells
-        if cell.status in UNAVAILABLE_STATUSES
+        if cell_status_blocks_roster_assignment(db, organization_id=organization_id, status=cell.status)
     }
     for assignment in assignments:
         conflict = unavailable.get((assignment.team_member_id, assignment.roster_slot.slot_date))

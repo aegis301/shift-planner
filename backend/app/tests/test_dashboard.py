@@ -99,7 +99,7 @@ def dash_client():
         db.flush()
         _seed_membership(db, "admin@example.com", "secret", "admin")
         planner = _seed_membership(db, "planner@example.com", "secret", "planner")
-        sg = ShiftGroup(organization_id=1, code="icu", name_de="ICU", name_en="ICU", display_order=0)
+        sg = ShiftGroup(organization_id=1, code="icu", name="ICU", display_order=0)
         db.add(sg)
         db.flush()
         db.add(UserShiftGroup(user_id=planner.id, shift_group_id=sg.id))
@@ -144,7 +144,7 @@ def test_admin_dashboard_api(dash_client: TestClient):
 def test_member_upcoming_shifts_all_future(dash_db):
     db = dash_db
     today = date.today()
-    sg = ShiftGroup(organization_id=1, code="icu", name_de="ICU", name_en="ICU", display_order=0)
+    sg = ShiftGroup(organization_id=1, code="icu", name="ICU", display_order=0)
     db.add(sg)
     db.flush()
     member = TeamMember(
@@ -161,8 +161,7 @@ def test_member_upcoming_shifts_all_future(dash_db):
     template = ShiftTemplate(
         organization_id=1,
         code="RD",
-        name_de="Rufdienst",
-        name_en="Stand-by",
+        name="Rufdienst",
         category="rufdienst",
         display_order=0,
     )

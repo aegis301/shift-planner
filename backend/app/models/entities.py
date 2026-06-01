@@ -50,8 +50,7 @@ class ShiftGroup(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     code: Mapped[str] = mapped_column(String(50), index=True)
-    name_de: Mapped[str] = mapped_column(String(255))
-    name_en: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255))
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -206,6 +205,24 @@ class TeamMemberPropertyValue(Base):
     property_definition: Mapped[TeamMemberPropertyDefinition] = relationship(back_populates="values")
 
 
+class PlanningDayStatusDefinition(Base):
+    __tablename__ = "planning_day_status_definitions"
+    __table_args__ = (UniqueConstraint("organization_id", "code", name="uq_planning_day_status_org_code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    code: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str] = mapped_column(String(64))
+    color_preset: Mapped[str] = mapped_column(String(32))
+    blocks_roster_assignment: Mapped[bool] = mapped_column(Boolean, default=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TeamMemberPlanningPattern(Base):
     __tablename__ = "team_member_planning_patterns"
 
@@ -232,8 +249,7 @@ class ShiftTemplate(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     code: Mapped[str] = mapped_column(String(50), index=True)
-    name_de: Mapped[str] = mapped_column(String(255))
-    name_en: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255))
     category: Mapped[str] = mapped_column(String(50))
     constraints: Mapped[list] = mapped_column(JSON, default=list)
     display_order: Mapped[int] = mapped_column(Integer, default=0)

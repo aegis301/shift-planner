@@ -20,6 +20,7 @@ from app.schemas import (
     ValidationWarning,
 )
 from app.services.audit import record_audit
+from app.services.planning_day_status_definitions import assert_valid_planning_cell_status
 from app.services.tenancy import require_team_member_in_org
 
 PatternWeekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -198,6 +199,8 @@ def replace_team_member_planning_patterns(
     require_team_member_in_org(db, team_member_id, organization_id)
     for item in payload.patterns:
         validate_pattern_severity(item.rule, severity=item.severity, policy=policy)
+        if item.rule.type in ("allowed_calendar_week_parity", "recurring_weekday_status"):
+            assert_valid_planning_cell_status(db, organization_id=organization_id, status=item.rule.status)
     existing = list(
         db.scalars(
             select(TeamMemberPlanningPattern).where(
