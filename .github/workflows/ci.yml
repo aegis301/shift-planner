@@ -55,6 +55,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and start production app services
         env:
+          DOCKER_BUILDKIT: 1
+          COMPOSE_DOCKER_CLI_BUILD: 1
           SESSION_SECRET: ci-session-secret
           SESSION_COOKIE_SECURE: "true"
           BACKEND_CORS_ORIGINS: https://shift-planner.example.invalid
