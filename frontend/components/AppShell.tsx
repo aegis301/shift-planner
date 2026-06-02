@@ -92,7 +92,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const { me, loading, refreshMe } = useSession();
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
@@ -102,7 +102,9 @@ export function AppShell({
   useEffect(() => {
     try {
       const v = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
-      if (v === "0") {
+      if (v === "1") {
+        setSidebarExpanded(true);
+      } else if (v === "0") {
         setSidebarExpanded(false);
       }
       const legacy = window.localStorage.getItem("shift-planner-sidebar-open");
