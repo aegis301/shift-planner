@@ -12,7 +12,7 @@ import {
 } from "@/lib/rosterWorkload";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
-import { t, type Locale } from "@/lib/i18n";
+import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import {
   planningDayStatusBadgeClass,
   planningDayStatusByCode,
