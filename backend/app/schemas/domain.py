@@ -1283,3 +1283,4 @@ class TeamMemberDashboardRead(BaseModel):
     my_validation_errors: int
     my_validation_warnings: int
     upcoming_slots: list[DashboardUpcomingSlot]
+    past_slots: list[DashboardUpcomingSlot] = []

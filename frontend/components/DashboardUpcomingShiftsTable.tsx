@@ -27,12 +27,14 @@ function templateLabel(locale: Locale, slot: UpcomingSlot): string {
 export function DashboardUpcomingShiftsTable({
   locale,
   slots,
+  emptyLabelKey = "dashboardUpcomingShiftsEmpty",
 }: {
   locale: Locale;
   slots: UpcomingSlot[];
+  emptyLabelKey?: TranslationKey;
 }) {
   if (slots.length === 0) {
-    return <p className="text-sm text-slate-500">{t(locale, "dashboardUpcomingShiftsEmpty")}</p>;
+    return <p className="text-sm text-slate-500">{t(locale, emptyLabelKey)}</p>;
   }
 
   return (

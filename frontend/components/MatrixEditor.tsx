@@ -208,11 +208,16 @@ function teamMemberLabel(member: MatrixTeamMember): string {
   return teamMemberPlanningDisplayName(member);
 }
 
-function shiftGroupQuery(shiftGroupId?: string) {
-  if (!shiftGroupId) {
-    return "";
+function matrixApiQuery(shiftGroupId?: string, teamMemberPortal?: boolean) {
+  const params = new URLSearchParams();
+  if (shiftGroupId) {
+    params.set("shift_group_id", shiftGroupId);
   }
-  return `?shift_group_id=${encodeURIComponent(shiftGroupId)}`;
+  if (teamMemberPortal) {
+    params.set("team_member_portal", "true");
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
 }
 
 export function MatrixEditor({
@@ -220,6 +225,7 @@ export function MatrixEditor({
   compact = false,
   shiftGroupId,
   editableMemberId,
+  teamMemberPortal = false,
   readOnly = false,
   dayFeedbackAlwaysVisible = false,
   onChanged
@@ -228,6 +234,7 @@ export function MatrixEditor({
   compact?: boolean;
   shiftGroupId?: string;
   editableMemberId?: number;
+  teamMemberPortal?: boolean;
   readOnly?: boolean;
   dayFeedbackAlwaysVisible?: boolean;
   onChanged?: () => void | Promise<void>;
@@ -250,7 +257,10 @@ export function MatrixEditor({
   const [daySheet, setDaySheet] = useState<{ date: string; memberId: number } | null>(null);
   const isNarrow = useMediaQuery("(max-width: 1023px)");
 
-  const groupQuery = useMemo(() => shiftGroupQuery(shiftGroupId), [shiftGroupId]);
+  const groupQuery = useMemo(
+    () => matrixApiQuery(shiftGroupId, teamMemberPortal),
+    [shiftGroupId, teamMemberPortal]
+  );
   const monthWeeks = useMemo(() => (matrix ? splitMonthIntoWeeks(matrix.days) : []), [matrix]);
 
   useEffect(() => {
@@ -367,7 +377,7 @@ export function MatrixEditor({
         if (!shiftGroupId) {
           return;
         }
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells/clear?shift_group_id=${encodeURIComponent(shiftGroupId)}`, {
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells/clear${groupQuery}`, {
           method: "POST",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate })
         });
@@ -375,7 +385,7 @@ export function MatrixEditor({
         if (!shiftGroupId) {
           return;
         }
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells?shift_group_id=${encodeURIComponent(shiftGroupId)}`, {
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells${groupQuery}`, {
           method: "PUT",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null })
         });
@@ -395,7 +405,7 @@ export function MatrixEditor({
       }
       setSavingCells((count) => count + 1);
       try {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/shift-intents/bulk`, {
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
           method: "PUT",
           body: JSON.stringify({
             intents: [
@@ -416,7 +426,7 @@ export function MatrixEditor({
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, loadMatrixById, locale, onChanged, shiftGroupId]
+    [activePeriodId, groupQuery, loadMatrixById, locale, onChanged, shiftGroupId]
   );
 
   async function persistNote(memberId: number, monthlyCommentOnly = false) {

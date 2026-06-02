@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-06-02
+- **My planning self-scope:** Wishes matrix reads and writes on `/my-planning` pass `team_member_portal=true` so admins and planners with a linked profile see and edit only their own row (full team matrix remains on `/planning`). Planners are no longer auto-filtered on the planning workspace without that flag.
+- **My planning shifts tab:** Third tab on `/my-planning` lists upcoming and past assigned shifts (same table as the team-member dashboard). Team-member dashboard API adds `past_slots`.
+
 ## 2026-06-13
 - **Per-shift-group planning status:** `planning_period_shift_group_statuses` stores `draft` / `preliminary` / `published` per `(planning_period, shift_group)`. Publish and rollback endpoints require `shift_group_id`; matrix and roster payloads include `shift_group_planning_status`. Alembic `202606130001` backfills from month-level status and duplicates existing wishes cells/notes per member shift group.
 - **Wishes isolation:** `planning_cells` and `team_member_period_notes` are keyed by `shift_group_id` so day status and month notes differ per Dienstgruppe. Regenerate roster accepts optional `shift_group_id` to rebuild only that group's template slots.

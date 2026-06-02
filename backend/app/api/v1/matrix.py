@@ -70,10 +70,15 @@ def _require_shift_group_id_for_write(shift_group_id: int | None) -> int:
 
 
 def _team_member_feedback_access(
-    db: Session, user: User, planning_period_id: int, shift_group_id: int | None
+    db: Session,
+    user: User,
+    planning_period_id: int,
+    shift_group_id: int | None,
+    *,
+    team_member_portal: bool = False,
 ) -> int:
     group_id = _require_shift_group_id_for_write(shift_group_id)
-    if can_use_planning_ui(user):
+    if can_use_planning_ui(user) and not team_member_portal:
         _matrix_access(db, user, group_id)
         return group_id
     try:
@@ -94,10 +99,51 @@ def _team_member_feedback_access(
     return group_id
 
 
+def _filter_matrix_to_linked_member(
+    db: Session,
+    user: User,
+    matrix: PlanningMatrixRead,
+    *,
+    team_member_portal: bool,
+) -> PlanningMatrixRead:
+    if not use_team_member_filtered_matrix_view(db, user, team_member_portal=team_member_portal):
+        return matrix
+    member = _linked_team_member_or_403(db, user)
+    return matrix.model_copy(
+        update={
+            "team_members": [row for row in matrix.team_members if row.id == member.id],
+            "cells": [row for row in matrix.cells if row.team_member_id == member.id],
+            "shift_intents": [row for row in matrix.shift_intents if row.team_member_id == member.id],
+        }
+    )
+
+
+def _assert_portal_self_write(
+    db: Session,
+    user: User,
+    team_member_id: int,
+    *,
+    team_member_portal: bool,
+) -> None:
+    if can_use_planning_ui(user) and not team_member_portal:
+        return
+    member = _linked_team_member_or_403(db, user)
+    try:
+        assert_team_member_cell_access(
+            user,
+            member,
+            team_member_id,
+            team_member_portal=team_member_portal,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
 @router.get("/{planning_period_id}", response_model=PlanningMatrixRead)
 def get_matrix(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -106,16 +152,9 @@ def get_matrix(
         matrix = get_planning_matrix(
             db, planning_period_id, organization_id=user.organization_id, shift_group_id=shift_group_id
         )
-        if use_team_member_filtered_matrix_view(db, user):
-            member = _linked_team_member_or_403(db, user)
-            return matrix.model_copy(
-                update={
-                    "team_members": [row for row in matrix.team_members if row.id == member.id],
-                    "cells": [row for row in matrix.cells if row.team_member_id == member.id],
-                    "shift_intents": [row for row in matrix.shift_intents if row.team_member_id == member.id],
-                }
-            )
-        return matrix
+        return _filter_matrix_to_linked_member(
+            db, user, matrix, team_member_portal=team_member_portal
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -125,16 +164,16 @@ def put_cell(
     planning_period_id: int,
     payload: PlanningCellUpsert,
     shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
-    if not can_use_planning_ui(user):
-        member = _linked_team_member_or_403(db, user)
-        try:
-            assert_team_member_cell_access(user, member, payload.team_member_id)
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    group_id = _team_member_feedback_access(
+        db, user, planning_period_id, shift_group_id, team_member_portal=team_member_portal
+    )
+    _assert_portal_self_write(
+        db, user, payload.team_member_id, team_member_portal=team_member_portal
+    )
     try:
         return upsert_planning_cell(
             db,
@@ -154,17 +193,17 @@ def put_cells_bulk(
     planning_period_id: int,
     payload: PlanningCellBulkUpsert,
     shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
-    if not can_use_planning_ui(user):
-        member = _linked_team_member_or_403(db, user)
-        for cell in payload.cells:
-            try:
-                assert_team_member_cell_access(user, member, cell.team_member_id)
-            except PermissionError as exc:
-                raise HTTPException(status_code=403, detail=str(exc)) from exc
+    group_id = _team_member_feedback_access(
+        db, user, planning_period_id, shift_group_id, team_member_portal=team_member_portal
+    )
+    for cell in payload.cells:
+        _assert_portal_self_write(
+            db, user, cell.team_member_id, team_member_portal=team_member_portal
+        )
     try:
         return bulk_upsert_planning_cells(
             db,
@@ -183,20 +222,21 @@ def put_cells_bulk(
 def put_shift_intents_bulk(
     planning_period_id: int,
     payload: PlanningShiftIntentBulkUpsert,
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not can_use_planning_ui(user):
+    if not can_use_planning_ui(user) or team_member_portal:
         if not payload.intents:
             raise HTTPException(status_code=400, detail="shift_group_id is required")
         group_id = payload.intents[0].shift_group_id
-        _team_member_feedback_access(db, user, planning_period_id, group_id)
-        member = _linked_team_member_or_403(db, user)
+        _team_member_feedback_access(
+            db, user, planning_period_id, group_id, team_member_portal=team_member_portal
+        )
         for item in payload.intents:
-            try:
-                assert_team_member_cell_access(user, member, item.team_member_id)
-            except PermissionError as exc:
-                raise HTTPException(status_code=403, detail=str(exc)) from exc
+            _assert_portal_self_write(
+                db, user, item.team_member_id, team_member_portal=team_member_portal
+            )
             try:
                 assert_team_member_shift_group_access(db, user, item.shift_group_id)
             except PermissionError as exc:
@@ -215,16 +255,16 @@ def clear_cell(
     planning_period_id: int,
     payload: PlanningCellClear,
     shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
-    if not can_use_planning_ui(user):
-        member = _linked_team_member_or_403(db, user)
-        try:
-            assert_team_member_cell_access(user, member, payload.team_member_id)
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    group_id = _team_member_feedback_access(
+        db, user, planning_period_id, shift_group_id, team_member_portal=team_member_portal
+    )
+    _assert_portal_self_write(
+        db, user, payload.team_member_id, team_member_portal=team_member_portal
+    )
     deleted = clear_planning_cell(
         db,
         planning_period_id,
@@ -241,6 +281,7 @@ def clear_cell(
 def get_notes(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -251,7 +292,7 @@ def get_notes(
         organization_id=user.organization_id,
         shift_group_id=shift_group_id,
     )
-    if use_team_member_filtered_matrix_view(db, user):
+    if use_team_member_filtered_matrix_view(db, user, team_member_portal=team_member_portal):
         member = _linked_team_member_or_403(db, user)
         notes = [note for note in notes if note.team_member_id == member.id]
     return notes
@@ -262,17 +303,18 @@ def put_note(
     planning_period_id: int,
     payload: TeamMemberPeriodNoteUpsert,
     shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
+    group_id = _team_member_feedback_access(
+        db, user, planning_period_id, shift_group_id, team_member_portal=team_member_portal
+    )
     payload_effective = payload
-    if not can_use_planning_ui(user):
-        member = _linked_team_member_or_403(db, user)
-        try:
-            assert_team_member_cell_access(user, member, payload.team_member_id)
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if not can_use_planning_ui(user) or team_member_portal:
+        _assert_portal_self_write(
+            db, user, payload.team_member_id, team_member_portal=team_member_portal
+        )
         previous = get_team_member_period_note(
             db,
             planning_period_id=planning_period_id,

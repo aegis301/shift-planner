@@ -107,6 +107,18 @@ export type TeamMemberDashboard = {
     period_year: number | null;
     period_month: number | null;
   }[];
+  past_slots: {
+    slot_date: string;
+    template_code: string | null;
+    template_name: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
+    category: string | null;
+    variant_label: string | null;
+    day_class: string | null;
+    period_year: number | null;
+    period_month: number | null;
+  }[];
 };
 
 export function periodLabel(year: number, month: number): string {

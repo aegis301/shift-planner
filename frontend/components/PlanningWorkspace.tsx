@@ -9,6 +9,7 @@ import {
   ArrowUp,
   BarChart3,
   CalendarCheck,
+  CalendarClock,
   Columns3,
   Download,
   Heart,
@@ -22,6 +23,7 @@ import {
 import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
+import { DashboardUpcomingShiftsTable } from "@/components/DashboardUpcomingShiftsTable";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -29,6 +31,7 @@ import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrix
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
+import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashboard";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
@@ -58,7 +61,7 @@ type ValidationWarning = {
 };
 
 type PlanningViewMode = "stacked" | "tabs";
-type PlanningTab = "wishes" | "roster" | "analysis";
+type PlanningTab = "wishes" | "roster" | "analysis" | "shifts";
 type DestructiveAction =
   | "delete-period"
   | "regenerate-roster"
@@ -124,6 +127,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
   const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
   const [groupPlanningStatus, setGroupPlanningStatus] = useState<ShiftGroupPlanningStatus | null>(null);
+  const [memberShifts, setMemberShifts] = useState<TeamMemberDashboard | null>(null);
+  const [memberShiftsLoading, setMemberShiftsLoading] = useState(false);
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
 
@@ -224,6 +229,19 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }, [userMe, variant]);
 
   const activePeriod = periods.find((period) => String(period.id) === periodId);
+
+  useEffect(() => {
+    if (!teamMemberPortalUi || !shiftGroupId) {
+      setMemberShifts(null);
+      return;
+    }
+    const year = activePeriod?.year ?? new Date().getFullYear();
+    setMemberShiftsLoading(true);
+    void fetchTeamMemberDashboard({ year, shiftGroupId })
+      .then(setMemberShifts)
+      .catch(() => setMemberShifts(null))
+      .finally(() => setMemberShiftsLoading(false));
+  }, [teamMemberPortalUi, shiftGroupId, activePeriod?.year]);
   const stats = useMemo(() => buildMemberWorkloadRows(rosterMatrix, warnings), [rosterMatrix, warnings]);
   const duplicateMemberDayKeys = useMemo(() => duplicateMemberDayKeysFromWarnings(warnings), [warnings]);
   const duplicateDayWarningsCount = useMemo(
@@ -496,6 +514,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           compact
           shiftGroupId={shiftGroupId || undefined}
           editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
+          teamMemberPortal={teamMemberPortalUi}
           readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
           dayFeedbackAlwaysVisible={Boolean(teamMemberPortalUi && teamMemberWishesEditable)}
           onChanged={handleWishesChanged}
@@ -546,6 +565,35 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
+    </section>
+  ) : null;
+
+  const shiftsSection = teamMemberPortalUi ? (
+    <section className="grid gap-4">
+      <div>
+        <h2 className="text-xl font-semibold text-ink">{t(locale, "myPlanningShiftsSection")}</h2>
+        <p className="mt-1 text-sm text-slate-600">{t(locale, "myPlanningShiftsSectionHelp")}</p>
+      </div>
+      {!shiftGroupId ? (
+        <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
+      ) : memberShiftsLoading ? (
+        <p className="text-sm text-slate-600">{t(locale, "saving")}</p>
+      ) : memberShifts ? (
+        <div className="grid gap-5">
+          <div className="grid gap-2">
+            <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardUpcomingShifts")}</h3>
+            <p className="text-sm text-slate-600">{t(locale, "dashboardUpcomingShiftsHint")}</p>
+            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.upcoming_slots} />
+          </div>
+          <div className="grid gap-2">
+            <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardPastShifts")}</h3>
+            <p className="text-sm text-slate-600">{t(locale, "dashboardPastShiftsHint")}</p>
+            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.past_slots} emptyLabelKey="dashboardPastShiftsEmpty" />
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
+      )}
     </section>
   ) : null;
 
@@ -904,7 +952,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               {(teamMemberPortalUi
                 ? ([
                     ["wishes", "wishesSection", Heart],
-                    ["roster", "rosterSection", CalendarCheck]
+                    ["roster", "rosterSection", CalendarCheck],
+                    ["shifts", "myPlanningShiftsSection", CalendarClock]
                   ] as const)
                 : ([
                     ["wishes", "wishesSection", Heart],
@@ -937,6 +986,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 {analysisSection}
               </>
             ) : null}
+            {activeTab === "shifts" ? shiftsSection : null}
           </div>
         )
       ) : (

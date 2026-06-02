@@ -115,8 +115,14 @@ def assert_team_member_shift_group_access(db: Session, user: User, shift_group_i
     return member
 
 
-def assert_team_member_cell_access(user: User, member: TeamMember, payload_team_member_id: int) -> None:
-    if can_use_planning_ui(user):
+def assert_team_member_cell_access(
+    user: User,
+    member: TeamMember,
+    payload_team_member_id: int,
+    *,
+    team_member_portal: bool = False,
+) -> None:
+    if can_use_planning_ui(user) and not team_member_portal:
         return
     if payload_team_member_id != member.id:
         raise PermissionError("Can only edit your own planning row")
@@ -126,12 +132,17 @@ def roles_allowed_for_team_member_user_link() -> set[str]:
     return {ROLE_ADMIN, ROLE_PLANNER, ROLE_TEAM_MEMBER, ROLE_APPLICANT}
 
 
-def use_team_member_filtered_matrix_view(db: Session, user: User) -> bool:
+def use_team_member_filtered_matrix_view(
+    db: Session,
+    user: User,
+    *,
+    team_member_portal: bool = False,
+) -> bool:
+    if team_member_portal:
+        return get_linked_team_member(db, user) is not None
     if is_admin(user):
         return False
     if is_pure_team_member(user):
-        return True
-    if is_shift_planner_role(user) and get_linked_team_member(db, user) is not None:
         return True
     return False
 

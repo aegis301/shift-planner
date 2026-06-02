@@ -454,6 +454,9 @@ export const dictionaries = {
       "Feedback: Nutzen Sie „Tages-Feedback“ unter jedem Datum zum vorläufigen Dienstplan; „Monats-Kommentar“ oben für Überblick. Ihre Planung sieht das in der Wunschmatrix.",
     myPlanningRosterFeedbackRedirect:
       "Änderungswünsche und Kommentare zum Plan tragen Sie im Tab „Wünsche“ ein (Tages-Feedback und Monats-Kommentar), nicht im schreibgeschützten Dienstplan.",
+    myPlanningShiftsSection: "Meine Schichten",
+    myPlanningShiftsSectionHelp:
+      "Übersicht Ihrer vergangenen und anstehenden Dienste (Vorplanung und veröffentlicht).",
     wishesDayFeedbackFieldLabel: "Tages-Feedback",
     wishesMatrixPlannerDayCommentCue: "Rückmeldung",
     dayCommentMarker: "Kommentar",
@@ -672,6 +675,9 @@ export const dictionaries = {
     dashboardUpcomingShifts: "Nächste Dienste",
     dashboardUpcomingShiftsHint: "Alle geplanten Schichten ab heute (Vorplanung und veröffentlicht).",
     dashboardUpcomingShiftsEmpty: "Keine anstehenden Schichten in den nächsten Wochen.",
+    dashboardPastShifts: "Vergangene Dienste",
+    dashboardPastShiftsHint: "Abgeschlossene Schichten aus veröffentlichten oder vorläufigen Monaten.",
+    dashboardPastShiftsEmpty: "Keine vergangenen Schichten im gewählten Zeitraum.",
     dashboardUpcomingShiftsColDate: "Datum",
     dashboardUpcomingShiftsColShift: "Schicht",
     dashboardUpcomingShiftsColTime: "Zeit",
@@ -1127,6 +1133,9 @@ export const dictionaries = {
       "Feedback: use Day feedback under each date to react to the preliminary roster; Monthly comment above for overall notes. Planners see this in the wishes matrix.",
     myPlanningRosterFeedbackRedirect:
       "To send comments or change requests, use the Wishes tab (day feedback and monthly comment). The roster here is read-only.",
+    myPlanningShiftsSection: "My shifts",
+    myPlanningShiftsSectionHelp:
+      "Overview of your past and upcoming assignments (preliminary and published months).",
     wishesDayFeedbackFieldLabel: "Day feedback",
     wishesMatrixPlannerDayCommentCue: "Team feedback",
     dayCommentMarker: "Comment",
@@ -1345,6 +1354,9 @@ export const dictionaries = {
     dashboardUpcomingShifts: "Upcoming shifts",
     dashboardUpcomingShiftsHint: "All scheduled shifts from today onward (preliminary and published months).",
     dashboardUpcomingShiftsEmpty: "No upcoming shifts in the next few weeks.",
+    dashboardPastShifts: "Past shifts",
+    dashboardPastShiftsHint: "Completed shifts from preliminary or published months.",
+    dashboardPastShiftsEmpty: "No past shifts in the selected period.",
     dashboardUpcomingShiftsColDate: "Date",
     dashboardUpcomingShiftsColShift: "Shift",
     dashboardUpcomingShiftsColTime: "Time",

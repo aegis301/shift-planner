@@ -645,7 +645,7 @@ def _member_shifts_by_month(
     ]
 
 
-def _member_upcoming_shifts(
+def _member_assigned_shifts(
     db: Session,
     *,
     organization_id: int,
@@ -655,7 +655,6 @@ def _member_upcoming_shifts(
 ) -> list[DashboardUpcomingSlot]:
     if not template_ids or not shift_group_ids:
         return []
-    today = _today()
     from app.models import ShiftGroupShiftTemplate
 
     stmt = (
@@ -670,12 +669,11 @@ def _member_upcoming_shifts(
         .where(
             PlanningPeriod.organization_id == organization_id,
             RosterSlotAssignment.team_member_id == team_member_id,
-            RosterSlot.slot_date >= today,
             RosterSlot.shift_template_id.in_(template_ids),
         )
         .order_by(RosterSlot.slot_date, RosterSlot.starts_at)
     )
-    upcoming: list[DashboardUpcomingSlot] = []
+    assigned: list[DashboardUpcomingSlot] = []
     for slot in db.scalars(stmt).unique():
         period = slot.planning_period
         if period is None or slot.shift_template_id is None:
@@ -705,7 +703,7 @@ def _member_upcoming_shifts(
             continue
         template = slot.shift_template
         variant = slot.shift_variant
-        upcoming.append(
+        assigned.append(
             DashboardUpcomingSlot(
                 slot_date=slot.slot_date,
                 template_code=template.code if template else None,
@@ -719,7 +717,53 @@ def _member_upcoming_shifts(
                 period_month=period.month if period else None,
             )
         )
-    return upcoming
+    return assigned
+
+
+def _member_upcoming_shifts(
+    db: Session,
+    *,
+    organization_id: int,
+    team_member_id: int,
+    template_ids: set[int],
+    shift_group_ids: set[int],
+) -> list[DashboardUpcomingSlot]:
+    today = _today()
+    return [
+        slot
+        for slot in _member_assigned_shifts(
+            db,
+            organization_id=organization_id,
+            team_member_id=team_member_id,
+            template_ids=template_ids,
+            shift_group_ids=shift_group_ids,
+        )
+        if slot.slot_date >= today
+    ]
+
+
+def _member_past_shifts(
+    db: Session,
+    *,
+    organization_id: int,
+    team_member_id: int,
+    template_ids: set[int],
+    shift_group_ids: set[int],
+) -> list[DashboardUpcomingSlot]:
+    today = _today()
+    past = [
+        slot
+        for slot in _member_assigned_shifts(
+            db,
+            organization_id=organization_id,
+            team_member_id=team_member_id,
+            template_ids=template_ids,
+            shift_group_ids=shift_group_ids,
+        )
+        if slot.slot_date < today
+    ]
+    past.reverse()
+    return past
 
 
 def get_team_member_dashboard(
@@ -777,6 +821,13 @@ def get_team_member_dashboard(
     my_warnings = 0
     scoped_template_ids = template_ids or set()
     upcoming = _member_upcoming_shifts(
+        db,
+        organization_id=organization_id,
+        team_member_id=team_member_id,
+        template_ids=scoped_template_ids,
+        shift_group_ids=scoped_groups,
+    )
+    past = _member_past_shifts(
         db,
         organization_id=organization_id,
         team_member_id=team_member_id,
@@ -850,6 +901,7 @@ def get_team_member_dashboard(
         my_validation_errors=my_errors,
         my_validation_warnings=my_warnings,
         upcoming_slots=upcoming,
+        past_slots=past,
     )
 
 

@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
   "fastmcp>=2.0.0",
   "email-validator>=2.1.0",
+  "itsdangerous>=2.2.0",
   "passlib>=1.7.4",
   "psycopg>=3.2.0,<3.4",
   "pydantic-settings>=2.5.0",

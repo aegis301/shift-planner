@@ -205,6 +205,59 @@ def test_team_member_nickname_profile_and_matrix(client: TestClient):
     assert roster_member["nickname"] == "Planner"
 
 
+def test_admin_matrix_team_member_portal_filters_to_linked_self(client: TestClient):
+    login(client)
+    me = client.get("/api/v1/auth/me").json()
+    uid = me["id"]
+    self_member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Admin",
+            "last_name": "Self",
+            "email": "admin-self-portal@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+            "user_id": uid,
+        },
+    ).json()
+    other_member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Other",
+            "last_name": "Person",
+            "email": "other-portal@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
+    ).json()
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2031, "month": 3}).json()["id"]
+    full = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert len(full["team_members"]) >= 2
+    portal = client.get(
+        f"/api/v1/matrix/{period_id}?shift_group_id=1&team_member_portal=true"
+    ).json()
+    assert len(portal["team_members"]) == 1
+    assert portal["team_members"][0]["id"] == self_member["id"]
+    denied = client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1&team_member_portal=true",
+        json={
+            "team_member_id": other_member["id"],
+            "cell_date": "2031-03-01",
+            "status": "frei",
+        },
+    )
+    assert denied.status_code == 403
+    allowed = client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1&team_member_portal=true",
+        json={
+            "team_member_id": self_member["id"],
+            "cell_date": "2031-03-01",
+            "status": "frei",
+        },
+    )
+    assert allowed.status_code == 200
+
+
 def test_login_without_organization_slug_when_email_unique(client: TestClient):
     response = client.post(
         "/api/v1/auth/login",
