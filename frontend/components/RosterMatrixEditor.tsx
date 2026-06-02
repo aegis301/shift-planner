@@ -100,8 +100,15 @@ type RosterShiftIntent = {
   kind: ShiftIntentKind;
 };
 
+type ShiftGroupPlanningStatus = {
+  shift_group_id: number;
+  status: "draft" | "preliminary" | "published";
+  published_at?: string | null;
+};
+
 export type RosterMatrix = {
   planning_period: PlanningPeriod;
+  shift_group_planning_status?: ShiftGroupPlanningStatus | null;
   team_members: RosterMatrixTeamMember[];
   days: MatrixDay[];
   shift_templates: ShiftTemplateSummary[];

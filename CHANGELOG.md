@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-06-13
+- **Per-shift-group planning status:** `planning_period_shift_group_statuses` stores `draft` / `preliminary` / `published` per `(planning_period, shift_group)`. Publish and rollback endpoints require `shift_group_id`; matrix and roster payloads include `shift_group_planning_status`. Alembic `202606130001` backfills from month-level status and duplicates existing wishes cells/notes per member shift group.
+- **Wishes isolation:** `planning_cells` and `team_member_period_notes` are keyed by `shift_group_id` so day status and month notes differ per Dienstgruppe. Regenerate roster accepts optional `shift_group_id` to rebuild only that group's template slots.
+- **Planning UI:** Status toolbar uses a per-group dropdown (`PlanningPeriodStatusMenu`); gates (exports, team-member edit/read) follow the selected group's status.
+
 ## 2026-06-12
 - **Single name for org-defined entities:** Shift groups, shift templates, and planning day status definitions now use one `name` or `label` field instead of paired `name_de`/`name_en` or `label_de`/`label_en`. Alembic `202606120001` backfills from the former German column when both existed. REST, roster/dashboard payloads (`template_name`, `shift_group_name`), exports, and MCP tools use the unified shape. UI forms and planning surfaces show org names as entered; the DE/EN locale switch remains for system copy only.
 

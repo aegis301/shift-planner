@@ -160,7 +160,9 @@ def validate_roster(
 ) -> list[ValidationWarning]:
     require_planning_period_in_org(db, planning_period_id, organization_id)
     warnings: list[ValidationWarning] = []
-    cells = list_planning_cells(db, planning_period_id=planning_period_id)
+    cells = list_planning_cells(
+        db, planning_period_id=planning_period_id, shift_group_id=shift_group_id
+    )
     slot_assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     intents = list_planning_shift_intents(db, planning_period_id=planning_period_id)
     _add_matrix_conflicts(db, warnings, cells, organization_id=organization_id)

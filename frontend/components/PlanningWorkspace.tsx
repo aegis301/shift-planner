@@ -19,6 +19,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
+import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
@@ -32,12 +33,19 @@ import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
+type ShiftGroupPlanningStatus = {
+  shift_group_id: number;
+  status: "draft" | "preliminary" | "published";
+  published_at?: string | null;
+};
+
 type PlanningPeriod = {
   id: number;
   year: number;
   month: number;
   status: string;
   published_at?: string | null;
+  shift_group_statuses?: ShiftGroupPlanningStatus[];
 };
 
 type ValidationWarning = {
@@ -115,6 +123,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
   const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
+  const [groupPlanningStatus, setGroupPlanningStatus] = useState<ShiftGroupPlanningStatus | null>(null);
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
 
@@ -223,10 +232,31 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   );
   const exportRequiresShiftGroup = plannerNeedsShiftGroup || teamMemberPortalUi;
   const exportBlockedByShiftGroup = exportRequiresShiftGroup && !shiftGroupId;
-  const exportPublishedReady = activePeriod?.status === "published";
+  const exportPublishedReady = groupPlanningStatus?.status === "published";
   const teamMemberWishesEditable =
-    teamMemberPortalUi && (activePeriod?.status === "draft" || activePeriod?.status === "preliminary");
-  const teamMemberRosterVisible = teamMemberPortalUi ? activePeriod?.status === "preliminary" || activePeriod?.status === "published" : true;
+    teamMemberPortalUi &&
+    (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
+  const teamMemberRosterVisible = teamMemberPortalUi
+    ? groupPlanningStatus?.status === "preliminary" || groupPlanningStatus?.status === "published"
+    : true;
+
+  const loadGroupPlanningStatus = useCallback(
+    async (nextPeriodId: string) => {
+      if (!nextPeriodId || !shiftGroupId) {
+        setGroupPlanningStatus(null);
+        return;
+      }
+      try {
+        const matrix = await apiFetch<{ shift_group_planning_status: ShiftGroupPlanningStatus | null }>(
+          `/api/v1/matrix/${nextPeriodId}?shift_group_id=${encodeURIComponent(shiftGroupId)}`
+        );
+        setGroupPlanningStatus(matrix.shift_group_planning_status ?? null);
+      } catch {
+        setGroupPlanningStatus(null);
+      }
+    },
+    [shiftGroupId]
+  );
 
   const loadWarnings = useCallback(
     async (nextPeriodId: string) => {
@@ -246,7 +276,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         return;
       }
       try {
-        setRosterMatrix(await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`));
+        const nextRoster = await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`);
+        setRosterMatrix(nextRoster);
+        setGroupPlanningStatus(nextRoster.shift_group_planning_status ?? null);
         if (teamMemberPortalUi) {
           setMessage("");
         }
@@ -263,6 +295,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     },
     [teamMemberPortalUi, locale, shiftGroupQuery]
   );
+
+  useEffect(() => {
+    void loadGroupPlanningStatus(periodId);
+  }, [periodId, shiftGroupId, loadGroupPlanningStatus]);
 
   function updateShiftGroup(next: string) {
     setShiftGroupId(next);
@@ -370,23 +406,42 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     if (!periodId || !destructiveAction) {
       return;
     }
+    const statusQuery = shiftGroupQuery;
+    const groupName = shiftGroups.find((g) => String(g.id) === shiftGroupId)?.name;
     if (destructiveAction === "status-published") {
-      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/publish`, { method: "POST" });
+      await apiFetch<ShiftGroupPlanningStatus>(`/api/v1/planning-periods/${periodId}/publish${statusQuery}`, {
+        method: "POST"
+      });
       await refreshPeriods();
+      await loadGroupPlanningStatus(periodId);
       await loadRosterMatrix(periodId);
-      setMessage(t(locale, "periodPublished"));
+      setMessage(
+        groupName ? `${t(locale, "periodPublishedGroup")} (${groupName})` : t(locale, "periodPublishedGroup")
+      );
     } else if (destructiveAction === "status-preliminary") {
-      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/preliminary`, { method: "POST" });
+      await apiFetch<ShiftGroupPlanningStatus>(`/api/v1/planning-periods/${periodId}/preliminary${statusQuery}`, {
+        method: "POST"
+      });
       await refreshPeriods();
+      await loadGroupPlanningStatus(periodId);
       await loadRosterMatrix(periodId);
-      setMessage(t(locale, "periodSetPreliminary"));
+      setMessage(
+        groupName
+          ? `${t(locale, "periodSetPreliminaryGroup")} (${groupName})`
+          : t(locale, "periodSetPreliminaryGroup")
+      );
     } else if (destructiveAction === "status-draft") {
-      await apiFetch<PlanningPeriod>(`/api/v1/planning-periods/${periodId}/draft`, { method: "POST" });
+      await apiFetch<ShiftGroupPlanningStatus>(`/api/v1/planning-periods/${periodId}/draft${statusQuery}`, {
+        method: "POST"
+      });
       await refreshPeriods();
+      await loadGroupPlanningStatus(periodId);
       await loadRosterMatrix(periodId);
-      setMessage(t(locale, "periodSetDraft"));
+      setMessage(
+        groupName ? `${t(locale, "periodSetDraftGroup")} (${groupName})` : t(locale, "periodSetDraftGroup")
+      );
     } else if (destructiveAction === "regenerate-roster") {
-      await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster`, {
+      await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster${statusQuery}`, {
         method: "POST"
       });
       setRosterReloadToken((value) => value + 1);
@@ -408,6 +463,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
 
   const handleRosterChange = useCallback(async (nextMatrix: RosterMatrix) => {
     setRosterMatrix(nextMatrix);
+    setGroupPlanningStatus(nextMatrix.shift_group_planning_status ?? null);
     await loadWarnings(String(nextMatrix.planning_period.id));
   }, [loadWarnings]);
 
@@ -426,7 +482,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
         {teamMemberPortalUi && teamMemberWishesEditable ? (
           <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-100">
-            {activePeriod?.status === "preliminary"
+            {groupPlanningStatus?.status === "preliminary"
               ? t(locale, "myPlanningWishesFeedbackHintPreliminary")
               : t(locale, "myPlanningWishesFeedbackHintDraft")}
           </p>
@@ -453,7 +509,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
-        {teamMemberPortalUi && activePeriod?.status === "preliminary" && teamMemberWishesEditable ? (
+        {teamMemberPortalUi && groupPlanningStatus?.status === "preliminary" && teamMemberWishesEditable ? (
           <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950 ring-1 ring-sky-100">
             {t(locale, "myPlanningRosterFeedbackRedirect")}
           </p>
@@ -553,54 +609,15 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   >
                     <Download size={18} />
                   </button>
-                  {activePeriod?.status === "draft" ? (
-                    <button
-                      aria-label={t(locale, "setPlanningPeriodPreliminary")}
-                      className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!periodId}
-                      onClick={() => setDestructiveAction("status-preliminary")}
-                      title={t(locale, "setPlanningPeriodPreliminary")}
-                      type="button"
-                    >
-                      <CalendarCheck size={18} />
-                    </button>
-                  ) : null}
-                  {activePeriod?.status === "preliminary" ? (
-                    <>
-                      <button
-                        aria-label={t(locale, "setPlanningPeriodDraft")}
-                        className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={!periodId}
-                        onClick={() => setDestructiveAction("status-draft")}
-                        title={t(locale, "setPlanningPeriodDraft")}
-                        type="button"
-                      >
-                        <CalendarCheck size={18} />
-                      </button>
-                      <button
-                        aria-label={t(locale, "publishPlanningPeriod")}
-                        className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-900 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={!periodId}
-                        onClick={() => setDestructiveAction("status-published")}
-                        title={t(locale, "publishPlanningPeriod")}
-                        type="button"
-                      >
-                        <CalendarCheck size={18} />
-                      </button>
-                    </>
-                  ) : null}
-                  {activePeriod?.status === "published" ? (
-                    <button
-                      aria-label={t(locale, "setPlanningPeriodPreliminary")}
-                      className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={!periodId}
-                      onClick={() => setDestructiveAction("status-preliminary")}
-                      title={t(locale, "setPlanningPeriodPreliminary")}
-                      type="button"
-                    >
-                      <CalendarCheck size={18} />
-                    </button>
-                  ) : null}
+                  <Field label={t(locale, "planningPeriodStatus")}>
+                    <PlanningPeriodStatusMenu
+                      disabled={!periodId || !shiftGroupId}
+                      disabledReason="planningPeriodStatusSelectGroup"
+                      locale={locale}
+                      onSelectAction={setDestructiveAction}
+                      status={groupPlanningStatus?.status ?? null}
+                    />
+                  </Field>
                   <button
                     aria-label={t(locale, "regenerateRoster")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
@@ -665,22 +682,26 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 <p>
                   {t(locale, "selectedMonth")}: {monthLabel(activePeriod)}
                 </p>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-                    activePeriod.status === "published"
-                      ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
-                      : activePeriod.status === "preliminary"
-                        ? "bg-sky-50 text-sky-900 ring-sky-200"
-                        : "bg-amber-50 text-amber-900 ring-amber-200"
-                  }`}
-                >
-                  {t(locale, periodStatusLabelKey(activePeriod.status))}
-                </span>
+                {groupPlanningStatus ? (
+                  <span
+                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                      groupPlanningStatus.status === "published"
+                        ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
+                        : groupPlanningStatus.status === "preliminary"
+                          ? "bg-sky-50 text-sky-900 ring-sky-200"
+                          : "bg-amber-50 text-amber-900 ring-amber-200"
+                    }`}
+                  >
+                    {t(locale, periodStatusLabelKey(groupPlanningStatus.status))}
+                  </span>
+                ) : shiftGroupId ? null : (
+                  <span className="text-xs text-slate-500">{t(locale, "planningPeriodStatusSelectGroup")}</span>
+                )}
               </div>
             ) : null}
             {message ? <p className="text-emerald-700">{message}</p> : null}
           </div>
-          {teamMemberPortalUi && activePeriod?.status === "preliminary" ? (
+          {teamMemberPortalUi && groupPlanningStatus?.status === "preliminary" ? (
             <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 ring-1 ring-sky-100">
               <p className="font-semibold">{t(locale, "myPlanningPreliminaryBannerTitle")}</p>
               <p className="mt-1 text-sky-900">{t(locale, "myPlanningPreliminaryBannerBody")}</p>

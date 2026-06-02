@@ -429,6 +429,12 @@ export const dictionaries = {
     periodPublished: "Planungsmonat veröffentlicht.",
     periodSetPreliminary: "Planungsmonat auf vorläufig gesetzt.",
     periodSetDraft: "Planungsmonat auf Entwurf gesetzt.",
+    planningPeriodStatus: "Planstatus",
+    planningPeriodStatusMenu: "Planstatus für Dienstgruppe",
+    planningPeriodStatusSelectGroup: "Dienstgruppe wählen …",
+    periodPublishedGroup: "Plan für diese Dienstgruppe veröffentlicht.",
+    periodSetPreliminaryGroup: "Plan für diese Dienstgruppe auf vorläufig gesetzt.",
+    periodSetDraftGroup: "Plan für diese Dienstgruppe auf Entwurf gesetzt.",
     setPlanningPeriodPreliminaryConfirm:
       "Teammitglieder können den Dienstplan danach einsehen und Kommentare für Feedback hinterlassen. Fortfahren?",
     setPlanningPeriodDraftConfirm:
@@ -1097,6 +1103,12 @@ export const dictionaries = {
     periodPublished: "Planning month published.",
     periodSetPreliminary: "Planning month set to preliminary.",
     periodSetDraft: "Planning month set to draft.",
+    planningPeriodStatus: "Plan status",
+    planningPeriodStatusMenu: "Plan status for shift group",
+    planningPeriodStatusSelectGroup: "Select shift group …",
+    periodPublishedGroup: "Plan published for this shift group.",
+    periodSetPreliminaryGroup: "Plan set to preliminary for this shift group.",
+    periodSetDraftGroup: "Plan set to draft for this shift group.",
     setPlanningPeriodPreliminaryConfirm:
       "Team members can view the roster and leave comment feedback after this change. Continue?",
     setPlanningPeriodDraftConfirm:

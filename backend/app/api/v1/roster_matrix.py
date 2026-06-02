@@ -22,7 +22,7 @@ from app.services.roster_matrix import (
     upsert_roster_slot_assignment,
 )
 from app.services.exports import export_roster_matrix_pdf, export_roster_matrix_xlsx
-from app.services.planning import is_team_member_roster_visible
+from app.services.planning import get_shift_group_planning_status, is_team_member_roster_visible
 
 router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
 export_router = APIRouter(tags=["roster-matrix"])
@@ -51,10 +51,15 @@ def _resolve_published_roster_export_scope(
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None or period.organization_id != user.organization_id:
-        raise HTTPException(status_code=404, detail="Planning period not found")
-    if not is_team_member_roster_visible(period.status):
+    if shift_group_id is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
+    row = get_shift_group_planning_status(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=user.organization_id,
+    )
+    if row is None or not is_team_member_roster_visible(row.status):
         raise HTTPException(status_code=403, detail="Roster is not visible for team members")
     return shift_group_id
 
@@ -82,13 +87,16 @@ def get_final_roster_matrix(
     linked = get_linked_team_member(db, user)
     if linked is None:
         raise HTTPException(status_code=403, detail="No linked team member profile")
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None or period.organization_id != user.organization_id:
-        raise HTTPException(status_code=404, detail="Planning period not found")
-    if not is_team_member_roster_visible(period.status):
-        raise HTTPException(status_code=403, detail="Roster is not visible for team members")
     if shift_group_id is None:
         raise HTTPException(status_code=400, detail="shift_group_id is required")
+    row = get_shift_group_planning_status(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=user.organization_id,
+    )
+    if row is None or not is_team_member_roster_visible(row.status):
+        raise HTTPException(status_code=403, detail="Roster is not visible for team members")
     try:
         assert_team_member_shift_group_access(db, user, shift_group_id)
     except PermissionError as exc:

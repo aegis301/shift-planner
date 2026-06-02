@@ -63,6 +63,9 @@ from app.services.planning import (
     create_planning_period,
     delete_planning_period,
     list_planning_periods,
+    publish_shift_group_planning,
+    set_shift_group_planning_to_draft,
+    set_shift_group_planning_to_preliminary,
 )
 from app.services.roster_matrix import (
     clear_roster_slot_assignment,
@@ -706,16 +709,26 @@ def create_planning_period_tool(token: str, year: int, month: int) -> dict[str, 
 
 
 @mcp.tool
-def regenerate_planning_period_roster_tool(token: str, planning_period_id: int) -> dict[str, Any]:
-    """Delete roster slots and assignments for a period, then regenerate slots from current templates."""
+def regenerate_planning_period_roster_tool(
+    token: str, planning_period_id: int, shift_group_id: int | None = None
+) -> dict[str, Any]:
+    """Delete roster slots and assignments for a period (optionally one shift group), then regenerate slots from current templates."""
     require_token(token)
     with db_session() as db:
         reset_roster_slots_for_period(
-            db, planning_period_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+            shift_group_id=shift_group_id,
         )
-        return get_roster_matrix(db, planning_period_id, organization_id=mcp_organization_id()).model_dump(
-            mode="json"
-        )
+        return get_roster_matrix(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        ).model_dump(mode="json")
 
 
 @mcp.tool
@@ -734,12 +747,13 @@ def delete_planning_period_tool(token: str, planning_period_id: int) -> dict[str
 def upsert_planning_cell_tool(
     token: str,
     planning_period_id: int,
+    shift_group_id: int,
     team_member_id: int,
     cell_date: str,
     status: str,
     comment: str | None = None,
 ) -> dict[str, Any]:
-    """Set one matrix cell status/comment. Requires MCP admin token."""
+    """Set one matrix cell status/comment for a shift group. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         cell = upsert_planning_cell(
@@ -752,6 +766,7 @@ def upsert_planning_cell_tool(
                 comment=comment,
             ),
             organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
             actor="mcp",
             source="mcp",
         )
@@ -762,9 +777,10 @@ def upsert_planning_cell_tool(
 def bulk_upsert_planning_cells_tool(
     token: str,
     planning_period_id: int,
+    shift_group_id: int,
     cells: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Set multiple matrix cells atomically. Requires MCP admin token."""
+    """Set multiple matrix cells atomically for a shift group. Requires MCP admin token."""
     require_token(token)
     payload = PlanningCellBulkUpsert(
         cells=[
@@ -781,7 +797,13 @@ def bulk_upsert_planning_cells_tool(
         return [
             serialize_model(cell)
             for cell in bulk_upsert_planning_cells(
-                db, planning_period_id, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+                db,
+                planning_period_id,
+                payload,
+                organization_id=mcp_organization_id(),
+                shift_group_id=shift_group_id,
+                actor="mcp",
+                source="mcp",
             )
         ]
 
@@ -821,13 +843,14 @@ def bulk_upsert_planning_shift_intents_tool(
 def save_team_member_period_note_tool(
     token: str,
     planning_period_id: int,
+    shift_group_id: int,
     team_member_id: int,
     summary: str | None = None,
     wishes_response_received: bool = False,
     planning_preferences: str | None = None,
     sync_planning_preferences: bool = False,
 ) -> dict[str, Any]:
-    """Save a team member's monthly matrix note; optionally sync permanent planning preferences on the team member. Requires MCP admin token."""
+    """Save a team member's monthly matrix note for a shift group; optionally sync permanent planning preferences on the team member. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         note = save_team_member_period_note(
@@ -841,10 +864,61 @@ def save_team_member_period_note_tool(
                 sync_planning_preferences=sync_planning_preferences,
             ),
             organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
             actor="mcp",
             source="mcp",
         )
         return serialize_model(note)
+
+
+@mcp.tool
+def publish_shift_group_planning_tool(token: str, planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Publish the roster for one shift group in a planning month. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = publish_shift_group_planning(
+            db,
+            planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return serialize_model(row)
+
+
+@mcp.tool
+def set_shift_group_planning_preliminary_tool(
+    token: str, planning_period_id: int, shift_group_id: int
+) -> dict[str, Any]:
+    """Set one shift group's plan to preliminary. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = set_shift_group_planning_to_preliminary(
+            db,
+            planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return serialize_model(row)
+
+
+@mcp.tool
+def set_shift_group_planning_draft_tool(token: str, planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Set one shift group's plan back to draft. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = set_shift_group_planning_to_draft(
+            db,
+            planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return serialize_model(row)
 
 
 @mcp.tool

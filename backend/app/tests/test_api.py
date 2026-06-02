@@ -49,6 +49,7 @@ def client():
         db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
         db.flush()
         _seed_membership(db, "admin@example.com", "secret", 1, "admin")
+        db.add(ShiftGroup(organization_id=1, code="default_sg", name="Default SG", display_order=0))
         db.commit()
 
     def override_get_db():
@@ -373,7 +374,8 @@ def test_auth_me_admin_organization_shift_groups_reflects_org(client: TestClient
     login(client)
     empty = client.get("/api/v1/auth/me").json()
     assert empty["role"] == "admin"
-    assert empty["organization_shift_groups"] == []
+    assert len(empty["organization_shift_groups"]) == 1
+    assert empty["organization_shift_groups"][0]["code"] == "default_sg"
     r = client.post(
         "/api/v1/shift-groups",
         json={"code": "g-me", "name": "Gm", "display_order": 0, "is_active": True},
@@ -800,7 +802,13 @@ def test_roster_validation_no_go_conflict(client: TestClient):
     login(client)
     team_member_id = client.post(
         "/api/v1/team-members",
-        json={"first_name": "Max", "last_name": "Planck", "email": "max@example.com", "employment_percentage": 100},
+        json={
+            "first_name": "Max",
+            "last_name": "Planck",
+            "email": "max@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -826,7 +834,7 @@ def test_roster_validation_no_go_conflict(client: TestClient):
     roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == request_date)
     client.put(
-        f"/api/v1/matrix/{period_id}/cells",
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={"team_member_id": team_member_id, "cell_date": request_date, "status": "frei"},
     )
     client.put(
@@ -841,12 +849,18 @@ def test_matrix_cell_note_and_csv_export(client: TestClient):
     login(client)
     team_member_id = client.post(
         "/api/v1/team-members",
-        json={"first_name": "Matrix", "last_name": "TeamMember", "email": "matrix@example.com", "employment_percentage": 100},
+        json={
+            "first_name": "Matrix",
+            "last_name": "TeamMember",
+            "email": "matrix@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
     ).json()["id"]
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
 
     response = client.put(
-        f"/api/v1/matrix/{period_id}/cells",
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={
             "team_member_id": team_member_id,
             "cell_date": "2026-07-11",
@@ -862,7 +876,7 @@ def test_matrix_cell_note_and_csv_export(client: TestClient):
     assert matrix["cells"][0]["comment"] == "Urlaub aus E-Mail"
 
     note = client.put(
-        f"/api/v1/matrix/{period_id}/notes",
+        f"/api/v1/matrix/{period_id}/notes?shift_group_id=1",
         json={
             "team_member_id": team_member_id,
             "summary": "Urlaub 11.-19.07.",
@@ -885,12 +899,18 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
     login(client)
     team_member_id = client.post(
         "/api/v1/team-members",
-        json={"first_name": "Bulk", "last_name": "TeamMember", "email": "bulk@example.com", "employment_percentage": 80},
+        json={
+            "first_name": "Bulk",
+            "last_name": "TeamMember",
+            "email": "bulk@example.com",
+            "employment_percentage": 80,
+            "shift_group_ids": [1],
+        },
     ).json()["id"]
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
 
     response = client.put(
-        f"/api/v1/matrix/{period_id}/cells/bulk",
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
         json={
             "cells": [
                 {"team_member_id": team_member_id, "cell_date": "2026-08-01", "status": "frei"},
@@ -907,7 +927,7 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
     assert len(response.json()) == 2
 
     clear_response = client.post(
-        f"/api/v1/matrix/{period_id}/cells/clear",
+        f"/api/v1/matrix/{period_id}/cells/clear?shift_group_id=1",
         json={"team_member_id": team_member_id, "cell_date": "2026-08-01"},
     )
     assert clear_response.status_code == 200
@@ -922,7 +942,13 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     login(client)
     team_member_id = client.post(
         "/api/v1/team-members",
-        json={"first_name": "Roster", "last_name": "TeamMember", "email": "roster@example.com", "employment_percentage": 100},
+        json={
+            "first_name": "Roster",
+            "last_name": "TeamMember",
+            "email": "roster@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -958,7 +984,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     assert assignment_response.json()["team_member_id"] == team_member_id
 
     client.put(
-        f"/api/v1/matrix/{period_id}/cells",
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={"team_member_id": team_member_id, "cell_date": "2026-07-11", "status": "urlaub"},
     )
     warnings = client.get(f"/api/v1/validation/{period_id}").json()
@@ -985,6 +1011,7 @@ def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
             "last_name": "Member",
             "email": "export-member@example.com",
             "employment_percentage": 100,
+            "shift_group_ids": [1],
         },
     ).json()["id"]
     template = client.post(
@@ -1014,12 +1041,12 @@ def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
     )
     assert assign.status_code == 200
 
-    denied = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx")
+    denied = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx?shift_group_id=1")
     assert denied.status_code == 403
 
-    assert client.post(f"/api/v1/planning-periods/{period_id}/publish").status_code == 200
+    assert client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id=1").status_code == 200
 
-    xlsx = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx")
+    xlsx = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx?shift_group_id=1")
     assert xlsx.status_code == 200
     assert xlsx.headers["content-type"].startswith(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1027,7 +1054,7 @@ def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
     assert f'attachment; filename="roster-matrix-{period_id}.xlsx"' == xlsx.headers["content-disposition"]
     assert xlsx.content.startswith(b"PK")
 
-    pdf = client.get(f"/api/v1/exports/roster-matrix/{period_id}.pdf")
+    pdf = client.get(f"/api/v1/exports/roster-matrix/{period_id}.pdf?shift_group_id=1")
     assert pdf.status_code == 200
     assert pdf.headers["content-type"].startswith("application/pdf")
     assert f'attachment; filename="roster-matrix-{period_id}.pdf"' == pdf.headers["content-disposition"]
@@ -1346,7 +1373,13 @@ def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClien
     login(client)
     member_id = client.post(
         "/api/v1/team-members",
-        json={"first_name": "Cross", "last_name": "Day", "email": "cross-day@example.com", "employment_percentage": 100},
+        json={
+            "first_name": "Cross",
+            "last_name": "Day",
+            "email": "cross-day@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
     ).json()["id"]
     template = client.post(
         "/api/v1/shift-templates",
@@ -1366,7 +1399,7 @@ def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClien
     )
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
     client.put(
-        f"/api/v1/matrix/{period_id}/cells",
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={"team_member_id": member_id, "cell_date": "2026-07-02", "status": "urlaub"},
     )
     roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
@@ -1831,7 +1864,7 @@ def test_delete_planning_period_removes_period_and_related_data(client: TestClie
     ).json()["id"]
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 10}).json()["id"]
     client.put(
-        f"/api/v1/matrix/{period_id}/cells",
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={"team_member_id": team_member_id, "cell_date": "2026-10-01", "status": "urlaub"},
     )
     client.put(
@@ -1898,7 +1931,7 @@ def test_delete_team_member_clears_related_data(client: TestClient):
     ).json()
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 12}).json()["id"]
     client.put(
-        f"/api/v1/matrix/{period_id}/cells",
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={"team_member_id": created["id"], "cell_date": "2026-12-01", "status": "urlaub"},
     )
     client.put(
@@ -2004,25 +2037,70 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
 def test_planning_period_status_transitions(client: TestClient):
     login(client)
     pid = client.post("/api/v1/planning-periods", json={"year": 2028, "month": 1}).json()["id"]
-    to_preliminary = client.post(f"/api/v1/planning-periods/{pid}/preliminary")
+    to_preliminary = client.post(f"/api/v1/planning-periods/{pid}/preliminary?shift_group_id=1")
     assert to_preliminary.status_code == 200
     assert to_preliminary.json()["status"] == "preliminary"
     assert to_preliminary.json().get("published_at") is None
 
-    pub = client.post(f"/api/v1/planning-periods/{pid}/publish")
+    pub = client.post(f"/api/v1/planning-periods/{pid}/publish?shift_group_id=1")
     assert pub.status_code == 200
     assert pub.json()["status"] == "published"
     assert pub.json().get("published_at") is not None
 
-    rollback = client.post(f"/api/v1/planning-periods/{pid}/preliminary")
+    rollback = client.post(f"/api/v1/planning-periods/{pid}/preliminary?shift_group_id=1")
     assert rollback.status_code == 200
     assert rollback.json()["status"] == "preliminary"
     assert rollback.json().get("published_at") is None
 
-    to_draft = client.post(f"/api/v1/planning-periods/{pid}/draft")
+    to_draft = client.post(f"/api/v1/planning-periods/{pid}/draft?shift_group_id=1")
     assert to_draft.status_code == 200
     assert to_draft.json()["status"] == "draft"
     assert to_draft.json().get("published_at") is None
+
+
+def test_publish_one_shift_group_leaves_other_unchanged(client: TestClient):
+    login(client)
+    second_group = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "sg_b", "name": "Group B", "display_order": 1, "is_active": True},
+    ).json()
+    pid = client.post("/api/v1/planning-periods", json={"year": 2029, "month": 3}).json()["id"]
+    assert client.post(f"/api/v1/planning-periods/{pid}/publish?shift_group_id=1").status_code == 200
+    period = next(row for row in client.get("/api/v1/planning-periods").json() if row["id"] == pid)
+    statuses = {row["shift_group_id"]: row["status"] for row in period["shift_group_statuses"]}
+    assert statuses[1] == "published"
+    assert statuses[second_group["id"]] == "draft"
+
+
+def test_wishes_cells_isolated_per_shift_group(client: TestClient):
+    login(client)
+    second_group = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "sg_two", "name": "Group Two", "display_order": 2, "is_active": True},
+    ).json()
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Iso",
+            "last_name": "Lated",
+            "email": "iso@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1, second_group["id"]],
+        },
+    ).json()["id"]
+    pid = client.post("/api/v1/planning-periods", json={"year": 2029, "month": 4}).json()["id"]
+    assert (
+        client.put(
+            f"/api/v1/matrix/{pid}/cells?shift_group_id=1",
+            json={"team_member_id": member_id, "cell_date": "2029-04-01", "status": "urlaub"},
+        ).status_code
+        == 200
+    )
+    matrix_b = client.get(f"/api/v1/matrix/{pid}?shift_group_id={second_group['id']}").json()
+    assert matrix_b["cells"] == []
+    matrix_a = client.get(f"/api/v1/matrix/{pid}?shift_group_id=1").json()
+    assert len(matrix_a["cells"]) == 1
+    assert matrix_a["cells"][0]["status"] == "urlaub"
 
 
 def test_team_member_shift_templates_forbidden(team_member_client: TestClient):
@@ -2142,15 +2220,15 @@ def test_team_member_roster_requires_preliminary_or_published(team_member_client
     login_team_member(team_member_client)
     assert team_member_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 403
     login(team_member_client)
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/preliminary").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/preliminary?shift_group_id=1").status_code == 200
     login_team_member(team_member_client)
     assert team_member_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 200
     login(team_member_client)
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/publish").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/publish?shift_group_id=1").status_code == 200
     login_team_member(team_member_client)
     assert team_member_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 200
     login(team_member_client)
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/draft").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/draft?shift_group_id=1").status_code == 200
     login_team_member(team_member_client)
     assert team_member_client.get(f"/api/v1/roster-matrix/{pid}?shift_group_id=1").status_code == 403
 
@@ -2177,7 +2255,7 @@ def test_team_member_published_roster_binary_export_requires_scope(team_member_c
         },
     )
     pid = team_member_client.post("/api/v1/planning-periods", json={"year": 2032, "month": 1}).json()["id"]
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/preliminary").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/preliminary?shift_group_id=1").status_code == 200
 
     login_team_member(team_member_client)
     no_scope = team_member_client.get(f"/api/v1/exports/roster-matrix/{pid}.xlsx?team_member_portal=true")
@@ -2189,7 +2267,7 @@ def test_team_member_published_roster_binary_export_requires_scope(team_member_c
     assert ok.content.startswith(b"PK")
 
     login(team_member_client)
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/draft").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/draft?shift_group_id=1").status_code == 200
     login_team_member(team_member_client)
     denied = team_member_client.get(
         f"/api/v1/exports/roster-matrix/{pid}.pdf?team_member_portal=true&shift_group_id=1"
@@ -2203,40 +2281,40 @@ def test_team_member_wishes_editable_in_draft_and_preliminary_not_published(team
     login_team_member(team_member_client)
 
     draft_cell = team_member_client.put(
-        f"/api/v1/matrix/{pid}/cells",
+        f"/api/v1/matrix/{pid}/cells?shift_group_id=1",
         json={"team_member_id": 1, "cell_date": "2033-01-01", "status": "frei", "comment": "draft"},
     )
     assert draft_cell.status_code == 200
     draft_note = team_member_client.put(
-        f"/api/v1/matrix/{pid}/notes",
+        f"/api/v1/matrix/{pid}/notes?shift_group_id=1",
         json={"team_member_id": 1, "summary": "month draft"},
     )
     assert draft_note.status_code == 200
 
     login(team_member_client)
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/preliminary").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/preliminary?shift_group_id=1").status_code == 200
     login_team_member(team_member_client)
     allowed = team_member_client.put(
-        f"/api/v1/matrix/{pid}/cells",
+        f"/api/v1/matrix/{pid}/cells?shift_group_id=1",
         json={"team_member_id": 1, "cell_date": "2033-01-01", "status": "frei", "comment": "preliminary"},
     )
     assert allowed.status_code == 200
     note_allowed = team_member_client.put(
-        f"/api/v1/matrix/{pid}/notes",
+        f"/api/v1/matrix/{pid}/notes?shift_group_id=1",
         json={"team_member_id": 1, "summary": "month comment"},
     )
     assert note_allowed.status_code == 200
 
     login(team_member_client)
-    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/publish").status_code == 200
+    assert team_member_client.post(f"/api/v1/planning-periods/{pid}/publish?shift_group_id=1").status_code == 200
     login_team_member(team_member_client)
     denied_published = team_member_client.put(
-        f"/api/v1/matrix/{pid}/cells",
+        f"/api/v1/matrix/{pid}/cells?shift_group_id=1",
         json={"team_member_id": 1, "cell_date": "2033-01-02", "status": "frei", "comment": "published"},
     )
     assert denied_published.status_code == 403
     denied_note_published = team_member_client.put(
-        f"/api/v1/matrix/{pid}/notes",
+        f"/api/v1/matrix/{pid}/notes?shift_group_id=1",
         json={"team_member_id": 1, "summary": "after publish"},
     )
     assert denied_note_published.status_code == 403
@@ -2264,7 +2342,7 @@ def test_planner_published_roster_binary_exports_require_shift_group(planner_cli
         },
     )
     pid = planner_client.post("/api/v1/planning-periods", json={"year": 2041, "month": 1}).json()["id"]
-    assert planner_client.post(f"/api/v1/planning-periods/{pid}/publish").status_code == 200
+    assert planner_client.post(f"/api/v1/planning-periods/{pid}/publish?shift_group_id=1").status_code == 200
 
     login_planner(planner_client)
     assert planner_client.get(f"/api/v1/exports/roster-matrix/{pid}.xlsx").status_code == 403

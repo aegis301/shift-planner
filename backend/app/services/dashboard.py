@@ -42,6 +42,7 @@ from app.services.planning import (
     PLANNING_PERIOD_STATUS_PRELIMINARY,
     PLANNING_PERIOD_STATUS_PUBLISHED,
     can_team_member_edit_wishes_matrix,
+    get_shift_group_planning_status,
     is_team_member_roster_visible,
     list_planning_periods,
 )
@@ -204,11 +205,21 @@ def _period_card(
                 errors += 1
             elif warning.severity == "warning":
                 warnings += 1
+    status = period.status
+    if shift_group_id is not None:
+        group_row = get_shift_group_planning_status(
+            db,
+            planning_period_id=period.id,
+            shift_group_id=shift_group_id,
+            organization_id=organization_id,
+        )
+        if group_row is not None:
+            status = group_row.status
     return DashboardPeriodCard(
         period_id=period.id,
         year=period.year,
         month=period.month,
-        status=period.status,
+        status=status,
         slot_count=slot_count,
         assigned_count=assigned_count,
         unassigned_count=max(0, slot_count - assigned_count),
@@ -391,7 +402,17 @@ def get_admin_dashboard(
     current = _resolve_current_period(periods)
     status_tallies: dict[str, int] = defaultdict(int)
     for period in year_periods:
-        status_tallies[period.status] += 1
+        if shift_group_id is not None:
+            group_row = get_shift_group_planning_status(
+                db,
+                planning_period_id=period.id,
+                shift_group_id=shift_group_id,
+                organization_id=organization_id,
+            )
+            if group_row is not None:
+                status_tallies[group_row.status] += 1
+        else:
+            status_tallies[period.status] += 1
     period_cards = [
         _period_card(
             db,
@@ -556,13 +577,27 @@ def get_planner_dashboard(
     )
 
 
-def _team_member_visible_periods(periods: list[PlanningPeriod]) -> list[PlanningPeriod]:
+def _team_member_visible_periods(
+    db: Session,
+    *,
+    periods: list[PlanningPeriod],
+    organization_id: int,
+    shift_group_ids: set[int],
+) -> list[PlanningPeriod]:
     visible: list[PlanningPeriod] = []
     for period in periods:
-        if is_team_member_roster_visible(period.status):
-            visible.append(period)
-        elif can_team_member_edit_wishes_matrix(period.status):
-            visible.append(period)
+        for group_id in shift_group_ids:
+            row = get_shift_group_planning_status(
+                db,
+                planning_period_id=period.id,
+                shift_group_id=group_id,
+                organization_id=organization_id,
+            )
+            if row is None:
+                continue
+            if is_team_member_roster_visible(row.status) or can_team_member_edit_wishes_matrix(row.status):
+                visible.append(period)
+                break
     return visible
 
 
@@ -623,11 +658,14 @@ def _member_upcoming_shifts(
     organization_id: int,
     team_member_id: int,
     template_ids: set[int],
+    shift_group_ids: set[int],
 ) -> list[DashboardUpcomingSlot]:
-    if not template_ids:
+    if not template_ids or not shift_group_ids:
         return []
     today = _today()
-    visible_statuses = {PLANNING_PERIOD_STATUS_PRELIMINARY, PLANNING_PERIOD_STATUS_PUBLISHED}
+    from app.models import ShiftGroupShiftTemplate
+
+    visible_group_ids: set[int] = set()
     stmt = (
         select(RosterSlot)
         .options(
@@ -639,7 +677,6 @@ def _member_upcoming_shifts(
         .join(PlanningPeriod, PlanningPeriod.id == RosterSlot.planning_period_id)
         .where(
             PlanningPeriod.organization_id == organization_id,
-            PlanningPeriod.status.in_(visible_statuses),
             RosterSlotAssignment.team_member_id == team_member_id,
             RosterSlot.slot_date >= today,
             RosterSlot.shift_template_id.in_(template_ids),
@@ -648,9 +685,34 @@ def _member_upcoming_shifts(
     )
     upcoming: list[DashboardUpcomingSlot] = []
     for slot in db.scalars(stmt).unique():
+        period = slot.planning_period
+        if period is None or slot.shift_template_id is None:
+            continue
+        template_group_ids = set(
+            db.scalars(
+                select(ShiftGroupShiftTemplate.shift_group_id).where(
+                    ShiftGroupShiftTemplate.shift_template_id == slot.shift_template_id,
+                    ShiftGroupShiftTemplate.shift_group_id.in_(shift_group_ids),
+                )
+            ).all()
+        )
+        if not template_group_ids:
+            continue
+        visible = False
+        for group_id in template_group_ids:
+            row = get_shift_group_planning_status(
+                db,
+                planning_period_id=period.id,
+                shift_group_id=group_id,
+                organization_id=organization_id,
+            )
+            if row is not None and is_team_member_roster_visible(row.status):
+                visible = True
+                break
+        if not visible:
+            continue
         template = slot.shift_template
         variant = slot.shift_variant
-        period = slot.planning_period
         upcoming.append(
             DashboardUpcomingSlot(
                 slot_date=slot.slot_date,
@@ -692,7 +754,19 @@ def get_team_member_dashboard(
         if not member_groups.intersection(shift_group_ids):
             raise ValueError("Team member is not in any of these shift groups")
     periods = list_planning_periods(db, organization_id=organization_id)
-    visible = _team_member_visible_periods(_periods_in_year(periods, selected_year))
+    member_groups = team_member_shift_group_ids(db, team_member_id)
+    if shift_group_id is not None:
+        scoped_groups = {shift_group_id}
+    elif shift_group_ids:
+        scoped_groups = member_groups.intersection(shift_group_ids)
+    else:
+        scoped_groups = member_groups
+    visible = _team_member_visible_periods(
+        db,
+        periods=_periods_in_year(periods, selected_year),
+        organization_id=organization_id,
+        shift_group_ids=scoped_groups,
+    )
     current = _resolve_current_period(visible) or _resolve_current_period(periods)
     period_cards = [
         _period_card(
@@ -715,6 +789,7 @@ def get_team_member_dashboard(
         organization_id=organization_id,
         team_member_id=team_member_id,
         template_ids=scoped_template_ids,
+        shift_group_ids=scoped_groups,
     )
     if current is not None:
         current_card = _period_card(
@@ -740,14 +815,19 @@ def get_team_member_dashboard(
                 my_warnings += 1
         status_tallies: dict[str, int] = defaultdict(int)
         days_in_month = calendar.monthrange(current.year, current.month)[1]
+        cell_stmt = select(PlanningCell).where(
+            PlanningCell.planning_period_id == current.id,
+            PlanningCell.team_member_id == team_member_id,
+        )
+        if shift_group_id is not None:
+            cell_stmt = cell_stmt.where(PlanningCell.shift_group_id == shift_group_id)
+        elif shift_group_ids:
+            cell_stmt = cell_stmt.where(PlanningCell.shift_group_id.in_(shift_group_ids))
+        elif scoped_groups:
+            cell_stmt = cell_stmt.where(PlanningCell.shift_group_id.in_(scoped_groups))
         status_by_day = {
             cell.cell_date: cell.status
-            for cell in db.scalars(
-                select(PlanningCell).where(
-                    PlanningCell.planning_period_id == current.id,
-                    PlanningCell.team_member_id == team_member_id,
-                )
-            )
+            for cell in db.scalars(cell_stmt)
         }
         for day in range(1, days_in_month + 1):
             cell_date = date(current.year, current.month, day)

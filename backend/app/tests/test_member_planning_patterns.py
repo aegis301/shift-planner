@@ -2,8 +2,17 @@
 from datetime import date, datetime, timezone
 
 import pytest
-from app.models import (Organization, PlanningCell, PlanningPeriod, RosterSlot,
-                        TeamMember, TeamMemberPlanningPattern)
+from app.models import (
+    Organization,
+    PlanningCell,
+    PlanningPeriod,
+    PlanningPeriodShiftGroupStatus,
+    RosterSlot,
+    ShiftGroup,
+    TeamMember,
+    TeamMemberPlanningPattern,
+    TeamMemberShiftGroup,
+)
 from app.models.base import Base
 from app.schemas import (AllowedCalendarWeekParityMemberPatternRule,
                          AvoidTimeWindowMemberPatternRule,
@@ -30,6 +39,9 @@ def pattern_db():
     db = TestingSessionLocal()
     db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
     db.add(TeamMember(id=1, organization_id=1, first_name="A", last_name="B", email="a@example.com", employment_percentage=100))
+    db.add(ShiftGroup(organization_id=1, code="sg", name="SG", display_order=0))
+    db.flush()
+    db.add(TeamMemberShiftGroup(team_member_id=1, shift_group_id=1))
     db.commit()
     try:
         yield db
@@ -256,8 +268,7 @@ def test_allowed_calendar_week_parity_rule_default_status():
 
 def test_sync_week_parity_writes_wishes_for_excluded_iso_weeks(pattern_db):
     db = pattern_db
-    db.add(PlanningPeriod(organization_id=1, year=2026, month=1, status="draft"))
-    db.commit()
+    _seed_open_period(db, year=2026, month=1)
     org = db.get(Organization, 1)
     policy = read_organization_member_pattern_policy(org)
     payload = TeamMemberPlanningPatternsReplace(
@@ -296,10 +307,24 @@ def test_sync_week_parity_writes_wishes_for_excluded_iso_weeks(pattern_db):
     assert jan_even_week is None
 
 
+def _seed_open_period(db, *, year: int, month: int) -> PlanningPeriod:
+    period = PlanningPeriod(organization_id=1, year=year, month=month, status="draft")
+    db.add(period)
+    db.flush()
+    db.add(
+        PlanningPeriodShiftGroupStatus(
+            planning_period_id=period.id,
+            shift_group_id=1,
+            status="draft",
+        )
+    )
+    db.commit()
+    return period
+
+
 def test_sync_recurring_weekday_status_writes_cells(pattern_db):
     db = pattern_db
-    db.add(PlanningPeriod(organization_id=1, year=2026, month=1, status="draft"))
-    db.commit()
+    _seed_open_period(db, year=2026, month=1)
     org = db.get(Organization, 1)
     policy = read_organization_member_pattern_policy(org)
     payload = TeamMemberPlanningPatternsReplace(
@@ -327,12 +352,11 @@ def test_sync_recurring_weekday_status_writes_cells(pattern_db):
 
 def test_sync_recurring_weekday_respects_manual_cell(pattern_db):
     db = pattern_db
-    period = PlanningPeriod(organization_id=1, year=2026, month=1, status="draft")
-    db.add(period)
-    db.flush()
+    period = _seed_open_period(db, year=2026, month=1)
     db.add(
         PlanningCell(
             planning_period_id=period.id,
+            shift_group_id=1,
             team_member_id=1,
             cell_date=date(2026, 1, 7),
             status="urlaub",
@@ -382,7 +406,16 @@ def test_sync_recurring_weekday_respects_manual_cell(pattern_db):
 
 def test_sync_recurring_weekday_skips_published_period(pattern_db):
     db = pattern_db
-    db.add(PlanningPeriod(organization_id=1, year=2026, month=2, status="published"))
+    period = PlanningPeriod(organization_id=1, year=2026, month=2, status="published")
+    db.add(period)
+    db.flush()
+    db.add(
+        PlanningPeriodShiftGroupStatus(
+            planning_period_id=period.id,
+            shift_group_id=1,
+            status="published",
+        )
+    )
     db.commit()
     org = db.get(Organization, 1)
     policy = read_organization_member_pattern_policy(org)

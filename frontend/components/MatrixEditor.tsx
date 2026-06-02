@@ -364,12 +364,18 @@ export function MatrixEditor({
     setSavingCells((count) => count + 1);
     try {
       if (!status) {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells/clear`, {
+        if (!shiftGroupId) {
+          return;
+        }
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells/clear?shift_group_id=${encodeURIComponent(shiftGroupId)}`, {
           method: "POST",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate })
         });
       } else {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells`, {
+        if (!shiftGroupId) {
+          return;
+        }
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells?shift_group_id=${encodeURIComponent(shiftGroupId)}`, {
           method: "PUT",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null })
         });
@@ -425,7 +431,10 @@ export function MatrixEditor({
       body.planning_preferences = preferencesDraft.trim() === "" ? null : preferencesDraft;
       body.sync_planning_preferences = true;
     }
-    await apiFetch(`/api/v1/matrix/${activePeriodId}/notes`, {
+    if (!shiftGroupId) {
+      return;
+    }
+    await apiFetch(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`, {
       method: "PUT",
       body: JSON.stringify(body)
     });
@@ -452,7 +461,7 @@ export function MatrixEditor({
       const next = !(prev?.wishes_response_received ?? false);
       setSavingCells((count) => count + 1);
       try {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/notes`, {
+        await apiFetch(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`, {
           method: "PUT",
           body: JSON.stringify({
             team_member_id: memberId,

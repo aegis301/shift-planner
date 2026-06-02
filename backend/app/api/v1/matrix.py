@@ -34,8 +34,7 @@ from app.services.matrix import (
     save_team_member_period_note,
     upsert_planning_cell,
 )
-from app.services.planning import can_team_member_edit_wishes_matrix
-from app.services.tenancy import require_planning_period_in_org
+from app.services.planning import can_team_member_edit_wishes_matrix, get_shift_group_planning_status
 
 router = APIRouter(prefix="/matrix", tags=["matrix"])
 
@@ -64,18 +63,35 @@ def _matrix_access(db: Session, user: User, shift_group_id: int | None) -> None:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
-def _team_member_feedback_access(db: Session, user: User, planning_period_id: int) -> None:
+def _require_shift_group_id_for_write(shift_group_id: int | None) -> int:
+    if shift_group_id is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
+    return shift_group_id
+
+
+def _team_member_feedback_access(
+    db: Session, user: User, planning_period_id: int, shift_group_id: int | None
+) -> int:
+    group_id = _require_shift_group_id_for_write(shift_group_id)
     if can_use_planning_ui(user):
-        return
+        _matrix_access(db, user, group_id)
+        return group_id
     try:
-        period = require_planning_period_in_org(db, planning_period_id, user.organization_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if not can_team_member_edit_wishes_matrix(period.status):
+        assert_team_member_shift_group_access(db, user, group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    row = get_shift_group_planning_status(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=group_id,
+        organization_id=user.organization_id,
+    )
+    if row is None or not can_team_member_edit_wishes_matrix(row.status):
         raise HTTPException(
             status_code=403,
-            detail="Team member wishes are only editable while the planning month is in draft or preliminary status",
+            detail="Team member wishes are only editable while this shift group's plan is in draft or preliminary status",
         )
+    return group_id
 
 
 @router.get("/{planning_period_id}", response_model=PlanningMatrixRead)
@@ -108,10 +124,11 @@ def get_matrix(
 def put_cell(
     planning_period_id: int,
     payload: PlanningCellUpsert,
+    shift_group_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _team_member_feedback_access(db, user, planning_period_id)
+    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         try:
@@ -120,7 +137,13 @@ def put_cell(
             raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
         return upsert_planning_cell(
-            db, planning_period_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+            db,
+            planning_period_id,
+            payload,
+            organization_id=user.organization_id,
+            shift_group_id=group_id,
+            actor=user.email,
+            source="rest",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -130,10 +153,11 @@ def put_cell(
 def put_cells_bulk(
     planning_period_id: int,
     payload: PlanningCellBulkUpsert,
+    shift_group_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _team_member_feedback_access(db, user, planning_period_id)
+    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         for cell in payload.cells:
@@ -143,7 +167,13 @@ def put_cells_bulk(
                 raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
         return bulk_upsert_planning_cells(
-            db, planning_period_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+            db,
+            planning_period_id,
+            payload,
+            organization_id=user.organization_id,
+            shift_group_id=group_id,
+            actor=user.email,
+            source="rest",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -156,8 +186,11 @@ def put_shift_intents_bulk(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _team_member_feedback_access(db, user, planning_period_id)
     if not can_use_planning_ui(user):
+        if not payload.intents:
+            raise HTTPException(status_code=400, detail="shift_group_id is required")
+        group_id = payload.intents[0].shift_group_id
+        _team_member_feedback_access(db, user, planning_period_id, group_id)
         member = _linked_team_member_or_403(db, user)
         for item in payload.intents:
             try:
@@ -181,10 +214,11 @@ def put_shift_intents_bulk(
 def clear_cell(
     planning_period_id: int,
     payload: PlanningCellClear,
+    shift_group_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _team_member_feedback_access(db, user, planning_period_id)
+    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
     if not can_use_planning_ui(user):
         member = _linked_team_member_or_403(db, user)
         try:
@@ -192,7 +226,13 @@ def clear_cell(
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
     deleted = clear_planning_cell(
-        db, planning_period_id, payload, organization_id=user.organization_id, actor=user.email, source="rest"
+        db,
+        planning_period_id,
+        payload,
+        organization_id=user.organization_id,
+        shift_group_id=group_id,
+        actor=user.email,
+        source="rest",
     )
     return {"deleted": deleted}
 
@@ -221,23 +261,33 @@ def get_notes(
 def put_note(
     planning_period_id: int,
     payload: TeamMemberPeriodNoteUpsert,
+    shift_group_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    group_id = _team_member_feedback_access(db, user, planning_period_id, shift_group_id)
     payload_effective = payload
     if not can_use_planning_ui(user):
-        _team_member_feedback_access(db, user, planning_period_id)
         member = _linked_team_member_or_403(db, user)
         try:
             assert_team_member_cell_access(user, member, payload.team_member_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         previous = get_team_member_period_note(
-            db, planning_period_id=planning_period_id, team_member_id=payload.team_member_id
+            db,
+            planning_period_id=planning_period_id,
+            team_member_id=payload.team_member_id,
+            shift_group_id=group_id,
         )
         payload_effective = payload.model_copy(
             update={"wishes_response_received": previous.wishes_response_received if previous else False}
         )
     return save_team_member_period_note(
-        db, planning_period_id, payload_effective, organization_id=user.organization_id, actor=user.email, source="rest"
+        db,
+        planning_period_id,
+        payload_effective,
+        organization_id=user.organization_id,
+        shift_group_id=group_id,
+        actor=user.email,
+        source="rest",
     )

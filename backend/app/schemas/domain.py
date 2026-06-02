@@ -928,6 +928,14 @@ class PlanningPeriodCreate(BaseModel):
     month: int = Field(ge=1, le=12)
 
 
+class ShiftGroupPlanningStatusRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    shift_group_id: int
+    status: PlanningPeriodStatus
+    published_at: datetime | None = None
+
+
 class PlanningPeriodRead(PlanningPeriodCreate):
     model_config = ConfigDict(from_attributes=True)
 
@@ -935,6 +943,7 @@ class PlanningPeriodRead(PlanningPeriodCreate):
     status: PlanningPeriodStatus
     published_at: datetime | None = None
     created_at: datetime
+    shift_group_statuses: list[ShiftGroupPlanningStatusRead] = Field(default_factory=list)
 
 
 class RosterSlotRead(BaseModel):
@@ -1008,6 +1017,7 @@ class PlanningCellRead(PlanningCellBase):
 
     id: int
     planning_period_id: int
+    shift_group_id: int
     created_at: datetime
     updated_at: datetime
 
@@ -1062,6 +1072,7 @@ class MatrixDay(BaseModel):
 
 class PlanningMatrixRead(BaseModel):
     planning_period: PlanningPeriodRead
+    shift_group_planning_status: ShiftGroupPlanningStatusRead | None = None
     team_members: list[MatrixTeamMember]
     days: list[MatrixDay]
     cells: list[PlanningCellRead]
@@ -1073,6 +1084,7 @@ class PlanningMatrixRead(BaseModel):
 
 class RosterMatrixRead(BaseModel):
     planning_period: PlanningPeriodRead
+    shift_group_planning_status: ShiftGroupPlanningStatusRead | None = None
     team_members: list[MatrixTeamMember]
     days: list[MatrixDay]
     shift_templates: list[ShiftTemplateRead] = Field(default_factory=list)
@@ -1096,6 +1108,7 @@ class TeamMemberPeriodNoteRead(BaseModel):
 
     id: int
     planning_period_id: int
+    shift_group_id: int
     team_member_id: int
     summary: str | None = None
     wishes_response_received: bool

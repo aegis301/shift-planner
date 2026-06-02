@@ -14,6 +14,7 @@ from app.schemas import (
     PlanningPeriodCreate,
     PlanningPeriodRead,
     RosterMatrixRead,
+    ShiftGroupPlanningStatusRead,
     ValidationWarning,
 )
 from app.services.exports import export_matrix_csv, export_roster_matrix_csv
@@ -21,6 +22,7 @@ from app.services.planning import (
     create_planning_period,
     delete_planning_period,
     list_planning_periods,
+    list_shift_group_statuses_for_period,
     publish_planning_period,
     set_planning_period_to_draft,
     set_planning_period_to_preliminary,
@@ -32,76 +34,114 @@ from app.services.validation import validate_roster
 router = APIRouter(tags=["planning"])
 
 
+def _period_read(period, statuses) -> PlanningPeriodRead:
+    return PlanningPeriodRead.model_validate(period).model_copy(
+        update={
+            "shift_group_statuses": [ShiftGroupPlanningStatusRead.model_validate(row) for row in statuses]
+        }
+    )
+
+
 @router.get("/planning-periods", response_model=list[PlanningPeriodRead])
 def get_planning_periods(
     db: Session = Depends(get_db), user: User = Depends(get_current_user_excluding_applicant)
 ):
-    return list_planning_periods(db, organization_id=user.organization_id)
+    periods = list_planning_periods(db, organization_id=user.organization_id)
+    return [
+        _period_read(period, list_shift_group_statuses_for_period(db, planning_period_id=period.id, organization_id=user.organization_id))
+        for period in periods
+    ]
 
 
 @router.post("/planning-periods", response_model=PlanningPeriodRead)
 def post_planning_period(
     payload: PlanningPeriodCreate, db: Session = Depends(get_db), user: User = Depends(get_current_admin)
 ):
-    return create_planning_period(
+    period = create_planning_period(
         db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
     )
+    statuses = list_shift_group_statuses_for_period(db, planning_period_id=period.id, organization_id=user.organization_id)
+    return _period_read(period, statuses)
 
 
-@router.post("/planning-periods/{planning_period_id}/publish", response_model=PlanningPeriodRead)
+@router.post("/planning-periods/{planning_period_id}/publish", response_model=ShiftGroupPlanningStatusRead)
 def post_publish_planning_period(
     planning_period_id: int,
+    shift_group_id: int = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    period = publish_planning_period(
-        db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+    row = publish_planning_period(
+        db,
+        planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=user.organization_id,
+        actor=user.email,
+        source="rest",
     )
-    if period is None:
+    if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
-    return period
+    return ShiftGroupPlanningStatusRead.model_validate(row)
 
 
-@router.post("/planning-periods/{planning_period_id}/preliminary", response_model=PlanningPeriodRead)
+@router.post("/planning-periods/{planning_period_id}/preliminary", response_model=ShiftGroupPlanningStatusRead)
 def post_set_planning_period_preliminary(
     planning_period_id: int,
+    shift_group_id: int = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    period = set_planning_period_to_preliminary(
-        db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+    row = set_planning_period_to_preliminary(
+        db,
+        planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=user.organization_id,
+        actor=user.email,
+        source="rest",
     )
-    if period is None:
+    if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
-    return period
+    return ShiftGroupPlanningStatusRead.model_validate(row)
 
 
-@router.post("/planning-periods/{planning_period_id}/draft", response_model=PlanningPeriodRead)
+@router.post("/planning-periods/{planning_period_id}/draft", response_model=ShiftGroupPlanningStatusRead)
 def post_set_planning_period_draft(
     planning_period_id: int,
+    shift_group_id: int = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    period = set_planning_period_to_draft(
-        db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+    row = set_planning_period_to_draft(
+        db,
+        planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=user.organization_id,
+        actor=user.email,
+        source="rest",
     )
-    if period is None:
+    if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
-    return period
+    return ShiftGroupPlanningStatusRead.model_validate(row)
 
 
-@router.post("/planning-periods/{planning_period_id}/unpublish", response_model=PlanningPeriodRead)
+@router.post("/planning-periods/{planning_period_id}/unpublish", response_model=ShiftGroupPlanningStatusRead)
 def post_unpublish_planning_period(
     planning_period_id: int,
+    shift_group_id: int = Query(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    period = unpublish_planning_period(
-        db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+    row = unpublish_planning_period(
+        db,
+        planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=user.organization_id,
+        actor=user.email,
+        source="rest",
     )
-    if period is None:
+    if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
-    return period
+    return ShiftGroupPlanningStatusRead.model_validate(row)
 
 
 @router.delete("/planning-periods/{planning_period_id}")
@@ -117,13 +157,28 @@ def delete_planning_period_endpoint(
 
 @router.post("/planning-periods/{planning_period_id}/regenerate-roster", response_model=RosterMatrixRead)
 def regenerate_planning_period_roster(
-    planning_period_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_planner)
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
 ):
+    if is_shift_planner_role(user) and not is_admin(user) and shift_group_id is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
     try:
         reset_roster_slots_for_period(
-            db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
+            db,
+            planning_period_id,
+            organization_id=user.organization_id,
+            actor=user.email,
+            source="rest",
+            shift_group_id=shift_group_id,
         )
-        return get_roster_matrix(db, planning_period_id, organization_id=user.organization_id)
+        return get_roster_matrix(
+            db,
+            planning_period_id,
+            organization_id=user.organization_id,
+            shift_group_id=shift_group_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

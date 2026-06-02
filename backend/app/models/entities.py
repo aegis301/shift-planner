@@ -297,6 +297,26 @@ class PlanningPeriod(Base):
     organization: Mapped["Organization"] = relationship(back_populates="planning_periods")
 
 
+class PlanningPeriodShiftGroupStatus(Base):
+    __tablename__ = "planning_period_shift_group_statuses"
+    __table_args__ = (
+        UniqueConstraint("planning_period_id", "shift_group_id", name="uq_planning_period_shift_group_status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(50), default="draft")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    planning_period: Mapped[PlanningPeriod] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
+
+
 class RuleConfig(Base):
     __tablename__ = "rule_configs"
 
@@ -356,11 +376,18 @@ class RosterSlotAssignment(Base):
 class PlanningCell(Base):
     __tablename__ = "planning_cells"
     __table_args__ = (
-        UniqueConstraint("planning_period_id", "team_member_id", "cell_date", name="uq_planning_cell"),
+        UniqueConstraint(
+            "planning_period_id",
+            "shift_group_id",
+            "team_member_id",
+            "cell_date",
+            name="uq_planning_cell",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
     team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id"))
     cell_date: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(50))
@@ -372,6 +399,7 @@ class PlanningCell(Base):
     )
 
     team_member: Mapped[TeamMember] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
     planning_period: Mapped[PlanningPeriod] = relationship()
 
 
@@ -410,11 +438,17 @@ class PlanningShiftIntent(Base):
 class TeamMemberPeriodNote(Base):
     __tablename__ = "team_member_period_notes"
     __table_args__ = (
-        UniqueConstraint("planning_period_id", "team_member_id", name="uq_team_member_period_note"),
+        UniqueConstraint(
+            "planning_period_id",
+            "shift_group_id",
+            "team_member_id",
+            name="uq_team_member_period_note",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
     team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id"))
     summary: Mapped[str | None] = mapped_column(Text)
     wishes_response_received: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -424,6 +458,7 @@ class TeamMemberPeriodNote(Base):
     )
 
     team_member: Mapped[TeamMember] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
     planning_period: Mapped[PlanningPeriod] = relationship()
 
 

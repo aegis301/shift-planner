@@ -20,6 +20,7 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
+from app.services.planning import shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
     list_planning_day_status_definitions,
@@ -105,14 +106,31 @@ def ensure_roster_slots_for_period(db: Session, planning_period_id: int, organiz
 
 
 def reset_roster_slots_for_period(
-    db: Session, planning_period_id: int, *, organization_id: int, actor: str, source: str
+    db: Session,
+    planning_period_id: int,
+    *,
+    organization_id: int,
+    actor: str,
+    source: str,
+    shift_group_id: int | None = None,
 ) -> list[RosterSlot]:
     require_planning_period_in_org(db, planning_period_id, organization_id)
-    slot_ids = list(db.scalars(select(RosterSlot.id).where(RosterSlot.planning_period_id == planning_period_id)))
+    template_filter: set[int] | None = None
+    if shift_group_id is not None:
+        require_shift_group(db, shift_group_id, organization_id)
+        template_filter = shift_template_ids_in_shift_group(db, shift_group_id)
+    slots_query = select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)
+    slots_to_clear = list(db.scalars(slots_query))
+    if template_filter is not None:
+        slots_to_clear = [
+            slot for slot in slots_to_clear
+            if slot.shift_template_id is not None and slot.shift_template_id in template_filter
+        ]
+    slot_ids = [slot.id for slot in slots_to_clear]
     if slot_ids:
         for assignment in db.scalars(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id.in_(slot_ids))):
             db.delete(assignment)
-    for slot in db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)):
+    for slot in slots_to_clear:
         db.delete(slot)
     db.flush()
     record_audit(
@@ -122,9 +140,42 @@ def reset_roster_slots_for_period(
         action="regenerate",
         entity_type="planning_period_roster_slots",
         entity_id=planning_period_id,
-        details={"cleared_slot_count": len(slot_ids)},
+        details={"cleared_slot_count": len(slot_ids), "shift_group_id": shift_group_id},
     )
-    slots = ensure_roster_slots_for_period(db, planning_period_id, organization_id)
+    if shift_group_id is None:
+        slots = ensure_roster_slots_for_period(db, planning_period_id, organization_id)
+    else:
+        period = require_planning_period_in_org(db, planning_period_id, organization_id)
+        generated_slots = generate_slots_for_month(
+            db, year=period.year, month=period.month, organization_id=organization_id
+        )
+        existing = {
+            (slot.slot_date, slot.shift_variant_id, slot.position)
+            for slot in db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id))
+        }
+        for generated in generated_slots:
+            if generated.template_id not in template_filter:
+                continue
+            key = (generated.slot_date, generated.variant_id, generated.position)
+            if key in existing:
+                continue
+            db.add(
+                RosterSlot(
+                    planning_period_id=planning_period_id,
+                    shift_template_id=generated.template_id,
+                    shift_variant_id=generated.variant_id,
+                    slot_date=generated.slot_date,
+                    position=generated.position,
+                    label=generated.label,
+                    starts_at=generated.starts_at,
+                    ends_at=generated.ends_at,
+                    day_class=generated.day_class,
+                    source="template",
+                )
+            )
+            existing.add(key)
+        db.flush()
+        slots = list_roster_slots(db, planning_period_id=planning_period_id)
     db.commit()
     return slots
 
@@ -147,7 +198,17 @@ def get_roster_matrix(
     shift_templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
     slots = list_roster_slots(db, planning_period_id=planning_period_id)
     assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
-    planning_cells = list_planning_cells(db, planning_period_id=planning_period_id)
+    group_status = None
+    if shift_group_id is not None:
+        group_status = shift_group_planning_status_read(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=organization_id,
+        )
+    planning_cells = list_planning_cells(
+        db, planning_period_id=planning_period_id, shift_group_id=shift_group_id
+    )
     shift_intents = [PlanningShiftIntentRead.model_validate(row) for row in list_planning_shift_intents(db, planning_period_id=planning_period_id)]
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
@@ -159,7 +220,6 @@ def get_roster_matrix(
         shift_templates = [template for template in shift_templates if template.id in visible_template_ids]
         slot_ids = {slot.id for slot in slots}
         assignments = [assignment for assignment in assignments if assignment.roster_slot_id in slot_ids]
-        planning_cells = [cell for cell in planning_cells if cell.team_member_id in allowed_team_member_ids]
         shift_intents = [
             row for row in shift_intents if row.shift_group_id == shift_group_id and row.team_member_id in allowed_team_member_ids
         ]
@@ -172,6 +232,7 @@ def get_roster_matrix(
     ]
     return RosterMatrixRead(
         planning_period=period,
+        shift_group_planning_status=group_status,
         team_members=[
             MatrixTeamMember(
                 id=m.id,

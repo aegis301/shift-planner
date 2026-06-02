@@ -20,6 +20,8 @@ from app.schemas import (
     ShiftTemplateRead,
     TeamMemberPeriodNoteUpsert,
 )
+from app.services.authz import team_member_shift_group_ids
+from app.services.planning import is_shift_group_planning_open, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     assert_valid_planning_cell_status,
     ensure_default_planning_day_statuses,
@@ -48,13 +50,20 @@ def _require_period_org(db: Session, planning_period_id: int, organization_id: i
     return period
 
 
-def list_planning_cells(db: Session, *, planning_period_id: int) -> list[PlanningCell]:
-    stmt = (
-        select(PlanningCell)
-        .where(PlanningCell.planning_period_id == planning_period_id)
-        .order_by(PlanningCell.cell_date, PlanningCell.team_member_id)
-    )
+def list_planning_cells(
+    db: Session, *, planning_period_id: int, shift_group_id: int | None = None
+) -> list[PlanningCell]:
+    stmt = select(PlanningCell).where(PlanningCell.planning_period_id == planning_period_id)
+    if shift_group_id is not None:
+        stmt = stmt.where(PlanningCell.shift_group_id == shift_group_id)
+    stmt = stmt.order_by(PlanningCell.cell_date, PlanningCell.team_member_id)
     return list(db.scalars(stmt))
+
+
+def _assert_member_in_shift_group(db: Session, *, team_member_id: int, shift_group_id: int) -> None:
+    allowed = active_team_member_ids_in_shift_group(db, shift_group_id)
+    if team_member_id not in allowed:
+        raise ValueError("Team member is not a member of this shift group")
 
 
 def list_planning_shift_intents(db: Session, *, planning_period_id: int) -> list[PlanningShiftIntent]:
@@ -92,14 +101,23 @@ def get_planning_matrix(
         MatrixDay(date=date(period.year, period.month, day), weekday=date(period.year, period.month, day).strftime("%A"))
         for day in range(1, days_in_month + 1)
     ]
-    cells = list_planning_cells(db, planning_period_id=planning_period_id)
+    group_status = None
+    if shift_group_id is not None:
+        group_status = shift_group_planning_status_read(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=organization_id,
+        )
+    cells = list_planning_cells(
+        db, planning_period_id=planning_period_id, shift_group_id=shift_group_id
+    )
     all_intents = list_planning_shift_intents(db, planning_period_id=planning_period_id)
     shift_templates_out: list[ShiftTemplateRead] = []
     shift_intents_out: list[PlanningShiftIntentRead] = []
     template_slot_days: list[MatrixTemplateSlotDay] = []
     if shift_group_id is not None:
         allowed_team_member_ids = {m.id for m in team_members}
-        cells = [cell for cell in cells if cell.team_member_id in allowed_team_member_ids]
         shift_intents_out = [
             PlanningShiftIntentRead.model_validate(row)
             for row in all_intents
@@ -160,6 +178,7 @@ def get_planning_matrix(
     ]
     return PlanningMatrixRead(
         planning_period=period,
+        shift_group_planning_status=group_status,
         team_members=[
             MatrixTeamMember(
                 id=m.id,
@@ -187,10 +206,13 @@ def upsert_planning_cell(
     payload: PlanningCellUpsert,
     *,
     organization_id: int,
+    shift_group_id: int,
     actor: str,
     source: str,
 ) -> PlanningCell:
     period = _require_period_org(db, planning_period_id, organization_id)
+    require_shift_group(db, shift_group_id, organization_id)
+    _assert_member_in_shift_group(db, team_member_id=payload.team_member_id, shift_group_id=shift_group_id)
     normalized_status = payload.status.strip().lower()
     assert_valid_planning_cell_status(db, organization_id=organization_id, status=normalized_status)
     if not _cell_date_in_period(period, payload.cell_date):
@@ -198,6 +220,7 @@ def upsert_planning_cell(
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
+            PlanningCell.shift_group_id == shift_group_id,
             PlanningCell.team_member_id == payload.team_member_id,
             PlanningCell.cell_date == payload.cell_date,
         )
@@ -205,6 +228,7 @@ def upsert_planning_cell(
     if cell is None:
         cell = PlanningCell(
             planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
             team_member_id=payload.team_member_id,
             cell_date=payload.cell_date,
             status=payload.status,
@@ -244,16 +268,26 @@ def bulk_upsert_planning_cells(
     payload: PlanningCellBulkUpsert,
     *,
     organization_id: int,
+    shift_group_id: int,
     actor: str,
     source: str,
 ) -> list[PlanningCell]:
     period = _require_period_org(db, planning_period_id, organization_id)
+    require_shift_group(db, shift_group_id, organization_id)
     for cell_payload in payload.cells:
         assert_valid_planning_cell_status(db, organization_id=organization_id, status=cell_payload.status)
         if not _cell_date_in_period(period, cell_payload.cell_date):
             raise ValueError("Cell date is outside the planning period month")
+        _assert_member_in_shift_group(db, team_member_id=cell_payload.team_member_id, shift_group_id=shift_group_id)
     cells = [
-        _upsert_planning_cell_no_commit(db, planning_period_id, cell_payload, actor=actor, source=source)
+        _upsert_planning_cell_no_commit(
+            db,
+            planning_period_id,
+            cell_payload,
+            shift_group_id=shift_group_id,
+            actor=actor,
+            source=source,
+        )
         for cell_payload in payload.cells
     ]
     db.commit()
@@ -267,6 +301,7 @@ def _upsert_planning_cell_no_commit(
     planning_period_id: int,
     payload: PlanningCellUpsert,
     *,
+    shift_group_id: int,
     actor: str,
     source: str,
 ) -> PlanningCell:
@@ -274,6 +309,7 @@ def _upsert_planning_cell_no_commit(
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
+            PlanningCell.shift_group_id == shift_group_id,
             PlanningCell.team_member_id == payload.team_member_id,
             PlanningCell.cell_date == payload.cell_date,
         )
@@ -281,6 +317,7 @@ def _upsert_planning_cell_no_commit(
     if cell is None:
         cell = PlanningCell(
             planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
             team_member_id=payload.team_member_id,
             cell_date=payload.cell_date,
             status=normalized_status,
@@ -313,13 +350,16 @@ def clear_planning_cell(
     payload: PlanningCellClear,
     *,
     organization_id: int,
+    shift_group_id: int,
     actor: str,
     source: str,
 ) -> bool:
     _require_period_org(db, planning_period_id, organization_id)
+    require_shift_group(db, shift_group_id, organization_id)
     cell = db.scalar(
         select(PlanningCell).where(
             PlanningCell.planning_period_id == planning_period_id,
+            PlanningCell.shift_group_id == shift_group_id,
             PlanningCell.team_member_id == payload.team_member_id,
             PlanningCell.cell_date == payload.cell_date,
         )
@@ -345,18 +385,23 @@ def list_team_member_period_notes(
 ) -> list[TeamMemberPeriodNote]:
     _require_period_org(db, planning_period_id, organization_id)
     stmt = select(TeamMemberPeriodNote).where(TeamMemberPeriodNote.planning_period_id == planning_period_id)
+    if shift_group_id is not None:
+        require_shift_group(db, shift_group_id, organization_id)
+        stmt = stmt.where(TeamMemberPeriodNote.shift_group_id == shift_group_id)
     notes = list(db.scalars(stmt.order_by(TeamMemberPeriodNote.team_member_id)))
     if shift_group_id is None:
         return notes
-    require_shift_group(db, shift_group_id, organization_id)
     allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
     return [note for note in notes if note.team_member_id in allowed_team_member_ids]
 
 
-def get_team_member_period_note(db: Session, *, planning_period_id: int, team_member_id: int) -> TeamMemberPeriodNote | None:
+def get_team_member_period_note(
+    db: Session, *, planning_period_id: int, team_member_id: int, shift_group_id: int
+) -> TeamMemberPeriodNote | None:
     return db.scalar(
         select(TeamMemberPeriodNote).where(
             TeamMemberPeriodNote.planning_period_id == planning_period_id,
+            TeamMemberPeriodNote.shift_group_id == shift_group_id,
             TeamMemberPeriodNote.team_member_id == team_member_id,
         )
     )
@@ -368,17 +413,29 @@ def save_team_member_period_note(
     payload: TeamMemberPeriodNoteUpsert,
     *,
     organization_id: int,
+    shift_group_id: int,
     actor: str,
     source: str,
 ) -> TeamMemberPeriodNote:
     period = _require_period_org(db, planning_period_id, organization_id)
-    note = get_team_member_period_note(db, planning_period_id=planning_period_id, team_member_id=payload.team_member_id)
+    require_shift_group(db, shift_group_id, organization_id)
+    _assert_member_in_shift_group(db, team_member_id=payload.team_member_id, shift_group_id=shift_group_id)
+    note = get_team_member_period_note(
+        db,
+        planning_period_id=planning_period_id,
+        team_member_id=payload.team_member_id,
+        shift_group_id=shift_group_id,
+    )
     note_fields = payload.model_dump(
         exclude={"sync_planning_preferences", "planning_preferences"},
         exclude_unset=False,
     )
     if note is None:
-        note = TeamMemberPeriodNote(planning_period_id=planning_period_id, **note_fields)
+        note = TeamMemberPeriodNote(
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            **note_fields,
+        )
         db.add(note)
         action = "create"
     else:
@@ -512,27 +569,24 @@ def _pattern_weekday_key(cell_date: date) -> str:
     return ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[cell_date.weekday()]
 
 
-def apply_recurring_weekday_status_to_one_period(
+def _apply_recurring_weekday_status_for_group(
     db: Session,
     *,
     planning_period_id: int,
+    shift_group_id: int,
     team_member_id: int,
-    organization_id: int,
+    period: PlanningPeriod,
     patterns: list[TeamMemberPlanningPattern],
     actor: str,
     source: str,
 ) -> None:
-    period = db.get(PlanningPeriod, planning_period_id)
-    if period is None or period.organization_id != organization_id:
-        return
-    if period.status not in _OPEN_PERIOD_STATUSES:
-        return
     days_in_month = calendar.monthrange(period.year, period.month)[1]
     for day in range(1, days_in_month + 1):
         cell_date = date(period.year, period.month, day)
         cell = db.scalar(
             select(PlanningCell).where(
                 PlanningCell.planning_period_id == planning_period_id,
+                PlanningCell.shift_group_id == shift_group_id,
                 PlanningCell.team_member_id == team_member_id,
                 PlanningCell.cell_date == cell_date,
             )
@@ -542,6 +596,7 @@ def apply_recurring_weekday_status_to_one_period(
             if cell is None:
                 row = PlanningCell(
                     planning_period_id=planning_period_id,
+                    shift_group_id=shift_group_id,
                     team_member_id=team_member_id,
                     cell_date=cell_date,
                     status=target,
@@ -559,6 +614,7 @@ def apply_recurring_weekday_status_to_one_period(
                     entity_id=row.id,
                     details={
                         "planning_period_id": planning_period_id,
+                        "shift_group_id": shift_group_id,
                         "team_member_id": team_member_id,
                         "cell_date": cell_date.isoformat(),
                         "status": target,
@@ -577,6 +633,7 @@ def apply_recurring_weekday_status_to_one_period(
                         entity_id=cell.id,
                         details={
                             "planning_period_id": planning_period_id,
+                            "shift_group_id": shift_group_id,
                             "team_member_id": team_member_id,
                             "cell_date": cell_date.isoformat(),
                             "status": target,
@@ -591,9 +648,49 @@ def apply_recurring_weekday_status_to_one_period(
                 action="delete",
                 entity_type="planning_cell",
                 entity_id=cid,
-                details={"planning_period_id": planning_period_id, "team_member_id": team_member_id},
+                details={
+                    "planning_period_id": planning_period_id,
+                    "shift_group_id": shift_group_id,
+                    "team_member_id": team_member_id,
+                },
             )
             db.delete(cell)
+
+
+def apply_recurring_weekday_status_to_one_period(
+    db: Session,
+    *,
+    planning_period_id: int,
+    team_member_id: int,
+    organization_id: int,
+    patterns: list[TeamMemberPlanningPattern],
+    actor: str,
+    source: str,
+) -> None:
+    period = db.get(PlanningPeriod, planning_period_id)
+    if period is None or period.organization_id != organization_id:
+        return
+    member_groups = team_member_shift_group_ids(db, team_member_id)
+    if not member_groups:
+        member_groups = {group.id for group in list_shift_groups(db, organization_id=organization_id, active_only=True)}
+    for shift_group_id in sorted(member_groups):
+        if not is_shift_group_planning_open(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=organization_id,
+        ):
+            continue
+        _apply_recurring_weekday_status_for_group(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            team_member_id=team_member_id,
+            period=period,
+            patterns=patterns,
+            actor=actor,
+            source=source,
+        )
 
 
 def sync_recurring_weekday_cells_for_member_open_periods(
@@ -605,11 +702,21 @@ def sync_recurring_weekday_cells_for_member_open_periods(
     actor: str,
     source: str,
 ) -> None:
-    stmt = select(PlanningPeriod).where(
-        PlanningPeriod.organization_id == organization_id,
-        PlanningPeriod.status.in_(_OPEN_PERIOD_STATUSES),
-    )
+    member_groups = team_member_shift_group_ids(db, team_member_id)
+    if not member_groups:
+        return
+    stmt = select(PlanningPeriod).where(PlanningPeriod.organization_id == organization_id)
     for period in db.scalars(stmt):
+        if not any(
+            is_shift_group_planning_open(
+                db,
+                planning_period_id=period.id,
+                shift_group_id=group_id,
+                organization_id=organization_id,
+            )
+            for group_id in member_groups
+        ):
+            continue
         apply_recurring_weekday_status_to_one_period(
             db,
             planning_period_id=period.id,

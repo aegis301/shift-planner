@@ -25,6 +25,7 @@ def test_matrix_tool_rejects_invalid_token_before_db_access():
         upsert_planning_cell_tool(
             token="wrong-token",
             planning_period_id=1,
+            shift_group_id=1,
             team_member_id=1,
             cell_date="2026-07-01",
             status="frei",

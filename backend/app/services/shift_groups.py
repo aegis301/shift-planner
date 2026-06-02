@@ -116,6 +116,12 @@ def create_shift_group(
     record_audit(db, actor=actor, source=source, action="create", entity_type="shift_group", entity_id=group.id)
     db.commit()
     db.refresh(group)
+    from app.services.planning import ensure_shift_group_statuses_for_new_group
+
+    ensure_shift_group_statuses_for_new_group(
+        db, shift_group_id=group.id, organization_id=organization_id
+    )
+    db.commit()
     return group
 
 

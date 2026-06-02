@@ -13,6 +13,7 @@ from app.models import (
     Account,
     Organization,
     PlanningPeriod,
+    PlanningPeriodShiftGroupStatus,
     RosterSlot,
     RosterSlotAssignment,
     ShiftGroup,
@@ -67,7 +68,19 @@ def test_admin_dashboard_kpis(dash_db):
         )
     )
     today = date.today()
-    db.add(PlanningPeriod(organization_id=1, year=today.year, month=today.month, status="draft"))
+    sg = ShiftGroup(organization_id=1, code="dash", name="Dash", display_order=0)
+    db.add(sg)
+    db.flush()
+    period = PlanningPeriod(organization_id=1, year=today.year, month=today.month, status="draft")
+    db.add(period)
+    db.flush()
+    db.add(
+        PlanningPeriodShiftGroupStatus(
+            planning_period_id=period.id,
+            shift_group_id=sg.id,
+            status="draft",
+        )
+    )
     db.commit()
     payload = get_admin_dashboard(db, organization_id=1)
     assert payload.kpis.active_team_members == 1
@@ -183,6 +196,14 @@ def test_member_upcoming_shifts_all_future(dash_db):
     period = PlanningPeriod(organization_id=1, year=today.year, month=today.month, status="preliminary")
     db.add(period)
     db.flush()
+    db.add(
+        PlanningPeriodShiftGroupStatus(
+            planning_period_id=period.id,
+            shift_group_id=sg.id,
+            status="preliminary",
+        )
+    )
+    db.flush()
     slot_date = today + timedelta(days=3)
     slot = RosterSlot(
         planning_period_id=period.id,
@@ -204,6 +225,7 @@ def test_member_upcoming_shifts_all_future(dash_db):
         organization_id=1,
         team_member_id=member.id,
         template_ids={template.id},
+        shift_group_ids={sg.id},
     )
     assert len(rows) == 1
     assert rows[0].slot_date == slot_date
@@ -217,6 +239,14 @@ def test_member_upcoming_shifts_all_future(dash_db):
         status="preliminary",
     )
     db.add(far_period)
+    db.flush()
+    db.add(
+        PlanningPeriodShiftGroupStatus(
+            planning_period_id=far_period.id,
+            shift_group_id=sg.id,
+            status="preliminary",
+        )
+    )
     db.flush()
     far_date = today + timedelta(weeks=20)
     far_slot = RosterSlot(
@@ -237,6 +267,7 @@ def test_member_upcoming_shifts_all_future(dash_db):
         organization_id=1,
         team_member_id=member.id,
         template_ids={template.id},
+        shift_group_ids={sg.id},
     )
     assert len(rows) == 2
     assert {row.slot_date for row in rows} == {slot_date, far_date}
