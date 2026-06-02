@@ -12,7 +12,6 @@ from app.schemas import (
 from app.services.team_member_property_definitions import (
     create_team_member_property_definition,
     delete_team_member_property_definition,
-    get_team_member_property_definition_or_none,
     list_team_member_property_definitions,
     update_team_member_property_definition,
 )

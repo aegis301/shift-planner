@@ -6,14 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
-    OrganizationJoinRequest,
     PlanningCell,
     PlanningPeriod,
     RosterSlot,
     RosterSlotAssignment,
-    ShiftGroup,
     ShiftTemplate,
-    TeamMember,
 )
 from app.schemas import (
     AdminDashboardRead,
@@ -38,9 +35,6 @@ from app.services.join_requests import list_join_requests_for_org
 from app.services.matrix import list_team_member_period_notes
 from app.services.organization_directory import list_organization_staff_directory
 from app.services.planning import (
-    PLANNING_PERIOD_STATUS_DRAFT,
-    PLANNING_PERIOD_STATUS_PRELIMINARY,
-    PLANNING_PERIOD_STATUS_PUBLISHED,
     can_team_member_edit_wishes_matrix,
     get_shift_group_planning_status,
     is_team_member_roster_visible,
@@ -60,7 +54,6 @@ from app.services.workload import (
     WorkloadMemberSlice,
     WorkloadSlotSlice,
     build_member_workload_rows,
-    member_display_name,
     validation_counts_by_code,
 )
 
@@ -665,7 +658,6 @@ def _member_upcoming_shifts(
     today = _today()
     from app.models import ShiftGroupShiftTemplate
 
-    visible_group_ids: set[int] = set()
     stmt = (
         select(RosterSlot)
         .options(

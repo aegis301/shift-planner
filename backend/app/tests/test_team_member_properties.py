@@ -1,5 +1,3 @@
-from datetime import date
-
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
@@ -55,13 +53,11 @@ def prop_db():
 
 
 def test_create_definition_select_requires_options(prop_db):
-    db = prop_db
     with pytest.raises(ValueError):
         TeamMemberPropertyDefinitionCreate(name="Badge", type="select", options=[])
 
 
 def test_validate_number_and_select(prop_db):
-    db = prop_db
     defn = TeamMemberPropertyDefinition(
         organization_id=1,
         name="Years",

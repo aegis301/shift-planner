@@ -13,7 +13,6 @@ from app.services.planning_day_status_definitions import (
     create_planning_day_status_definition,
     delete_planning_day_status_definition,
     ensure_default_planning_day_statuses,
-    get_planning_day_status_definition_or_none,
     list_planning_day_status_definitions,
     update_planning_day_status_definition,
 )
