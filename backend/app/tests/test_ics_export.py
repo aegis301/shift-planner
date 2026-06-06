@@ -1,31 +1,22 @@
 from datetime import date, datetime, time, timedelta, timezone
-import pytest
-from fastapi.testclient import TestClient
-from icalendar import Calendar
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
+import pytest
 from app.api.deps import get_db
 from app.core.security import hash_password
 from app.main import app
-from app.models import (
-    Account,
-    Organization,
-    PlanningPeriod,
-    PlanningPeriodShiftGroupStatus,
-    RosterSlot,
-    RosterSlotAssignment,
-    ShiftGroup,
-    ShiftGroupShiftTemplate,
-    ShiftTemplate,
-    ShiftVariant,
-    TeamMember,
-    TeamMemberShiftGroup,
-    User,
-)
+from app.models import (Account, Organization, PlanningPeriod,
+                        PlanningPeriodShiftGroupStatus, RosterSlot,
+                        RosterSlotAssignment, ShiftGroup,
+                        ShiftGroupShiftTemplate, ShiftTemplate, ShiftVariant,
+                        TeamMember, TeamMemberShiftGroup, User)
 from app.models.base import Base
-from app.services.ics_export import build_ics_calendar, event_uid, export_member_shifts_ics, ShiftCalendarEvent
+from app.services.ics_export import (ShiftCalendarEvent, build_ics_calendar,
+                                     event_uid)
+from fastapi.testclient import TestClient
+from icalendar import Calendar
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 
 def test_build_ics_calendar_timed_event():
