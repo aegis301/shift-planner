@@ -1232,6 +1232,7 @@ class DashboardWishesDayStatusCount(BaseModel):
 
 
 class DashboardUpcomingSlot(BaseModel):
+    roster_slot_id: int
     slot_date: date_type
     template_code: str | None
     template_name: str | None

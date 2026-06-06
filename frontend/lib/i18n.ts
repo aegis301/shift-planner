@@ -205,7 +205,12 @@ export const dictionaries = {
     wishesCsvExport: "Wünsche CSV Export",
     rosterXlsxExport: "Dienstplan Excel Export",
     rosterPdfExport: "Dienstplan PDF Export",
+    myShiftsIcsExport: "Alle meine Schichten (.ics)",
+    myShiftsMonthIcsExport: "Meine Schichten diesen Monat (.ics)",
+    shiftIcsExport: "Schicht in Kalender exportieren",
     exportPublishedOnlyHint: "Nur für veröffentlichte Planungsmonate verfügbar.",
+    exportRosterVisibleHint: "Kalender-Export für Monat nur bei vorläufigem oder veröffentlichtem Plan.",
+    rosterMyAssignmentHighlight: "Dein Dienst",
     conflictSummary: "Konfliktübersicht",
     noConflicts: "Keine Konflikte",
     analysisSection: "Analyse",
@@ -682,6 +687,7 @@ export const dictionaries = {
     dashboardUpcomingShiftsColShift: "Schicht",
     dashboardUpcomingShiftsColTime: "Zeit",
     dashboardUpcomingShiftsColCategory: "Kategorie",
+    dashboardUpcomingShiftsColExport: "Export",
     dashboardOpenMyPlanning: "Zu Meine Planung"
   },
   en: {
@@ -887,7 +893,12 @@ export const dictionaries = {
     wishesCsvExport: "Requests CSV export",
     rosterXlsxExport: "Roster Excel export",
     rosterPdfExport: "Roster PDF export",
+    myShiftsIcsExport: "All my shifts (.ics)",
+    myShiftsMonthIcsExport: "My shifts this month (.ics)",
+    shiftIcsExport: "Export shift to calendar",
     exportPublishedOnlyHint: "Available only for published planning months.",
+    exportRosterVisibleHint: "Monthly calendar export requires a preliminary or published roster.",
+    rosterMyAssignmentHighlight: "Your assignment",
     conflictSummary: "Conflict summary",
     noConflicts: "No conflicts",
     analysisSection: "Analysis",
@@ -1361,6 +1372,7 @@ export const dictionaries = {
     dashboardUpcomingShiftsColShift: "Shift",
     dashboardUpcomingShiftsColTime: "Time",
     dashboardUpcomingShiftsColCategory: "Category",
+    dashboardUpcomingShiftsColExport: "Export",
     dashboardOpenMyPlanning: "Open my planning"
   }
 } as const;

@@ -1,7 +1,9 @@
 "use client";
 
+import { Calendar } from "lucide-react";
 import { categoryLabel } from "@/components/dashboardCharts";
 import type { TeamMemberDashboard } from "@/lib/dashboard";
+import { API_BASE_URL } from "@/lib/api";
 import { formatPlanningDate, formatShiftTimeRange } from "@/lib/shiftDisplay";
 import type { Locale, TranslationKey } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
@@ -28,10 +30,12 @@ export function DashboardUpcomingShiftsTable({
   locale,
   slots,
   emptyLabelKey = "dashboardUpcomingShiftsEmpty",
+  showIcsExport = false,
 }: {
   locale: Locale;
   slots: UpcomingSlot[];
   emptyLabelKey?: TranslationKey;
+  showIcsExport?: boolean;
 }) {
   if (slots.length === 0) {
     return <p className="text-sm text-slate-500">{t(locale, emptyLabelKey)}</p>;
@@ -54,6 +58,11 @@ export function DashboardUpcomingShiftsTable({
             <th scope="col" className="hidden px-3 py-2 text-left font-semibold text-slate-700 md:table-cell">
               {t(locale, "dashboardUpcomingShiftsColCategory")}
             </th>
+            {showIcsExport ? (
+              <th scope="col" className="px-3 py-2 text-right font-semibold text-slate-700">
+                <span className="sr-only">{t(locale, "dashboardUpcomingShiftsColExport")}</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
@@ -79,6 +88,18 @@ export function DashboardUpcomingShiftsTable({
                 <td className="hidden px-3 py-2.5 text-slate-600 md:table-cell">
                   {slot.category ? categoryLabel(locale, slot.category) : "—"}
                 </td>
+                {showIcsExport ? (
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                    <a
+                      aria-label={t(locale, "shiftIcsExport")}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                      href={`${API_BASE_URL}/api/v1/exports/roster-slots/${slot.roster_slot_id}.ics`}
+                      title={t(locale, "shiftIcsExport")}
+                    >
+                      <Calendar size={16} />
+                    </a>
+                  </td>
+                ) : null}
               </tr>
             );
           })}

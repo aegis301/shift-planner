@@ -81,7 +81,7 @@ export function DashboardMemberPanel({
       </div>
       <DashboardSection title={t(locale, "dashboardUpcomingShifts")}>
         <p className="mb-3 text-sm text-slate-600">{t(locale, "dashboardUpcomingShiftsHint")}</p>
-        <DashboardUpcomingShiftsTable locale={locale} slots={data.upcoming_slots} />
+        <DashboardUpcomingShiftsTable locale={locale} slots={data.upcoming_slots} showIcsExport />
       </DashboardSection>
       <DashboardSection title={t(locale, "dashboardPastShifts")}>
         <p className="mb-3 text-sm text-slate-600">{t(locale, "dashboardPastShiftsHint")}</p>
@@ -89,6 +89,7 @@ export function DashboardMemberPanel({
           locale={locale}
           slots={data.past_slots}
           emptyLabelKey="dashboardPastShiftsEmpty"
+          showIcsExport
         />
       </DashboardSection>
       <div className="grid gap-5 lg:grid-cols-2">

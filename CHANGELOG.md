@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2026-06-02
+- **ICS calendar export:** Team members export assigned shifts as `.ics` from dashboard/upcoming-shift table rows, the `/my-planning` export modal (all shifts or selected month), and `GET /api/v1/exports/roster-slots/{id}.ics`, `/exports/my-shifts.ics`, `/exports/my-shifts/{planning_period_id}.ics` (team-member portal auth; preliminary/published visibility). `DashboardUpcomingSlot` includes `roster_slot_id`.
+- **My planning roster highlight:** Read-only final roster on `/my-planning` rings the signed-in member’s assignments in emerald.
 - **My planning self-scope:** Wishes matrix reads and writes on `/my-planning` pass `team_member_portal=true` so admins and planners with a linked profile see and edit only their own row (full team matrix remains on `/planning`). Planners are no longer auto-filtered on the planning workspace without that flag.
 - **My planning shifts tab:** Third tab on `/my-planning` lists upcoming and past assigned shifts (same table as the team-member dashboard). Team-member dashboard API adds `past_slots`.
 

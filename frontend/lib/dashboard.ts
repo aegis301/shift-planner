@@ -96,6 +96,7 @@ export type TeamMemberDashboard = {
   my_validation_errors: number;
   my_validation_warnings: number;
   upcoming_slots: {
+    roster_slot_id: number;
     slot_date: string;
     template_code: string | null;
     template_name: string | null;
@@ -108,6 +109,7 @@ export type TeamMemberDashboard = {
     period_month: number | null;
   }[];
   past_slots: {
+    roster_slot_id: number;
     slot_date: string;
     template_code: string | null;
     template_name: string | null;

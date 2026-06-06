@@ -229,6 +229,7 @@ def test_member_upcoming_shifts_all_future(dash_db):
     )
     assert len(rows) == 1
     assert rows[0].slot_date == slot_date
+    assert rows[0].roster_slot_id == slot.id
     assert rows[0].template_code == "RD"
     assert rows[0].category == "rufdienst"
 

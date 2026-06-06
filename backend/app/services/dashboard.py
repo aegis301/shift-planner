@@ -705,6 +705,7 @@ def _member_assigned_shifts(
         variant = slot.shift_variant
         assigned.append(
             DashboardUpcomingSlot(
+                roster_slot_id=slot.id,
                 slot_date=slot.slot_date,
                 template_code=template.code if template else None,
                 template_name=template.name if template else None,

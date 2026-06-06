@@ -186,6 +186,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     const query = params.toString();
     return query ? `?${query}` : "";
   }, [shiftGroupId, teamMemberPortalUi]);
+  const myShiftsIcsQuery = useMemo(
+    () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
+    [shiftGroupId]
+  );
+  const teamMemberExportReady = Boolean(shiftGroupId);
+  const exportModalOpen = isExportModalOpen && (periodId || (teamMemberPortalUi && teamMemberExportReady));
 
   useEffect(() => {
     setShiftGroupId(searchParams.get("shiftGroup") ?? "");
@@ -553,6 +559,9 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           duplicateMemberDayKeys={duplicateMemberDayKeys}
           validationWarnings={warnings}
           onMatrixChange={handleRosterChange}
+          highlightTeamMemberId={
+            teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined
+          }
         />
       )}
     </section>
@@ -583,12 +592,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           <div className="grid gap-2">
             <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardUpcomingShifts")}</h3>
             <p className="text-sm text-slate-600">{t(locale, "dashboardUpcomingShiftsHint")}</p>
-            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.upcoming_slots} />
+            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.upcoming_slots} showIcsExport />
           </div>
           <div className="grid gap-2">
             <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardPastShifts")}</h3>
             <p className="text-sm text-slate-600">{t(locale, "dashboardPastShiftsHint")}</p>
-            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.past_slots} emptyLabelKey="dashboardPastShiftsEmpty" />
+            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.past_slots} emptyLabelKey="dashboardPastShiftsEmpty" showIcsExport />
           </div>
         </div>
       ) : (
@@ -714,7 +723,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 <button
                   aria-label={t(locale, "exports")}
                   className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!periodId}
+                  disabled={!teamMemberExportReady}
                   onClick={() => setIsExportModalOpen(true)}
                   title={t(locale, "exports")}
                   type="button"
@@ -789,7 +798,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         </div>
       ) : null}
 
-      {isExportModalOpen && periodId ? (
+      {exportModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="export-title">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -804,7 +813,29 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               </button>
             </div>
             <div className="grid gap-3">
-              {planningUi ? (
+              {teamMemberPortalUi ? (
+                <>
+                  <a
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                      exportBlockedByShiftGroup ? "pointer-events-none opacity-40" : ""
+                    }`}
+                    href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${myShiftsIcsQuery}`}
+                  >
+                    <Download size={17} />
+                    {t(locale, "myShiftsIcsExport")}
+                  </a>
+                  <a
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                      exportBlockedByShiftGroup || !periodId || !teamMemberRosterVisible ? "pointer-events-none opacity-40" : ""
+                    }`}
+                    href={`${API_BASE_URL}/api/v1/exports/my-shifts/${periodId}.ics${myShiftsIcsQuery}`}
+                  >
+                    <Download size={17} />
+                    {t(locale, "myShiftsMonthIcsExport")}
+                  </a>
+                </>
+              ) : null}
+              {planningUi && periodId ? (
                 <>
                   <a
                     className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
@@ -826,25 +857,32 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   </a>
                 </>
               ) : null}
-              <a
-                className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                  exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
-                }`}
-                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.xlsx${exportQuery}`}
-              >
-                <Download size={17} />
-                {t(locale, "rosterXlsxExport")}
-              </a>
-              <a
-                className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                  exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
-                }`}
-                href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.pdf${exportQuery}`}
-              >
-                <Download size={17} />
-                {t(locale, "rosterPdfExport")}
-              </a>
-              {!exportPublishedReady ? (
+              {periodId ? (
+                <>
+                  <a
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                      exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
+                    }`}
+                    href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.xlsx${exportQuery}`}
+                  >
+                    <Download size={17} />
+                    {t(locale, "rosterXlsxExport")}
+                  </a>
+                  <a
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                      exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
+                    }`}
+                    href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.pdf${exportQuery}`}
+                  >
+                    <Download size={17} />
+                    {t(locale, "rosterPdfExport")}
+                  </a>
+                </>
+              ) : null}
+              {teamMemberPortalUi && periodId && !teamMemberRosterVisible ? (
+                <p className="text-xs text-slate-500">{t(locale, "exportRosterVisibleHint")}</p>
+              ) : null}
+              {periodId && !exportPublishedReady ? (
                 <p className="text-xs text-slate-500">{t(locale, "exportPublishedOnlyHint")}</p>
               ) : null}
             </div>

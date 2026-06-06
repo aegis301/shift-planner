@@ -310,7 +310,8 @@ export function RosterMatrixEditor({
   readOnly = false,
   duplicateMemberDayKeys,
   validationWarnings = [],
-  onMatrixChange
+  onMatrixChange,
+  highlightTeamMemberId,
 }: {
   periodId?: string;
   compact?: boolean;
@@ -320,6 +321,7 @@ export function RosterMatrixEditor({
   duplicateMemberDayKeys?: ReadonlySet<string>;
   validationWarnings?: RosterWorkloadWarning[];
   onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
+  highlightTeamMemberId?: number;
 } = {}) {
   const { locale } = useLocale();
   const currentDate = new Date();
@@ -563,6 +565,7 @@ export function RosterMatrixEditor({
               templateColumns={templateColumns}
               readOnly={readOnly}
               duplicateMemberDayKeys={duplicateMemberDayKeys}
+              highlightTeamMemberId={highlightTeamMemberId}
             />
             <MobileRosterMatrix
               matrix={matrix}
@@ -579,6 +582,7 @@ export function RosterMatrixEditor({
               templateColumns={templateColumns}
               readOnly={readOnly}
               duplicateMemberDayKeys={duplicateMemberDayKeys}
+              highlightTeamMemberId={highlightTeamMemberId}
             />
           </>
         ) : (
@@ -610,6 +614,7 @@ function DesktopRosterMatrix({
   templateColumns,
   readOnly,
   duplicateMemberDayKeys,
+  highlightTeamMemberId,
 }: {
   matrix: RosterMatrix;
   workloadMatrix: RosterWorkloadMatrixSlice;
@@ -625,6 +630,7 @@ function DesktopRosterMatrix({
   templateColumns: ShiftTemplateSummary[];
   readOnly: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
+  highlightTeamMemberId?: number;
 }) {
   if (dense) {
     return (
@@ -687,6 +693,7 @@ function DesktopRosterMatrix({
                                   workloadWarnings={workloadWarnings}
                                   planningPeriodLabel={planningPeriodLabel}
                                   dayStatusDefinitions={matrix.day_status_definitions ?? []}
+                                  highlightTeamMemberId={highlightTeamMemberId}
                                 />
                               </div>
                             );
@@ -745,6 +752,7 @@ function DesktopRosterMatrix({
                         workloadWarnings={workloadWarnings}
                         planningPeriodLabel={planningPeriodLabel}
                         dayStatusDefinitions={matrix.day_status_definitions ?? []}
+                        highlightTeamMemberId={highlightTeamMemberId}
                       />
                     </div>
                   ))}
@@ -773,6 +781,7 @@ function MobileRosterMatrix({
   templateColumns,
   readOnly,
   duplicateMemberDayKeys,
+  highlightTeamMemberId,
 }: {
   matrix: RosterMatrix;
   workloadMatrix: RosterWorkloadMatrixSlice;
@@ -788,6 +797,7 @@ function MobileRosterMatrix({
   templateColumns: ShiftTemplateSummary[];
   readOnly: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
+  highlightTeamMemberId?: number;
 }) {
   if (dense) {
     return (
@@ -847,6 +857,7 @@ function MobileRosterMatrix({
                                       workloadWarnings={workloadWarnings}
                                       planningPeriodLabel={planningPeriodLabel}
                                       dayStatusDefinitions={matrix.day_status_definitions ?? []}
+                                      highlightTeamMemberId={highlightTeamMemberId}
                                     />
                                   </div>
                                 );
@@ -892,6 +903,7 @@ function MobileRosterMatrix({
                       workloadWarnings={workloadWarnings}
                       planningPeriodLabel={planningPeriodLabel}
                       dayStatusDefinitions={matrix.day_status_definitions ?? []}
+                      highlightTeamMemberId={highlightTeamMemberId}
                     />
                 </div>
             ))}
@@ -931,6 +943,7 @@ function RosterCell({
   workloadWarnings,
   planningPeriodLabel,
   dayStatusDefinitions,
+  highlightTeamMemberId,
 }: {
   slot: RosterSlot;
   members: RosterMatrixTeamMember[];
@@ -945,6 +958,7 @@ function RosterCell({
   workloadWarnings: RosterWorkloadWarning[];
   planningPeriodLabel: string;
   dayStatusDefinitions: PlanningDayStatusDefinition[];
+  highlightTeamMemberId?: number;
 }) {
   const [memberId, setMemberId] = useState<number | "">(assignment?.team_member_id ?? "");
   const [open, setOpen] = useState(false);
@@ -1007,6 +1021,8 @@ function RosterCell({
   const duplicateSameDay =
     assigneeId != null && Boolean(duplicateMemberDayKeys?.has(`${assigneeId}:${slot.slot_date}`));
   const warnUnavailable = hasUnavailableDay || highlightNoGo;
+  const isMyAssignment = highlightTeamMemberId != null && assigneeId === highlightTeamMemberId;
+  const highlightMine = isMyAssignment && !warnUnavailable && !duplicateSameDay;
 
   const syncMenuPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -1291,8 +1307,16 @@ function RosterCell({
     <div
       ref={rootRef}
       className={`relative grid gap-1 rounded-lg p-0.5 ${
-        warnUnavailable ? "bg-rose-50 ring-2 ring-rose-300" : duplicateSameDay ? "bg-amber-50/80 ring-2 ring-amber-400" : ""
+        warnUnavailable
+          ? "bg-rose-50 ring-2 ring-rose-300"
+          : duplicateSameDay
+            ? "bg-amber-50/80 ring-2 ring-amber-400"
+            : highlightMine
+              ? "bg-emerald-50/40 ring-2 ring-emerald-500"
+              : ""
       }`}
+      title={highlightMine ? t(locale, "rosterMyAssignmentHighlight") : undefined}
+      aria-label={highlightMine ? t(locale, "rosterMyAssignmentHighlight") : undefined}
     >
       <button
         ref={triggerRef}

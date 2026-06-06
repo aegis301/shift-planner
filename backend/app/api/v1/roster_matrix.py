@@ -13,6 +13,7 @@ from app.schemas import (
 from app.services.authz import (
     assert_planning_shift_group_scope,
     assert_team_member_shift_group_access,
+    can_access_team_member_portal,
     can_use_planning_ui,
     get_linked_team_member,
 )
@@ -22,6 +23,7 @@ from app.services.roster_matrix import (
     upsert_roster_slot_assignment,
 )
 from app.services.exports import export_roster_matrix_pdf, export_roster_matrix_xlsx
+from app.services.ics_export import export_member_shifts_ics, export_single_roster_slot_ics
 from app.services.planning import get_shift_group_planning_status, is_team_member_roster_visible
 
 router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
@@ -193,4 +195,96 @@ def get_roster_matrix_pdf(
         content=body,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="roster-matrix-{planning_period_id}.pdf"'},
+    )
+
+
+def _require_team_member_export_user(db: Session, user: User):
+    if not can_access_team_member_portal(db, user):
+        raise HTTPException(status_code=403, detail="Team member portal access denied")
+    linked = get_linked_team_member(db, user)
+    if linked is None:
+        raise HTTPException(status_code=403, detail="No linked team member profile")
+    return linked
+
+
+@export_router.get("/exports/roster-slots/{roster_slot_id}.ics")
+def get_roster_slot_ics(
+    roster_slot_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    member = _require_team_member_export_user(db, user)
+    try:
+        body = export_single_roster_slot_ics(
+            db,
+            organization_id=user.organization_id,
+            team_member_id=member.id,
+            roster_slot_id=roster_slot_id,
+            calendar_name="Shift",
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="text/calendar",
+        headers={"Content-Disposition": f'attachment; filename="shift-{roster_slot_id}.ics"'},
+    )
+
+
+@export_router.get("/exports/my-shifts.ics")
+def get_my_shifts_ics(
+    shift_group_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    member = _require_team_member_export_user(db, user)
+    try:
+        assert_team_member_shift_group_access(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        body = export_member_shifts_ics(
+            db,
+            organization_id=user.organization_id,
+            team_member_id=member.id,
+            shift_group_id=shift_group_id,
+            calendar_name="My shifts",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="text/calendar",
+        headers={"Content-Disposition": 'attachment; filename="my-shifts.ics"'},
+    )
+
+
+@export_router.get("/exports/my-shifts/{planning_period_id}.ics")
+def get_my_shifts_period_ics(
+    planning_period_id: int,
+    shift_group_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _resolve_published_roster_export_scope(db, user, planning_period_id, shift_group_id, True)
+    member = _require_team_member_export_user(db, user)
+    try:
+        body = export_member_shifts_ics(
+            db,
+            organization_id=user.organization_id,
+            team_member_id=member.id,
+            shift_group_id=shift_group_id,
+            planning_period_id=planning_period_id,
+            calendar_name="My shifts",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="text/calendar",
+        headers={
+            "Content-Disposition": f'attachment; filename="my-shifts-{planning_period_id}.ics"',
+        },
     )
