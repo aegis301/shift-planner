@@ -500,7 +500,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }, [loadRosterMatrix, loadWarnings, periodId]);
 
   const wishesSection = periodId ? (
-    <section className="grid gap-3">
+    <section className="grid min-w-0 gap-3">
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
@@ -530,7 +530,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   ) : null;
 
   const rosterSection = periodId ? (
-    <section className="grid gap-3">
+    <section className="grid min-w-0 gap-3">
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
@@ -612,7 +612,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     ) : null;
 
   return (
-    <div className="grid gap-6">
+    <div className="grid min-w-0 gap-6">
       <Card>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">

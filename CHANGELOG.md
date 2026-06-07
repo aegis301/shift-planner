@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-06-07
+- **Wishes matrix any-shift no-go:** Template picker adds **Any shift** / **Jeder Dienst**; choosing no-go marks every shift template in the plan as a no-go for that day in one action (bulk shift-intent API).
+
 ## 2026-06-02
 - **ICS calendar export:** Team members export assigned shifts as `.ics` from dashboard/upcoming-shift table rows, the `/my-planning` export modal (all shifts or selected month), and `GET /api/v1/exports/roster-slots/{id}.ics`, `/exports/my-shifts.ics`, `/exports/my-shifts/{planning_period_id}.ics` (team-member portal auth; preliminary/published visibility). `DashboardUpcomingSlot` includes `roster_slot_id`.
 - **My planning roster highlight:** Read-only final roster on `/my-planning` rings the signed-in member’s assignments in emerald.
