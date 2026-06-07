@@ -11,6 +11,7 @@ import {
   planningDayStatusBadgeClass,
   planningDayStatusByCode,
   planningDayStatusLabel,
+  planningDayStatusSelectClass,
   type PlanningDayStatusDefinition
 } from "@/lib/planningDayStatus";
 import { Card, Field, inputClass } from "@/components/Card";
@@ -226,6 +227,7 @@ function matrixApiQuery(shiftGroupId?: string, teamMemberPortal?: boolean) {
 export function MatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
+  reloadToken = 0,
   shiftGroupId,
   editableMemberId,
   teamMemberPortal = false,
@@ -235,6 +237,7 @@ export function MatrixEditor({
 }: {
   periodId?: string;
   compact?: boolean;
+  reloadToken?: number;
   shiftGroupId?: string;
   editableMemberId?: number;
   teamMemberPortal?: boolean;
@@ -345,7 +348,7 @@ export function MatrixEditor({
     }
 
     void loadLatestPeriod();
-  }, [controlledPeriodId, loadMatrixById, groupQuery]);
+  }, [controlledPeriodId, loadMatrixById, groupQuery, reloadToken]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -384,13 +387,33 @@ export function MatrixEditor({
           method: "POST",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate })
         });
+        setMatrix((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          return {
+            ...prev,
+            cells: prev.cells.filter(
+              (cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate)
+            )
+          };
+        });
       } else {
         if (!shiftGroupId) {
           return;
         }
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells${groupQuery}`, {
+        const saved = await apiFetch<PlanningCell>(`/api/v1/matrix/${activePeriodId}/cells${groupQuery}`, {
           method: "PUT",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null })
+        });
+        setMatrix((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          const cells = prev.cells.filter(
+            (cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate)
+          );
+          return { ...prev, cells: [...cells, saved] };
         });
       }
       setMessage(t(locale, "autosaved"));
@@ -1753,7 +1776,10 @@ function MatrixCell({
   onOpenDayEdit?: () => void;
 }) {
   const dense = uiMode === "dense";
-  const dayStatuses = activePlanningDayStatusDefinitions(matrix.day_status_definitions ?? []);
+  const dayStatuses = useMemo(
+    () => activePlanningDayStatusDefinitions(matrix.day_status_definitions ?? []),
+    [matrix.day_status_definitions]
+  );
   const [status, setStatus] = useState(() => normalizePlanningStatus(cell?.status, dayStatuses));
   const [comment, setComment] = useState(cell?.comment ?? "");
   const [commentDraftOpen, setCommentDraftOpen] = useState(false);
@@ -1763,9 +1789,10 @@ function MatrixCell({
     !commentInSheetOnly &&
     (Boolean(dayFeedbackAlwaysVisible && !readOnly) || hasComment || commentDraftOpen);
   const storedDayComment = (cell?.comment ?? "").trim();
-  const controlClass = `min-w-0 rounded-lg border border-slate-200 bg-white font-medium ${
+  const controlSizeClass = `min-w-0 rounded-lg font-medium outline-none focus:ring-4 focus:ring-mint/20 ${
     dense ? "px-1.5 py-1.5 text-[0.7rem]" : uiMode === "mobile" ? "px-2 py-2.5 text-sm" : "px-2 py-2 text-xs"
   }`;
+  const controlClass = `${controlSizeClass} border border-slate-200 bg-white`;
 
   const intentMap = useMemo(() => {
     const map = new Map<string, PlanningShiftIntentKind>();
@@ -1914,7 +1941,7 @@ function MatrixCell({
         </div>
       ) : (
         <select
-          className={controlClass}
+          className={`${controlSizeClass} ${planningDayStatusSelectClass(status, dayStatuses)}`}
           disabled={readOnly}
           value={status}
           onChange={(event) => {

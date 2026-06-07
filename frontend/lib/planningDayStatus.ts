@@ -58,6 +58,22 @@ const BADGE_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
   teal: "bg-teal-100 text-teal-800 ring-teal-200"
 };
 
+const SELECT_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
+  rose: "border-rose-400 bg-rose-50 text-rose-900",
+  violet: "border-violet-400 bg-violet-50 text-violet-900",
+  amber: "border-amber-400 bg-amber-50 text-amber-950",
+  slate: "border-slate-400 bg-slate-50 text-slate-800",
+  emerald: "border-emerald-400 bg-emerald-50 text-emerald-900",
+  sky: "border-sky-400 bg-sky-50 text-sky-900",
+  cyan: "border-cyan-400 bg-cyan-50 text-cyan-900",
+  orange: "border-orange-400 bg-orange-50 text-orange-900",
+  lime: "border-lime-400 bg-lime-50 text-lime-950",
+  fuchsia: "border-fuchsia-400 bg-fuchsia-50 text-fuchsia-900",
+  zinc: "border-zinc-400 bg-zinc-50 text-zinc-900",
+  indigo: "border-indigo-400 bg-indigo-50 text-indigo-900",
+  teal: "border-teal-400 bg-teal-50 text-teal-900"
+};
+
 const SOLID_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
   rose: "bg-rose-500",
   violet: "bg-violet-500",
@@ -84,6 +100,23 @@ export function planningDayStatusBadgeClass(preset: PlanningDayStatusColorPreset
 
 export function planningDayStatusSolidClass(preset: PlanningDayStatusColorPreset): string {
   return SOLID_BY_PRESET[preset] ?? SOLID_BY_PRESET.slate;
+}
+
+export const planningDayStatusSelectShellClass =
+  "h-11 min-w-0 rounded-lg px-3 text-sm font-medium outline-none transition focus:ring-4 focus:ring-mint/20";
+
+export function planningDayStatusSelectClass(
+  code: string,
+  definitions: PlanningDayStatusDefinition[]
+): string {
+  if (!code) {
+    return "border-2 border-slate-200 bg-white text-slate-700";
+  }
+  const row = planningDayStatusByCode(definitions).get(code);
+  if (!row) {
+    return "border-2 border-slate-200 bg-white text-slate-700";
+  }
+  return `border-2 ${SELECT_BY_PRESET[row.color_preset] ?? SELECT_BY_PRESET.slate}`;
 }
 
 export function sortPlanningDayStatusDefinitions(

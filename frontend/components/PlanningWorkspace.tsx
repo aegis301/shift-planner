@@ -24,6 +24,7 @@ import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu"
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { DashboardUpcomingShiftsTable } from "@/components/DashboardUpcomingShiftsTable";
+import { PlanningDayIntervalBar } from "@/components/PlanningDayIntervalBar";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -118,6 +119,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [warnings, setWarnings] = useState<ValidationWarning[]>([]);
   const [message, setMessage] = useState("");
   const [rosterReloadToken, setRosterReloadToken] = useState(0);
+  const [matrixReloadToken, setMatrixReloadToken] = useState(0);
   const [viewMode, setViewMode] = useState<PlanningViewMode>("tabs");
   const [activeTab, setActiveTab] = useState<PlanningTab>("wishes");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -499,6 +501,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     }
   }, [loadRosterMatrix, loadWarnings, periodId]);
 
+  const handleDayIntervalApplied = useCallback(async () => {
+    setMatrixReloadToken((value) => value + 1);
+    await handleWishesChanged();
+  }, [handleWishesChanged]);
+
   const wishesSection = periodId ? (
     <section className="grid min-w-0 gap-3">
       <div>
@@ -518,6 +525,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <MatrixEditor
           periodId={periodId}
           compact
+          reloadToken={matrixReloadToken}
           shiftGroupId={shiftGroupId || undefined}
           editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
           teamMemberPortal={teamMemberPortalUi}
@@ -765,6 +773,17 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             </div>
           ) : null}
           <PlanningDayStatusLegend locale={locale} definitions={dayStatusDefinitions} />
+          {periodId && shiftGroupId ? (
+            <PlanningDayIntervalBar
+              periodId={periodId}
+              shiftGroupId={shiftGroupId}
+              readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
+              teamMemberPortal={teamMemberPortalUi}
+              editableMemberId={editableMemberId}
+              dayStatusDefinitions={dayStatusDefinitions}
+              onApplied={handleDayIntervalApplied}
+            />
+          ) : null}
         </div>
       </Card>
 

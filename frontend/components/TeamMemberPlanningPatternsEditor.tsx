@@ -10,6 +10,8 @@ import {
   activePlanningDayStatusDefinitions,
   labelForPlanningDayStatusCode,
   planningDayStatusLabel,
+  planningDayStatusSelectClass,
+  planningDayStatusSelectShellClass,
   type PlanningDayStatusDefinition
 } from "@/lib/planningDayStatus";
 
@@ -784,7 +786,7 @@ export function TeamMemberPlanningPatternsEditor({
                   </div>
                   <Field label={t(locale, "memberPlanningPatternMatrixStatus")}>
                     <select
-                      className={inputClass}
+                      className={`${planningDayStatusSelectShellClass} w-full ${planningDayStatusSelectClass(rule.status, dayStatusDefinitions)}`}
                       disabled={readOnly}
                       value={rule.status}
                       onChange={(event) =>
@@ -826,7 +828,7 @@ export function TeamMemberPlanningPatternsEditor({
                   </Field>
                   <Field label={t(locale, "memberPlanningPatternMatrixStatus")}>
                     <select
-                      className={inputClass}
+                      className={`${planningDayStatusSelectShellClass} w-full ${planningDayStatusSelectClass(rule.status, dayStatusDefinitions)}`}
                       disabled={readOnly}
                       value={rule.status}
                       onChange={(event) =>
