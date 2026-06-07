@@ -19,6 +19,9 @@ import { useMediaQuery } from "@/lib/useMediaQuery";
 
 type PlanningShiftIntentKind = "wish" | "no_go";
 
+const ANY_SHIFT_INTENT_KEY = "__any_shift__";
+const ANY_SHIFT_TEMPLATE_ID = 0;
+
 type SaveMatrixIntentFn = (
   memberId: number,
   cellDate: string,
@@ -399,6 +402,36 @@ export function MatrixEditor({
 
   const saveIntent = useCallback<SaveMatrixIntentFn>(
     async (memberId, cellDate, templateId, kind, intentShiftGroupId) => {
+      const intentRows =
+        templateId === ANY_SHIFT_TEMPLATE_ID && matrix
+          ? intentTemplateRowsForGroup(matrix, shiftGroupId)
+          : null;
+      if (intentRows) {
+        if (intentRows.length === 0) {
+          return;
+        }
+        setSavingCells((count) => count + 1);
+        try {
+          await apiFetch(`/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              intents: intentRows.map((row) => ({
+                team_member_id: memberId,
+                cell_date: cellDate,
+                shift_group_id: row.shiftGroupId,
+                shift_template_id: row.templateId,
+                kind
+              }))
+            })
+          });
+          setMessage(t(locale, "autosaved"));
+          await loadMatrixById(activePeriodId);
+          await onChanged?.();
+        } finally {
+          setSavingCells((count) => Math.max(0, count - 1));
+        }
+        return;
+      }
       const gid = intentShiftGroupId ?? (shiftGroupId ? Number(shiftGroupId) : undefined);
       if (gid == null || Number.isNaN(gid)) {
         return;
@@ -426,7 +459,7 @@ export function MatrixEditor({
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, groupQuery, loadMatrixById, locale, onChanged, shiftGroupId]
+    [activePeriodId, groupQuery, loadMatrixById, locale, matrix, onChanged, shiftGroupId]
   );
 
   async function persistNote(memberId: number, monthlyCommentOnly = false) {
@@ -499,7 +532,7 @@ export function MatrixEditor({
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 w-full gap-5">
       {!compact ? (
         <Card>
           <div className="grid gap-5">
@@ -654,7 +687,7 @@ export function MatrixEditor({
                   />
                 </div>
               ) : null}
-              <div className={isNarrow ? "hidden lg:block" : undefined}>
+              <div className={isNarrow ? "hidden min-w-0 w-full lg:block" : "min-w-0 w-full"}>
                 <PlanningDenseMatrix
                   matrix={matrix}
                   cellMap={cellMap}
@@ -1227,7 +1260,7 @@ function DesktopMatrix({
 
   return (
     <div className={`hidden ${dataTableScrollShellClassName} rounded-lg border border-slate-200 bg-white shadow-soft lg:block`}>
-      <table className="min-w-full border-separate border-spacing-0 text-sm">
+      <table className={`${singleMemberColumn ? "min-w-full" : "min-w-max"} border-separate border-spacing-0 text-sm`}>
         <thead>
           <tr>
             <th className="sticky left-0 top-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-left font-semibold text-slate-700">
@@ -1769,17 +1802,49 @@ function MatrixCell({
 
   const [selectedIntentKey, setSelectedIntentKey] = useState("");
   const showIntents = Boolean(matrix.shift_templates?.length && intentOptions.length);
+  const isAnyShiftSelected = selectedIntentKey === ANY_SHIFT_INTENT_KEY;
   const selectedIntent = intentOptions.find((row) => row.key === selectedIntentKey);
-  const selectedIntentKind = selectedIntent
-    ? intentMap.get(`${cellDate}:${memberId}:${selectedIntent.templateId}:${selectedIntent.shiftGroupId}`)
-    : undefined;
+  const anyShiftKind = useMemo(() => {
+    if (!isAnyShiftSelected || intentRows.length === 0) {
+      return undefined;
+    }
+    const kinds = intentRows.map((row) =>
+      intentMap.get(`${cellDate}:${memberId}:${row.templateId}:${row.shiftGroupId}`)
+    );
+    return kinds.every((kind) => kind === "no_go") ? "no_go" : "";
+  }, [cellDate, intentMap, intentRows, isAnyShiftSelected, memberId]);
+  const selectedIntentKind = isAnyShiftSelected
+    ? anyShiftKind
+    : selectedIntent
+      ? intentMap.get(`${cellDate}:${memberId}:${selectedIntent.templateId}:${selectedIntent.shiftGroupId}`)
+      : undefined;
+
+  const applyIntentKind = (kind: PlanningShiftIntentKind | null) => {
+    if (isAnyShiftSelected) {
+      void onSaveIntent(memberId, cellDate, ANY_SHIFT_TEMPLATE_ID, kind);
+      return;
+    }
+    if (!selectedIntent) {
+      return;
+    }
+    void onSaveIntent(
+      memberId,
+      cellDate,
+      selectedIntent.templateId,
+      kind,
+      selectedIntent.shiftGroupId
+    );
+  };
 
   useEffect(() => {
     if (intentOptions.length === 0) {
       setSelectedIntentKey("");
       return;
     }
-    if (!intentOptions.some((row) => row.key === selectedIntentKey)) {
+    if (
+      selectedIntentKey !== ANY_SHIFT_INTENT_KEY &&
+      !intentOptions.some((row) => row.key === selectedIntentKey)
+    ) {
       setSelectedIntentKey(intentOptions[0].key);
     }
   }, [intentOptions, selectedIntentKey]);
@@ -1915,7 +1980,7 @@ function MatrixCell({
           <MessageSquarePlus aria-hidden size={dense ? 14 : 16} />
         </button>
       )}
-      {showIntents && selectedIntent ? (
+      {showIntents && (selectedIntent || isAnyShiftSelected) ? (
         <div className={`grid ${dense ? "gap-1 pt-0.5" : "gap-1.5 pt-1"}`}>
           <select
             className={controlClass}
@@ -1924,6 +1989,7 @@ function MatrixCell({
             aria-label={t(locale, "shiftTemplate")}
             onChange={(event) => setSelectedIntentKey(event.target.value)}
           >
+            <option value={ANY_SHIFT_INTENT_KEY}>{t(locale, "matrixAnyShift")}</option>
             {intentOptions.map((row) => (
               <option key={row.key} value={row.key}>
                 {row.label}
@@ -1933,11 +1999,16 @@ function MatrixCell({
           {useIntentSegments ? (
             <div className="flex overflow-hidden rounded-lg border border-slate-200">
               {(
-                [
-                  { value: "", label: t(locale, "emptyValue") },
-                  { value: "wish", label: t(locale, "wishShort") },
-                  { value: "no_go", label: t(locale, "noGoShort") }
-                ] as const
+                isAnyShiftSelected
+                  ? [
+                      { value: "", label: t(locale, "emptyValue") },
+                      { value: "no_go", label: t(locale, "noGoShort") }
+                    ]
+                  : [
+                      { value: "", label: t(locale, "emptyValue") },
+                      { value: "wish", label: t(locale, "wishShort") },
+                      { value: "no_go", label: t(locale, "noGoShort") }
+                    ]
               ).map((segment) => {
                 const active = (selectedIntentKind ?? "") === segment.value;
                 const tone =
@@ -1961,13 +2032,7 @@ function MatrixCell({
                     onClick={() => {
                       const kind: PlanningShiftIntentKind | null =
                         segment.value === "wish" || segment.value === "no_go" ? segment.value : null;
-                      void onSaveIntent(
-                        memberId,
-                        cellDate,
-                        selectedIntent.templateId,
-                        kind,
-                        selectedIntent.shiftGroupId
-                      );
+                      applyIntentKind(kind);
                     }}
                   >
                     {segment.label}
@@ -1985,17 +2050,11 @@ function MatrixCell({
                 const next = event.target.value;
                 const kind: PlanningShiftIntentKind | null =
                   next === "wish" || next === "no_go" ? next : null;
-                void onSaveIntent(
-                  memberId,
-                  cellDate,
-                  selectedIntent.templateId,
-                  kind,
-                  selectedIntent.shiftGroupId
-                );
+                applyIntentKind(kind);
               }}
             >
               <option value="">{t(locale, "emptyValue")}</option>
-              <option value="wish">{t(locale, "wish")}</option>
+              {!isAnyShiftSelected ? <option value="wish">{t(locale, "wish")}</option> : null}
               <option value="no_go">{t(locale, "noGo")}</option>
             </select>
           )}
