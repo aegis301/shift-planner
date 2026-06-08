@@ -258,7 +258,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   );
   const exportRequiresShiftGroup = plannerNeedsShiftGroup || teamMemberPortalUi;
   const exportBlockedByShiftGroup = exportRequiresShiftGroup && !shiftGroupId;
-  const exportPublishedReady = groupPlanningStatus?.status === "published";
+  const exportRosterFileReady =
+    groupPlanningStatus?.status === "preliminary" || groupPlanningStatus?.status === "published";
   const teamMemberWishesEditable =
     teamMemberPortalUi &&
     (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
@@ -880,7 +881,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 <>
                   <a
                     className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                      exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
+                      exportBlockedByShiftGroup || !exportRosterFileReady ? "pointer-events-none opacity-40" : ""
                     }`}
                     href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.xlsx${exportQuery}`}
                   >
@@ -889,7 +890,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   </a>
                   <a
                     className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                      exportBlockedByShiftGroup || !exportPublishedReady ? "pointer-events-none opacity-40" : ""
+                      exportBlockedByShiftGroup || !exportRosterFileReady ? "pointer-events-none opacity-40" : ""
                     }`}
                     href={`${API_BASE_URL}/api/v1/exports/roster-matrix/${periodId}.pdf${exportQuery}`}
                   >
@@ -901,8 +902,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               {teamMemberPortalUi && periodId && !teamMemberRosterVisible ? (
                 <p className="text-xs text-slate-500">{t(locale, "exportRosterVisibleHint")}</p>
               ) : null}
-              {periodId && !exportPublishedReady ? (
-                <p className="text-xs text-slate-500">{t(locale, "exportPublishedOnlyHint")}</p>
+              {periodId && !exportRosterFileReady ? (
+                <p className="text-xs text-slate-500">{t(locale, "exportRosterFileReadyHint")}</p>
               ) : null}
             </div>
           </div>

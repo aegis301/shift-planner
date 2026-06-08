@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-06-08
+- **Roster PDF/XLSX in preliminary:** Planning workspace enables Excel and PDF roster exports when the selected shift group is `preliminary` or `published` (backend already allowed both; UI was published-only). Export headers drop the "Published" label.
+
 ## 2026-06-07
 - **Day interval exceptions:** Planning workspace toolbar adds a date-range form to apply one org-defined day status (e.g. vacation, research) across inclusive from/to dates for a single team member, using the existing bulk cells API with overwrite confirmation when existing statuses would change.
 - **Wishes matrix any-shift no-go:** Template picker adds **Any shift** / **Jeder Dienst**; choosing no-go marks every shift template in the plan as a no-go for that day in one action (bulk shift-intent API).

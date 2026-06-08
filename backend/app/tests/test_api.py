@@ -1097,6 +1097,19 @@ def test_roster_matrix_published_xlsx_pdf_exports(client: TestClient):
     denied = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx?shift_group_id=1")
     assert denied.status_code == 403
 
+    assert client.post(f"/api/v1/planning-periods/{period_id}/preliminary?shift_group_id=1").status_code == 200
+
+    preliminary_xlsx = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx?shift_group_id=1")
+    assert preliminary_xlsx.status_code == 200
+    assert preliminary_xlsx.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    preliminary_pdf = client.get(f"/api/v1/exports/roster-matrix/{period_id}.pdf?shift_group_id=1")
+    assert preliminary_pdf.status_code == 200
+    assert preliminary_pdf.headers["content-type"].startswith("application/pdf")
+    assert preliminary_pdf.content.startswith(b"%PDF")
+
     assert client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id=1").status_code == 200
 
     xlsx = client.get(f"/api/v1/exports/roster-matrix/{period_id}.xlsx?shift_group_id=1")

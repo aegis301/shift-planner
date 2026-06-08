@@ -327,7 +327,7 @@ def export_roster_matrix_xlsx(
     sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
 
     sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col)
-    sheet["A2"] = f"Published roster {table.period_label}"
+    sheet["A2"] = f"Roster {table.period_label}"
     sheet["A2"].font = Font(size=11, color="334155")
 
     header_row = 4
@@ -400,14 +400,14 @@ def export_roster_matrix_pdf(
     document = SimpleDocTemplate(
         buffer,
         pagesize=landscape(A4),
-        title=f"Published roster {table.period_label}",
+        title=f"Roster {table.period_label}",
         leftMargin=24,
         rightMargin=24,
         topMargin=28,
         bottomMargin=24,
     )
     styles = getSampleStyleSheet()
-    title = Paragraph(f"<b>Shift Planner</b> - Published roster {table.period_label}", styles["Title"])
+    title = Paragraph(f"<b>Shift Planner</b> - Roster {table.period_label}", styles["Title"])
     subtitle = Paragraph("Final roster matrix export", styles["Normal"])
     story = [title, Spacer(1, 6), subtitle, Spacer(1, 12)]
 
