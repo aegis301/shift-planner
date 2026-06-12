@@ -161,6 +161,12 @@ export const dictionaries = {
     saved: "Gespeichert",
     deletePlanningPeriod: "Planungsmonat löschen",
     regenerateRoster: "Dienstplan zurücksetzen",
+    refreshRosterFromTemplates: "Dienstplan aus Vorlagen aktualisieren",
+    refreshRosterConfirmTitle: "Dienstplan aus Vorlagen aktualisieren?",
+    refreshRosterConfirmBody:
+      "Neue Dienste aus den aktuellen Dienstvorlagen werden ergänzt, veraltete entfernt. Bestehende Zuweisungen auf unveränderten Diensten bleiben erhalten; Zuweisungen auf entfernten Diensten werden gelöscht.",
+    refreshRosterResult: "Aktualisiert: {{added}} hinzugefügt, {{removed}} entfernt, {{updated}} angepasst",
+    refreshRosterPublishedBlocked: "Veröffentlichte Dienstgruppen können nicht aktualisiert werden",
     destructiveAction: "Destruktive Aktion",
     deletePlanningPeriodWarning: "Dieser Planungsmonat wird vollständig gelöscht. Wünsche, Monatsnotizen, generierte Dienste und bereits zugewiesene Dienste werden entfernt.",
     regenerateRosterWarning: "Die Dienste dieses Monats werden aus den aktuellen Dienstvorlagen neu erzeugt. Bereits zugewiesene Dienste werden entfernt.",
@@ -174,6 +180,7 @@ export const dictionaries = {
     noShiftTemplatesForRoster: "Noch keine aktiven Dienstarten. Lege zuerst Dienstarten an, damit Spalten im Dienstplan entstehen.",
     conflict: "Konflikt",
     planningWorkspaceHelp: "Ein Planungsmonat steuert Wünsche, finalen Dienstplan, Exporte, Prüfung und Arbeitslast.",
+    planningToolbarDetailsHint: "Status, Legende und Tagesintervall",
     dayStatusLegendTitle: "Tagesstatus in Wünschen und Dienstplan:",
     planningDayIntervalTitle: "Tagesstatus für Zeitraum",
     planningDayIntervalHelp: "Einen Tagesstatus (z. B. Urlaub, Forschung) für alle Tage von Start bis Ende setzen.",
@@ -260,6 +267,28 @@ export const dictionaries = {
     endDayOffset: "Ende nach Tagen",
     requiredCount: "Besetzungen",
     applicability: "Gültigkeit",
+    shiftVariantApplicabilityHint:
+      "Legt fest, an welchen Tagen diese Variante Dienstplätze erzeugt. Für die meisten Schichten reicht der Starttag; der Endtag ist vor allem bei Schichten über Mitternacht relevant.",
+    shiftVariantLimitToSpecificDays: "Auf bestimmte Tage begrenzen",
+    shiftVariantLimitWeekdaysHint:
+      "Erzeugt Dienste nur an den ausgewählten Wochentagen. Der Grobfilter darüber wird dann ignoriert.",
+    shiftVariantIncludeHolidays: "Auch an Feiertagen anwenden, wenn diese auf die gewählten Tage fallen",
+    shiftVariantIncludeHolidaysHint:
+      "Aus: An NRW-Feiertagen entsteht kein Dienst, auch wenn der Feiertag auf einen gewählten Wochentag fällt.",
+    shiftVariantEndApplicability: "Endtag-Gültigkeit",
+    shiftVariantEndApplicabilityHint:
+      "Optional für Schichten über Mitternacht: Begrenzt den Wochentag, an dem die Schicht endet (Starttag + Endtag-Offset).",
+    shiftVariantStartDayClassHint:
+      "Grobfilter für den Starttag: Wochentag, Wochenende, Feiertag oder jeder Tag. Für z. B. Mo–Do aktivieren Sie „Auf bestimmte Tage begrenzen“.",
+    shiftVariantEndDayClassHint:
+      "Grobfilter für den Endtag bei Schichten über Mitternacht. Leer lassen, wenn der Endtag nicht eingeschränkt werden soll.",
+    shiftVariantWeekdaySelectionLabel: "Wochentage",
+    shiftVariantWeekdaySelectionHint:
+      "Einzelne Tage antippen oder Schnellauswahl nutzen. Nur markierte Tage erhalten einen generierten Dienstplatz.",
+    shiftVariantInfoButton: "Erklärung ein- oder ausblenden",
+    shiftVariantWeekdayPresetMonThu: "Mo–Do",
+    shiftVariantWeekdayPresetMonFri: "Mo–Fr",
+    shiftVariantWeekdayPresetSatSun: "Sa–So",
     timeRange: "Zeit",
     count: "Anzahl",
     noVariants: "Noch keine Varianten",
@@ -864,6 +893,12 @@ export const dictionaries = {
     saved: "Saved",
     deletePlanningPeriod: "Delete planning month",
     regenerateRoster: "Reset roster",
+    refreshRosterFromTemplates: "Refresh roster from templates",
+    refreshRosterConfirmTitle: "Refresh roster from templates?",
+    refreshRosterConfirmBody:
+      "Adds new shifts from current shift templates and removes obsolete ones. Existing assignments on unchanged slots are kept; assignments on removed slots are cleared.",
+    refreshRosterResult: "Updated: {{added}} added, {{removed}} removed, {{updated}} adjusted",
+    refreshRosterPublishedBlocked: "Published shift groups cannot be refreshed",
     destructiveAction: "Destructive action",
     deletePlanningPeriodWarning: "This planning month will be deleted completely. Requests, monthly notes, generated slots, and assigned shifts will be removed.",
     regenerateRosterWarning: "This month's shifts will be regenerated from the current shift templates. Already assigned shifts will be removed.",
@@ -877,6 +912,7 @@ export const dictionaries = {
     noShiftTemplatesForRoster: "No active shift types yet. Create shift types first so the roster has columns.",
     conflict: "Conflict",
     planningWorkspaceHelp: "One planning month controls requests, final roster, exports, validation, and workload.",
+    planningToolbarDetailsHint: "Status, legend, and day interval",
     dayStatusLegendTitle: "Day status in wishes and roster:",
     planningDayIntervalTitle: "Day status for date range",
     planningDayIntervalHelp: "Apply one day status (e.g. vacation, research) to every day from start through end.",
@@ -963,6 +999,28 @@ export const dictionaries = {
     endDayOffset: "End after days",
     requiredCount: "Slots",
     applicability: "Applies",
+    shiftVariantApplicabilityHint:
+      "Controls which days this variant generates roster slots. Start-date rules cover most shifts; end-date rules matter mainly for cross-midnight shifts.",
+    shiftVariantLimitToSpecificDays: "Limit to specific days",
+    shiftVariantLimitWeekdaysHint:
+      "Generates shifts only on the selected weekdays. The preset filter above is ignored when this is enabled.",
+    shiftVariantIncludeHolidays: "Also apply on public holidays falling on these days",
+    shiftVariantIncludeHolidaysHint:
+      "Off: no slot on NRW public holidays, even when the holiday falls on a selected weekday.",
+    shiftVariantEndApplicability: "End day applicability",
+    shiftVariantEndApplicabilityHint:
+      "Optional for cross-midnight shifts: limits the weekday when the shift ends (start date + end-day offset).",
+    shiftVariantStartDayClassHint:
+      "Broad filter for the start date: weekday, weekend, holiday, or any day. For finer control (e.g. Mon–Thu), enable “Limit to specific days”.",
+    shiftVariantEndDayClassHint:
+      "Broad filter for the end date on cross-midnight shifts. Leave empty when the end date should not be restricted.",
+    shiftVariantWeekdaySelectionLabel: "Weekdays",
+    shiftVariantWeekdaySelectionHint:
+      "Tap individual days or use a quick preset. Only selected days receive a generated roster slot.",
+    shiftVariantInfoButton: "Show or hide explanation",
+    shiftVariantWeekdayPresetMonThu: "Mon–Thu",
+    shiftVariantWeekdayPresetMonFri: "Mon–Fri",
+    shiftVariantWeekdayPresetSatSun: "Sat–Sun",
     timeRange: "Time",
     count: "Count",
     noVariants: "No variants yet",

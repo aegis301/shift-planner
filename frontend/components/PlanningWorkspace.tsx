@@ -16,6 +16,8 @@ import {
   LayoutList,
   Plus,
   RotateCw,
+  RefreshCw,
+  ChevronDown,
   Save,
   Trash2,
   X
@@ -69,6 +71,18 @@ type DestructiveAction =
   | "status-draft"
   | "status-preliminary"
   | "status-published";
+
+type RosterSyncSummary = {
+  added_count: number;
+  removed_count: number;
+  updated_count: number;
+  assignments_cleared_count: number;
+};
+
+type RosterSyncResponse = {
+  matrix: RosterMatrix;
+  sync: RosterSyncSummary;
+};
 
 type ShiftGroupOption = { id: number; code: string; name: string };
 
@@ -125,6 +139,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
+  const [syncRosterConfirmOpen, setSyncRosterConfirmOpen] = useState(false);
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
   const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
@@ -266,6 +281,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const teamMemberRosterVisible = teamMemberPortalUi
     ? groupPlanningStatus?.status === "preliminary" || groupPlanningStatus?.status === "published"
     : true;
+  const refreshRosterDisabled =
+    !periodId ||
+    (plannerNeedsShiftGroup && !shiftGroupId) ||
+    groupPlanningStatus?.status === "published";
 
   const loadGroupPlanningStatus = useCallback(
     async (nextPeriodId: string) => {
@@ -488,6 +507,29 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     setDestructiveAction(null);
   }
 
+  async function confirmSyncRoster() {
+    if (!periodId) {
+      return;
+    }
+    const response = await apiFetch<RosterSyncResponse>(
+      `/api/v1/planning-periods/${periodId}/sync-roster${shiftGroupQuery}`,
+      { method: "POST" }
+    );
+    setRosterMatrix(response.matrix);
+    setGroupPlanningStatus(response.matrix.shift_group_planning_status ?? null);
+    setRosterReloadToken((value) => value + 1);
+    setMatrixReloadToken((value) => value + 1);
+    await loadWarnings(periodId);
+    setMessage(
+      t(locale, "refreshRosterResult", {
+        added: String(response.sync.added_count),
+        removed: String(response.sync.removed_count),
+        updated: String(response.sync.updated_count)
+      })
+    );
+    setSyncRosterConfirmOpen(false);
+  }
+
   const handleRosterChange = useCallback(async (nextMatrix: RosterMatrix) => {
     setRosterMatrix(nextMatrix);
     setGroupPlanningStatus(nextMatrix.shift_group_planning_status ?? null);
@@ -685,6 +727,20 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                     />
                   </Field>
                   <button
+                    aria-label={t(locale, "refreshRosterFromTemplates")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={refreshRosterDisabled}
+                    onClick={() => setSyncRosterConfirmOpen(true)}
+                    title={
+                      groupPlanningStatus?.status === "published"
+                        ? t(locale, "refreshRosterPublishedBlocked")
+                        : t(locale, "refreshRosterFromTemplates")
+                    }
+                    type="button"
+                  >
+                    <RefreshCw size={18} />
+                  </button>
+                  <button
                     aria-label={t(locale, "regenerateRoster")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={!periodId}
@@ -742,49 +798,64 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               ) : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-3 text-sm">
-            {activePeriod ? (
-              <div className="flex flex-wrap items-center gap-2 text-slate-600">
-                <p>
-                  {t(locale, "selectedMonth")}: {monthLabel(activePeriod)}
-                </p>
-                {groupPlanningStatus ? (
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
-                      groupPlanningStatus.status === "published"
-                        ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
-                        : groupPlanningStatus.status === "preliminary"
-                          ? "bg-sky-50 text-sky-900 ring-sky-200"
-                          : "bg-amber-50 text-amber-900 ring-amber-200"
-                    }`}
-                  >
-                    {t(locale, periodStatusLabelKey(groupPlanningStatus.status))}
-                  </span>
-                ) : shiftGroupId ? null : (
-                  <span className="text-xs text-slate-500">{t(locale, "planningPeriodStatusSelectGroup")}</span>
+          <details className="group rounded-lg border border-slate-200 bg-slate-50/60">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm [&::-webkit-details-marker]:hidden">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-slate-600">
+                {activePeriod ? (
+                  <>
+                    <span className="font-medium text-slate-700">
+                      {t(locale, "selectedMonth")}: {monthLabel(activePeriod)}
+                    </span>
+                    {groupPlanningStatus ? (
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                          groupPlanningStatus.status === "published"
+                            ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
+                            : groupPlanningStatus.status === "preliminary"
+                              ? "bg-sky-50 text-sky-900 ring-sky-200"
+                              : "bg-amber-50 text-amber-900 ring-amber-200"
+                        }`}
+                      >
+                        {t(locale, periodStatusLabelKey(groupPlanningStatus.status))}
+                      </span>
+                    ) : shiftGroupId ? null : (
+                      <span className="text-xs text-slate-500">{t(locale, "planningPeriodStatusSelectGroup")}</span>
+                    )}
+                    {message ? (
+                      <span className="truncate text-xs font-medium text-emerald-700">{message}</span>
+                    ) : null}
+                  </>
+                ) : (
+                  <span className="text-slate-500">{t(locale, "planningToolbarDetailsHint")}</span>
                 )}
               </div>
-            ) : null}
-            {message ? <p className="text-emerald-700">{message}</p> : null}
-          </div>
-          {teamMemberPortalUi && groupPlanningStatus?.status === "preliminary" ? (
-            <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 ring-1 ring-sky-100">
-              <p className="font-semibold">{t(locale, "myPlanningPreliminaryBannerTitle")}</p>
-              <p className="mt-1 text-sky-900">{t(locale, "myPlanningPreliminaryBannerBody")}</p>
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-500">
+                {t(locale, "details")}
+                <ChevronDown size={14} className="transition group-open:rotate-180" aria-hidden />
+              </span>
+            </summary>
+            <div className="grid gap-3 border-t border-slate-200 px-3 py-3">
+              {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
+              {teamMemberPortalUi && groupPlanningStatus?.status === "preliminary" ? (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 ring-1 ring-sky-100">
+                  <p className="font-semibold">{t(locale, "myPlanningPreliminaryBannerTitle")}</p>
+                  <p className="mt-1 text-sky-900">{t(locale, "myPlanningPreliminaryBannerBody")}</p>
+                </div>
+              ) : null}
+              <PlanningDayStatusLegend locale={locale} definitions={dayStatusDefinitions} />
+              {periodId && shiftGroupId ? (
+                <PlanningDayIntervalBar
+                  periodId={periodId}
+                  shiftGroupId={shiftGroupId}
+                  readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
+                  teamMemberPortal={teamMemberPortalUi}
+                  editableMemberId={editableMemberId}
+                  dayStatusDefinitions={dayStatusDefinitions}
+                  onApplied={handleDayIntervalApplied}
+                />
+              ) : null}
             </div>
-          ) : null}
-          <PlanningDayStatusLegend locale={locale} definitions={dayStatusDefinitions} />
-          {periodId && shiftGroupId ? (
-            <PlanningDayIntervalBar
-              periodId={periodId}
-              shiftGroupId={shiftGroupId}
-              readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
-              teamMemberPortal={teamMemberPortalUi}
-              editableMemberId={editableMemberId}
-              dayStatusDefinitions={dayStatusDefinitions}
-              onApplied={handleDayIntervalApplied}
-            />
-          ) : null}
+          </details>
         </div>
       </Card>
 
@@ -905,6 +976,46 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               {periodId && !exportRosterFileReady ? (
                 <p className="text-xs text-slate-500">{t(locale, "exportRosterFileReadyHint")}</p>
               ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {syncRosterConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="sync-roster-title">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 id="sync-roster-title" className="text-lg font-semibold text-ink">
+                  {t(locale, "refreshRosterConfirmTitle")}
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">{t(locale, "refreshRosterConfirmBody")}</p>
+              </div>
+              <button
+                aria-label={t(locale, "close")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                onClick={() => setSyncRosterConfirmOpen(false)}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+                onClick={() => setSyncRosterConfirmOpen(false)}
+                type="button"
+              >
+                {t(locale, "close")}
+              </button>
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"
+                onClick={confirmSyncRoster}
+                type="button"
+              >
+                <RefreshCw size={16} />
+                {t(locale, "refresh")}
+              </button>
             </div>
           </div>
         </div>

@@ -845,27 +845,63 @@ class TeamMemberPropertyValueRead(BaseModel):
     updated_at: datetime | None = None
 
 
+def _normalize_weekday_allowlist(value: list[PatternWeekday] | None) -> list[PatternWeekday] | None:
+    if not value:
+        return None
+    seen: set[PatternWeekday] = set()
+    unique: list[PatternWeekday] = []
+    for code in value:
+        if code not in seen:
+            seen.add(code)
+            unique.append(code)
+    return unique or None
+
+
 class ShiftVariantCreate(BaseModel):
     label: str = Field(min_length=1, max_length=255)
     start_day_class: DayClass = "any"
     end_day_class: DayClass | None = None
+    start_weekdays: list[PatternWeekday] | None = None
+    end_weekdays: list[PatternWeekday] | None = None
+    include_holidays: bool = False
     starts_at: time
     ends_at: time
     end_day_offset: int = Field(default=0, ge=0, le=1)
     required_count: int = Field(default=1, ge=1, le=20)
     constraints: list[ShiftConstraint] = Field(default_factory=list)
 
+    @field_validator("start_weekdays", "end_weekdays", mode="before")
+    @classmethod
+    def normalize_weekday_allowlists(cls, value: list[PatternWeekday] | None) -> list[PatternWeekday] | None:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("weekdays must be a list")
+        return _normalize_weekday_allowlist(value)
+
 
 class ShiftVariantUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=255)
     start_day_class: DayClass | None = None
     end_day_class: DayClass | None = None
+    start_weekdays: list[PatternWeekday] | None = None
+    end_weekdays: list[PatternWeekday] | None = None
+    include_holidays: bool | None = None
     starts_at: time | None = None
     ends_at: time | None = None
     end_day_offset: int | None = Field(default=None, ge=0, le=1)
     required_count: int | None = Field(default=None, ge=1, le=20)
     constraints: list[ShiftConstraint] | None = None
     is_active: bool | None = None
+
+    @field_validator("start_weekdays", "end_weekdays", mode="before")
+    @classmethod
+    def normalize_weekday_allowlists(cls, value: list[PatternWeekday] | None) -> list[PatternWeekday] | None:
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError("weekdays must be a list")
+        return _normalize_weekday_allowlist(value)
 
 
 class ShiftVariantRead(ShiftVariantCreate):
@@ -1093,6 +1129,18 @@ class RosterMatrixRead(BaseModel):
     planning_cells: list[PlanningCellRead]
     day_status_definitions: list[PlanningDayStatusDefinitionRead] = Field(default_factory=list)
     shift_intents: list[PlanningShiftIntentRead] = Field(default_factory=list)
+
+
+class RosterSlotSyncSummary(BaseModel):
+    added_count: int
+    removed_count: int
+    updated_count: int
+    assignments_cleared_count: int
+
+
+class RosterMatrixSyncRead(BaseModel):
+    matrix: RosterMatrixRead
+    sync: RosterSlotSyncSummary
 
 
 class TeamMemberPeriodNoteUpsert(BaseModel):

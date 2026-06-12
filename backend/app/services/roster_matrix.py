@@ -1,4 +1,5 @@
 import calendar
+from dataclasses import dataclass
 from datetime import date
 
 from sqlalchemy import select
@@ -20,12 +21,12 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
+from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_team_member_planning_patterns
 from app.services.planning import shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
     list_planning_day_status_definitions,
 )
-from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_team_member_planning_patterns
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     require_shift_group,
@@ -34,7 +35,165 @@ from app.services.shift_groups import (
 )
 from app.services.team_member_property_values import property_value_dict_for_member
 from app.services.tenancy import require_planning_period_in_org
-from app.services.shift_templates import generate_slots_for_month, list_shift_templates
+from app.services.shift_templates import GeneratedSlot, generate_slots_for_month, list_shift_templates
+
+
+class RosterSyncPublishedError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class RosterSlotSyncResult:
+    added_count: int
+    removed_count: int
+    updated_count: int
+    assignments_cleared_count: int
+
+
+def _slot_key(slot_date: date, variant_id: int, position: int) -> tuple[date, int, int]:
+    return (slot_date, variant_id, position)
+
+
+def _generated_desired_map(
+    generated_slots: list[GeneratedSlot],
+    *,
+    template_filter: set[int] | None,
+) -> dict[tuple[date, int, int], GeneratedSlot]:
+    desired: dict[tuple[date, int, int], GeneratedSlot] = {}
+    for generated in generated_slots:
+        if template_filter is not None and generated.template_id not in template_filter:
+            continue
+        desired[_slot_key(generated.slot_date, generated.variant_id, generated.position)] = generated
+    return desired
+
+
+def _apply_generated_to_slot(slot: RosterSlot, generated: GeneratedSlot) -> bool:
+    changed = False
+    if slot.label != generated.label:
+        slot.label = generated.label
+        changed = True
+    if slot.starts_at != generated.starts_at:
+        slot.starts_at = generated.starts_at
+        changed = True
+    if slot.ends_at != generated.ends_at:
+        slot.ends_at = generated.ends_at
+        changed = True
+    if slot.day_class != generated.day_class:
+        slot.day_class = generated.day_class
+        changed = True
+    if slot.shift_template_id != generated.template_id:
+        slot.shift_template_id = generated.template_id
+        changed = True
+    if slot.shift_variant_id != generated.variant_id:
+        slot.shift_variant_id = generated.variant_id
+        changed = True
+    return changed
+
+
+def sync_roster_slots_for_period(
+    db: Session,
+    planning_period_id: int,
+    *,
+    organization_id: int,
+    actor: str,
+    source: str,
+    shift_group_id: int | None = None,
+) -> RosterSlotSyncResult:
+    period = require_planning_period_in_org(db, planning_period_id, organization_id)
+    template_filter: set[int] | None = None
+    if shift_group_id is not None:
+        require_shift_group(db, shift_group_id, organization_id)
+        template_filter = shift_template_ids_in_shift_group(db, shift_group_id)
+        group_status = shift_group_planning_status_read(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=organization_id,
+        )
+        if group_status is not None and group_status.status == "published":
+            raise RosterSyncPublishedError("Cannot sync roster slots for a published shift group")
+
+    generated_slots = generate_slots_for_month(
+        db, year=period.year, month=period.month, organization_id=organization_id
+    )
+    desired = _generated_desired_map(generated_slots, template_filter=template_filter)
+
+    existing_slots = list(
+        db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id))
+    )
+    existing_by_key: dict[tuple[date, int, int], RosterSlot] = {}
+    for slot in existing_slots:
+        if slot.source != "template":
+            continue
+        if template_filter is not None:
+            if slot.shift_template_id is None or slot.shift_template_id not in template_filter:
+                continue
+        if slot.shift_variant_id is None:
+            continue
+        existing_by_key[_slot_key(slot.slot_date, slot.shift_variant_id, slot.position)] = slot
+
+    added_count = 0
+    removed_count = 0
+    updated_count = 0
+    assignments_cleared_count = 0
+
+    for key, slot in list(existing_by_key.items()):
+        if key in desired:
+            continue
+        assignment = db.scalar(
+            select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot.id)
+        )
+        if assignment is not None:
+            db.delete(assignment)
+            assignments_cleared_count += 1
+        db.delete(slot)
+        removed_count += 1
+        del existing_by_key[key]
+
+    for key, generated in desired.items():
+        existing = existing_by_key.get(key)
+        if existing is None:
+            db.add(
+                RosterSlot(
+                    planning_period_id=planning_period_id,
+                    shift_template_id=generated.template_id,
+                    shift_variant_id=generated.variant_id,
+                    slot_date=generated.slot_date,
+                    position=generated.position,
+                    label=generated.label,
+                    starts_at=generated.starts_at,
+                    ends_at=generated.ends_at,
+                    day_class=generated.day_class,
+                    source="template",
+                )
+            )
+            added_count += 1
+            continue
+        if _apply_generated_to_slot(existing, generated):
+            updated_count += 1
+
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="sync",
+        entity_type="planning_period_roster_slots",
+        entity_id=planning_period_id,
+        details={
+            "shift_group_id": shift_group_id,
+            "added_count": added_count,
+            "removed_count": removed_count,
+            "updated_count": updated_count,
+            "assignments_cleared_count": assignments_cleared_count,
+        },
+    )
+    db.commit()
+    return RosterSlotSyncResult(
+        added_count=added_count,
+        removed_count=removed_count,
+        updated_count=updated_count,
+        assignments_cleared_count=assignments_cleared_count,
+    )
 
 
 def _period_days(period: PlanningPeriod) -> list[MatrixDay]:

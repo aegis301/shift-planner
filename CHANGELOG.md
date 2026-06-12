@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-15
+- **Planning roster refresh:** `POST /api/v1/planning-periods/{id}/sync-roster` syncs template-generated roster slots for a month (optional `shift_group_id`): adds missing slots, removes obsolete template slots, updates slot metadata, preserves assignments on unchanged slots. Blocked for published shift groups (`409`). Planning workspace adds a neutral Refresh button; destructive **Reset roster** unchanged. MCP `sync_planning_period_roster_tool`.
+
+## 2026-06-14
+- **Shift variant weekday applicability:** Variants may set optional **`start_weekdays`** / **`end_weekdays`** allowlists (`mon`…`sun`) plus per-variant **`include_holidays`** when using custom days. Slot generation filters by ISO weekday after the NRW calendar; empty allowlists keep existing day-class behavior. Admin shift-type editor adds weekday chips, quick presets (Mo–Do, Mo–Fr, Sa–So), and holiday toggle. REST variant schemas and MCP create/update shift variant tools accept the new fields. Alembic `202606140001`.
+
 ## 2026-06-08
 - **Roster PDF/XLSX in preliminary:** Planning workspace enables Excel and PDF roster exports when the selected shift group is `preliminary` or `published` (backend already allowed both; UI was published-only). Export headers drop the "Published" label.
 

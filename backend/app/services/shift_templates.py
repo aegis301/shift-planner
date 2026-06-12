@@ -272,25 +272,109 @@ def delete_shift_variant(db: Session, variant_id: int, *, organization_id: int, 
     return True
 
 
+def _weekday_code(day: date) -> str:
+    return ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[day.weekday()]
+
+
+def _active_weekday_allowlist(weekdays: list | None) -> list[str]:
+    return list(weekdays) if weekdays else []
+
+
+def _day_class_applies(
+    day_class: str,
+    configured_class: str,
+    *,
+    has_holiday_variant: bool,
+) -> bool:
+    effective_classes = {day_class}
+    if day_class == "holiday" and not has_holiday_variant:
+        effective_classes.add("weekend")
+    return configured_class in effective_classes or configured_class == "any"
+
+
+def _weekday_allowlist_applies(
+    day: date,
+    day_class: str,
+    weekdays: list[str],
+    *,
+    include_holidays: bool,
+) -> bool:
+    if _weekday_code(day) not in weekdays:
+        return False
+    if day_class == "holiday" and not include_holidays:
+        return False
+    return True
+
+
+def _start_applies(
+    variant: ShiftVariant,
+    slot_date: date,
+    start_class: str,
+    *,
+    has_start_holiday_variant: bool,
+) -> bool:
+    start_weekdays = _active_weekday_allowlist(variant.start_weekdays)
+    if start_weekdays:
+        return _weekday_allowlist_applies(
+            slot_date,
+            start_class,
+            start_weekdays,
+            include_holidays=variant.include_holidays,
+        )
+    return _day_class_applies(
+        start_class,
+        variant.start_day_class,
+        has_holiday_variant=has_start_holiday_variant,
+    )
+
+
+def _end_applies(
+    variant: ShiftVariant,
+    end_date: date,
+    end_class: str,
+    *,
+    has_end_holiday_variant: bool,
+) -> bool:
+    end_weekdays = _active_weekday_allowlist(variant.end_weekdays)
+    if end_weekdays:
+        return _weekday_allowlist_applies(
+            end_date,
+            end_class,
+            end_weekdays,
+            include_holidays=variant.include_holidays,
+        )
+    if variant.end_day_class is None:
+        return True
+    return _day_class_applies(
+        end_class,
+        variant.end_day_class,
+        has_holiday_variant=has_end_holiday_variant,
+    )
+
+
 def _variant_applies(
     variant: ShiftVariant,
+    slot_date: date,
+    end_date: date,
     start_class: str,
     end_class: str,
     *,
     has_start_holiday_variant: bool,
     has_end_holiday_variant: bool,
 ) -> bool:
-    effective_start_classes = {start_class}
-    if start_class == "holiday" and not has_start_holiday_variant:
-        effective_start_classes.add("weekend")
-    if variant.start_day_class not in effective_start_classes and variant.start_day_class != "any":
+    if not _start_applies(
+        variant,
+        slot_date,
+        start_class,
+        has_start_holiday_variant=has_start_holiday_variant,
+    ):
         return False
-    if variant.end_day_class is None:
-        return True
-    effective_end_classes = {end_class}
-    if end_class == "holiday" and not has_end_holiday_variant:
-        effective_end_classes.add("weekend")
-    return variant.end_day_class in effective_end_classes or variant.end_day_class == "any"
+    return _end_applies(
+        variant,
+        end_date,
+        end_class,
+        has_end_holiday_variant=has_end_holiday_variant,
+    )
 
 
 def _combine(day: date, value: time) -> datetime:
@@ -313,6 +397,8 @@ def generate_slots_for_month(db: Session, *, year: int, month: int, organization
                 end_class = classify_day(end_date)
                 if not _variant_applies(
                     variant,
+                    slot_date,
+                    end_date,
                     start_class,
                     end_class,
                     has_start_holiday_variant=has_start_holiday_variant,

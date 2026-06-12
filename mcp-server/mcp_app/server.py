@@ -71,6 +71,8 @@ from app.services.roster_matrix import (
     clear_roster_slot_assignment,
     get_roster_matrix,
     reset_roster_slots_for_period,
+    sync_roster_slots_for_period,
+    RosterSyncPublishedError,
     upsert_roster_slot_assignment,
 )
 from app.services.shift_groups import (
@@ -606,6 +608,9 @@ def create_shift_variant_tool(
     starts_at: str,
     ends_at: str,
     end_day_class: str | None = None,
+    start_weekdays: list[str] | None = None,
+    end_weekdays: list[str] | None = None,
+    include_holidays: bool = False,
     end_day_offset: int = 0,
     required_count: int = 1,
     constraints: list[dict[str, Any]] | None = None,
@@ -621,6 +626,9 @@ def create_shift_variant_tool(
                     label=label,
                     start_day_class=start_day_class,  # type: ignore[arg-type]
                     end_day_class=end_day_class,  # type: ignore[arg-type]
+                    start_weekdays=start_weekdays,  # type: ignore[arg-type]
+                    end_weekdays=end_weekdays,  # type: ignore[arg-type]
+                    include_holidays=include_holidays,
                     starts_at=time.fromisoformat(starts_at),
                     ends_at=time.fromisoformat(ends_at),
                     end_day_offset=end_day_offset,
@@ -645,6 +653,9 @@ def update_shift_variant_tool(
     label: str | None = None,
     start_day_class: str | None = None,
     end_day_class: str | None = None,
+    start_weekdays: list[str] | None = None,
+    end_weekdays: list[str] | None = None,
+    include_holidays: bool | None = None,
     starts_at: str | None = None,
     ends_at: str | None = None,
     end_day_offset: int | None = None,
@@ -663,6 +674,9 @@ def update_shift_variant_tool(
                     label=label,
                     start_day_class=start_day_class,  # type: ignore[arg-type]
                     end_day_class=end_day_class,  # type: ignore[arg-type]
+                    start_weekdays=start_weekdays,  # type: ignore[arg-type]
+                    end_weekdays=end_weekdays,  # type: ignore[arg-type]
+                    include_holidays=include_holidays,
                     starts_at=time.fromisoformat(starts_at) if starts_at else None,
                     ends_at=time.fromisoformat(ends_at) if ends_at else None,
                     end_day_offset=end_day_offset,
@@ -729,6 +743,41 @@ def regenerate_planning_period_roster_tool(
             organization_id=mcp_organization_id(),
             shift_group_id=shift_group_id,
         ).model_dump(mode="json")
+
+
+@mcp.tool
+def sync_planning_period_roster_tool(
+    token: str, planning_period_id: int, shift_group_id: int | None = None
+) -> dict[str, Any]:
+    """Sync roster slots from current shift templates for a period (optionally one shift group). Adds, updates, and removes template slots while preserving assignments on unchanged slots. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            sync_result = sync_roster_slots_for_period(
+                db,
+                planning_period_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+                shift_group_id=shift_group_id,
+            )
+            matrix = get_roster_matrix(
+                db,
+                planning_period_id,
+                organization_id=mcp_organization_id(),
+                shift_group_id=shift_group_id,
+            )
+        except RosterSyncPublishedError as exc:
+            raise ValueError(str(exc)) from exc
+        return {
+            "sync": {
+                "added_count": sync_result.added_count,
+                "removed_count": sync_result.removed_count,
+                "updated_count": sync_result.updated_count,
+                "assignments_cleared_count": sync_result.assignments_cleared_count,
+            },
+            "matrix": matrix.model_dump(mode="json"),
+        }
 
 
 @mcp.tool

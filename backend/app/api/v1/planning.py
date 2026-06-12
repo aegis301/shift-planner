@@ -14,6 +14,8 @@ from app.schemas import (
     PlanningPeriodCreate,
     PlanningPeriodRead,
     RosterMatrixRead,
+    RosterMatrixSyncRead,
+    RosterSlotSyncSummary,
     ShiftGroupPlanningStatusRead,
     ValidationWarning,
 )
@@ -28,7 +30,12 @@ from app.services.planning import (
     set_planning_period_to_preliminary,
     unpublish_planning_period,
 )
-from app.services.roster_matrix import get_roster_matrix, reset_roster_slots_for_period
+from app.services.roster_matrix import (
+    RosterSyncPublishedError,
+    get_roster_matrix,
+    reset_roster_slots_for_period,
+    sync_roster_slots_for_period,
+)
 from app.services.validation import validate_roster
 
 router = APIRouter(tags=["planning"])
@@ -179,6 +186,48 @@ def regenerate_planning_period_roster(
             organization_id=user.organization_id,
             shift_group_id=shift_group_id,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/planning-periods/{planning_period_id}/sync-roster", response_model=RosterMatrixSyncRead)
+def sync_planning_period_roster(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    if is_shift_planner_role(user) and not is_admin(user) and shift_group_id is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
+    try:
+        sync_result = sync_roster_slots_for_period(
+            db,
+            planning_period_id,
+            organization_id=user.organization_id,
+            actor=user.email,
+            source="rest",
+            shift_group_id=shift_group_id,
+        )
+        matrix = get_roster_matrix(
+            db,
+            planning_period_id,
+            organization_id=user.organization_id,
+            shift_group_id=shift_group_id,
+        )
+        return RosterMatrixSyncRead(
+            matrix=matrix,
+            sync=RosterSlotSyncSummary(
+                added_count=sync_result.added_count,
+                removed_count=sync_result.removed_count,
+                updated_count=sync_result.updated_count,
+                assignments_cleared_count=sync_result.assignments_cleared_count,
+            ),
+        )
+    except RosterSyncPublishedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ROSTER_SYNC_PUBLISHED", "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

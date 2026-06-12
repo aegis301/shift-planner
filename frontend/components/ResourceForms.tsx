@@ -46,6 +46,7 @@ function apiFailureUserMessage(locale: Locale, error: unknown): string {
 }
 type ShiftTemplateCategory = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
 type DayClass = "any" | "weekday" | "weekend" | "holiday";
+type WeekdayCode = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 type ConstraintSeverity = "info" | "warning" | "error";
 type ShiftConstraintType =
   | "no_additional_same_day"
@@ -70,6 +71,9 @@ type ShiftVariantRecord = {
   label: string;
   start_day_class: DayClass;
   end_day_class: DayClass | null;
+  start_weekdays?: WeekdayCode[] | null;
+  end_weekdays?: WeekdayCode[] | null;
+  include_holidays?: boolean;
   starts_at: string;
   ends_at: string;
   end_day_offset: number;
@@ -78,11 +82,26 @@ type ShiftVariantRecord = {
   is_active: boolean;
 };
 
+type VariantApplicabilityState = {
+  start_day_class: DayClass;
+  end_day_class: DayClass | null;
+  start_limit_weekdays: boolean;
+  start_weekdays: WeekdayCode[];
+  end_limit_weekdays: boolean;
+  end_weekdays: WeekdayCode[];
+  include_holidays: boolean;
+};
+
 type PendingVariantDraft = {
   uid: string;
   label: string;
   start_day_class: DayClass;
   end_day_class: "" | DayClass;
+  start_limit_weekdays: boolean;
+  start_weekdays: WeekdayCode[];
+  end_limit_weekdays: boolean;
+  end_weekdays: WeekdayCode[];
+  include_holidays: boolean;
   starts_at: string;
   ends_at: string;
   required_count: number;
@@ -371,6 +390,314 @@ function dayClassOptions(locale: Locale) {
   ] as const).map(([value, label]) => (
     <option key={value} value={value}>{t(locale, label)}</option>
   ));
+}
+
+const WEEKDAY_CODES: WeekdayCode[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+const WEEKDAY_LABEL_KEYS: Record<WeekdayCode, TranslationKey> = {
+  mon: "weekdayMonShort",
+  tue: "weekdayTueShort",
+  wed: "weekdayWedShort",
+  thu: "weekdayThuShort",
+  fri: "weekdayFriShort",
+  sat: "weekdaySatShort",
+  sun: "weekdaySunShort"
+};
+
+const WEEKDAY_PRESETS: Array<{ labelKey: TranslationKey; weekdays: WeekdayCode[] }> = [
+  { labelKey: "shiftVariantWeekdayPresetMonThu", weekdays: ["mon", "tue", "wed", "thu"] },
+  { labelKey: "shiftVariantWeekdayPresetMonFri", weekdays: ["mon", "tue", "wed", "thu", "fri"] },
+  { labelKey: "shiftVariantWeekdayPresetSatSun", weekdays: ["sat", "sun"] }
+];
+
+function summarizeWeekdayCodes(locale: Locale, weekdays: WeekdayCode[]): string {
+  return WEEKDAY_CODES.filter((day) => weekdays.includes(day))
+    .map((day) => t(locale, WEEKDAY_LABEL_KEYS[day]))
+    .join(", ");
+}
+
+function applicabilityStateFromVariant(variant: ShiftVariantRecord): VariantApplicabilityState {
+  return {
+    start_day_class: variant.start_day_class,
+    end_day_class: variant.end_day_class,
+    start_limit_weekdays: Boolean(variant.start_weekdays?.length),
+    start_weekdays: variant.start_weekdays ?? [],
+    end_limit_weekdays: Boolean(variant.end_weekdays?.length),
+    end_weekdays: variant.end_weekdays ?? [],
+    include_holidays: variant.include_holidays ?? false
+  };
+}
+
+function applicabilityPayload(state: VariantApplicabilityState) {
+  const usesCustom = state.start_limit_weekdays || state.end_limit_weekdays;
+  return {
+    start_day_class: state.start_limit_weekdays ? "any" : state.start_day_class,
+    end_day_class: state.end_limit_weekdays ? null : state.end_day_class,
+    start_weekdays: state.start_limit_weekdays && state.start_weekdays.length ? state.start_weekdays : null,
+    end_weekdays: state.end_limit_weekdays && state.end_weekdays.length ? state.end_weekdays : null,
+    include_holidays: usesCustom && state.include_holidays
+  };
+}
+
+function pendingApplicabilityPayload(variant: PendingVariantDraft) {
+  return applicabilityPayload({
+    start_day_class: variant.start_day_class,
+    end_day_class: variant.end_day_class || null,
+    start_limit_weekdays: variant.start_limit_weekdays,
+    start_weekdays: variant.start_weekdays,
+    end_limit_weekdays: variant.end_limit_weekdays,
+    end_weekdays: variant.end_weekdays,
+    include_holidays: variant.include_holidays
+  });
+}
+
+function defaultWeekdaySelection(): WeekdayCode[] {
+  return ["mon", "tue", "wed", "thu", "fri"];
+}
+
+function toggleWeekdaySelection(current: WeekdayCode[], weekday: WeekdayCode): WeekdayCode[] {
+  const next = current.includes(weekday) ? current.filter((item) => item !== weekday) : [...current, weekday];
+  return next.length ? next : [weekday];
+}
+
+function InlineInfoHint({
+  hintKey,
+  align = "left"
+}: {
+  hintKey: TranslationKey;
+  align?: "left" | "right";
+}) {
+  const { locale } = useLocale();
+  const hintId = useId();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border text-slate-600 outline-none ring-mint/20 transition focus:ring-4 ${
+          open
+            ? "border-slate-300 bg-slate-50 text-slate-800 ring-1 ring-slate-200"
+            : "border-slate-200 bg-white hover:bg-slate-50"
+        }`}
+        aria-expanded={open}
+        aria-controls={hintId}
+        aria-label={t(locale, "shiftVariantInfoButton")}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+      >
+        <Info size={14} strokeWidth={2} aria-hidden />
+      </button>
+      {open ? (
+        <div
+          id={hintId}
+          role="region"
+          aria-label={t(locale, hintKey)}
+          className={`absolute top-full z-30 mt-1 min-w-[14rem] max-w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs leading-relaxed text-slate-700 shadow-soft ring-1 ring-slate-100 ${
+            align === "right" ? "right-0" : "left-0"
+          }`}
+        >
+          {t(locale, hintKey)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function VariantApplicabilitySideEditor({
+  side,
+  dayClass,
+  onDayClassChange,
+  limitWeekdays,
+  onLimitWeekdaysChange,
+  weekdays,
+  onWeekdaysChange
+}: {
+  side: "start" | "end";
+  dayClass: DayClass | null;
+  onDayClassChange: (next: DayClass | null) => void;
+  limitWeekdays: boolean;
+  onLimitWeekdaysChange: (next: boolean) => void;
+  weekdays: WeekdayCode[];
+  onWeekdaysChange: (next: WeekdayCode[]) => void;
+}) {
+  const { locale } = useLocale();
+  const sideLabel = side === "start" ? t(locale, "startDayClass") : t(locale, "endDayClass");
+  const dayClassHintKey: TranslationKey =
+    side === "start" ? "shiftVariantStartDayClassHint" : "shiftVariantEndDayClassHint";
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{sideLabel}</div>
+        {!limitWeekdays ? <InlineInfoHint hintKey={dayClassHintKey} /> : null}
+      </div>
+      {!limitWeekdays ? (
+        <select
+          className={`${inputClass} w-full max-w-xs`}
+          value={dayClass ?? ""}
+          onChange={(event) => onDayClassChange(event.target.value ? (event.target.value as DayClass) : null)}
+        >
+          {side === "end" ? <option value="">{t(locale, "emptyValue")}</option> : null}
+          {dayClassOptions(locale)}
+        </select>
+      ) : null}
+      <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
+        <input
+          className="mt-0.5"
+          type="checkbox"
+          checked={limitWeekdays}
+          onChange={(event) => {
+            const enabled = event.target.checked;
+            onLimitWeekdaysChange(enabled);
+            if (enabled && !weekdays.length) {
+              onWeekdaysChange(defaultWeekdaySelection());
+            }
+          }}
+        />
+        <span className="flex flex-wrap items-center gap-1">
+          {t(locale, "shiftVariantLimitToSpecificDays")}
+          <InlineInfoHint hintKey="shiftVariantLimitWeekdaysHint" />
+        </span>
+      </label>
+      {limitWeekdays ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-medium text-slate-600">{t(locale, "shiftVariantWeekdaySelectionLabel")}</span>
+            <InlineInfoHint hintKey="shiftVariantWeekdaySelectionHint" />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {WEEKDAY_CODES.map((weekday) => (
+              <button
+                key={weekday}
+                type="button"
+                className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-sm font-semibold ring-1 ${
+                  weekdays.includes(weekday)
+                    ? "bg-sky-600 text-white ring-sky-600"
+                    : "bg-white text-slate-700 ring-slate-200"
+                }`}
+                onClick={() => onWeekdaysChange(toggleWeekdaySelection(weekdays, weekday))}
+              >
+                {t(locale, WEEKDAY_LABEL_KEYS[weekday])}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {WEEKDAY_PRESETS.map((preset) => (
+              <button
+                key={preset.labelKey}
+                type="button"
+                className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700"
+                onClick={() => onWeekdaysChange([...preset.weekdays])}
+              >
+                {t(locale, preset.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function VariantApplicabilityEditor({
+  value,
+  onChange
+}: {
+  value: VariantApplicabilityState;
+  onChange: (next: VariantApplicabilityState) => void;
+}) {
+  const { locale } = useLocale();
+  const usesCustom = value.start_limit_weekdays || value.end_limit_weekdays;
+
+  return (
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex items-center gap-1 border-b border-slate-100 pb-2">
+        <span className="text-sm font-semibold text-slate-700">{t(locale, "applicability")}</span>
+        <InlineInfoHint hintKey="shiftVariantApplicabilityHint" />
+      </div>
+      <VariantApplicabilitySideEditor
+        side="start"
+        dayClass={value.start_day_class}
+        onDayClassChange={(next) => onChange({ ...value, start_day_class: next ?? "any" })}
+        limitWeekdays={value.start_limit_weekdays}
+        onLimitWeekdaysChange={(next) => onChange({ ...value, start_limit_weekdays: next })}
+        weekdays={value.start_weekdays}
+        onWeekdaysChange={(next) => onChange({ ...value, start_weekdays: next })}
+      />
+      <details className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-semibold text-slate-700 [&::-webkit-details-marker]:hidden">
+          <span>{t(locale, "shiftVariantEndApplicability")}</span>
+          <InlineInfoHint hintKey="shiftVariantEndApplicabilityHint" align="right" />
+        </summary>
+        <div className="mt-3">
+          <VariantApplicabilitySideEditor
+            side="end"
+            dayClass={value.end_day_class}
+            onDayClassChange={(next) => onChange({ ...value, end_day_class: next })}
+            limitWeekdays={value.end_limit_weekdays}
+            onLimitWeekdaysChange={(next) => onChange({ ...value, end_limit_weekdays: next })}
+            weekdays={value.end_weekdays}
+            onWeekdaysChange={(next) => onChange({ ...value, end_weekdays: next })}
+          />
+        </div>
+      </details>
+      {usesCustom ? (
+        <label className="flex items-start gap-2 text-sm font-medium text-slate-700">
+          <input
+            className="mt-1"
+            type="checkbox"
+            checked={value.include_holidays}
+            onChange={(event) => onChange({ ...value, include_holidays: event.target.checked })}
+          />
+          <span className="flex flex-wrap items-center gap-1">
+            {t(locale, "shiftVariantIncludeHolidays")}
+            <InlineInfoHint hintKey="shiftVariantIncludeHolidaysHint" />
+          </span>
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
+function VariantApplicabilitySummary({ variant }: { variant: ShiftVariantRecord }) {
+  const { locale } = useLocale();
+  const startSummary = variant.start_weekdays?.length
+    ? summarizeWeekdayCodes(locale, variant.start_weekdays)
+    : null;
+  const endSummary = variant.end_weekdays?.length ? summarizeWeekdayCodes(locale, variant.end_weekdays) : null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {startSummary ? (
+        <span className="inline-flex rounded-full bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">
+          {startSummary}
+        </span>
+      ) : (
+        <DayClassPill dayClass={variant.start_day_class} />
+      )}
+      {endSummary || variant.end_day_class ? (
+        <>
+          <span className="text-xs text-slate-400">-&gt;</span>
+          {endSummary ? (
+            <span className="inline-flex rounded-full bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-200">
+              {endSummary}
+            </span>
+          ) : (
+            <DayClassPill dayClass={variant.end_day_class} />
+          )}
+        </>
+      ) : null}
+      {variant.include_holidays && (variant.start_weekdays?.length || variant.end_weekdays?.length) ? (
+        <span className="inline-flex rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-800 ring-1 ring-rose-200">
+          {t(locale, "holiday")}
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function categoryOptions(locale: Locale) {
@@ -869,12 +1196,16 @@ function RuleRowsEditor({
 
 function VariantEditFields({
   variant,
+  applicability,
+  onApplicabilityChange,
   constraints,
   onConstraintsChange,
   onRemove,
   allTemplates
 }: {
   variant: ShiftVariantRecord;
+  applicability: VariantApplicabilityState;
+  onApplicabilityChange: (next: VariantApplicabilityState) => void;
   constraints: ShiftConstraintRecord[];
   onConstraintsChange: (next: ShiftConstraintRecord[]) => void;
   onRemove: () => void;
@@ -897,15 +1228,8 @@ function VariantEditFields({
   }
 
   return (
-    <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_auto]">
+    <div className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_8rem_8rem_6rem_auto]">
       <Field label={t(locale, "name")}><input className={inputClass} name={`variant_${variant.id}_label`} defaultValue={variant.label} required /></Field>
-      <Field label={t(locale, "startDayClass")}><select className={`${inputClass} w-full`} name={`variant_${variant.id}_start_day_class`} defaultValue={variant.start_day_class}>{dayClassOptions(locale)}</select></Field>
-      <Field label={t(locale, "endDayClass")}>
-        <select className={`${inputClass} w-full`} name={`variant_${variant.id}_end_day_class`} defaultValue={variant.end_day_class ?? ""}>
-          <option value="">{t(locale, "emptyValue")}</option>
-          {dayClassOptions(locale)}
-        </select>
-      </Field>
       <Field label={t(locale, "start")}><input className={`${inputClass} w-full`} name={`variant_${variant.id}_starts_at`} type="time" defaultValue={formatScalar(locale, variant.starts_at)} required /></Field>
       <Field label={t(locale, "end")}><input className={`${inputClass} w-full`} name={`variant_${variant.id}_ends_at`} type="time" defaultValue={formatScalar(locale, variant.ends_at)} required /></Field>
       <Field label={t(locale, "requiredCount")}><input className={`${inputClass} w-full`} name={`variant_${variant.id}_required_count`} type="number" min="1" max="20" defaultValue={variant.required_count} /></Field>
@@ -930,6 +1254,9 @@ function VariantEditFields({
         >
           {t(locale, "addRule")}
         </button>
+      </div>
+      <div className="lg:col-span-full">
+        <VariantApplicabilityEditor value={applicability} onChange={onApplicabilityChange} />
       </div>
       {rulePickerOpen ? (
         <div className="lg:col-span-full grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(16rem,1fr)_auto]">
@@ -983,7 +1310,7 @@ function PendingVariantFields({
   const [nextRuleType, setNextRuleType] = useState<ShiftConstraintType>(SHIFT_CONSTRAINT_OPTIONS[0].type);
 
   return (
-    <div className="grid gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_10rem_10rem_8rem_8rem_6rem_auto]">
+    <div className="grid gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 ring-1 ring-slate-200 lg:grid-cols-[minmax(16rem,1fr)_8rem_8rem_6rem_auto]">
       <Field label={t(locale, "name")}>
         <input
           className={inputClass}
@@ -991,25 +1318,6 @@ function PendingVariantFields({
           onChange={(event) => onChange({ ...variant, label: event.target.value })}
           required
         />
-      </Field>
-      <Field label={t(locale, "startDayClass")}>
-        <select
-          className={`${inputClass} w-full`}
-          value={variant.start_day_class}
-          onChange={(event) => onChange({ ...variant, start_day_class: event.target.value as DayClass })}
-        >
-          {dayClassOptions(locale)}
-        </select>
-      </Field>
-      <Field label={t(locale, "endDayClass")}>
-        <select
-          className={`${inputClass} w-full`}
-          value={variant.end_day_class}
-          onChange={(event) => onChange({ ...variant, end_day_class: event.target.value as "" | DayClass })}
-        >
-          <option value="">{t(locale, "emptyValue")}</option>
-          {dayClassOptions(locale)}
-        </select>
       </Field>
       <Field label={t(locale, "start")}>
         <input
@@ -1064,6 +1372,31 @@ function PendingVariantFields({
         >
           <Trash2 size={16} />
         </button>
+      </div>
+      <div className="lg:col-span-full">
+        <VariantApplicabilityEditor
+          value={{
+            start_day_class: variant.start_day_class,
+            end_day_class: variant.end_day_class || null,
+            start_limit_weekdays: variant.start_limit_weekdays,
+            start_weekdays: variant.start_weekdays,
+            end_limit_weekdays: variant.end_limit_weekdays,
+            end_weekdays: variant.end_weekdays,
+            include_holidays: variant.include_holidays
+          }}
+          onChange={(next) =>
+            onChange({
+              ...variant,
+              start_day_class: next.start_day_class,
+              end_day_class: next.end_day_class ?? "",
+              start_limit_weekdays: next.start_limit_weekdays,
+              start_weekdays: next.start_weekdays,
+              end_limit_weekdays: next.end_limit_weekdays,
+              end_weekdays: next.end_weekdays,
+              include_holidays: next.include_holidays
+            })
+          }
+        />
       </div>
       {rulePickerOpen ? (
         <div className="lg:col-span-full grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(16rem,1fr)_auto]">
@@ -1128,13 +1461,7 @@ function VariantRows({ variants }: { variants: ShiftVariantRecord[] }) {
           <div key={variant.id} className="grid gap-2 px-3 py-3 text-sm sm:grid-cols-[minmax(7rem,1.4fr)_minmax(9rem,1.2fr)_minmax(6rem,0.8fr)_4rem_4rem] sm:items-center sm:gap-3">
             <div className="font-semibold text-ink">{variant.label}</div>
             <div className="flex flex-wrap items-center gap-1.5">
-              <DayClassPill dayClass={variant.start_day_class} />
-              {variant.end_day_class ? (
-                <>
-                  <span className="text-xs text-slate-400">-&gt;</span>
-                  <DayClassPill dayClass={variant.end_day_class} />
-                </>
-              ) : null}
+              <VariantApplicabilitySummary variant={variant} />
             </div>
             <div className="font-mono text-xs text-slate-700 sm:text-sm">{formatVariantTime(variant)}</div>
             <div className="text-slate-700">{variant.required_count}</div>
@@ -1199,6 +1526,12 @@ function ShiftTemplateEditorModal({
         (template.variants ?? []).map((variant) => [variant.id, parseShiftConstraintList(variant.constraints)])
       )
   );
+  const [variantApplicabilityById, setVariantApplicabilityById] = useState<Record<number, VariantApplicabilityState>>(
+    () =>
+      Object.fromEntries(
+        (template.variants ?? []).map((variant) => [variant.id, applicabilityStateFromVariant(variant)])
+      )
+  );
   const [variantDeleteCandidate, setVariantDeleteCandidate] = useState<ShiftVariantRecord | null>(null);
   const [editorSaveError, setEditorSaveError] = useState<string | null>(null);
 
@@ -1212,6 +1545,11 @@ function ShiftTemplateEditorModal({
         (template.variants ?? []).map((variant) => [variant.id, parseShiftConstraintList(variant.constraints)])
       )
     );
+    setVariantApplicabilityById(
+      Object.fromEntries(
+        (template.variants ?? []).map((variant) => [variant.id, applicabilityStateFromVariant(variant)])
+      )
+    );
   }, [template.id]);
 
   function addPendingVariant() {
@@ -1222,6 +1560,11 @@ function ShiftTemplateEditorModal({
         label: "",
         start_day_class: "any",
         end_day_class: "",
+        start_limit_weekdays: false,
+        start_weekdays: [],
+        end_limit_weekdays: false,
+        end_weekdays: [],
+        include_holidays: false,
         starts_at: "",
         ends_at: "",
         required_count: 1,
@@ -1287,8 +1630,7 @@ function ShiftTemplateEditorModal({
         method: "PATCH",
         body: JSON.stringify({
           label: form.get(`variant_${variant.id}_label`),
-          start_day_class: form.get(`variant_${variant.id}_start_day_class`),
-          end_day_class: form.get(`variant_${variant.id}_end_day_class`) || null,
+          ...applicabilityPayload(variantApplicabilityById[variant.id] ?? applicabilityStateFromVariant(variant)),
           starts_at: startsAt,
           ends_at: endsAt,
           end_day_offset: inferEndDayOffset(startsAt, endsAt),
@@ -1308,8 +1650,7 @@ function ShiftTemplateEditorModal({
         method: "POST",
         body: JSON.stringify({
           label: variant.label,
-          start_day_class: variant.start_day_class,
-          end_day_class: variant.end_day_class || null,
+          ...pendingApplicabilityPayload(variant),
           starts_at: variant.starts_at,
           ends_at: variant.ends_at,
           end_day_offset: inferEndDayOffset(variant.starts_at, variant.ends_at),
@@ -1434,6 +1775,10 @@ function ShiftTemplateEditorModal({
               <VariantEditFields
                 key={variant.id}
                 variant={variant}
+                applicability={variantApplicabilityById[variant.id] ?? applicabilityStateFromVariant(variant)}
+                onApplicabilityChange={(next) =>
+                  setVariantApplicabilityById((current) => ({ ...current, [variant.id]: next }))
+                }
                 constraints={variantConstraintsById[variant.id] ?? []}
                 onConstraintsChange={(next) =>
                   setVariantConstraintsById((current) => ({ ...current, [variant.id]: next }))
