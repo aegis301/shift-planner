@@ -1,9 +1,7 @@
 from datetime import date
 
-import pytest
-from fastapi.testclient import TestClient
-
 from app.services.holidays import classify_day
+from fastapi.testclient import TestClient
 
 pytest_plugins = ("app.tests.test_api",)
 
