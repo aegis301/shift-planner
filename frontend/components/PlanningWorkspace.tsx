@@ -37,6 +37,7 @@ import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWork
 import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashboard";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
+import { monthDateBounds } from "@/lib/planningDates";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type ShiftGroupPlanningStatus = {
@@ -146,6 +147,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [groupPlanningStatus, setGroupPlanningStatus] = useState<ShiftGroupPlanningStatus | null>(null);
   const [memberShifts, setMemberShifts] = useState<TeamMemberDashboard | null>(null);
   const [memberShiftsLoading, setMemberShiftsLoading] = useState(false);
+  const [icsExportStartDate, setIcsExportStartDate] = useState("");
+  const [icsExportEndDate, setIcsExportEndDate] = useState("");
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
 
@@ -207,6 +210,25 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
     [shiftGroupId]
   );
+  const myShiftsIcsRangeQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (shiftGroupId) {
+      params.set("shift_group_id", shiftGroupId);
+    }
+    if (icsExportStartDate) {
+      params.set("start_date", icsExportStartDate);
+    }
+    if (icsExportEndDate) {
+      params.set("end_date", icsExportEndDate);
+    }
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  }, [shiftGroupId, icsExportStartDate, icsExportEndDate]);
+  const icsExportRangeReady =
+    Boolean(shiftGroupId) &&
+    Boolean(icsExportStartDate) &&
+    Boolean(icsExportEndDate) &&
+    icsExportStartDate <= icsExportEndDate;
   const teamMemberExportReady = Boolean(shiftGroupId);
   const exportModalOpen = isExportModalOpen && (periodId || (teamMemberPortalUi && teamMemberExportReady));
 
@@ -252,6 +274,15 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   }, [userMe, variant]);
 
   const activePeriod = periods.find((period) => String(period.id) === periodId);
+
+  useEffect(() => {
+    const now = new Date();
+    const bounds = activePeriod
+      ? monthDateBounds(activePeriod.year, activePeriod.month)
+      : monthDateBounds(now.getFullYear(), now.getMonth() + 1);
+    setIcsExportStartDate(bounds.min);
+    setIcsExportEndDate(bounds.max);
+  }, [activePeriod]);
 
   useEffect(() => {
     if (!teamMemberPortalUi || !shiftGroupId) {
@@ -915,15 +946,36 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                     <Download size={17} />
                     {t(locale, "myShiftsIcsExport")}
                   </a>
-                  <a
-                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                      exportBlockedByShiftGroup || !periodId || !teamMemberRosterVisible ? "pointer-events-none opacity-40" : ""
-                    }`}
-                    href={`${API_BASE_URL}/api/v1/exports/my-shifts/${periodId}.ics${myShiftsIcsQuery}`}
-                  >
-                    <Download size={17} />
-                    {t(locale, "myShiftsMonthIcsExport")}
-                  </a>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label={t(locale, "planningDayIntervalFrom")}>
+                        <input
+                          className={`${inputClass} min-w-0`}
+                          onChange={(event) => setIcsExportStartDate(event.target.value)}
+                          type="date"
+                          value={icsExportStartDate}
+                        />
+                      </Field>
+                      <Field label={t(locale, "planningDayIntervalTo")}>
+                        <input
+                          className={`${inputClass} min-w-0`}
+                          onChange={(event) => setIcsExportEndDate(event.target.value)}
+                          type="date"
+                          value={icsExportEndDate}
+                        />
+                      </Field>
+                    </div>
+                    <a
+                      className={`mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
+                        !icsExportRangeReady ? "pointer-events-none opacity-40" : ""
+                      }`}
+                      href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${myShiftsIcsRangeQuery}`}
+                    >
+                      <Download size={17} />
+                      {t(locale, "myShiftsRangeIcsExport")}
+                    </a>
+                  </div>
+                  <p className="text-xs text-slate-500">{t(locale, "exportRosterVisibleHint")}</p>
                 </>
               ) : null}
               {planningUi && periodId ? (
@@ -969,9 +1021,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                     {t(locale, "rosterPdfExport")}
                   </a>
                 </>
-              ) : null}
-              {teamMemberPortalUi && periodId && !teamMemberRosterVisible ? (
-                <p className="text-xs text-slate-500">{t(locale, "exportRosterVisibleHint")}</p>
               ) : null}
               {periodId && !exportRosterFileReady ? (
                 <p className="text-xs text-slate-500">{t(locale, "exportRosterFileReadyHint")}</p>

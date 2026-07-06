@@ -146,6 +146,19 @@ def ics_client():
         db.add(other_slot)
         db.flush()
         db.add(RosterSlotAssignment(roster_slot_id=other_slot.id, team_member_id=other_member.id))
+        range_slot = RosterSlot(
+            planning_period_id=period.id,
+            shift_template_id=template.id,
+            shift_variant_id=variant.id,
+            slot_date=slot_date + timedelta(days=10),
+            position=1,
+            starts_at=datetime.combine(slot_date + timedelta(days=10), time(8, 0), tzinfo=timezone.utc),
+            ends_at=datetime.combine(slot_date + timedelta(days=10), time(20, 0), tzinfo=timezone.utc),
+            day_class="weekday",
+        )
+        db.add(range_slot)
+        db.flush()
+        db.add(RosterSlotAssignment(roster_slot_id=range_slot.id, team_member_id=member.id))
         db.commit()
         ctx.update(
             {
@@ -153,6 +166,9 @@ def ics_client():
                 "period_id": period.id,
                 "slot_id": slot.id,
                 "other_slot_id": other_slot.id,
+                "range_slot_id": range_slot.id,
+                "slot_date": slot_date,
+                "range_slot_date": slot_date + timedelta(days=10),
             }
         )
 
@@ -199,7 +215,7 @@ def test_export_my_shifts_bulk(ics_client):
     response = client.get(f"/api/v1/exports/my-shifts.ics?shift_group_id={ctx['sg_id']}")
     cal = _parse_ics(response)
     events = [c for c in cal.walk() if c.name == "VEVENT"]
-    assert len(events) == 1
+    assert len(events) == 2
 
 
 def test_export_my_shifts_period(ics_client):
@@ -209,10 +225,62 @@ def test_export_my_shifts_period(ics_client):
     )
     cal = _parse_ics(response)
     events = [c for c in cal.walk() if c.name == "VEVENT"]
-    assert len(events) == 1
+    assert len(events) == 2
 
 
 def test_export_my_shifts_requires_shift_group(ics_client):
     client, _ctx = ics_client
     response = client.get("/api/v1/exports/my-shifts.ics")
+    assert response.status_code == 422
+
+
+def test_export_my_shifts_date_range(ics_client):
+    client, ctx = ics_client
+    slot_date = ctx["slot_date"]
+    range_start = slot_date.isoformat()
+    range_end = (slot_date + timedelta(days=5)).isoformat()
+    response = client.get(
+        f"/api/v1/exports/my-shifts.ics?shift_group_id={ctx['sg_id']}"
+        f"&start_date={range_start}&end_date={range_end}"
+    )
+    cal = _parse_ics(response)
+    events = [c for c in cal.walk() if c.name == "VEVENT"]
+    assert len(events) == 1
+
+
+def test_export_my_shifts_date_range_empty(ics_client):
+    client, ctx = ics_client
+    slot_date = ctx["slot_date"]
+    range_start = (slot_date + timedelta(days=20)).isoformat()
+    range_end = (slot_date + timedelta(days=25)).isoformat()
+    response = client.get(
+        f"/api/v1/exports/my-shifts.ics?shift_group_id={ctx['sg_id']}"
+        f"&start_date={range_start}&end_date={range_end}"
+    )
+    cal = _parse_ics(response)
+    events = [c for c in cal.walk() if c.name == "VEVENT"]
+    assert len(events) == 0
+
+
+def test_export_my_shifts_date_range_requires_both_dates(ics_client):
+    client, ctx = ics_client
+    slot_date = ctx["slot_date"].isoformat()
+    response = client.get(
+        f"/api/v1/exports/my-shifts.ics?shift_group_id={ctx['sg_id']}&start_date={slot_date}"
+    )
+    assert response.status_code == 422
+    response = client.get(
+        f"/api/v1/exports/my-shifts.ics?shift_group_id={ctx['sg_id']}&end_date={slot_date}"
+    )
+    assert response.status_code == 422
+
+
+def test_export_my_shifts_date_range_invalid_order(ics_client):
+    client, ctx = ics_client
+    slot_date = ctx["slot_date"]
+    response = client.get(
+        f"/api/v1/exports/my-shifts.ics?shift_group_id={ctx['sg_id']}"
+        f"&start_date={(slot_date + timedelta(days=5)).isoformat()}"
+        f"&end_date={slot_date.isoformat()}"
+    )
     assert response.status_code == 422

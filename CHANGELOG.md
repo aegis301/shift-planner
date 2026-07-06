@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-06-17
+- **ICS date-range export:** My-planning export modal lets team members pick start and end dates for `.ics` downloads. `GET /api/v1/exports/my-shifts.ics` accepts optional `start_date` and `end_date` query params (both required together); only preliminary/published months are included per slot.
+
 ## 2026-06-15
 - **Planning roster refresh:** `POST /api/v1/planning-periods/{id}/sync-roster` syncs template-generated roster slots for a month (optional `shift_group_id`): adds missing slots, removes obsolete template slots, updates slot metadata, preserves assignments on unchanged slots. Blocked for published shift groups (`409`). Planning workspace adds a neutral Refresh button; destructive **Reset roster** unchanged. MCP `sync_planning_period_roster_tool`.
 

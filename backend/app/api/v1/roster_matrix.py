@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
@@ -23,7 +25,11 @@ from app.services.roster_matrix import (
     upsert_roster_slot_assignment,
 )
 from app.services.exports import export_roster_matrix_pdf, export_roster_matrix_xlsx
-from app.services.ics_export import export_member_shifts_ics, export_single_roster_slot_ics
+from app.services.ics_export import (
+    export_member_shifts_ics,
+    export_single_roster_slot_ics,
+    resolve_ics_date_range,
+)
 from app.services.planning import get_shift_group_planning_status, is_team_member_roster_visible
 
 router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
@@ -236,6 +242,8 @@ def get_roster_slot_ics(
 @export_router.get("/exports/my-shifts.ics")
 def get_my_shifts_ics(
     shift_group_id: int = Query(...),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -245,19 +253,29 @@ def get_my_shifts_ics(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
+        resolved_start, resolved_end = resolve_ics_date_range(start_date, end_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
         body = export_member_shifts_ics(
             db,
             organization_id=user.organization_id,
             team_member_id=member.id,
             shift_group_id=shift_group_id,
+            start_date=resolved_start,
+            end_date=resolved_end,
             calendar_name="My shifts",
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if resolved_start is not None and resolved_end is not None:
+        filename = f"my-shifts-{resolved_start.isoformat()}_{resolved_end.isoformat()}.ics"
+    else:
+        filename = "my-shifts.ics"
     return Response(
         content=body,
         media_type="text/calendar",
-        headers={"Content-Disposition": 'attachment; filename="my-shifts.ics"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

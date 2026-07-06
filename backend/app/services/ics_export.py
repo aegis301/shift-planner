@@ -168,6 +168,19 @@ def _slot_visible_for_member(
     return False
 
 
+def resolve_ics_date_range(
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[date | None, date | None]:
+    if start_date is None and end_date is None:
+        return None, None
+    if start_date is None or end_date is None:
+        raise ValueError("start_date and end_date must both be provided")
+    if start_date > end_date:
+        raise ValueError("start_date must be on or before end_date")
+    return start_date, end_date
+
+
 def _load_org_and_group_names(
     db: Session,
     *,
@@ -190,6 +203,8 @@ def list_member_calendar_events(
     shift_group_id: int,
     planning_period_id: int | None = None,
     roster_slot_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> list[ShiftCalendarEvent]:
     require_shift_group(db, shift_group_id, organization_id)
     template_ids, _ = _scope_template_and_member_ids(
@@ -223,6 +238,10 @@ def list_member_calendar_events(
         stmt = stmt.where(RosterSlot.planning_period_id == planning_period_id)
     if roster_slot_id is not None:
         stmt = stmt.where(RosterSlot.id == roster_slot_id)
+    if start_date is not None:
+        stmt = stmt.where(RosterSlot.slot_date >= start_date)
+    if end_date is not None:
+        stmt = stmt.where(RosterSlot.slot_date <= end_date)
     events: list[ShiftCalendarEvent] = []
     shift_group_ids = {shift_group_id}
     for slot in db.scalars(stmt).unique():
@@ -252,6 +271,8 @@ def export_member_shifts_ics(
     shift_group_id: int,
     planning_period_id: int | None = None,
     roster_slot_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
     calendar_name: str,
 ) -> bytes:
     events = list_member_calendar_events(
@@ -261,6 +282,8 @@ def export_member_shifts_ics(
         shift_group_id=shift_group_id,
         planning_period_id=planning_period_id,
         roster_slot_id=roster_slot_id,
+        start_date=start_date,
+        end_date=end_date,
     )
     if roster_slot_id is not None and not events:
         raise ValueError("Roster slot not found or not visible")

@@ -133,6 +133,7 @@ Personal iCalendar exports (linked team-member portal users only; same prelimina
 
 - Single assigned shift: `/api/v1/exports/roster-slots/{roster_slot_id}.ics`
 - All visible assigned shifts (shift group scope): `/api/v1/exports/my-shifts.ics?shift_group_id=…`
+- Visible assigned shifts in a date range: same endpoint with optional `start_date` and `end_date` query params (ISO dates, both required together)
 - Assigned shifts in one planning month: `/api/v1/exports/my-shifts/{planning_period_id}.ics?shift_group_id=…`
 
 Query parameter `shift_group_id`: **admins** may omit it for a full-org matrix, matrix notes, roster, validation, and CSV exports. **Planners** (non-admin) must pass `shift_group_id` on `GET /api/v1/matrix/{id}`, matrix note routes under `/api/v1/matrix/{id}/notes`, `GET /api/v1/roster-matrix/{id}`, `GET /api/v1/validation/{id}`, and on both CSV export routes; the value must be one of their `user_shift_groups`. For roster XLSX/PDF exports, planners follow the same shift-group scope rules, while team-member portal users must pass `shift_group_id` and are checked against team-member shift-group membership. Creating or deleting a planning month (`POST` / `DELETE /api/v1/planning-periods`) is **admin-only**; status transitions, `POST /api/v1/planning-periods/{id}/sync-roster` (add/remove/update template slots while preserving assignments on unchanged slots), and destructive `POST /api/v1/planning-periods/{id}/regenerate-roster` remain available to any user with planning access (admin or planner).
