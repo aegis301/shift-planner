@@ -229,6 +229,7 @@ export function MatrixEditor({
   compact = false,
   reloadToken = 0,
   shiftGroupId,
+  versionId,
   editableMemberId,
   teamMemberPortal = false,
   readOnly = false,
@@ -239,6 +240,7 @@ export function MatrixEditor({
   compact?: boolean;
   reloadToken?: number;
   shiftGroupId?: string;
+  versionId?: number;
   editableMemberId?: number;
   teamMemberPortal?: boolean;
   readOnly?: boolean;
@@ -307,8 +309,14 @@ export function MatrixEditor({
   }, [matrix?.team_members, matrix?.shift_intents]);
 
   const loadMatrixById = useCallback(async (nextPeriodId: string) => {
-    const next = await apiFetch<PlanningMatrix>(`/api/v1/matrix/${nextPeriodId}${groupQuery}`);
-    const nextNotes = await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${nextPeriodId}/notes${groupQuery}`);
+    const next = await apiFetch<PlanningMatrix>(
+      versionId
+        ? `/api/v1/planning-periods/${nextPeriodId}/versions/${versionId}/matrix`
+        : `/api/v1/matrix/${nextPeriodId}${groupQuery}`
+    );
+    const nextNotes = versionId
+      ? []
+      : await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${nextPeriodId}/notes${groupQuery}`);
     setMatrix({
       ...next,
       shift_templates: next.shift_templates ?? [],
@@ -317,7 +325,7 @@ export function MatrixEditor({
     });
     setNotes(nextNotes);
     setActiveMemberId(next.team_members[0]?.id ?? null);
-  }, [groupQuery]);
+  }, [groupQuery, versionId]);
 
   const activePeriodId = controlledPeriodId ?? periodId;
 

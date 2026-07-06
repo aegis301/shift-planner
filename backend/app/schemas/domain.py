@@ -970,6 +970,51 @@ class ShiftGroupPlanningStatusRead(BaseModel):
     shift_group_id: int
     status: PlanningPeriodStatus
     published_at: datetime | None = None
+    working_major_version: int | None = None
+    working_minor_version: int | None = None
+    first_published_at: datetime | None = None
+
+
+PlanVersionLifecyclePhase = Literal["preliminary", "published"]
+PlanVersionTrigger = Literal["status_preliminary", "status_published", "manual_save"]
+
+
+class PlanVersionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    planning_period_id: int
+    shift_group_id: int
+    major_version: int
+    minor_version: int
+    lifecycle_phase: PlanVersionLifecyclePhase
+    trigger: PlanVersionTrigger
+    note: str | None = None
+    created_by_user_id: int | None = None
+    created_at: datetime
+
+    @property
+    def label(self) -> str:
+        return f"{self.major_version}.{self.minor_version}"
+
+
+class PlanVersionListRead(BaseModel):
+    working_major_version: int | None = None
+    working_minor_version: int | None = None
+    versions: list[PlanVersionRead] = Field(default_factory=list)
+
+
+class PlanVersionSaveRequest(BaseModel):
+    major_version: int | None = Field(default=None, ge=0)
+    minor_version: int | None = Field(default=None, ge=0)
+    note: str | None = None
+
+
+class PlanVersionTransitionRequest(BaseModel):
+    major_version: int | None = Field(default=None, ge=0)
+    minor_version: int | None = Field(default=None, ge=0)
+    note: str | None = None
+    is_major_update: bool = False
 
 
 class PlanningPeriodRead(PlanningPeriodCreate):

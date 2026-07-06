@@ -1,10 +1,10 @@
 # Plan
 
 ## Current Milestone
-Refine the unified `/planning` workflow with shared month state, wishes, final roster assignment, inline validation, exports, and workload stats.
+Refine the unified `/planning` workflow with shared month state, wishes, final roster assignment, inline validation, exports, workload stats, and **per-shift-group plan versioning**.
 
 ## Next Steps
-1. Run Alembic migrations against Postgres after pulling the shift template and cleanup migrations.
+1. Run Alembic migrations against Postgres after pulling the plan-versions migration (`202606180001`).
 2. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 3. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 4. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing (day-interval bar shipped; multi-member ranges and clear-range still open).

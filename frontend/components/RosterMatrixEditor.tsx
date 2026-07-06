@@ -307,6 +307,7 @@ export function RosterMatrixEditor({
   compact = false,
   reloadToken = 0,
   shiftGroupId,
+  versionId,
   readOnly = false,
   duplicateMemberDayKeys,
   validationWarnings = [],
@@ -317,6 +318,7 @@ export function RosterMatrixEditor({
   compact?: boolean;
   reloadToken?: number;
   shiftGroupId?: string;
+  versionId?: number;
   readOnly?: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   validationWarnings?: RosterWorkloadWarning[];
@@ -389,9 +391,13 @@ export function RosterMatrixEditor({
   );
 
   const loadRosterById = useCallback(async (nextPeriodId: string) => {
-    const next = await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${groupQuery}`);
+    const next = await apiFetch<RosterMatrix>(
+      versionId
+        ? `/api/v1/planning-periods/${nextPeriodId}/versions/${versionId}/roster-matrix`
+        : `/api/v1/roster-matrix/${nextPeriodId}${groupQuery}`
+    );
     await publishMatrix(next);
-  }, [publishMatrix, groupQuery]);
+  }, [publishMatrix, groupQuery, versionId]);
 
   const loadRoster = useCallback(async () => {
     await loadRosterById(activePeriodId);
@@ -441,7 +447,7 @@ export function RosterMatrixEditor({
     setSavingAssignments((count) => count + 1);
     try {
       if (!memberId) {
-        await apiFetch("/api/v1/roster-matrix/assignments/clear", {
+        await apiFetch(`/api/v1/roster-matrix/assignments/clear?shift_group_id=${shiftGroupId ?? ""}`, {
           method: "POST",
           body: JSON.stringify({ roster_slot_id: rosterSlotId })
         });
@@ -452,7 +458,9 @@ export function RosterMatrixEditor({
           });
         }
       } else {
-        const saved = await apiFetch<RosterSlotAssignment>("/api/v1/roster-matrix/assignments", {
+        const saved = await apiFetch<RosterSlotAssignment>(
+          `/api/v1/roster-matrix/assignments?shift_group_id=${shiftGroupId ?? ""}`,
+          {
           method: "PUT",
           body: JSON.stringify({
             roster_slot_id: rosterSlotId,
@@ -460,7 +468,8 @@ export function RosterMatrixEditor({
             comment: null,
             manual_override: manualOverride
           })
-        });
+        }
+        );
         if (matrix) {
           await publishMatrix({
             ...matrix,

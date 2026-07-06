@@ -311,6 +311,9 @@ class PlanningPeriodShiftGroupStatus(Base):
     shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String(50), default="draft")
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    working_major_version: Mapped[int | None] = mapped_column(Integer)
+    working_minor_version: Mapped[int | None] = mapped_column(Integer)
+    first_published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -318,6 +321,139 @@ class PlanningPeriodShiftGroupStatus(Base):
 
     planning_period: Mapped[PlanningPeriod] = relationship()
     shift_group: Mapped["ShiftGroup"] = relationship()
+
+
+class PlanningPlanVersion(Base):
+    __tablename__ = "planning_plan_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "planning_period_id",
+            "shift_group_id",
+            "major_version",
+            "minor_version",
+            name="uq_planning_plan_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+    major_version: Mapped[int] = mapped_column(Integer)
+    minor_version: Mapped[int] = mapped_column(Integer)
+    lifecycle_phase: Mapped[str] = mapped_column(String(50))
+    trigger: Mapped[str] = mapped_column(String(50))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    planning_period: Mapped[PlanningPeriod] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
+    created_by: Mapped["User | None"] = relationship()
+
+
+class PlanVersionRosterSlot(Base):
+    __tablename__ = "plan_version_roster_slots"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_version_id",
+            "slot_date",
+            "shift_variant_id",
+            "position",
+            name="uq_plan_version_roster_slot",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_version_id: Mapped[int] = mapped_column(ForeignKey("planning_plan_versions.id", ondelete="CASCADE"))
+    shift_template_id: Mapped[int | None] = mapped_column(Integer)
+    shift_variant_id: Mapped[int | None] = mapped_column(Integer)
+    slot_date: Mapped[date] = mapped_column(Date)
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    label: Mapped[str | None] = mapped_column(String(255))
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    day_class: Mapped[str | None] = mapped_column(String(50))
+    source: Mapped[str] = mapped_column(String(50), default="template")
+    template_code: Mapped[str | None] = mapped_column(String(100))
+    template_name: Mapped[str | None] = mapped_column(String(255))
+    variant_label: Mapped[str | None] = mapped_column(String(255))
+
+
+class PlanVersionRosterAssignment(Base):
+    __tablename__ = "plan_version_roster_assignments"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_version_id",
+            "slot_date",
+            "shift_variant_id",
+            "position",
+            name="uq_plan_version_roster_assignment",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_version_id: Mapped[int] = mapped_column(ForeignKey("planning_plan_versions.id", ondelete="CASCADE"))
+    slot_date: Mapped[date] = mapped_column(Date)
+    shift_variant_id: Mapped[int] = mapped_column(Integer)
+    position: Mapped[int] = mapped_column(Integer, default=1)
+    team_member_id: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(Text)
+    manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PlanVersionPlanningCell(Base):
+    __tablename__ = "plan_version_planning_cells"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_version_id",
+            "team_member_id",
+            "cell_date",
+            name="uq_plan_version_planning_cell",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_version_id: Mapped[int] = mapped_column(ForeignKey("planning_plan_versions.id", ondelete="CASCADE"))
+    team_member_id: Mapped[int] = mapped_column(Integer)
+    cell_date: Mapped[date] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(50))
+    comment: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(50), default="manual")
+
+
+class PlanVersionShiftIntent(Base):
+    __tablename__ = "plan_version_shift_intents"
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_version_id",
+            "team_member_id",
+            "cell_date",
+            "shift_template_id",
+            name="uq_plan_version_shift_intent",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_version_id: Mapped[int] = mapped_column(ForeignKey("planning_plan_versions.id", ondelete="CASCADE"))
+    team_member_id: Mapped[int] = mapped_column(Integer)
+    cell_date: Mapped[date] = mapped_column(Date)
+    shift_template_id: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20))
+    source: Mapped[str] = mapped_column(String(50), default="manual")
+
+
+class PlanVersionMemberNote(Base):
+    __tablename__ = "plan_version_member_notes"
+    __table_args__ = (
+        UniqueConstraint("plan_version_id", "team_member_id", name="uq_plan_version_member_note"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_version_id: Mapped[int] = mapped_column(ForeignKey("planning_plan_versions.id", ondelete="CASCADE"))
+    team_member_id: Mapped[int] = mapped_column(Integer)
+    summary: Mapped[str | None] = mapped_column(Text)
+    wishes_response_received: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class RuleConfig(Base):

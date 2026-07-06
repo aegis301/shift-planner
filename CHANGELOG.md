@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-06-18
+- **Plan versioning:** Per-shift-group semver-style snapshots (`0.1` first preliminary share, `1.0` first publish, minor bumps on reopen/manual save). Immutable roster + wishes snapshots in `planning_plan_versions` and child tables. Published plans are read-only for planners/admins until set back to preliminary. REST: `GET|POST /api/v1/planning-periods/{id}/versions`, version matrix/roster reads, version-scoped CSV/XLSX/PDF exports; publish/preliminary accept optional version body. Planning workspace: version badge, save, history panel, transition modals with version fields. MCP: `list_plan_versions_tool`, `save_plan_version_tool`; extended publish/preliminary tools. Alembic `202606180001`.
+
 ## 2026-06-17
 - **ICS date-range export:** My-planning export modal lets team members pick start and end dates for `.ics` downloads. `GET /api/v1/exports/my-shifts.ics` accepts optional `start_date` and `end_date` query params (both required together); only preliminary/published months are included per slot.
 

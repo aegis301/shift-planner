@@ -486,6 +486,24 @@ export const dictionaries = {
     periodSetDraftGroup: "Plan für diese Dienstgruppe auf Entwurf gesetzt.",
     setPlanningPeriodPreliminaryConfirm:
       "Teammitglieder können den Dienstplan danach einsehen und Kommentare für Feedback hinterlassen. Fortfahren?",
+    setPlanningPeriodPreliminaryReopenConfirm:
+      "Der Plan wird wieder bearbeitbar. Die Arbeitsversion wird erhöht (z. B. 1.0 → 1.1). Optional als Hauptupdate markieren.",
+    planVersionSave: "Version speichern",
+    planVersionHistory: "Versionen",
+    planVersionHistoryEmpty: "Noch keine gespeicherten Versionen für diese Dienstgruppe.",
+    planVersionSaveTitle: "Planversion speichern",
+    planVersionSaveHelp: "Erstellt einen unveränderlichen Snapshot des aktuellen Plans (Dienstplan und Wunschmatrix).",
+    planVersionMajor: "Hauptversion",
+    planVersionMinor: "Nebenversion",
+    planVersionNote: "Notiz (optional)",
+    planVersionView: "Version ansehen",
+    planVersionBackToCurrent: "Zurück zum aktuellen Plan",
+    planVersionTransitionLabel: "Versionsnummer",
+    planVersionMajorUpdate: "Hauptupdate (z. B. 2.0)",
+    planVersionPublishedReadOnly: "Veröffentlichte Pläne sind schreibgeschützt. Zum Bearbeiten auf vorläufig setzen.",
+    planVersionViewingBanner: "Sie sehen Version {version} ({phase}) — nur Lesen.",
+    publishPlanningPeriodVersionConfirm:
+      "Der Plan wird als diese Version veröffentlicht und danach schreibgeschützt. Fortfahren?",
     setPlanningPeriodDraftConfirm:
       "Teammitglieder können den Dienstplan danach nicht mehr einsehen und kein Feedback mehr abgeben. Fortfahren?",
     unpublishPlanningPeriod: "Veröffentlichung aufheben",
@@ -1216,6 +1234,24 @@ export const dictionaries = {
     periodSetDraftGroup: "Plan set to draft for this shift group.",
     setPlanningPeriodPreliminaryConfirm:
       "Team members can view the roster and leave comment feedback after this change. Continue?",
+    setPlanningPeriodPreliminaryReopenConfirm:
+      "The plan becomes editable again. The working version bumps (e.g. 1.0 → 1.1). Optionally mark as a major update.",
+    planVersionSave: "Save version",
+    planVersionHistory: "Versions",
+    planVersionHistoryEmpty: "No saved versions for this shift group yet.",
+    planVersionSaveTitle: "Save plan version",
+    planVersionSaveHelp: "Creates an immutable snapshot of the current plan (roster and wishes matrix).",
+    planVersionMajor: "Major version",
+    planVersionMinor: "Minor version",
+    planVersionNote: "Note (optional)",
+    planVersionView: "View version",
+    planVersionBackToCurrent: "Back to current plan",
+    planVersionTransitionLabel: "Version number",
+    planVersionMajorUpdate: "Major update (e.g. 2.0)",
+    planVersionPublishedReadOnly: "Published plans are read-only. Set to preliminary to edit.",
+    planVersionViewingBanner: "Viewing version {version} ({phase}) — read-only.",
+    publishPlanningPeriodVersionConfirm:
+      "The plan will be published as this version and locked afterwards. Continue?",
     setPlanningPeriodDraftConfirm:
       "Team members will no longer see the roster or submit feedback after this change. Continue?",
     unpublishPlanningPeriod: "Unpublish plan",

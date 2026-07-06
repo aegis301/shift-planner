@@ -22,7 +22,7 @@ from app.services.audit import record_audit
 from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_team_member_planning_patterns
-from app.services.planning import shift_group_planning_status_read
+from app.services.planning import can_edit_planning_data, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
     list_planning_day_status_definitions,
@@ -39,6 +39,10 @@ from app.services.shift_templates import GeneratedSlot, generate_slots_for_month
 
 
 class RosterSyncPublishedError(Exception):
+    pass
+
+
+class RosterRegeneratePublishedError(Exception):
     pass
 
 
@@ -278,6 +282,14 @@ def reset_roster_slots_for_period(
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
         template_filter = shift_template_ids_in_shift_group(db, shift_group_id)
+        group_status = shift_group_planning_status_read(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=organization_id,
+        )
+        if group_status is not None and not can_edit_planning_data(group_status.status):
+            raise RosterRegeneratePublishedError("Cannot regenerate roster slots for a published shift group")
     slots_query = select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)
     slots_to_clear = list(db.scalars(slots_query))
     if template_filter is not None:

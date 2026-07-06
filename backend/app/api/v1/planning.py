@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
@@ -9,17 +9,44 @@ from app.api.deps import (
 )
 from app.db.session import get_db
 from app.models import User
-from app.services.authz import is_admin, is_shift_planner_role
+from app.services.authz import assert_planning_shift_group_scope, is_admin, is_shift_planner_role
 from app.schemas import (
     PlanningPeriodCreate,
     PlanningPeriodRead,
+    PlanVersionListRead,
+    PlanVersionRead,
+    PlanVersionSaveRequest,
+    PlanVersionTransitionRequest,
+    PlanningMatrixRead,
     RosterMatrixRead,
     RosterMatrixSyncRead,
     RosterSlotSyncSummary,
     ShiftGroupPlanningStatusRead,
     ValidationWarning,
 )
-from app.services.exports import export_matrix_csv, export_roster_matrix_csv
+from app.services.exports import (
+    export_matrix_csv,
+    export_roster_matrix_csv,
+    export_roster_matrix_pdf,
+    export_roster_matrix_xlsx,
+    export_version_matrix_csv,
+    export_version_roster_matrix_csv,
+    export_version_roster_matrix_pdf,
+    export_version_roster_matrix_xlsx,
+)
+from app.services.plan_versions import (
+    PlanVersionNotFoundError,
+    PlanVersionValidationError,
+    VERSION_TRIGGER_MANUAL_SAVE,
+    VERSION_TRIGGER_STATUS_PRELIMINARY,
+    VERSION_TRIGGER_STATUS_PUBLISHED,
+    get_plan_version,
+    get_plan_version_matrix,
+    get_plan_version_roster,
+    list_plan_versions,
+    manual_save_plan_version,
+    suggest_next_version,
+)
 from app.services.planning import (
     create_planning_period,
     delete_planning_period,
@@ -31,6 +58,7 @@ from app.services.planning import (
     unpublish_planning_period,
 )
 from app.services.roster_matrix import (
+    RosterRegeneratePublishedError,
     RosterSyncPublishedError,
     get_roster_matrix,
     reset_roster_slots_for_period,
@@ -75,17 +103,30 @@ def post_planning_period(
 def post_publish_planning_period(
     planning_period_id: int,
     shift_group_id: int = Query(...),
+    payload: PlanVersionTransitionRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    row = publish_planning_period(
-        db,
-        planning_period_id,
-        shift_group_id=shift_group_id,
-        organization_id=user.organization_id,
-        actor=user.email,
-        source="rest",
-    )
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    options = payload or PlanVersionTransitionRequest()
+    try:
+        row = publish_planning_period(
+            db,
+            planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=user.organization_id,
+            actor=user.email,
+            source="rest",
+            created_by_user_id=user.id,
+            major_version=options.major_version,
+            minor_version=options.minor_version,
+            note=options.note,
+        )
+    except PlanVersionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
     return ShiftGroupPlanningStatusRead.model_validate(row)
@@ -95,17 +136,31 @@ def post_publish_planning_period(
 def post_set_planning_period_preliminary(
     planning_period_id: int,
     shift_group_id: int = Query(...),
+    payload: PlanVersionTransitionRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    row = set_planning_period_to_preliminary(
-        db,
-        planning_period_id,
-        shift_group_id=shift_group_id,
-        organization_id=user.organization_id,
-        actor=user.email,
-        source="rest",
-    )
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    options = payload or PlanVersionTransitionRequest()
+    try:
+        row = set_planning_period_to_preliminary(
+            db,
+            planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=user.organization_id,
+            actor=user.email,
+            source="rest",
+            created_by_user_id=user.id,
+            major_version=options.major_version,
+            minor_version=options.minor_version,
+            note=options.note,
+            is_major_update=options.is_major_update,
+        )
+    except PlanVersionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
     return ShiftGroupPlanningStatusRead.model_validate(row)
@@ -135,17 +190,27 @@ def post_set_planning_period_draft(
 def post_unpublish_planning_period(
     planning_period_id: int,
     shift_group_id: int = Query(...),
+    payload: PlanVersionTransitionRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
-    row = unpublish_planning_period(
-        db,
-        planning_period_id,
-        shift_group_id=shift_group_id,
-        organization_id=user.organization_id,
-        actor=user.email,
-        source="rest",
-    )
+    options = payload or PlanVersionTransitionRequest()
+    try:
+        row = unpublish_planning_period(
+            db,
+            planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=user.organization_id,
+            actor=user.email,
+            source="rest",
+            created_by_user_id=user.id,
+            major_version=options.major_version,
+            minor_version=options.minor_version,
+            note=options.note,
+            is_major_update=options.is_major_update,
+        )
+    except PlanVersionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if row is None:
         raise HTTPException(status_code=404, detail="Planning period not found")
     return ShiftGroupPlanningStatusRead.model_validate(row)
@@ -186,6 +251,11 @@ def regenerate_planning_period_roster(
             organization_id=user.organization_id,
             shift_group_id=shift_group_id,
         )
+    except RosterRegeneratePublishedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ROSTER_REGENERATE_PUBLISHED", "message": str(exc)},
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -290,4 +360,326 @@ def get_matrix_csv(
         body,
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="matrix-{planning_period_id}.csv"'},
+    )
+
+
+@router.get("/planning-periods/{planning_period_id}/versions", response_model=PlanVersionListRead)
+def get_plan_versions(
+    planning_period_id: int,
+    shift_group_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        return list_plan_versions(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=user.organization_id,
+        )
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/planning-periods/{planning_period_id}/versions/suggest")
+def get_suggested_plan_version(
+    planning_period_id: int,
+    shift_group_id: int = Query(...),
+    trigger: str = Query(...),
+    is_major_update: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if trigger not in {
+        VERSION_TRIGGER_MANUAL_SAVE,
+        VERSION_TRIGGER_STATUS_PRELIMINARY,
+        VERSION_TRIGGER_STATUS_PUBLISHED,
+    }:
+        raise HTTPException(status_code=400, detail="Invalid version trigger")
+    try:
+        suggested = suggest_next_version(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=user.organization_id,
+            trigger=trigger,
+            is_major_update=is_major_update,
+        )
+    except PlanVersionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"major_version": suggested.major, "minor_version": suggested.minor, "label": suggested.label}
+
+
+@router.get("/planning-periods/{planning_period_id}/versions/{version_id}", response_model=PlanVersionRead)
+def get_plan_version_detail(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlanVersionRead.model_validate(version)
+
+
+@router.post("/planning-periods/{planning_period_id}/versions", response_model=PlanVersionRead)
+def post_save_plan_version(
+    planning_period_id: int,
+    shift_group_id: int = Query(...),
+    payload: PlanVersionSaveRequest | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    options = payload or PlanVersionSaveRequest()
+    try:
+        version = manual_save_plan_version(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=user.organization_id,
+            created_by_user_id=user.id,
+            actor=user.email,
+            source="rest",
+            major_version=options.major_version,
+            minor_version=options.minor_version,
+            note=options.note,
+        )
+    except PlanVersionValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanVersionRead.model_validate(version)
+
+
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/{version_id}/matrix",
+    response_model=PlanningMatrixRead,
+)
+def get_plan_version_matrix_endpoint(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+        return get_plan_version_matrix(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/{version_id}/roster-matrix",
+    response_model=RosterMatrixRead,
+)
+def get_plan_version_roster_endpoint(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+        return get_plan_version_roster(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/{version_id}/export/matrix.csv",
+    response_class=PlainTextResponse,
+)
+def get_plan_version_matrix_csv(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+        body = export_version_matrix_csv(
+            db,
+            planning_period_id,
+            version_id=version_id,
+            organization_id=user.organization_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlainTextResponse(
+        body,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="matrix-{planning_period_id}-v{version.major_version}.{version.minor_version}.csv"'
+            )
+        },
+    )
+
+
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.csv",
+    response_class=PlainTextResponse,
+)
+def get_plan_version_roster_csv(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+        body = export_version_roster_matrix_csv(
+            db,
+            planning_period_id,
+            version_id=version_id,
+            organization_id=user.organization_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PlainTextResponse(
+        body,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="roster-matrix-{planning_period_id}-v{version.major_version}.{version.minor_version}.csv"'
+            )
+        },
+    )
+
+
+@router.get("/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.xlsx")
+def get_plan_version_roster_xlsx(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+        body = export_version_roster_matrix_xlsx(
+            db,
+            planning_period_id,
+            version_id=version_id,
+            organization_id=user.organization_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="roster-matrix-{planning_period_id}-v{version.major_version}.{version.minor_version}.xlsx"'
+            )
+        },
+    )
+
+
+@router.get("/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.pdf")
+def get_plan_version_roster_pdf(
+    planning_period_id: int,
+    version_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+):
+    try:
+        version = get_plan_version(
+            db,
+            version_id=version_id,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+        )
+        assert_planning_shift_group_scope(db, user, version.shift_group_id)
+        body = export_version_roster_matrix_pdf(
+            db,
+            planning_period_id,
+            version_id=version_id,
+            organization_id=user.organization_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except PlanVersionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="roster-matrix-{planning_period_id}-v{version.major_version}.{version.minor_version}.pdf"'
+            )
+        },
     )

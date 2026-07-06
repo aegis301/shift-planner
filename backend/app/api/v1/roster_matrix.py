@@ -1,11 +1,12 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_planner, get_current_user
 from app.db.session import get_db
-from app.models import User
+from app.models import RosterSlot, ShiftGroup, ShiftGroupShiftTemplate, User
 from app.schemas import (
     RosterMatrixRead,
     RosterSlotAssignmentClear,
@@ -30,7 +31,7 @@ from app.services.ics_export import (
     export_single_roster_slot_ics,
     resolve_ics_date_range,
 )
-from app.services.planning import get_shift_group_planning_status, is_team_member_roster_visible
+from app.services.planning import can_edit_planning_data, get_shift_group_planning_status, is_team_member_roster_visible
 
 router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
 export_router = APIRouter(tags=["roster-matrix"])
@@ -117,12 +118,84 @@ def get_final_roster_matrix(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _resolve_assignment_shift_group_id(
+    db: Session,
+    *,
+    slot: RosterSlot,
+    organization_id: int,
+    shift_group_id: int | None,
+) -> int:
+    if shift_group_id is not None:
+        return shift_group_id
+    if slot.shift_template_id is not None:
+        linked = list(
+            db.scalars(
+                select(ShiftGroupShiftTemplate.shift_group_id).where(
+                    ShiftGroupShiftTemplate.shift_template_id == slot.shift_template_id
+                )
+            )
+        )
+        if len(linked) == 1:
+            return linked[0]
+        if linked:
+            return linked[0]
+    fallback = db.scalar(
+        select(ShiftGroup.id)
+        .where(ShiftGroup.organization_id == organization_id, ShiftGroup.is_active.is_(True))
+        .order_by(ShiftGroup.display_order, ShiftGroup.id)
+        .limit(1)
+    )
+    if fallback is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
+    return fallback
+
+
+def _assert_roster_editable(
+    db: Session,
+    *,
+    planning_period_id: int,
+    shift_group_id: int,
+    organization_id: int,
+) -> None:
+    row = get_shift_group_planning_status(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=organization_id,
+    )
+    if row is None or not can_edit_planning_data(row.status):
+        raise HTTPException(
+            status_code=403,
+            detail="Roster assignments are read-only while this shift group's plan is published",
+        )
+
+
 @router.put("/assignments", response_model=RosterSlotAssignmentRead)
 def put_roster_slot_assignment(
     payload: RosterSlotAssignmentUpsert,
+    shift_group_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
+    slot = db.get(RosterSlot, payload.roster_slot_id)
+    if slot is None:
+        raise HTTPException(status_code=404, detail="Roster slot not found")
+    resolved_shift_group_id = _resolve_assignment_shift_group_id(
+        db,
+        slot=slot,
+        organization_id=user.organization_id,
+        shift_group_id=shift_group_id,
+    )
+    try:
+        assert_planning_shift_group_scope(db, user, resolved_shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    _assert_roster_editable(
+        db,
+        planning_period_id=slot.planning_period_id,
+        shift_group_id=resolved_shift_group_id,
+        organization_id=user.organization_id,
+    )
     try:
         return upsert_roster_slot_assignment(
             db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
@@ -137,9 +210,29 @@ def put_roster_slot_assignment(
 @router.post("/assignments/clear")
 def clear_assignment(
     payload: RosterSlotAssignmentClear,
+    shift_group_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ):
+    slot = db.get(RosterSlot, payload.roster_slot_id)
+    if slot is None:
+        raise HTTPException(status_code=404, detail="Roster slot not found")
+    resolved_shift_group_id = _resolve_assignment_shift_group_id(
+        db,
+        slot=slot,
+        organization_id=user.organization_id,
+        shift_group_id=shift_group_id,
+    )
+    try:
+        assert_planning_shift_group_scope(db, user, resolved_shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    _assert_roster_editable(
+        db,
+        planning_period_id=slot.planning_period_id,
+        shift_group_id=resolved_shift_group_id,
+        organization_id=user.organization_id,
+    )
     deleted = clear_roster_slot_assignment(
         db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
     )

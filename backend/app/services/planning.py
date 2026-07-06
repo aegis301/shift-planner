@@ -7,6 +7,7 @@ from app.models import (
     PlanningCell,
     PlanningPeriod,
     PlanningPeriodShiftGroupStatus,
+    PlanningPlanVersion,
     PlanningShiftIntent,
     RosterSlot,
     RosterSlotAssignment,
@@ -182,54 +183,14 @@ def _sync_period_aggregate_status(db: Session, period: PlanningPeriod) -> None:
         period.published_at = None
 
 
-def _transition_shift_group_status(
-    db: Session,
-    *,
-    planning_period_id: int,
-    shift_group_id: int,
-    organization_id: int,
-    target_status: str,
-    actor: str,
-    source: str,
-    audit_action: str,
-) -> PlanningPeriodShiftGroupStatus | None:
-    period = _require_period_org(db, planning_period_id, organization_id)
-    row = get_shift_group_planning_status(
-        db,
-        planning_period_id=planning_period_id,
-        shift_group_id=shift_group_id,
-        organization_id=organization_id,
-    )
-    if row is None:
-        return None
-    if row.status == target_status:
-        return row
-    row.status = target_status
-    if target_status == PLANNING_PERIOD_STATUS_PUBLISHED:
-        row.published_at = datetime.now(timezone.utc)
-    else:
-        row.published_at = None
-    db.flush()
-    _sync_period_aggregate_status(db, period)
-    record_audit(
-        db,
-        actor=actor,
-        source=source,
-        action=audit_action,
-        entity_type="planning_period_shift_group_status",
-        entity_id=row.id,
-        details={
-            "planning_period_id": planning_period_id,
-            "shift_group_id": shift_group_id,
-            "status": target_status,
-            "year": period.year,
-            "month": period.month,
-        },
-    )
-    db.commit()
-    db.refresh(row)
-    db.refresh(period)
-    return row
+def can_edit_planning_data(status: str) -> bool:
+    return status in _OPEN_GROUP_STATUSES
+
+
+def _transition_with_versioning(db: Session, **kwargs):
+    from app.services.plan_versions import transition_shift_group_status_with_versioning
+
+    return transition_shift_group_status_with_versioning(db, **kwargs)
 
 
 def publish_shift_group_planning(
@@ -240,8 +201,12 @@ def publish_shift_group_planning(
     organization_id: int,
     actor: str,
     source: str,
+    created_by_user_id: int | None = None,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
 ) -> PlanningPeriodShiftGroupStatus | None:
-    return _transition_shift_group_status(
+    return _transition_with_versioning(
         db,
         planning_period_id=planning_period_id,
         shift_group_id=shift_group_id,
@@ -250,6 +215,10 @@ def publish_shift_group_planning(
         actor=actor,
         source=source,
         audit_action="publish",
+        created_by_user_id=created_by_user_id,
+        major_version=major_version,
+        minor_version=minor_version,
+        note=note,
     )
 
 
@@ -261,8 +230,13 @@ def unpublish_shift_group_planning(
     organization_id: int,
     actor: str,
     source: str,
+    created_by_user_id: int | None = None,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+    is_major_update: bool = False,
 ) -> PlanningPeriodShiftGroupStatus | None:
-    return _transition_shift_group_status(
+    return _transition_with_versioning(
         db,
         planning_period_id=planning_period_id,
         shift_group_id=shift_group_id,
@@ -271,6 +245,11 @@ def unpublish_shift_group_planning(
         actor=actor,
         source=source,
         audit_action="set_preliminary",
+        created_by_user_id=created_by_user_id,
+        major_version=major_version,
+        minor_version=minor_version,
+        note=note,
+        is_major_update=is_major_update,
     )
 
 
@@ -283,7 +262,7 @@ def set_shift_group_planning_to_draft(
     actor: str,
     source: str,
 ) -> PlanningPeriodShiftGroupStatus | None:
-    return _transition_shift_group_status(
+    return _transition_with_versioning(
         db,
         planning_period_id=planning_period_id,
         shift_group_id=shift_group_id,
@@ -303,8 +282,13 @@ def set_shift_group_planning_to_preliminary(
     organization_id: int,
     actor: str,
     source: str,
+    created_by_user_id: int | None = None,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+    is_major_update: bool = False,
 ) -> PlanningPeriodShiftGroupStatus | None:
-    return _transition_shift_group_status(
+    return _transition_with_versioning(
         db,
         planning_period_id=planning_period_id,
         shift_group_id=shift_group_id,
@@ -313,6 +297,11 @@ def set_shift_group_planning_to_preliminary(
         actor=actor,
         source=source,
         audit_action="set_preliminary",
+        created_by_user_id=created_by_user_id,
+        major_version=major_version,
+        minor_version=minor_version,
+        note=note,
+        is_major_update=is_major_update,
     )
 
 
@@ -365,6 +354,10 @@ def delete_planning_period(db: Session, planning_period_id: int, *, organization
     for model in (PlanningShiftIntent, PlanningCell, TeamMemberPeriodNote, PlanningPeriodShiftGroupStatus):
         for item in db.scalars(select(model).where(model.planning_period_id == planning_period_id)):
             db.delete(item)
+    for version in db.scalars(
+        select(PlanningPlanVersion).where(PlanningPlanVersion.planning_period_id == planning_period_id)
+    ):
+        db.delete(version)
 
     record_audit(
         db,
@@ -388,6 +381,10 @@ def publish_planning_period(
     organization_id: int,
     actor: str,
     source: str,
+    created_by_user_id: int | None = None,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
 ) -> PlanningPeriodShiftGroupStatus | None:
     return publish_shift_group_planning(
         db,
@@ -396,6 +393,10 @@ def publish_planning_period(
         organization_id=organization_id,
         actor=actor,
         source=source,
+        created_by_user_id=created_by_user_id,
+        major_version=major_version,
+        minor_version=minor_version,
+        note=note,
     )
 
 
@@ -407,6 +408,11 @@ def unpublish_planning_period(
     organization_id: int,
     actor: str,
     source: str,
+    created_by_user_id: int | None = None,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+    is_major_update: bool = False,
 ) -> PlanningPeriodShiftGroupStatus | None:
     return unpublish_shift_group_planning(
         db,
@@ -415,6 +421,11 @@ def unpublish_planning_period(
         organization_id=organization_id,
         actor=actor,
         source=source,
+        created_by_user_id=created_by_user_id,
+        major_version=major_version,
+        minor_version=minor_version,
+        note=note,
+        is_major_update=is_major_update,
     )
 
 
@@ -445,6 +456,11 @@ def set_planning_period_to_preliminary(
     organization_id: int,
     actor: str,
     source: str,
+    created_by_user_id: int | None = None,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+    is_major_update: bool = False,
 ) -> PlanningPeriodShiftGroupStatus | None:
     return set_shift_group_planning_to_preliminary(
         db,
@@ -453,6 +469,11 @@ def set_planning_period_to_preliminary(
         organization_id=organization_id,
         actor=actor,
         source=source,
+        created_by_user_id=created_by_user_id,
+        major_version=major_version,
+        minor_version=minor_version,
+        note=note,
+        is_major_update=is_major_update,
     )
 
 

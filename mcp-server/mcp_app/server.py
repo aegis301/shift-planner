@@ -59,6 +59,7 @@ from app.services.matrix import (
     save_team_member_period_note,
     upsert_planning_cell,
 )
+from app.services.plan_versions import list_plan_versions, manual_save_plan_version
 from app.services.planning import (
     create_planning_period,
     delete_planning_period,
@@ -921,7 +922,14 @@ def save_team_member_period_note_tool(
 
 
 @mcp.tool
-def publish_shift_group_planning_tool(token: str, planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+def publish_shift_group_planning_tool(
+    token: str,
+    planning_period_id: int,
+    shift_group_id: int,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
     """Publish the roster for one shift group in a planning month. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
@@ -932,13 +940,22 @@ def publish_shift_group_planning_tool(token: str, planning_period_id: int, shift
             organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
+            major_version=major_version,
+            minor_version=minor_version,
+            note=note,
         )
         return serialize_model(row)
 
 
 @mcp.tool
 def set_shift_group_planning_preliminary_tool(
-    token: str, planning_period_id: int, shift_group_id: int
+    token: str,
+    planning_period_id: int,
+    shift_group_id: int,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+    is_major_update: bool = False,
 ) -> dict[str, Any]:
     """Set one shift group's plan to preliminary. Requires MCP admin token."""
     require_token(token)
@@ -950,8 +967,53 @@ def set_shift_group_planning_preliminary_tool(
             organization_id=mcp_organization_id(),
             actor="mcp",
             source="mcp",
+            major_version=major_version,
+            minor_version=minor_version,
+            note=note,
+            is_major_update=is_major_update,
         )
         return serialize_model(row)
+
+
+@mcp.tool
+def list_plan_versions_tool(token: str, planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """List saved plan versions for a shift group. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        payload = list_plan_versions(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=mcp_organization_id(),
+        )
+        return payload.model_dump()
+
+
+@mcp.tool
+def save_plan_version_tool(
+    token: str,
+    planning_period_id: int,
+    shift_group_id: int,
+    major_version: int | None = None,
+    minor_version: int | None = None,
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Manually save a plan version snapshot while preliminary. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        version = manual_save_plan_version(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            organization_id=mcp_organization_id(),
+            created_by_user_id=None,
+            actor="mcp",
+            source="mcp",
+            major_version=major_version,
+            minor_version=minor_version,
+            note=note,
+        )
+        return serialize_model(version)
 
 
 @mcp.tool

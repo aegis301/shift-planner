@@ -34,7 +34,7 @@ from app.services.matrix import (
     save_team_member_period_note,
     upsert_planning_cell,
 )
-from app.services.planning import can_team_member_edit_wishes_matrix, get_shift_group_planning_status
+from app.services.planning import can_edit_planning_data, can_team_member_edit_wishes_matrix, get_shift_group_planning_status
 
 router = APIRouter(prefix="/matrix", tags=["matrix"])
 
@@ -80,6 +80,17 @@ def _team_member_feedback_access(
     group_id = _require_shift_group_id_for_write(shift_group_id)
     if can_use_planning_ui(user) and not team_member_portal:
         _matrix_access(db, user, group_id)
+        row = get_shift_group_planning_status(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=group_id,
+            organization_id=user.organization_id,
+        )
+        if row is None or not can_edit_planning_data(row.status):
+            raise HTTPException(
+                status_code=403,
+                detail="Planning data is read-only while this shift group's plan is published",
+            )
         return group_id
     try:
         assert_team_member_shift_group_access(db, user, group_id)

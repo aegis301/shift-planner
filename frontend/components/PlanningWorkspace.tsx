@@ -23,6 +23,7 @@ import {
   X
 } from "lucide-react";
 import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
+import { PlanVersionPanel } from "@/components/PlanVersionPanel";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { DashboardUpcomingShiftsTable } from "@/components/DashboardUpcomingShiftsTable";
@@ -44,6 +45,8 @@ type ShiftGroupPlanningStatus = {
   shift_group_id: number;
   status: "draft" | "preliminary" | "published";
   published_at?: string | null;
+  working_major_version?: number | null;
+  working_minor_version?: number | null;
 };
 
 type PlanningPeriod = {
@@ -149,6 +152,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [memberShiftsLoading, setMemberShiftsLoading] = useState(false);
   const [icsExportStartDate, setIcsExportStartDate] = useState("");
   const [icsExportEndDate, setIcsExportEndDate] = useState("");
+  const [viewingVersionId, setViewingVersionId] = useState<number | null>(null);
+  const [versionMajor, setVersionMajor] = useState("");
+  const [versionMinor, setVersionMinor] = useState("");
+  const [versionNote, setVersionNote] = useState("");
+  const [versionMajorUpdate, setVersionMajorUpdate] = useState(false);
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
 
@@ -316,6 +324,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     !periodId ||
     (plannerNeedsShiftGroup && !shiftGroupId) ||
     groupPlanningStatus?.status === "published";
+  const plannerPlanningEditable =
+    planningUi &&
+    !viewingVersionId &&
+    (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
+  const regenerateRosterDisabled = !periodId || groupPlanningStatus?.status === "published";
 
   const loadGroupPlanningStatus = useCallback(
     async (nextPeriodId: string) => {
@@ -479,15 +492,52 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     setMessage(`${t(locale, "saved")}: ${monthLabel(period)}`);
   }
 
+  useEffect(() => {
+    if (
+      !destructiveAction ||
+      !periodId ||
+      !shiftGroupId ||
+      (destructiveAction !== "status-published" &&
+        destructiveAction !== "status-preliminary")
+    ) {
+      return;
+    }
+    const trigger =
+      destructiveAction === "status-published" ? "status_published" : "status_preliminary";
+    const fromPublished =
+      destructiveAction === "status-preliminary" && groupPlanningStatus?.status === "published";
+    void apiFetch<{ major_version: number; minor_version: number }>(
+      `/api/v1/planning-periods/${periodId}/versions/suggest?shift_group_id=${encodeURIComponent(shiftGroupId)}&trigger=${trigger}&is_major_update=${fromPublished && versionMajorUpdate}`
+    )
+      .then((suggested) => {
+        setVersionMajor(String(suggested.major_version));
+        setVersionMinor(String(suggested.minor_version));
+      })
+      .catch(() => {
+        setVersionMajor("");
+        setVersionMinor("");
+      });
+  }, [destructiveAction, periodId, shiftGroupId, groupPlanningStatus?.status, versionMajorUpdate]);
+
   async function confirmDestructiveAction() {
     if (!periodId || !destructiveAction) {
       return;
     }
     const statusQuery = shiftGroupQuery;
     const groupName = shiftGroups.find((g) => String(g.id) === shiftGroupId)?.name;
+    const versionBody =
+      versionMajor && versionMinor
+        ? {
+            major_version: Number(versionMajor),
+            minor_version: Number(versionMinor),
+            note: versionNote.trim() || null,
+            is_major_update: versionMajorUpdate
+          }
+        : { is_major_update: versionMajorUpdate, note: versionNote.trim() || null };
     if (destructiveAction === "status-published") {
       await apiFetch<ShiftGroupPlanningStatus>(`/api/v1/planning-periods/${periodId}/publish${statusQuery}`, {
-        method: "POST"
+        method: "POST",
+        body: JSON.stringify(versionBody)
       });
       await refreshPeriods();
       await loadGroupPlanningStatus(periodId);
@@ -497,7 +547,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       );
     } else if (destructiveAction === "status-preliminary") {
       await apiFetch<ShiftGroupPlanningStatus>(`/api/v1/planning-periods/${periodId}/preliminary${statusQuery}`, {
-        method: "POST"
+        method: "POST",
+        body: JSON.stringify(versionBody)
       });
       await refreshPeriods();
       await loadGroupPlanningStatus(periodId);
@@ -536,6 +587,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       setMessage(t(locale, "deletePlanningPeriod"));
     }
     setDestructiveAction(null);
+    setVersionNote("");
+    setVersionMajorUpdate(false);
   }
 
   async function confirmSyncRoster() {
@@ -601,9 +654,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           compact
           reloadToken={matrixReloadToken}
           shiftGroupId={shiftGroupId || undefined}
+          versionId={viewingVersionId ?? undefined}
           editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
           teamMemberPortal={teamMemberPortalUi}
-          readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
+          readOnly={(teamMemberPortalUi && !teamMemberWishesEditable) || !plannerPlanningEditable || viewingVersionId != null}
           dayFeedbackAlwaysVisible={Boolean(teamMemberPortalUi && teamMemberWishesEditable)}
           onChanged={handleWishesChanged}
         />
@@ -635,9 +689,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <RosterMatrixEditor
           periodId={periodId}
           compact
-          readOnly={Boolean(teamMemberPortalUi)}
+          readOnly={Boolean(teamMemberPortalUi) || !plannerPlanningEditable || viewingVersionId != null}
           reloadToken={rosterReloadToken}
           shiftGroupId={shiftGroupId || undefined}
+          versionId={viewingVersionId ?? undefined}
           duplicateMemberDayKeys={duplicateMemberDayKeys}
           validationWarnings={warnings}
           onMatrixChange={handleRosterChange}
@@ -757,6 +812,18 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                       status={groupPlanningStatus?.status ?? null}
                     />
                   </Field>
+                  {periodId && shiftGroupId ? (
+                    <div className="mt-5">
+                      <PlanVersionPanel
+                        locale={locale}
+                        periodId={periodId}
+                        shiftGroupId={shiftGroupId}
+                        status={groupPlanningStatus?.status ?? null}
+                        viewingVersionId={viewingVersionId}
+                        onViewVersion={setViewingVersionId}
+                      />
+                    </div>
+                  ) : null}
                   <button
                     aria-label={t(locale, "refreshRosterFromTemplates")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
@@ -774,7 +841,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                   <button
                     aria-label={t(locale, "regenerateRoster")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={!periodId}
+                    disabled={regenerateRosterDisabled}
                     onClick={() => setDestructiveAction("regenerate-roster")}
                     title={t(locale, "regenerateRoster")}
                     type="button"
@@ -878,7 +945,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 <PlanningDayIntervalBar
                   periodId={periodId}
                   shiftGroupId={shiftGroupId}
-                  readOnly={teamMemberPortalUi && !teamMemberWishesEditable}
+                  readOnly={(teamMemberPortalUi && !teamMemberWishesEditable) || !plannerPlanningEditable}
                   teamMemberPortal={teamMemberPortalUi}
                   editableMemberId={editableMemberId}
                   dayStatusDefinitions={dayStatusDefinitions}
@@ -1114,11 +1181,57 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 : destructiveAction === "status-published"
                   ? t(locale, "publishPlanningPeriodConfirm")
                   : destructiveAction === "status-preliminary"
-                    ? t(locale, "setPlanningPeriodPreliminaryConfirm")
+                    ? groupPlanningStatus?.status === "published"
+                      ? t(locale, "setPlanningPeriodPreliminaryReopenConfirm")
+                      : t(locale, "setPlanningPeriodPreliminaryConfirm")
                     : destructiveAction === "status-draft"
                       ? t(locale, "setPlanningPeriodDraftConfirm")
                   : t(locale, "regenerateRosterWarning")}
             </p>
+            {destructiveAction === "status-published" || destructiveAction === "status-preliminary" ? (
+              <div className="mt-4 grid gap-3 rounded-lg border border-slate-200 p-3">
+                <p className="text-sm font-medium text-slate-800">{t(locale, "planVersionTransitionLabel")}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="grid gap-1 text-sm">
+                    <span>{t(locale, "planVersionMajor")}</span>
+                    <input
+                      value={versionMajor}
+                      onChange={(event) => setVersionMajor(event.target.value)}
+                      className="rounded-lg border border-slate-200 px-3 py-2"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span>{t(locale, "planVersionMinor")}</span>
+                    <input
+                      value={versionMinor}
+                      onChange={(event) => setVersionMinor(event.target.value)}
+                      className="rounded-lg border border-slate-200 px-3 py-2"
+                    />
+                  </label>
+                </div>
+                {destructiveAction === "status-preliminary" && groupPlanningStatus?.status === "published" ? (
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={versionMajorUpdate}
+                      onChange={(event) => setVersionMajorUpdate(event.target.checked)}
+                    />
+                    {t(locale, "planVersionMajorUpdate")}
+                  </label>
+                ) : null}
+                <label className="grid gap-1 text-sm">
+                  <span>{t(locale, "planVersionNote")}</span>
+                  <textarea
+                    value={versionNote}
+                    onChange={(event) => setVersionNote(event.target.value)}
+                    className="min-h-16 rounded-lg border border-slate-200 px-3 py-2"
+                  />
+                </label>
+              </div>
+            ) : null}
+            {destructiveAction === "status-published" ? (
+              <p className="mt-3 text-sm text-slate-700">{t(locale, "planVersionPublishedReadOnly")}</p>
+            ) : null}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
                 className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
