@@ -14,7 +14,7 @@ import { t, type Locale } from "@/lib/i18n";
 type OrgSettings = { id: number; name: string; slug: string; plan_tier: string };
 
 type MemberPatternPolicy = {
-  hard_types: Array<"allowed_calendar_week_parity">;
+  hard_types: Array<"allowed_calendar_week_parity" | "iso_week_cycle">;
 };
 
 type ShiftGroupOption = { id: number; code: string; name: string; is_active?: boolean };
@@ -130,7 +130,8 @@ export function OrganizationManagementPanel() {
         if (!cancelled) {
           setMemberPatternPolicy({
             hard_types: policy.hard_types.filter(
-              (item): item is "allowed_calendar_week_parity" => item === "allowed_calendar_week_parity"
+              (item): item is "allowed_calendar_week_parity" | "iso_week_cycle" =>
+                item === "allowed_calendar_week_parity" || item === "iso_week_cycle"
             )
           });
         }
@@ -335,6 +336,20 @@ export function OrganizationManagementPanel() {
               }
             />
             {t(locale, "memberPatternPolicyHardWeekParity")}
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={memberPatternPolicy.hard_types.includes("iso_week_cycle")}
+              onChange={() =>
+                setMemberPatternPolicy((prev) => ({
+                  hard_types: prev.hard_types.includes("iso_week_cycle")
+                    ? prev.hard_types.filter((item) => item !== "iso_week_cycle")
+                    : [...prev.hard_types, "iso_week_cycle"]
+                }))
+              }
+            />
+            {t(locale, "memberPatternPolicyHardIsoWeekCycle")}
           </label>
         </div>
         <button

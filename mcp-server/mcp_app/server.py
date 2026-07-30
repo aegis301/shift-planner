@@ -1038,7 +1038,7 @@ def replace_team_member_planning_patterns_tool(
     team_member_id: int,
     patterns: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Replace recurring planning patterns for a team member (avoid_time_window with one or more `windows` bands, allowed_calendar_week_parity with optional `status` for wishes on non-matching ISO weeks, recurring_weekday_status). Avoid time window is always stored and evaluated as info-only. recurring_weekday_status and week-parity `status` write wishes-matrix cells for draft and preliminary months (source recurring_pattern; merged by pattern order; manual cells are not overwritten). Requires MCP admin token."""
+    """Replace recurring planning patterns for a team member (`avoid_time_window` with `windows[]`; `iso_week_cycle` with `cycle_weeks`, `on_weeks`, `anchor_iso_year`, `anchor_iso_week`, optional `wishes_weekdays`, `allow_weekend_roster`, and `off_status`; legacy `allowed_calendar_week_parity`; `recurring_weekday_status`). Avoid time window is info-only on roster. `iso_week_cycle` and parity off-status write wishes-matrix cells in draft/preliminary months. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         org = db.get(Organization, mcp_organization_id())

@@ -52,9 +52,11 @@ type ShiftConstraintType =
   | "no_additional_same_day"
   | "min_rest_hours"
   | "no_cross_day_into_unavailable_day"
+  | "unavailable_overlap_policy"
   | "max_assignments_per_month"
   | "requires_coupled_shift"
   | "team_member_property_requirement";
+type UnavailableOverlapPolicyMode = "inherit" | "allow" | "warn" | "block";
 type ShiftConstraintRecord = {
   constraintInstanceId: string;
   type: ShiftConstraintType;
@@ -63,6 +65,7 @@ type ShiftConstraintRecord = {
   max_assignments_per_month?: number | null;
   paired_shift_variant_id?: number | null;
   partner_day_offset?: number;
+  unavailable_overlap_mode?: UnavailableOverlapPolicyMode;
   property_requirement?: PropertyRequirementExpr;
 };
 
@@ -709,7 +712,7 @@ function categoryOptions(locale: Locale) {
 const SHIFT_CONSTRAINT_OPTIONS: { type: ShiftConstraintType; label: TranslationKey }[] = [
   { type: "no_additional_same_day", label: "constraintNoAdditionalSameDay" },
   { type: "min_rest_hours", label: "constraintMinRestHours" },
-  { type: "no_cross_day_into_unavailable_day", label: "constraintNoCrossDayIntoUnavailable" },
+  { type: "unavailable_overlap_policy", label: "constraintUnavailableOverlapPolicy" },
   { type: "max_assignments_per_month", label: "constraintMaxAssignmentsPerMonth" },
   { type: "requires_coupled_shift", label: "constraintRequiresCoupledShift" },
   { type: "team_member_property_requirement", label: "constraintTeamMemberPropertyRequirement" }
@@ -802,6 +805,7 @@ function parseShiftConstraintList(raw: unknown): ShiftConstraintRecord[] {
       type !== "no_additional_same_day" &&
       type !== "min_rest_hours" &&
       type !== "no_cross_day_into_unavailable_day" &&
+      type !== "unavailable_overlap_policy" &&
       type !== "max_assignments_per_month" &&
       type !== "requires_coupled_shift" &&
       type !== "team_member_property_requirement"
@@ -810,6 +814,26 @@ function parseShiftConstraintList(raw: unknown): ShiftConstraintRecord[] {
     }
     const severity = constraintSeverityFromApiRow(row);
     const constraintInstanceId = newConstraintInstanceId();
+    if (type === "unavailable_overlap_policy") {
+      const modeRaw = row.unavailable_overlap_mode;
+      const mode: UnavailableOverlapPolicyMode =
+        modeRaw === "allow" || modeRaw === "warn" || modeRaw === "block" || modeRaw === "inherit"
+          ? modeRaw
+          : "block";
+      out.push({ constraintInstanceId, type, severity, unavailable_overlap_mode: mode });
+      continue;
+    }
+    if (type === "no_cross_day_into_unavailable_day") {
+      const mode: UnavailableOverlapPolicyMode =
+        severity === "error" ? "block" : severity === "warning" ? "warn" : "allow";
+      out.push({
+        constraintInstanceId,
+        type: "unavailable_overlap_policy",
+        severity,
+        unavailable_overlap_mode: mode
+      });
+      continue;
+    }
     if (type === "min_rest_hours") {
       const minRest = typeof row.min_rest_hours === "number" ? row.min_rest_hours : 11;
       out.push({ constraintInstanceId, type, severity, min_rest_hours: minRest });
@@ -862,6 +886,10 @@ function shiftConstraintsToApi(constraints: ShiftConstraintRecord[]): unknown[] 
     if (c.type === "requires_coupled_shift") {
       base.paired_shift_variant_id = c.paired_shift_variant_id;
       base.partner_day_offset = c.partner_day_offset ?? 1;
+      return base;
+    }
+    if (c.type === "unavailable_overlap_policy") {
+      base.unavailable_overlap_mode = c.unavailable_overlap_mode ?? "block";
       return base;
     }
     if (c.type === "team_member_property_requirement" && c.property_requirement) {
@@ -920,6 +948,16 @@ function setConstraintPropertyRequirement(
 
 type AddConstraintContext = { allTemplates: ShiftTemplateRecord[]; excludeVariantId?: number | null; propertyDefinitions: PropertyDefinitionBrief[] };
 
+function setConstraintUnavailableOverlapMode(
+  constraints: ShiftConstraintRecord[],
+  constraintInstanceId: string,
+  unavailable_overlap_mode: UnavailableOverlapPolicyMode
+): ShiftConstraintRecord[] {
+  return constraints.map((item) =>
+    item.constraintInstanceId === constraintInstanceId ? { ...item, unavailable_overlap_mode } : item
+  );
+}
+
 function addConstraint(
   constraints: ShiftConstraintRecord[],
   type: ShiftConstraintType,
@@ -957,6 +995,9 @@ function addConstraint(
         property_requirement: defaultPropertyRequirementExpr(defs)
       }
     ];
+  }
+  if (type === "unavailable_overlap_policy") {
+    return [...constraints, { constraintInstanceId, type, severity: "warning", unavailable_overlap_mode: "warn" }];
   }
   return [...constraints, { constraintInstanceId, type, severity: "warning" }];
 }
@@ -1046,29 +1087,49 @@ function RuleRowsEditor({
               role="group"
               aria-label={t(locale, "constraintRuleSeverityGroup")}
             >
-              <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
-                {CONSTRAINT_SEVERITY_ORDER.map((severity) => {
-                  const active = rule.severity === severity;
-                  const labelKey =
-                    severity === "info"
-                      ? "constraintSeverityInfo"
-                      : severity === "warning"
-                        ? "constraintSeverityWarning"
-                        : "constraintSeverityError";
-                  return (
-                    <button
-                      key={severity}
-                      type="button"
-                      aria-pressed={active}
-                      title={severity === "error" ? t(locale, "constraintSeverityErrorHint") : undefined}
-                      className={constraintSeverityButtonClass(severity, active)}
-                      onClick={() => onChange(setConstraintSeverity(constraints, rule.constraintInstanceId, severity))}
-                    >
-                      {t(locale, labelKey)}
-                    </button>
-                  );
-                })}
-              </div>
+              {rule.type === "unavailable_overlap_policy" ? (
+                <select
+                  className={inputClass}
+                  value={rule.unavailable_overlap_mode ?? "warn"}
+                  onChange={(event) =>
+                    onChange(
+                      setConstraintUnavailableOverlapMode(
+                        constraints,
+                        rule.constraintInstanceId,
+                        event.target.value as UnavailableOverlapPolicyMode
+                      )
+                    )
+                  }
+                >
+                  <option value="allow">{t(locale, "constraintUnavailableOverlapAllow")}</option>
+                  <option value="warn">{t(locale, "constraintUnavailableOverlapWarn")}</option>
+                  <option value="block">{t(locale, "constraintUnavailableOverlapBlock")}</option>
+                </select>
+              ) : (
+                <div className="flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
+                  {CONSTRAINT_SEVERITY_ORDER.map((severity) => {
+                    const active = rule.severity === severity;
+                    const labelKey =
+                      severity === "info"
+                        ? "constraintSeverityInfo"
+                        : severity === "warning"
+                          ? "constraintSeverityWarning"
+                          : "constraintSeverityError";
+                    return (
+                      <button
+                        key={severity}
+                        type="button"
+                        aria-pressed={active}
+                        title={severity === "error" ? t(locale, "constraintSeverityErrorHint") : undefined}
+                        className={constraintSeverityButtonClass(severity, active)}
+                        onClick={() => onChange(setConstraintSeverity(constraints, rule.constraintInstanceId, severity))}
+                      >
+                        {t(locale, labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             <button
               type="button"

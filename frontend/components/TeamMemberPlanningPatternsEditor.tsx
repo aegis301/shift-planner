@@ -17,7 +17,7 @@ import {
 
 type PatternWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 type ConstraintSeverity = "info" | "warning" | "error";
-type MemberPatternType = "avoid_time_window" | "allowed_calendar_week_parity" | "recurring_weekday_status";
+type MemberPatternType = "avoid_time_window" | "iso_week_cycle" | "allowed_calendar_week_parity" | "recurring_weekday_status";
 type TimeWindowAnchorOption = "any_overlap_day" | "slot_start_day";
 
 type AvoidTimeWindowBand = {
@@ -34,6 +34,20 @@ type AvoidTimeWindowRule = {
   windows: AvoidTimeWindowBand[];
 };
 
+type IsoWeekCyclePreset = "half" | "three_quarter" | "custom";
+
+type IsoWeekCycleRule = {
+  type: "iso_week_cycle";
+  cycle_weeks: number;
+  on_weeks: number;
+  anchor_iso_year: number;
+  anchor_iso_week: number;
+  off_status: string;
+  wishes_weekdays: PatternWeekday[] | null;
+  roster_weekdays: PatternWeekday[] | null;
+  allow_weekend_roster: boolean;
+};
+
 type AllowedCalendarWeekParityRule = {
   type: "allowed_calendar_week_parity";
   parity: "even" | "odd";
@@ -46,7 +60,7 @@ type RecurringWeekdayStatusRule = {
   status: string;
 };
 
-type MemberPlanningPatternRule = AvoidTimeWindowRule | AllowedCalendarWeekParityRule | RecurringWeekdayStatusRule;
+type MemberPlanningPatternRule = AvoidTimeWindowRule | IsoWeekCycleRule | AllowedCalendarWeekParityRule | RecurringWeekdayStatusRule;
 
 type PlanningPatternRow = {
   serverId?: number;
@@ -97,12 +111,72 @@ function patternCardKey(rowIndex: number): string {
   return String(rowIndex);
 }
 
+function currentIsoWeekAnchor(): { anchor_iso_year: number; anchor_iso_week: number } {
+  const date = new Date();
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { anchor_iso_year: utc.getUTCFullYear(), anchor_iso_week: week };
+}
+
+function isoWeekCyclePreset(rule: IsoWeekCycleRule): IsoWeekCyclePreset {
+  if (rule.cycle_weeks === 2 && rule.on_weeks === 1) {
+    return "half";
+  }
+  if (rule.cycle_weeks === 4 && rule.on_weeks === 3) {
+    return "three_quarter";
+  }
+  return "custom";
+}
+
+function defaultIsoWeekCycleRule(defaultStatus: string): IsoWeekCycleRule {
+  const anchor = currentIsoWeekAnchor();
+  return {
+    type: "iso_week_cycle",
+    cycle_weeks: 4,
+    on_weeks: 3,
+    anchor_iso_year: anchor.anchor_iso_year,
+    anchor_iso_week: anchor.anchor_iso_week,
+    off_status: defaultStatus,
+    wishes_weekdays: ["mon", "tue", "wed", "thu", "fri"],
+    roster_weekdays: null,
+    allow_weekend_roster: true
+  };
+}
+
+function parityToIsoWeekCycleRule(parity: "even" | "odd", status: string): IsoWeekCycleRule {
+  const anchor = currentIsoWeekAnchor();
+  let anchorWeek = anchor.anchor_iso_week;
+  if (parity === "even" && anchorWeek % 2 !== 0) {
+    anchorWeek += 1;
+  }
+  if (parity === "odd" && anchorWeek % 2 === 0) {
+    anchorWeek += 1;
+  }
+  return {
+    type: "iso_week_cycle",
+    cycle_weeks: 2,
+    on_weeks: 1,
+    anchor_iso_year: anchor.anchor_iso_year,
+    anchor_iso_week: anchorWeek,
+    off_status: status,
+    wishes_weekdays: null,
+    roster_weekdays: null,
+    allow_weekend_roster: false
+  };
+}
+
 function patternTypeLabel(locale: Locale, rule: MemberPlanningPatternRule): string {
   if (rule.type === "avoid_time_window") {
     return t(locale, "memberPlanningPatternTypeAvoidTimeWindow");
   }
   if (rule.type === "recurring_weekday_status") {
     return t(locale, "memberPlanningPatternTypeRecurringWeekdayStatus");
+  }
+  if (rule.type === "iso_week_cycle") {
+    return t(locale, "memberPlanningPatternTypeIsoWeekCycle");
   }
   return t(locale, "memberPlanningPatternTypeWeekParity");
 }
@@ -128,6 +202,25 @@ function summarizePatternCardDetails(
     const days = summarizeAvoidBandWeekdays(locale, rule.weekdays);
     const status = labelForPlanningDayStatusCode(rule.status, definitions, locale);
     return `${days} · ${status} · ${activePart}`;
+  }
+  if (rule.type === "iso_week_cycle") {
+    const preset = isoWeekCyclePreset(rule);
+    const presetLabel =
+      preset === "half"
+        ? t(locale, "memberPlanningPatternCyclePresetHalf")
+        : preset === "three_quarter"
+          ? t(locale, "memberPlanningPatternCyclePresetThreeQuarter")
+          : t(locale, "memberPlanningPatternCyclePresetCustom");
+    const status = labelForPlanningDayStatusCode(rule.off_status, definitions, locale);
+    const sev = t(
+      locale,
+      row.severity === "error"
+        ? "constraintSeverityError"
+        : row.severity === "warning"
+          ? "constraintSeverityWarning"
+          : "constraintSeverityInfo"
+    );
+    return `${presetLabel} · ${status} · ${sev} · ${activePart}`;
   }
   const parity = t(locale, rule.parity === "even" ? "memberPlanningPatternParityEven" : "memberPlanningPatternParityOdd");
   const status = labelForPlanningDayStatusCode(rule.status, definitions, locale);
@@ -179,17 +272,43 @@ function normalizePlanningRuleFromApi(
       };
     }
   }
+  if (rule && typeof rule === "object" && "type" in rule && (rule as { type: string }).type === "iso_week_cycle") {
+    const r = rule as Record<string, unknown>;
+    const rawOff = typeof r.off_status === "string" ? r.off_status : fallbackStatus;
+    const offStatus = allowedCodes.has(rawOff) ? rawOff : fallbackStatus;
+    const anchor = currentIsoWeekAnchor();
+    return {
+      type: "iso_week_cycle",
+      cycle_weeks: typeof r.cycle_weeks === "number" ? r.cycle_weeks : 4,
+      on_weeks: typeof r.on_weeks === "number" ? r.on_weeks : 3,
+      anchor_iso_year: typeof r.anchor_iso_year === "number" ? r.anchor_iso_year : anchor.anchor_iso_year,
+      anchor_iso_week: typeof r.anchor_iso_week === "number" ? r.anchor_iso_week : anchor.anchor_iso_week,
+      off_status: offStatus,
+      wishes_weekdays: Array.isArray(r.wishes_weekdays) ? (r.wishes_weekdays as PatternWeekday[]) : null,
+      roster_weekdays: Array.isArray(r.roster_weekdays) ? (r.roster_weekdays as PatternWeekday[]) : null,
+      allow_weekend_roster: r.allow_weekend_roster === true
+    };
+  }
   if (rule && typeof rule === "object" && "type" in rule && (rule as { type: string }).type === "allowed_calendar_week_parity") {
     const r = rule as Record<string, unknown>;
     const parity = (r.parity === "odd" ? "odd" : "even") as "even" | "odd";
     const rawStatus = typeof r.status === "string" ? r.status : undefined;
     const status = rawStatus && allowedCodes.has(rawStatus) ? rawStatus : fallbackStatus;
-    return { type: "allowed_calendar_week_parity", parity, status };
+    return parityToIsoWeekCycleRule(parity, status);
   }
   return rule as MemberPlanningPatternRule;
 }
 
 function defaultPatternRow(type: MemberPatternType, defaultStatus: string): PlanningPatternRow {
+  if (type === "iso_week_cycle") {
+    return {
+      label: "",
+      is_active: true,
+      severity: "warning",
+      display_order: 0,
+      rule: defaultIsoWeekCycleRule(defaultStatus)
+    };
+  }
   if (type === "allowed_calendar_week_parity") {
     return {
       label: "",
@@ -239,6 +358,9 @@ function defaultLabelForRule(rule: MemberPlanningPatternRule): TranslationKey {
   if (rule.type === "avoid_time_window") {
     return "memberPlanningPatternTypeAvoidTimeWindow";
   }
+  if (rule.type === "iso_week_cycle") {
+    return "memberPlanningPatternTypeIsoWeekCycle";
+  }
   if (rule.type === "allowed_calendar_week_parity") {
     return "memberPlanningPatternTypeWeekParity";
   }
@@ -246,7 +368,7 @@ function defaultLabelForRule(rule: MemberPlanningPatternRule): TranslationKey {
 }
 
 function showsSeveritySelect(rule: MemberPlanningPatternRule): boolean {
-  return rule.type === "allowed_calendar_week_parity";
+  return rule.type === "allowed_calendar_week_parity" || rule.type === "iso_week_cycle";
 }
 
 function payloadSeverity(rule: MemberPlanningPatternRule, declared: ConstraintSeverity): ConstraintSeverity {
@@ -376,6 +498,16 @@ export function TeamMemberPlanningPatternsEditor({
 
   function updateRule(index: number, rule: MemberPlanningPatternRule) {
     commitRows(rowsRef.current.map((row, rowIndex) => (rowIndex === index ? { ...row, rule } : row)));
+  }
+
+  function toggleIsoWeekCycleWeekday(index: number, weekday: PatternWeekday) {
+    const row = rowsRef.current[index];
+    if (!row || row.rule.type !== "iso_week_cycle") {
+      return;
+    }
+    const current = row.rule.wishes_weekdays ?? [...WEEKDAYS];
+    const next = current.includes(weekday) ? current.filter((day) => day !== weekday) : [...current, weekday];
+    updateRule(index, { ...row.rule, wishes_weekdays: next.length === WEEKDAYS.length ? null : next });
   }
 
   function toggleRecurringWeekday(index: number, weekday: PatternWeekday) {
@@ -601,7 +733,8 @@ export function TeamMemberPlanningPatternsEditor({
                   <option value="recurring_weekday_status">
                     {t(locale, "memberPlanningPatternTypeRecurringWeekdayStatus")}
                   </option>
-                  <option value="allowed_calendar_week_parity">{t(locale, "memberPlanningPatternTypeWeekParity")}</option>
+                  <option value="iso_week_cycle">{t(locale, "memberPlanningPatternTypeIsoWeekCycle")}</option>
+                  <option value="allowed_calendar_week_parity">{t(locale, "memberPlanningPatternTypeWeekParityLegacy")}</option>
                 </select>
               </Field>
               {rule.type === "avoid_time_window" ? (
@@ -796,6 +929,138 @@ export function TeamMemberPlanningPatternsEditor({
                           status: event.target.value
                         })
                       }
+                    >
+                      {dayStatuses.map((status) => (
+                        <option key={status.code} value={status.code}>
+                          {planningDayStatusLabel(status, locale)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              ) : null}
+              {rule.type === "iso_week_cycle" ? (
+                <div className="grid gap-3">
+                  <p className="text-sm text-slate-600">{t(locale, "memberPlanningPatternIsoWeekCycleHelp")}</p>
+                  <Field label={t(locale, "memberPlanningPatternCyclePreset")}>
+                    <select
+                      className={inputClass}
+                      disabled={readOnly}
+                      value={isoWeekCyclePreset(rule)}
+                      onChange={(event) => {
+                        const preset = event.target.value as IsoWeekCyclePreset;
+                        if (preset === "half") {
+                          updateRule(index, { ...rule, cycle_weeks: 2, on_weeks: 1 });
+                          return;
+                        }
+                        if (preset === "three_quarter") {
+                          updateRule(index, { ...rule, cycle_weeks: 4, on_weeks: 3 });
+                          return;
+                        }
+                      }}
+                    >
+                      <option value="half">{t(locale, "memberPlanningPatternCyclePresetHalf")}</option>
+                      <option value="three_quarter">{t(locale, "memberPlanningPatternCyclePresetThreeQuarter")}</option>
+                      <option value="custom">{t(locale, "memberPlanningPatternCyclePresetCustom")}</option>
+                    </select>
+                  </Field>
+                  {isoWeekCyclePreset(rule) === "custom" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label={t(locale, "memberPlanningPatternCycleWeeks")}>
+                        <input
+                          className={inputClass}
+                          type="number"
+                          min={1}
+                          max={52}
+                          disabled={readOnly}
+                          value={rule.cycle_weeks}
+                          onChange={(event) =>
+                            updateRule(index, { ...rule, cycle_weeks: Math.max(1, Number(event.target.value) || 1) })
+                          }
+                        />
+                      </Field>
+                      <Field label={t(locale, "memberPlanningPatternOnWeeks")}>
+                        <input
+                          className={inputClass}
+                          type="number"
+                          min={0}
+                          max={rule.cycle_weeks}
+                          disabled={readOnly}
+                          value={rule.on_weeks}
+                          onChange={(event) =>
+                            updateRule(index, {
+                              ...rule,
+                              on_weeks: Math.min(rule.cycle_weeks, Math.max(0, Number(event.target.value) || 0))
+                            })
+                          }
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label={t(locale, "memberPlanningPatternAnchorIsoYear")}>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={2000}
+                        max={2100}
+                        disabled={readOnly}
+                        value={rule.anchor_iso_year}
+                        onChange={(event) =>
+                          updateRule(index, { ...rule, anchor_iso_year: Number(event.target.value) || rule.anchor_iso_year })
+                        }
+                      />
+                    </Field>
+                    <Field label={t(locale, "memberPlanningPatternAnchorIsoWeek")}>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={1}
+                        max={53}
+                        disabled={readOnly}
+                        value={rule.anchor_iso_week}
+                        onChange={(event) =>
+                          updateRule(index, { ...rule, anchor_iso_week: Number(event.target.value) || rule.anchor_iso_week })
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <div>
+                    <p className="mb-2 text-sm font-medium text-slate-700">{t(locale, "memberPlanningPatternWishesWeekdays")}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {WEEKDAYS.map((weekday) => {
+                        const selected = (rule.wishes_weekdays ?? WEEKDAYS).includes(weekday);
+                        return (
+                          <button
+                            key={weekday}
+                            type="button"
+                            disabled={readOnly}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
+                              selected ? "bg-ink text-white ring-ink" : "bg-white text-slate-700 ring-slate-200"
+                            }`}
+                            onClick={() => toggleIsoWeekCycleWeekday(index, weekday)}
+                          >
+                            {t(locale, WEEKDAY_LABEL_KEYS[weekday])}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      disabled={readOnly}
+                      checked={rule.allow_weekend_roster}
+                      onChange={(event) => updateRule(index, { ...rule, allow_weekend_roster: event.target.checked })}
+                    />
+                    {t(locale, "memberPlanningPatternAllowWeekendRoster")}
+                  </label>
+                  <Field label={t(locale, "memberPlanningPatternMatrixStatus")}>
+                    <select
+                      className={`${planningDayStatusSelectShellClass} w-full ${planningDayStatusSelectClass(rule.off_status, dayStatusDefinitions)}`}
+                      disabled={readOnly}
+                      value={rule.off_status}
+                      onChange={(event) => updateRule(index, { ...rule, off_status: event.target.value })}
                     >
                       {dayStatuses.map((status) => (
                         <option key={status.code} value={status.code}>

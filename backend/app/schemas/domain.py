@@ -515,10 +515,13 @@ ShiftConstraintType = Literal[
     "no_additional_same_day",
     "min_rest_hours",
     "no_cross_day_into_unavailable_day",
+    "unavailable_overlap_policy",
     "max_assignments_per_month",
     "requires_coupled_shift",
     "team_member_property_requirement",
 ]
+
+UnavailableOverlapPolicyMode = Literal["inherit", "allow", "warn", "block"]
 
 
 class ShiftConstraint(BaseModel):
@@ -528,6 +531,7 @@ class ShiftConstraint(BaseModel):
     max_assignments_per_month: int | None = Field(default=None, ge=1, le=31)
     paired_shift_variant_id: int | None = Field(default=None, ge=1)
     partner_day_offset: int = Field(default=1, ge=-7, le=7)
+    unavailable_overlap_mode: UnavailableOverlapPolicyMode | None = None
     property_requirement: TeamMemberPropertyRequirementExpr | None = None
 
     @model_validator(mode="before")
@@ -578,18 +582,43 @@ class ShiftConstraint(BaseModel):
             self.max_assignments_per_month = None
             self.paired_shift_variant_id = None
             self.partner_day_offset = 1
+            self.unavailable_overlap_mode = None
+            return self
+        if self.type == "unavailable_overlap_policy":
+            if self.unavailable_overlap_mode is None:
+                raise ValueError("unavailable_overlap_mode is required for unavailable_overlap_policy constraints")
+            self.min_rest_hours = None
+            self.max_assignments_per_month = None
+            self.paired_shift_variant_id = None
+            self.partner_day_offset = 1
+            self.property_requirement = None
+            return self
+        if self.type == "no_cross_day_into_unavailable_day":
+            self.min_rest_hours = None
+            self.max_assignments_per_month = None
+            self.paired_shift_variant_id = None
+            self.partner_day_offset = 1
+            self.unavailable_overlap_mode = None
+            self.property_requirement = None
             return self
         self.min_rest_hours = None
         self.max_assignments_per_month = None
         self.paired_shift_variant_id = None
         self.partner_day_offset = 1
+        self.unavailable_overlap_mode = None
         self.property_requirement = None
         return self
 
 
 PatternWeekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-MemberPatternRuleType = Literal["avoid_time_window", "allowed_calendar_week_parity", "recurring_weekday_status"]
-MemberPatternHardType = Literal["allowed_calendar_week_parity"]
+ALL_PATTERN_WEEKDAYS: tuple[PatternWeekday, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+MemberPatternRuleType = Literal[
+    "avoid_time_window",
+    "allowed_calendar_week_parity",
+    "iso_week_cycle",
+    "recurring_weekday_status",
+]
+MemberPatternHardType = Literal["allowed_calendar_week_parity", "iso_week_cycle"]
 TimeWindowAnchor = Literal["slot_start_day", "any_overlap_day"]
 
 
@@ -641,6 +670,24 @@ class AllowedCalendarWeekParityMemberPatternRule(BaseModel):
     status: str = "frei"
 
 
+class IsoWeekCycleMemberPatternRule(BaseModel):
+    type: Literal["iso_week_cycle"] = "iso_week_cycle"
+    cycle_weeks: int = Field(ge=1, le=52)
+    on_weeks: int = Field(ge=0, le=52)
+    anchor_iso_year: int = Field(ge=2000, le=2100)
+    anchor_iso_week: int = Field(ge=1, le=53)
+    off_status: str = "frei"
+    wishes_weekdays: list[PatternWeekday] | None = None
+    roster_weekdays: list[PatternWeekday] | None = None
+    allow_weekend_roster: bool = False
+
+    @model_validator(mode="after")
+    def validate_on_weeks(self) -> Self:
+        if self.on_weeks > self.cycle_weeks:
+            raise ValueError("on_weeks cannot exceed cycle_weeks")
+        return self
+
+
 class RecurringWeekdayStatusMemberPatternRule(BaseModel):
     type: Literal["recurring_weekday_status"] = "recurring_weekday_status"
     weekdays: list[PatternWeekday] = Field(min_length=1)
@@ -650,6 +697,7 @@ class RecurringWeekdayStatusMemberPatternRule(BaseModel):
 MemberPlanningPatternRule = Annotated[
     AvoidTimeWindowMemberPatternRule
     | AllowedCalendarWeekParityMemberPatternRule
+    | IsoWeekCycleMemberPatternRule
     | RecurringWeekdayStatusMemberPatternRule,
     Field(discriminator="type"),
 ]
@@ -663,7 +711,7 @@ class OrganizationMemberPatternPolicy(BaseModel):
     def _only_parity_hard_types(cls, value: object) -> object:
         if not value:
             return []
-        allowed = {"allowed_calendar_week_parity"}
+        allowed = {"allowed_calendar_week_parity", "iso_week_cycle"}
         if isinstance(value, list):
             return [item for item in value if item in allowed]
         return value
@@ -704,7 +752,7 @@ class OrganizationMemberPatternPolicyRead(BaseModel):
     def _filter_hard_types_read(cls, value: object) -> object:
         if not value:
             return []
-        allowed = {"allowed_calendar_week_parity"}
+        allowed = {"allowed_calendar_week_parity", "iso_week_cycle"}
         if isinstance(value, list):
             return [item for item in value if item in allowed]
         return value
@@ -718,7 +766,7 @@ class OrganizationMemberPatternPolicyUpdate(BaseModel):
     def _filter_hard_types_update(cls, value: object) -> object:
         if not value:
             return []
-        allowed = {"allowed_calendar_week_parity"}
+        allowed = {"allowed_calendar_week_parity", "iso_week_cycle"}
         if isinstance(value, list):
             return [item for item in value if item in allowed]
         return value

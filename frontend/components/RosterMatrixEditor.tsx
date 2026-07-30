@@ -21,6 +21,7 @@ import {
   rosterBlocksForPlanningDayStatusCode,
   type PlanningDayStatusDefinition
 } from "@/lib/planningDayStatus";
+import { overlapCalendarDaysForSlot } from "@/lib/shiftOverlap";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 
@@ -1012,8 +1013,27 @@ function RosterCell({
     return map;
   }, [workloadMatrix.assignments, workloadMatrix.slots, slot.shift_template_id, slot.category]);
 
-  const planningCell = memberId ? planningCellMap.get(`${slot.slot_date}:${memberId}`) : undefined;
-  const hasDayComment = Boolean(planningCell?.comment?.trim());
+  const overlapDays = useMemo(() => overlapCalendarDaysForSlot(slot), [slot]);
+  const memberHasBlockingOverlap = useCallback(
+    (member: RosterMatrixTeamMember) => {
+      for (const day of overlapDays) {
+        const cell = planningCellMap.get(`${day}:${member.id}`);
+        if (cell?.status && rosterBlocksForPlanningDayStatusCode(cell.status, dayStatusDefinitions)) {
+          return true;
+        }
+      }
+      return false;
+    },
+    [overlapDays, planningCellMap, dayStatusDefinitions]
+  );
+  const planningCell = memberId
+    ? overlapDays
+        .map((day) => planningCellMap.get(`${day}:${memberId}`))
+        .find((cell) => cell?.status && rosterBlocksForPlanningDayStatusCode(cell.status, dayStatusDefinitions))
+    : undefined;
+  const hasDayComment = Boolean(
+    memberId && overlapDays.some((day) => planningCellMap.get(`${day}:${memberId}`)?.comment?.trim())
+  );
   const status = planningCell?.status;
   const statusRow = status ? planningDayStatusByCode(dayStatusDefinitions).get(status) : undefined;
   const meta = statusRow
@@ -1172,18 +1192,26 @@ function RosterCell({
                 </li>
               ) : null}
               {filteredMembers.map((member) => {
-                const cell = planningCellMap.get(`${slot.slot_date}:${member.id}`);
+                const overlapBlockingCell = overlapDays
+                  .map((day) => planningCellMap.get(`${day}:${member.id}`))
+                  .find((cell) => cell?.status && rosterBlocksForPlanningDayStatusCode(cell.status, dayStatusDefinitions));
+                const cell = overlapBlockingCell ?? planningCellMap.get(`${slot.slot_date}:${member.id}`);
                 const st = cell?.status;
                 const stRow = st ? planningDayStatusByCode(dayStatusDefinitions).get(st) : undefined;
                 const dotClass = stRow ? planningDayStatusSolidClass(stRow.color_preset) : "bg-slate-300";
                 const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
                 const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
+                const memberBlocked = memberHasBlockingOverlap(member);
                 const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
                 return (
                   <li key={member.id} className="flex items-stretch" role="none">
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                      className={
+                        memberBlocked
+                          ? "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-rose-50"
+                          : "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                      }
                       onClick={async () => {
                         const previous = memberId;
                         setMemberId(member.id);
@@ -1210,6 +1238,11 @@ function RosterCell({
                       {intentKind === "no_go" ? (
                         <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
                           {t(locale, "noGoShort")}
+                        </span>
+                      ) : null}
+                      {memberBlocked ? (
+                        <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
+                          {t(locale, "conflict")}
                         </span>
                       ) : null}
                     </button>

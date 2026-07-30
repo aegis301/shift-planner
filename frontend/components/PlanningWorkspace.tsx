@@ -1438,12 +1438,20 @@ function validationWarningDetailText(
     }
     return t(locale, "validationDetailDuplicateDay", { count: String(count), slots: slotsText });
   }
-  if (warning.code === "ROSTER_MATRIX_UNAVAILABLE_CONFLICT") {
+  if (warning.code === "ROSTER_MATRIX_UNAVAILABLE_OVERLAP" || warning.code === "ROSTER_MATRIX_UNAVAILABLE_CONFLICT") {
     const st = String(warning.details?.unavailable_status ?? "");
     const wishLabel = labelForPlanningDayStatusCode(st, dayStatusDefinitions, locale);
     const slotId = warning.details?.roster_slot_id as number | undefined;
     const slot = slotId != null ? matrix.slots.find((s) => s.id === slotId) : undefined;
     const slotLabel = slot ? summarizeRosterSlot(slot, locale) : "—";
+    const overlapDays = (warning.details?.overlap_days as string[] | undefined) ?? [];
+    if (overlapDays.length > 1) {
+      return t(locale, "validationDetailUnavailableOverlap", {
+        wish: wishLabel,
+        slot: slotLabel,
+        days: overlapDays.join(", ")
+      });
+    }
     return t(locale, "validationDetailUnavailable", { wish: wishLabel, slot: slotLabel });
   }
   if (warning.code === "ROSTER_TEMPLATE_NO_GO_CONFLICT") {
@@ -1497,6 +1505,15 @@ function validationWarningDetailText(
       windowStart: String(warning.details?.window_start ?? "—"),
       windowEnd: String(warning.details?.window_end ?? "—"),
       weekday: String(warning.details?.weekday ?? "—"),
+      severity: String(warning.details?.constraint_severity ?? warning.severity)
+    });
+  }
+  if (warning.code === "MEMBER_PATTERN_ISO_WEEK_CYCLE") {
+    return t(locale, "validationDetailMemberPatternIsoWeekCycle", {
+      label: String(warning.details?.pattern_label ?? "—"),
+      isoWeek: String(warning.details?.iso_week ?? "—"),
+      cycleWeeks: String(warning.details?.cycle_weeks ?? "—"),
+      onWeeks: String(warning.details?.on_weeks ?? "—"),
       severity: String(warning.details?.constraint_severity ?? warning.severity)
     });
   }

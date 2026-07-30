@@ -8,6 +8,7 @@ from app.schemas import PLANNED_DUTY_STATUSES, ValidationWarning
 from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.constraints import evaluate_assignment_constraints, resolve_slot_constraints
 from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_patterns_for_members
+from app.services.unavailable_overlap import evaluate_unavailable_overlap_for_slot
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
@@ -31,6 +32,10 @@ def _warning_in_shift_group_scope(
 ) -> bool:
     if warning.team_member_id is not None and warning.team_member_id not in team_member_ids:
         return False
+    if warning.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP":
+        rid = warning.details.get("roster_slot_id")
+        if rid is not None and rid not in slot_ids:
+            return False
     if warning.code == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT":
         rid = warning.details.get("roster_slot_id")
         if rid is not None and rid not in slot_ids:
@@ -163,10 +168,13 @@ def validate_roster(
     cells = list_planning_cells(
         db, planning_period_id=planning_period_id, shift_group_id=shift_group_id
     )
+    all_cells = list_planning_cells(db, planning_period_id=planning_period_id)
     slot_assignments = list_roster_slot_assignments(db, planning_period_id=planning_period_id)
     intents = list_planning_shift_intents(db, planning_period_id=planning_period_id)
     _add_matrix_conflicts(db, warnings, cells, organization_id=organization_id)
-    _add_roster_slot_matrix_conflicts(db, warnings, slot_assignments, cells, organization_id=organization_id)
+    _add_roster_slot_matrix_conflicts(
+        db, warnings, slot_assignments, all_cells, organization_id=organization_id
+    )
     _add_roster_template_no_go_conflicts(warnings, slot_assignments, intents)
     _add_roster_slot_duplicate_day_warnings(warnings, slot_assignments)
     _add_consecutive_weekend_warnings(warnings, slot_assignments)
@@ -217,35 +225,28 @@ def _add_roster_slot_matrix_conflicts(
     db: Session,
     warnings: list[ValidationWarning],
     assignments: list[RosterSlotAssignment],
-    cells: list[PlanningCell],
+    all_cells: list[PlanningCell],
     *,
     organization_id: int,
 ) -> None:
-    unavailable = {
-        (cell.team_member_id, cell.cell_date): cell
-        for cell in cells
-        if cell_status_blocks_roster_assignment(db, organization_id=organization_id, status=cell.status)
-    }
+    cells_by_member: dict[int, list[PlanningCell]] = defaultdict(list)
+    for cell in all_cells:
+        cells_by_member[cell.team_member_id].append(cell)
     for assignment in assignments:
-        conflict = unavailable.get((assignment.team_member_id, assignment.roster_slot.slot_date))
-        if conflict is None:
+        slot = assignment.roster_slot
+        if slot is None:
             continue
-        warnings.append(
-            ValidationWarning(
-                code="ROSTER_MATRIX_UNAVAILABLE_CONFLICT",
-                severity="error",
-                message="Final roster assignment conflicts with an unavailable wishes matrix status.",
-                team_member_id=assignment.team_member_id,
-                date=assignment.roster_slot.slot_date,
-                details={
-                    "roster_slot_id": assignment.roster_slot_id,
-                    "roster_slot_assignment_id": assignment.id,
-                    "shift_template_id": assignment.roster_slot.shift_template_id,
-                    "shift_variant_id": assignment.roster_slot.shift_variant_id,
-                    "unavailable_status": conflict.status,
-                },
-            )
+        member_cells = cells_by_member.get(assignment.team_member_id, [])
+        warning = evaluate_unavailable_overlap_for_slot(
+            db=db,
+            slot=slot,
+            team_member_id=assignment.team_member_id,
+            planning_cells=member_cells,
+            organization_id=organization_id,
+            assignment_id=assignment.id,
         )
+        if warning is not None:
+            warnings.append(warning)
 
 
 def _add_roster_template_no_go_conflicts(

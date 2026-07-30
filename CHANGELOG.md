@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-07-10
+- **Constraints rework:** Global roster blocking when a shift overlaps any wishes-matrix day with `blocks_roster_assignment` (`ROSTER_MATRIX_UNAVAILABLE_OVERLAP`); templates/variants may override via `unavailable_overlap_policy` (`allow` / `warn` / `block`). New member pattern `iso_week_cycle` (anchored multi-week on/off cycles, weekday-only wishes, optional weekend roster allowance); legacy even/odd parity still reads. Assignment preflight enforces overlap blocking. Roster picker highlights cross-day conflicts.
+
 ## 2026-06-18
 - **Plan versioning:** Per-shift-group semver-style snapshots (`0.1` first preliminary share, `1.0` first publish, minor bumps on reopen/manual save). Immutable roster + wishes snapshots in `planning_plan_versions` and child tables. Published plans are read-only for planners/admins until set back to preliminary. REST: `GET|POST /api/v1/planning-periods/{id}/versions`, version matrix/roster reads, version-scoped CSV/XLSX/PDF exports; publish/preliminary accept optional version body. Planning workspace: version badge, save, history panel, transition modals with version fields. MCP: `list_plan_versions_tool`, `save_plan_version_tool`; extended publish/preliminary tools. Alembic `202606180001`.
 

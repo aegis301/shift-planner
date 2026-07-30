@@ -1476,7 +1476,98 @@ def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClien
     )
     assert assigned.status_code == 200
     warnings = client.get(f"/api/v1/validation/{period_id}").json()
-    assert any(row["code"] == "ROSTER_CONSTRAINT_CROSS_DAY_UNAVAILABLE" for row in warnings)
+    assert any(row["code"] == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP" for row in warnings)
+
+
+def test_global_unavailable_overlap_blocks_overnight_without_template_rule(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Global",
+            "last_name": "Overlap",
+            "email": "global-overlap@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "GLO", "name": "Nacht Global", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Nacht",
+            "start_day_class": "any",
+            "starts_at": "20:00:00",
+            "ends_at": "06:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
+        json={"team_member_id": member_id, "cell_date": "2026-07-02", "status": "urlaub"},
+    )
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(
+        row for row in roster["slots"] if row["slot_date"] == "2026-07-01" and row["shift_template_id"] == template["id"]
+    )
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": member_id},
+    )
+    assert assigned.status_code == 400
+
+
+def test_unavailable_overlap_allow_policy_permits_assignment(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Allow",
+            "last_name": "Overlap",
+            "email": "allow-overlap@example.com",
+            "employment_percentage": 100,
+            "shift_group_ids": [1],
+        },
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "ALW",
+            "name": "Nacht Allow",
+            "category": "other",
+            "constraints": [{"type": "unavailable_overlap_policy", "unavailable_overlap_mode": "allow"}],
+        },
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Nacht",
+            "start_day_class": "any",
+            "starts_at": "20:00:00",
+            "ends_at": "06:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+        },
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
+        json={"team_member_id": member_id, "cell_date": "2026-07-02", "status": "urlaub"},
+    )
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(
+        row for row in roster["slots"] if row["slot_date"] == "2026-07-01" and row["shift_template_id"] == template["id"]
+    )
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": member_id},
+    )
+    assert assigned.status_code == 200
 
 
 def test_validation_warns_for_max_assignments_per_month_constraint(client: TestClient):

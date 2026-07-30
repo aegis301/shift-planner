@@ -7,17 +7,24 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Organization, RosterSlot, ShiftVariant, TeamMember, TeamMemberPlanningPattern
+from app.models import Organization, RosterSlot, TeamMember, TeamMemberPlanningPattern
 from app.schemas import (
+    ALL_PATTERN_WEEKDAYS,
     AvoidTimeWindowBand,
     AvoidTimeWindowMemberPatternRule,
     AllowedCalendarWeekParityMemberPatternRule,
+    IsoWeekCycleMemberPatternRule,
     MemberPlanningPatternRule,
     OrganizationMemberPatternPolicy,
+    PatternWeekday,
     RecurringWeekdayStatusMemberPatternRule,
     TeamMemberPlanningPatternRead,
     TeamMemberPlanningPatternsReplace,
     ValidationWarning,
+)
+from app.services.shift_intervals import (
+    is_iso_week_cycle_on_week,
+    resolve_slot_interval,
 )
 from app.services.audit import record_audit
 from app.services.planning_day_status_definitions import assert_valid_planning_cell_status
@@ -41,7 +48,12 @@ class ResolvedMemberPattern:
     pattern_id: int
     label: str
     severity: str
-    rule: AvoidTimeWindowMemberPatternRule | AllowedCalendarWeekParityMemberPatternRule | RecurringWeekdayStatusMemberPatternRule
+    rule: (
+        AvoidTimeWindowMemberPatternRule
+        | AllowedCalendarWeekParityMemberPatternRule
+        | IsoWeekCycleMemberPatternRule
+        | RecurringWeekdayStatusMemberPatternRule
+    )
 
 
 def default_member_pattern_policy() -> OrganizationMemberPatternPolicy:
@@ -79,12 +91,19 @@ def update_organization_member_pattern_policy(
 
 def _parse_rule(
     raw: dict,
-) -> AvoidTimeWindowMemberPatternRule | AllowedCalendarWeekParityMemberPatternRule | RecurringWeekdayStatusMemberPatternRule:
+) -> (
+    AvoidTimeWindowMemberPatternRule
+    | AllowedCalendarWeekParityMemberPatternRule
+    | IsoWeekCycleMemberPatternRule
+    | RecurringWeekdayStatusMemberPatternRule
+):
     rule_type = raw.get("type")
     if rule_type == "avoid_time_window":
         return AvoidTimeWindowMemberPatternRule.model_validate(raw)
     if rule_type == "allowed_calendar_week_parity":
         return AllowedCalendarWeekParityMemberPatternRule.model_validate(raw)
+    if rule_type == "iso_week_cycle":
+        return IsoWeekCycleMemberPatternRule.model_validate(raw)
     if rule_type == "recurring_weekday_status":
         return RecurringWeekdayStatusMemberPatternRule.model_validate(raw)
     raise ValueError("Unsupported member planning pattern rule type")
@@ -93,6 +112,8 @@ def _parse_rule(
 def effective_pattern_severity(rule: MemberPlanningPatternRule, severity: str) -> str:
     if rule.type in ("avoid_time_window", "recurring_weekday_status"):
         return "info"
+    if rule.type in ("allowed_calendar_week_parity", "iso_week_cycle"):
+        return severity
     return severity
 
 
@@ -124,6 +145,17 @@ def list_team_member_planning_patterns(
     return list(db.scalars(stmt))
 
 
+def _weekday_in_list(day: date, weekdays: list[PatternWeekday] | None) -> bool:
+    allowed = weekdays if weekdays is not None else list(ALL_PATTERN_WEEKDAYS)
+    return _weekday_code(day) in allowed
+
+
+def _parity_is_on_week(cell_date: date, parity: Literal["even", "odd"]) -> bool:
+    _, iso_week, _ = cell_date.isocalendar()
+    actual_parity: Literal["even", "odd"] = "even" if iso_week % 2 == 0 else "odd"
+    return actual_parity == parity
+
+
 def merge_recurring_pattern_cell_target(cell_date: date, patterns: list[TeamMemberPlanningPattern]) -> str | None:
     sorted_rows = sorted(patterns, key=lambda r: (r.display_order, r.id))
     target: str | None = None
@@ -136,10 +168,18 @@ def merge_recurring_pattern_cell_target(cell_date: date, patterns: list[TeamMemb
             if wd_key in rule.weekdays:
                 target = rule.status
         elif rule.type == "allowed_calendar_week_parity":
-            _, iso_week, _ = cell_date.isocalendar()
-            actual_parity: Literal["even", "odd"] = "even" if iso_week % 2 == 0 else "odd"
-            if actual_parity != rule.parity:
+            if not _parity_is_on_week(cell_date, rule.parity) and _weekday_in_list(cell_date, None):
                 target = rule.status
+        elif rule.type == "iso_week_cycle":
+            is_on = is_iso_week_cycle_on_week(
+                cell_date=cell_date,
+                anchor_iso_year=rule.anchor_iso_year,
+                anchor_iso_week=rule.anchor_iso_week,
+                cycle_weeks=rule.cycle_weeks,
+                on_weeks=rule.on_weeks,
+            )
+            if not is_on and _weekday_in_list(cell_date, rule.wishes_weekdays):
+                target = rule.off_status
     return target
 
 
@@ -199,8 +239,15 @@ def replace_team_member_planning_patterns(
     require_team_member_in_org(db, team_member_id, organization_id)
     for item in payload.patterns:
         validate_pattern_severity(item.rule, severity=item.severity, policy=policy)
-        if item.rule.type in ("allowed_calendar_week_parity", "recurring_weekday_status"):
-            assert_valid_planning_cell_status(db, organization_id=organization_id, status=item.rule.status)
+        if item.rule.type in ("allowed_calendar_week_parity", "iso_week_cycle", "recurring_weekday_status"):
+            status_code = (
+                item.rule.status
+                if item.rule.type == "allowed_calendar_week_parity"
+                else item.rule.off_status
+                if item.rule.type == "iso_week_cycle"
+                else item.rule.status
+            )
+            assert_valid_planning_cell_status(db, organization_id=organization_id, status=status_code)
     existing = list(
         db.scalars(
             select(TeamMemberPlanningPattern).where(
@@ -252,22 +299,6 @@ def _weekday_code(day: date) -> PatternWeekday:
     return ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[day.weekday()]
 
 
-def _resolve_slot_interval(db: Session, slot: RosterSlot) -> tuple[datetime, datetime] | None:
-    if slot.starts_at is not None and slot.ends_at is not None:
-        return slot.starts_at, slot.ends_at
-    variant: ShiftVariant | None = slot.shift_variant
-    if variant is None and slot.shift_variant_id is not None:
-        variant = db.get(ShiftVariant, slot.shift_variant_id)
-    if variant is None:
-        return None
-    start = datetime.combine(slot.slot_date, variant.starts_at)
-    end_date = slot.slot_date + timedelta(days=variant.end_day_offset)
-    end = datetime.combine(end_date, variant.ends_at)
-    if end <= start:
-        end = end + timedelta(days=1)
-    return start, end
-
-
 def _window_interval_for_day(
     day: date, window_start: time, window_end: time, *, tz: datetime.tzinfo | None = None
 ) -> tuple[datetime, datetime]:
@@ -299,6 +330,10 @@ def _days_for_anchor(
 ) -> list[date]:
     if anchor == "slot_start_day":
         return [slot.slot_date]
+    return overlap_calendar_days_from_interval(shift_start, shift_end)
+
+
+def overlap_calendar_days_from_interval(shift_start: datetime, shift_end: datetime) -> list[date]:
     out: list[date] = []
     day = shift_start.date()
     last = shift_end.date()
@@ -315,7 +350,7 @@ def _matches_avoid_time_window_band(
     band: AvoidTimeWindowBand,
     band_index: int,
 ) -> dict[str, object] | None:
-    interval = _resolve_slot_interval(db, slot)
+    interval = resolve_slot_interval(db, slot)
     if interval is None:
         return None
     shift_start, shift_end = interval
@@ -354,15 +389,43 @@ def _matches_avoid_time_window(
 
 
 def _matches_week_parity(slot: RosterSlot, rule: AllowedCalendarWeekParityMemberPatternRule) -> dict[str, object] | None:
+    if _parity_is_on_week(slot.slot_date, rule.parity):
+        return None
     iso_year, iso_week, _ = slot.slot_date.isocalendar()
     actual_parity = "even" if iso_week % 2 == 0 else "odd"
-    if actual_parity == rule.parity:
-        return None
     return {
         "iso_year": iso_year,
         "iso_week": iso_week,
         "actual_parity": actual_parity,
         "required_parity": rule.parity,
+    }
+
+
+def _matches_iso_week_cycle(slot: RosterSlot, rule: IsoWeekCycleMemberPatternRule) -> dict[str, object] | None:
+    eval_date = slot.slot_date
+    if rule.allow_weekend_roster and _weekday_code(eval_date) in ("sat", "sun"):
+        return None
+    roster_weekdays = rule.roster_weekdays if rule.roster_weekdays is not None else rule.wishes_weekdays
+    if not _weekday_in_list(eval_date, roster_weekdays):
+        return None
+    is_on = is_iso_week_cycle_on_week(
+        cell_date=eval_date,
+        anchor_iso_year=rule.anchor_iso_year,
+        anchor_iso_week=rule.anchor_iso_week,
+        cycle_weeks=rule.cycle_weeks,
+        on_weeks=rule.on_weeks,
+    )
+    if is_on:
+        return None
+    iso_year, iso_week, _ = eval_date.isocalendar()
+    return {
+        "iso_year": iso_year,
+        "iso_week": iso_week,
+        "cycle_weeks": rule.cycle_weeks,
+        "on_weeks": rule.on_weeks,
+        "anchor_iso_year": rule.anchor_iso_year,
+        "anchor_iso_week": rule.anchor_iso_week,
+        "off_status": rule.off_status,
     }
 
 
@@ -434,6 +497,22 @@ def evaluate_member_planning_patterns(
                     code="MEMBER_PATTERN_WEEK_PARITY",
                     severity=resolved.severity,
                     message="Member planning pattern: assignment is outside the allowed calendar week parity.",
+                    team_member_id=team_member_id,
+                    date=slot.slot_date,
+                    details=details,
+                )
+            )
+            continue
+        if resolved.rule.type == "iso_week_cycle":
+            match = _matches_iso_week_cycle(slot, resolved.rule)
+            if match is None:
+                continue
+            details.update(match)
+            warnings.append(
+                ValidationWarning(
+                    code="MEMBER_PATTERN_ISO_WEEK_CYCLE",
+                    severity=resolved.severity,
+                    message="Member planning pattern: assignment is outside the allowed ISO week cycle.",
                     team_member_id=team_member_id,
                     date=slot.slot_date,
                     details=details,

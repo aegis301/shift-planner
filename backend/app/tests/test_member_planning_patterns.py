@@ -16,12 +16,18 @@ from app.models import (
 from app.models.base import Base
 from app.schemas import (AllowedCalendarWeekParityMemberPatternRule,
                          AvoidTimeWindowMemberPatternRule,
+                         IsoWeekCycleMemberPatternRule,
                          RecurringWeekdayStatusMemberPatternRule,
                          TeamMemberPlanningPatternsReplace,
                          TeamMemberPlanningPatternUpsertItem)
+from app.services.shift_intervals import is_iso_week_cycle_on_week
 from app.services.member_planning_patterns import (
-    evaluate_member_planning_patterns, read_organization_member_pattern_policy,
-    replace_team_member_planning_patterns, validate_pattern_severity)
+    evaluate_member_planning_patterns,
+    merge_recurring_pattern_cell_target,
+    read_organization_member_pattern_policy,
+    replace_team_member_planning_patterns,
+    validate_pattern_severity,
+)
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -305,6 +311,119 @@ def test_sync_week_parity_writes_wishes_for_excluded_iso_weeks(pattern_db):
         )
     )
     assert jan_even_week is None
+
+
+def test_iso_week_cycle_writes_off_week_wishes_weekdays_only(pattern_db):
+    db = pattern_db
+    _seed_open_period(db, year=2026, month=1)
+    org = db.get(Organization, 1)
+    policy = read_organization_member_pattern_policy(org)
+    payload = TeamMemberPlanningPatternsReplace(
+        patterns=[
+            TeamMemberPlanningPatternUpsertItem(
+                label="75 percent",
+                rule=IsoWeekCycleMemberPatternRule(
+                    cycle_weeks=4,
+                    on_weeks=3,
+                    anchor_iso_year=2026,
+                    anchor_iso_week=1,
+                    off_status="forschung",
+                    wishes_weekdays=["mon", "tue", "wed", "thu", "fri"],
+                ),
+                severity="warning",
+            )
+        ]
+    )
+    replace_team_member_planning_patterns(
+        db,
+        team_member_id=1,
+        organization_id=1,
+        payload=payload,
+        policy=policy,
+        actor="test",
+        source="test",
+    )
+    off_week_weekday = db.scalar(
+        select(PlanningCell).where(
+            PlanningCell.team_member_id == 1,
+            PlanningCell.cell_date == date(2026, 1, 26),
+        )
+    )
+    off_week_saturday = db.scalar(
+        select(PlanningCell).where(
+            PlanningCell.team_member_id == 1,
+            PlanningCell.cell_date == date(2026, 1, 31),
+        )
+    )
+    if off_week_weekday is not None:
+        assert off_week_weekday.status == "forschung"
+    assert off_week_saturday is None
+
+
+def test_iso_week_cycle_allow_weekend_roster(pattern_db):
+    db = pattern_db
+    slot = RosterSlot(
+        id=3,
+        planning_period_id=1,
+        shift_template_id=1,
+        shift_variant_id=1,
+        slot_date=date(2026, 1, 31),
+        position=1,
+        starts_at=datetime(2026, 1, 31, 8, 0),
+        ends_at=datetime(2026, 1, 31, 16, 0),
+    )
+    pattern = TeamMemberPlanningPattern(
+        id=3,
+        organization_id=1,
+        team_member_id=1,
+        label="75 with weekend",
+        is_active=True,
+        rule={
+            "type": "iso_week_cycle",
+            "cycle_weeks": 4,
+            "on_weeks": 3,
+            "anchor_iso_year": 2026,
+            "anchor_iso_week": 1,
+            "off_status": "frei",
+            "wishes_weekdays": ["mon", "tue", "wed", "thu", "fri"],
+            "allow_weekend_roster": True,
+        },
+        severity="error",
+        display_order=0,
+    )
+    warnings = evaluate_member_planning_patterns(db=db, slot=slot, team_member_id=1, patterns=[pattern])
+    assert warnings == []
+
+
+def test_merge_iso_week_cycle_off_status(pattern_db):
+    db = pattern_db
+    pattern = TeamMemberPlanningPattern(
+        id=4,
+        organization_id=1,
+        team_member_id=1,
+        label="cycle",
+        is_active=True,
+        rule={
+            "type": "iso_week_cycle",
+            "cycle_weeks": 2,
+            "on_weeks": 1,
+            "anchor_iso_year": 2026,
+            "anchor_iso_week": 2,
+            "off_status": "frei",
+        },
+        severity="warning",
+        display_order=0,
+    )
+    off_day = date(2026, 1, 12)
+    target = merge_recurring_pattern_cell_target(off_day, [pattern])
+    if not is_iso_week_cycle_on_week(
+        cell_date=off_day,
+        anchor_iso_year=2026,
+        anchor_iso_week=2,
+        cycle_weeks=2,
+        on_weeks=1,
+    ):
+        assert target == "frei"
 
 
 def _seed_open_period(db, *, year: int, month: int) -> PlanningPeriod:

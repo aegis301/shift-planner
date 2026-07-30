@@ -15,7 +15,6 @@ from app.models import (
     TeamMemberPropertyDefinition,
 )
 from app.schemas import ShiftConstraint, ValidationWarning
-from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.team_member_property_requirements import (
     collect_property_requirement_violations,
     evaluate_property_requirement_expr,
@@ -98,11 +97,6 @@ def evaluate_assignment_constraints(
     if period is None:
         period = db.get(PlanningPeriod, slot.planning_period_id)
     organization_id = period.organization_id if period is not None else 0
-    unavailable_days = {
-        row.cell_date
-        for row in planning_cells_for_member
-        if cell_status_blocks_roster_assignment(db, organization_id=organization_id, status=row.status)
-    }
     defs_map: dict[int, TeamMemberPropertyDefinition] = {}
     if any(r.rule.type == "team_member_property_requirement" for r in resolved_constraints):
         period = slot.planning_period
@@ -175,21 +169,7 @@ def evaluate_assignment_constraints(
                     )
                 )
             continue
-        if rule.type == "no_cross_day_into_unavailable_day":
-            if slot.ends_at is None:
-                continue
-            end_day: date = slot.ends_at.date()
-            if end_day != slot.slot_date and end_day in unavailable_days:
-                warnings.append(
-                    ValidationWarning(
-                        code="ROSTER_CONSTRAINT_CROSS_DAY_UNAVAILABLE",
-                        severity=rule.severity,
-                        message="Constraint violation: shift crosses into an unavailable day.",
-                        team_member_id=team_member_id,
-                        date=end_day,
-                        details={**details, "end_day": end_day.isoformat()},
-                    )
-                )
+        if rule.type == "unavailable_overlap_policy":
             continue
         if rule.type == "max_assignments_per_month":
             if rule.max_assignments_per_month is None:

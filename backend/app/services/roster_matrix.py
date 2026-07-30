@@ -20,6 +20,10 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
+from app.services.unavailable_overlap import (
+    evaluate_unavailable_overlap_for_slot,
+    find_blocking_unavailable_overlap,
+)
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
 from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_team_member_planning_patterns
 from app.services.planning import can_edit_planning_data, shift_group_planning_status_read
@@ -521,6 +525,15 @@ def upsert_roster_slot_assignment(
         if row.team_member_id == payload.team_member_id
     ]
     preflight_warnings: list = []
+    overlap_warning = evaluate_unavailable_overlap_for_slot(
+        db=db,
+        slot=slot,
+        team_member_id=payload.team_member_id,
+        planning_cells=member_cells,
+        organization_id=org_id,
+    )
+    if overlap_warning is not None:
+        preflight_warnings.append(overlap_warning)
     if resolved_constraints:
         preflight_warnings.extend(
             evaluate_assignment_constraints(
@@ -548,6 +561,11 @@ def upsert_roster_slot_assignment(
                 patterns=member_patterns,
             )
         )
+    blocking = find_blocking_unavailable_overlap(
+        next((w for w in preflight_warnings if w.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"), None)
+    )
+    if blocking is not None:
+        raise ValueError(blocking.message)
     blocking = find_blocking_constraint(preflight_warnings)
     if blocking is not None:
         raise ValueError(blocking.message)
