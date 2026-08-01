@@ -1,4 +1,3 @@
-from datetime import date
 
 from app.schemas import ShiftConstraint
 from app.services.constraints import ResolvedConstraint

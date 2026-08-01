@@ -2,37 +2,33 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.models import (
+    PlanningPeriod,
+    PlanningPeriodShiftGroupStatus,
+    PlanningPlanVersion,
     PlanVersionMemberNote,
     PlanVersionPlanningCell,
     PlanVersionRosterAssignment,
     PlanVersionRosterSlot,
     PlanVersionShiftIntent,
-    PlanningCell,
-    PlanningPeriod,
-    PlanningPeriodShiftGroupStatus,
-    PlanningPlanVersion,
-    PlanningShiftIntent,
-    RosterSlot,
-    RosterSlotAssignment,
     TeamMember,
     TeamMemberPeriodNote,
 )
 from app.schemas import (
     MatrixDay,
     MatrixTeamMember,
-    PlanVersionListRead,
-    PlanVersionRead,
     PlanningCellRead,
     PlanningDayStatusDefinitionRead,
     PlanningMatrixRead,
     PlanningPeriodRead,
     PlanningShiftIntentRead,
+    PlanVersionListRead,
+    PlanVersionRead,
     RosterMatrixRead,
     RosterSlotAssignmentRead,
     RosterSlotRead,
@@ -929,7 +925,7 @@ def apply_publish_transition_versioning(
     )
     _set_working_version(status_row, version_numbers)
     if status_row.first_published_at is None:
-        status_row.first_published_at = datetime.now(timezone.utc)
+        status_row.first_published_at = datetime.now(UTC)
     return version
 
 
@@ -993,7 +989,7 @@ def transition_shift_group_status_with_versioning(
 
     row.status = target_status
     if target_status == PLANNING_PERIOD_STATUS_PUBLISHED:
-        row.published_at = datetime.now(timezone.utc)
+        row.published_at = datetime.now(UTC)
     else:
         row.published_at = None
     db.flush()

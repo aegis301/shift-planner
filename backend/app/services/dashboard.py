@@ -28,7 +28,6 @@ from app.schemas import (
     ShiftCategoryCount,
     ShiftTemplateCount,
     TeamMemberDashboardRead,
-
 )
 from app.services.authz import get_linked_team_member, team_member_shift_group_ids
 from app.services.join_requests import list_join_requests_for_org
@@ -40,7 +39,11 @@ from app.services.planning import (
     is_team_member_roster_visible,
     list_planning_periods,
 )
-from app.services.roster_matrix import ensure_roster_slots_for_period, list_roster_slot_assignments, list_roster_slots
+from app.services.roster_matrix import (
+    ensure_roster_slots_for_period,
+    list_roster_slot_assignments,
+    list_roster_slots,
+)
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     require_shift_group,
@@ -551,7 +554,7 @@ def get_planner_dashboard(
         notes = [note for note in notes if note.team_member_id in allowed]
     total_wishes = len(allowed)
     responded = sum(1 for note in notes if note.wishes_response_received and note.team_member_id in allowed)
-    wishes_percent = int(round(100 * responded / total_wishes)) if total_wishes else 0
+    wishes_percent = round(100 * responded / total_wishes) if total_wishes else 0
     return PlannerDashboardRead(
         year=selected_year,
         shift_group_id=shift_group_id,

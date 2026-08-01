@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -211,8 +211,8 @@ def test_member_upcoming_shifts_all_future(dash_db):
         shift_variant_id=variant.id,
         slot_date=slot_date,
         position=1,
-        starts_at=datetime.combine(slot_date, datetime.min.time()).replace(tzinfo=timezone.utc),
-        ends_at=datetime.combine(slot_date, datetime.max.time()).replace(tzinfo=timezone.utc),
+        starts_at=datetime.combine(slot_date, datetime.min.time()).replace(tzinfo=UTC),
+        ends_at=datetime.combine(slot_date, datetime.max.time()).replace(tzinfo=UTC),
         day_class="weekday",
     )
     db.add(slot)

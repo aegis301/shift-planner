@@ -7,7 +7,7 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from app.models import PlanningCell, RosterSlot
-from app.schemas import ShiftConstraint, ValidationWarning
+from app.schemas import ValidationWarning
 from app.services.constraints import ResolvedConstraint, resolve_slot_constraints
 from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.shift_intervals import overlap_calendar_days

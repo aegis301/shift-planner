@@ -11,11 +11,11 @@ from app.core.security import hash_password
 from app.main import app
 from app.models import (
     Account,
-    TeamMember,
-    TeamMemberShiftGroup,
     Organization,
     OrganizationJoinRequest,
     ShiftGroup,
+    TeamMember,
+    TeamMemberShiftGroup,
     User,
     UserShiftGroup,
 )
@@ -886,16 +886,17 @@ def test_roster_validation_no_go_conflict(client: TestClient):
     request_date = date(2026, 5, 3).isoformat()
     roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == request_date)
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": team_member_id},
+    )
+    assert assigned.status_code == 200
     client.put(
         f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={"team_member_id": team_member_id, "cell_date": request_date, "status": "frei"},
     )
-    client.put(
-        "/api/v1/roster-matrix/assignments",
-        json={"roster_slot_id": slot["id"], "team_member_id": team_member_id},
-    )
     warnings = client.get(f"/api/v1/validation/{period_id}").json()
-    assert warnings[0]["code"] == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT"
+    assert warnings[0]["code"] == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"
 
 
 def test_matrix_cell_note_and_csv_export(client: TestClient):
@@ -1041,7 +1042,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
         json={"team_member_id": team_member_id, "cell_date": "2026-07-11", "status": "urlaub"},
     )
     warnings = client.get(f"/api/v1/validation/{period_id}").json()
-    assert warnings[0]["code"] == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT"
+    assert warnings[0]["code"] == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"
 
     csv_response = client.get(f"/api/v1/exports/roster-matrix/{period_id}.csv")
     assert csv_response.status_code == 200

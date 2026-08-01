@@ -5,15 +5,22 @@ from sqlalchemy.orm import Session
 
 from app.models import PlanningCell, PlanningShiftIntent, RosterSlotAssignment, RuleConfig
 from app.schemas import PLANNED_DUTY_STATUSES, ValidationWarning
-from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.constraints import evaluate_assignment_constraints, resolve_slot_constraints
-from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_patterns_for_members
-from app.services.unavailable_overlap import evaluate_unavailable_overlap_for_slot
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
+from app.services.member_planning_patterns import (
+    evaluate_member_planning_patterns,
+    list_patterns_for_members,
+)
+from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
 from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
-from app.services.shift_groups import active_team_member_ids_in_shift_group, require_shift_group, shift_template_ids_in_shift_group
+from app.services.shift_groups import (
+    active_team_member_ids_in_shift_group,
+    require_shift_group,
+    shift_template_ids_in_shift_group,
+)
 from app.services.team_member_property_values import property_value_maps_for_members
 from app.services.tenancy import require_planning_period_in_org
+from app.services.unavailable_overlap import evaluate_unavailable_overlap_for_slot
 
 
 def get_default_rule_config(db: Session) -> RuleConfig:
@@ -36,10 +43,6 @@ def _warning_in_shift_group_scope(
         rid = warning.details.get("roster_slot_id")
         if rid is not None and rid not in slot_ids:
             return False
-    if warning.code == "ROSTER_MATRIX_UNAVAILABLE_CONFLICT":
-        rid = warning.details.get("roster_slot_id")
-        if rid is not None and rid not in slot_ids:
-            return False
     if warning.code == "ROSTER_MATRIX_DUPLICATE_DAY":
         ids = warning.details.get("roster_slot_ids") or []
         if ids and not set(ids).issubset(slot_ids):
@@ -52,16 +55,12 @@ def _warning_in_shift_group_scope(
         vids = warning.details.get("violating_roster_slot_ids")
         if isinstance(vids, list) and vids:
             ids_int = [x for x in vids if isinstance(x, int)]
-            if ids_int and not set(ids_int) & slot_ids:
-                return False
-            return True
+            return not ids_int or bool(set(ids_int) & slot_ids)
     if warning.code == "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED":
         sids = warning.details.get("source_roster_slot_ids")
         if isinstance(sids, list) and sids:
             ids_int = [x for x in sids if isinstance(x, int)]
-            if ids_int and not set(ids_int) & slot_ids:
-                return False
-            return True
+            return not ids_int or bool(set(ids_int) & slot_ids)
     if warning.code == "ROSTER_CONSECUTIVE_WEEKENDS":
         ids = warning.details.get("roster_slot_ids")
         if isinstance(ids, list) and ids:
@@ -314,10 +313,11 @@ def _add_consecutive_weekend_warnings(
         slots_by_member_anchor[(assignment.team_member_id, anchor)].append(slot.id)
     for member_id, anchors in anchors_by_member.items():
         ordered = sorted(anchors)
-        pairs: list[tuple[date, date]] = []
-        for i in range(len(ordered) - 1):
-            if ordered[i + 1] - ordered[i] == timedelta(days=7):
-                pairs.append((ordered[i], ordered[i + 1]))
+        pairs: list[tuple[date, date]] = [
+            (ordered[i], ordered[i + 1])
+            for i in range(len(ordered) - 1)
+            if ordered[i + 1] - ordered[i] == timedelta(days=7)
+        ]
         if not pairs:
             continue
         slot_ids: set[int] = set()

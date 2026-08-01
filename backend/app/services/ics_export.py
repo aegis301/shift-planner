@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from icalendar import Calendar, Event
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Organization, PlanningPeriod, RosterSlot, RosterSlotAssignment, ShiftGroup, ShiftGroupShiftTemplate
+from app.models import (
+    Organization,
+    PlanningPeriod,
+    RosterSlot,
+    RosterSlotAssignment,
+    ShiftGroup,
+    ShiftGroupShiftTemplate,
+)
+from app.services.authz import team_member_shift_group_ids
 from app.services.dashboard import _scope_template_and_member_ids
 from app.services.planning import get_shift_group_planning_status, is_team_member_roster_visible
-from app.services.authz import team_member_shift_group_ids
 from app.services.shift_groups import require_shift_group
 
 ICS_UID_DOMAIN = "shift-planner.local"
@@ -76,9 +83,9 @@ def _resolve_event_times(slot: RosterSlot) -> tuple[datetime | None, datetime | 
         start = slot.starts_at
         end = slot.ends_at
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+            start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=UTC)
         return start, end, False
     variant = slot.shift_variant
     if variant is not None:

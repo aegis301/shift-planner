@@ -52,8 +52,11 @@ python -m app.scripts.seed_admin
 python -m app.scripts.seed_team_member_users
 python -m app.scripts.seed_planner_user
 uvicorn app.main:app --reload --port 18180
+ruff check app
 pytest
 ```
+
+Backend lint rules live in [backend/pyproject.toml](backend/pyproject.toml) (`[tool.ruff.lint]`): pycodestyle errors, pyflakes, isort, pyupgrade, bugbear, flake8-simplify, perflint, and Ruff-specific checks. FastAPI dependency markers (`Depends`, `Query`, `Body`, …) are registered as immutable calls so `B008` does not fire on route signatures. Run `ruff check app --fix` before pushing; CI runs `ruff check app`.
 
 If your machine already runs Postgres on port `5432`, keep `POSTGRES_HOST_PORT=5433` in `.env`. The backend and MCP containers still use `postgres:5432` internally. Containers still listen on `8000` / `3000` / `8001` internally; only the published host ports use `18180` / `18130` / `18181` by default.
 

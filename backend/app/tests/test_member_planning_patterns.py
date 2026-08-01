@@ -1,7 +1,11 @@
 """Tests for member planning patterns."""
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
 from app.models import (
     Organization,
     PlanningCell,
@@ -14,13 +18,14 @@ from app.models import (
     TeamMemberShiftGroup,
 )
 from app.models.base import Base
-from app.schemas import (AllowedCalendarWeekParityMemberPatternRule,
-                         AvoidTimeWindowMemberPatternRule,
-                         IsoWeekCycleMemberPatternRule,
-                         RecurringWeekdayStatusMemberPatternRule,
-                         TeamMemberPlanningPatternsReplace,
-                         TeamMemberPlanningPatternUpsertItem)
-from app.services.shift_intervals import is_iso_week_cycle_on_week
+from app.schemas import (
+    AllowedCalendarWeekParityMemberPatternRule,
+    AvoidTimeWindowMemberPatternRule,
+    IsoWeekCycleMemberPatternRule,
+    RecurringWeekdayStatusMemberPatternRule,
+    TeamMemberPlanningPatternsReplace,
+    TeamMemberPlanningPatternUpsertItem,
+)
 from app.services.member_planning_patterns import (
     evaluate_member_planning_patterns,
     merge_recurring_pattern_cell_target,
@@ -28,9 +33,7 @@ from app.services.member_planning_patterns import (
     replace_team_member_planning_patterns,
     validate_pattern_severity,
 )
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from app.services.shift_intervals import is_iso_week_cycle_on_week
 
 
 @pytest.fixture()
@@ -107,8 +110,8 @@ def test_avoid_time_window_matches_timezone_aware_slot_interval(pattern_db):
         shift_variant_id=1,
         slot_date=date(2026, 6, 6),
         position=1,
-        starts_at=datetime(2026, 6, 6, 23, 0, tzinfo=timezone.utc),
-        ends_at=datetime(2026, 6, 7, 7, 0, tzinfo=timezone.utc),
+        starts_at=datetime(2026, 6, 6, 23, 0, tzinfo=UTC),
+        ends_at=datetime(2026, 6, 7, 7, 0, tzinfo=UTC),
     )
     pattern = TeamMemberPlanningPattern(
         id=1,
@@ -396,7 +399,6 @@ def test_iso_week_cycle_allow_weekend_roster(pattern_db):
 
 
 def test_merge_iso_week_cycle_off_status(pattern_db):
-    db = pattern_db
     pattern = TeamMemberPlanningPattern(
         id=4,
         organization_id=1,

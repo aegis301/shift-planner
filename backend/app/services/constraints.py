@@ -31,10 +31,7 @@ class ResolvedConstraint:
 
 
 def _normalize_constraint_list(raw: list | None) -> list[ShiftConstraint]:
-    out: list[ShiftConstraint] = []
-    for row in raw or []:
-        out.append(ShiftConstraint.model_validate(row))
-    return out
+    return [ShiftConstraint.model_validate(row) for row in raw or []]
 
 
 def resolve_slot_constraints(db: Session, slot: RosterSlot) -> list[ResolvedConstraint]:
@@ -48,12 +45,11 @@ def resolve_slot_constraints(db: Session, slot: RosterSlot) -> list[ResolvedCons
         variant = slot.shift_variant
     elif slot.shift_variant_id is not None:
         variant = db.get(ShiftVariant, slot.shift_variant_id)
-    out: list[ResolvedConstraint] = []
-    for rule in _normalize_constraint_list(template.constraints if template is not None else []):
-        out.append(ResolvedConstraint(source="template", rule=rule))
-    for rule in _normalize_constraint_list(variant.constraints if variant is not None else []):
-        out.append(ResolvedConstraint(source="variant", rule=rule))
-    return out
+    template_rules = _normalize_constraint_list(template.constraints if template is not None else [])
+    variant_rules = _normalize_constraint_list(variant.constraints if variant is not None else [])
+    return [ResolvedConstraint(source="template", rule=rule) for rule in template_rules] + [
+        ResolvedConstraint(source="variant", rule=rule) for rule in variant_rules
+    ]
 
 
 def _team_slots_including_hypothetical(slot: RosterSlot, team_slots: list[RosterSlot]) -> list[RosterSlot]:
@@ -96,14 +92,11 @@ def evaluate_assignment_constraints(
     period = slot.planning_period
     if period is None:
         period = db.get(PlanningPeriod, slot.planning_period_id)
-    organization_id = period.organization_id if period is not None else 0
     defs_map: dict[int, TeamMemberPropertyDefinition] = {}
-    if any(r.rule.type == "team_member_property_requirement" for r in resolved_constraints):
-        period = slot.planning_period
-        if period is None:
-            period = db.get(PlanningPeriod, slot.planning_period_id)
-        if period is not None:
-            defs_map = load_property_definitions_map(db, organization_id=period.organization_id)
+    if period is not None and any(
+        r.rule.type == "team_member_property_requirement" for r in resolved_constraints
+    ):
+        defs_map = load_property_definitions_map(db, organization_id=period.organization_id)
     for resolved in resolved_constraints:
         rule = resolved.rule
         details = _base_details(

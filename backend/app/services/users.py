@@ -25,8 +25,8 @@ from app.services.authz import (
     is_admin,
     list_shift_groups_for_team_member,
 )
-from app.services.shift_groups import list_shift_groups
 from app.services.organizations import get_organization_by_slug
+from app.services.shift_groups import list_shift_groups
 from app.services.tenancy import ensure_default_organization
 
 
@@ -140,8 +140,10 @@ def build_user_read(db: Session, user: User) -> UserRead:
     team_member_id = linked.id if linked else None
     groups: list[UserShiftGroupBrief] = []
     if linked:
-        for g in list_shift_groups_for_team_member(db, linked.id):
-            groups.append(UserShiftGroupBrief.model_validate(g))
+        groups.extend(
+            UserShiftGroupBrief.model_validate(g)
+            for g in list_shift_groups_for_team_member(db, linked.id)
+        )
     planner_groups: list[UserShiftGroupBrief] = []
     if user.role == ROLE_PLANNER:
         stmt = (
@@ -150,12 +152,13 @@ def build_user_read(db: Session, user: User) -> UserRead:
             .where(UserShiftGroup.user_id == user.id, ShiftGroup.organization_id == user.organization_id)
             .order_by(ShiftGroup.display_order, ShiftGroup.code)
         )
-        for g in db.scalars(stmt):
-            planner_groups.append(UserShiftGroupBrief.model_validate(g))
+        planner_groups.extend(UserShiftGroupBrief.model_validate(g) for g in db.scalars(stmt))
     org_wide_shift_groups: list[UserShiftGroupBrief] = []
     if is_admin(user):
-        for g in list_shift_groups(db, organization_id=user.organization_id, active_only=False):
-            org_wide_shift_groups.append(UserShiftGroupBrief.model_validate(g))
+        org_wide_shift_groups.extend(
+            UserShiftGroupBrief.model_validate(g)
+            for g in list_shift_groups(db, organization_id=user.organization_id, active_only=False)
+        )
     caps = UserCapabilities(
         admin=is_admin(user),
         planning=can_use_planning_ui(user),

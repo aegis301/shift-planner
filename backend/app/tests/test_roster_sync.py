@@ -46,7 +46,7 @@ def test_sync_roster_adds_slots_preserves_existing_assignment(client: TestClient
             "employment_percentage": 100,
         },
     ).json()["id"]
-    template, variant = _create_daily_template(client, "SYNCK", required_count=1)
+    _, variant = _create_daily_template(client, "SYNCK", required_count=1)
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
     roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     assert len(roster["slots"]) == 30
@@ -81,7 +81,7 @@ def test_sync_roster_removes_weekday_slots_and_clears_assignments(client: TestCl
             "employment_percentage": 100,
         },
     ).json()["id"]
-    template, variant = _create_daily_template(client, "SYNCR")
+    _, variant = _create_daily_template(client, "SYNCR")
     client.patch(
         f"/api/v1/shift-templates/variants/{variant['id']}",
         json={

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Account, Organization, OrganizationMembershipInvite, ShiftGroup, TeamMember, User, UserShiftGroup
+from app.models import (
+    Account,
+    Organization,
+    OrganizationMembershipInvite,
+    ShiftGroup,
+    TeamMember,
+    User,
+    UserShiftGroup,
+)
 from app.schemas import (
     OrganizationBrief,
     OrganizationInviteAcceptInput,
@@ -22,7 +30,6 @@ from app.services.org_limits import assert_org_allows_team_member_user_link
 from app.services.team_members import create_team_member, delete_team_member, update_team_member
 from app.services.tenancy import get_organization
 from app.services.users import get_account_by_email, get_user_in_organization
-
 
 INVITE_PENDING = "pending"
 INVITE_ACCEPTED = "accepted"
@@ -231,7 +238,7 @@ def revoke_membership_invite(db: Session, *, actor: User, invite_id: int) -> Org
     tid = row.precreated_team_member_id
     row.precreated_team_member_id = None
     row.status = INVITE_REVOKED
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     record_audit(
         db,
         actor=actor.email,
@@ -262,7 +269,7 @@ def decline_membership_invite(db: Session, *, user: User, invite_id: int) -> Org
     tid = row.precreated_team_member_id
     row.precreated_team_member_id = None
     row.status = INVITE_DECLINED
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     record_audit(
         db,
         actor=user.email,
@@ -331,7 +338,7 @@ def accept_membership_invite(
             inv = db.get(OrganizationMembershipInvite, invite_id)
             if inv is not None:
                 inv.status = INVITE_ACCEPTED
-                inv.updated_at = datetime.now(timezone.utc)
+                inv.updated_at = datetime.now(UTC)
                 record_audit(
                     db,
                     actor=user.email,
@@ -388,7 +395,7 @@ def accept_membership_invite(
         inv = db.get(OrganizationMembershipInvite, invite_id)
         if inv is not None:
             inv.status = INVITE_ACCEPTED
-            inv.updated_at = datetime.now(timezone.utc)
+            inv.updated_at = datetime.now(UTC)
             record_audit(
                 db,
                 actor=user.email,
@@ -418,7 +425,7 @@ def accept_membership_invite(
         for gid in sorted(set(pl_ids)):
             db.add(UserShiftGroup(user_id=new_user.id, shift_group_id=gid))
         row.status = INVITE_ACCEPTED
-        row.updated_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(UTC)
         record_audit(
             db,
             actor=user.email,

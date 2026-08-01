@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import OrganizationJoinRequest, TeamMember, User
-from app.schemas import ApproveJoinCreateTeamMemberInput, JoinRequestRead, TeamMemberCreate, TeamMemberUpdate
+from app.schemas import (
+    ApproveJoinCreateTeamMemberInput,
+    JoinRequestRead,
+    TeamMemberCreate,
+    TeamMemberUpdate,
+)
 from app.services.audit import record_audit
 from app.services.team_members import create_team_member, update_team_member
 from app.services.users import get_user
@@ -142,7 +147,7 @@ def cancel_join_request_by_requester(db: Session, *, request_id: int, user_id: i
     if row.status != STATUS_PENDING:
         return False
     row.status = STATUS_CANCELLED
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(UTC)
     record_audit(
         db,
         actor=str(user_id),
@@ -167,8 +172,8 @@ def reject_join_request(
     row.status = STATUS_REJECTED
     row.rejection_reason = reason.strip() if reason else None
     row.resolved_by_user_id = admin_user.id
-    row.resolved_at = datetime.now(timezone.utc)
-    row.updated_at = datetime.now(timezone.utc)
+    row.resolved_at = datetime.now(UTC)
+    row.updated_at = datetime.now(UTC)
     record_audit(
         db,
         actor=admin_user.email,
@@ -220,8 +225,8 @@ def approve_join_request_create_team_member(
         row.resolution = RESOLUTION_CREATED_TEAM_MEMBER
         row.resolved_team_member_id = member.id
         row.resolved_by_user_id = admin_user.id
-        row.resolved_at = datetime.now(timezone.utc)
-        row.updated_at = datetime.now(timezone.utc)
+        row.resolved_at = datetime.now(UTC)
+        row.updated_at = datetime.now(UTC)
     record_audit(
         db,
         actor=admin_user.email,
@@ -271,8 +276,8 @@ def approve_join_request_link_team_member(
         row.resolution = RESOLUTION_LINKED_TEAM_MEMBER
         row.resolved_team_member_id = team_member_id
         row.resolved_by_user_id = admin_user.id
-        row.resolved_at = datetime.now(timezone.utc)
-        row.updated_at = datetime.now(timezone.utc)
+        row.resolved_at = datetime.now(UTC)
+        row.updated_at = datetime.now(UTC)
     record_audit(
         db,
         actor=admin_user.email,

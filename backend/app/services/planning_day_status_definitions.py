@@ -6,7 +6,12 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, PlanningDayStatusDefinition, PlanningPeriod, TeamMemberPlanningPattern
+from app.models import (
+    PlanningCell,
+    PlanningDayStatusDefinition,
+    PlanningPeriod,
+    TeamMemberPlanningPattern,
+)
 from app.schemas import PlanningDayStatusDefinitionCreate, PlanningDayStatusDefinitionUpdate
 from app.services.audit import record_audit
 

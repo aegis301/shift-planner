@@ -157,9 +157,12 @@ def update_shift_template(
         return None
     data = payload.model_dump(exclude_unset=True)
     new_code = data.get("code")
-    if new_code is not None and new_code != template.code:
-        if _shift_template_code_in_use(db, new_code, organization_id, exclude_template_id=template.id):
-            raise ShiftTemplateCodeConflictError(new_code)
+    if (
+        new_code is not None
+        and new_code != template.code
+        and _shift_template_code_in_use(db, new_code, organization_id, exclude_template_id=template.id)
+    ):
+        raise ShiftTemplateCodeConflictError(new_code)
     if "constraints" in data and data["constraints"] is not None:
         validate_shift_constraint_payloads(db, data["constraints"], organization_id=organization_id)
     for key, value in data.items():
@@ -301,9 +304,7 @@ def _weekday_allowlist_applies(
 ) -> bool:
     if _weekday_code(day) not in weekdays:
         return False
-    if day_class == "holiday" and not include_holidays:
-        return False
-    return True
+    return day_class != "holiday" or include_holidays
 
 
 def _start_applies(

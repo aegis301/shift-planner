@@ -20,15 +20,15 @@ from app.services.authz import (
     assert_team_member_property_values_write,
     is_admin,
 )
-from app.services.team_member_property_values import (
-    list_property_values_for_member,
-    replace_team_member_property_values,
-)
 from app.services.member_planning_patterns import (
     list_team_member_planning_patterns,
     pattern_to_read,
     read_organization_member_pattern_policy,
     replace_team_member_planning_patterns,
+)
+from app.services.team_member_property_values import (
+    list_property_values_for_member,
+    replace_team_member_property_values,
 )
 from app.services.team_members import (
     create_team_member,

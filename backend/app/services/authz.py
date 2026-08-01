@@ -142,9 +142,7 @@ def use_team_member_filtered_matrix_view(
         return get_linked_team_member(db, user) is not None
     if is_admin(user):
         return False
-    if is_pure_team_member(user):
-        return True
-    return False
+    return is_pure_team_member(user)
 
 
 def assert_team_member_patterns_read(db: Session, user: User, team_member_id: int) -> None:
@@ -187,8 +185,9 @@ def writable_property_definition_ids_for_user(db: Session, user: User, team_memb
     member = get_linked_team_member(db, user)
     if member is None or member.id != team_member_id:
         raise PermissionError("Not allowed to edit property values for this team member")
-    from app.models import TeamMemberPropertyDefinition
     from sqlalchemy import select
+
+    from app.models import TeamMemberPropertyDefinition
 
     rows = db.scalars(
         select(TeamMemberPropertyDefinition.id).where(

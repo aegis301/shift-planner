@@ -1,8 +1,8 @@
 from datetime import date, datetime
 from types import SimpleNamespace
 
-from app.services.export_colors import member_pastel_palette
 from app.services import exports
+from app.services.export_colors import member_pastel_palette
 
 
 def test_member_pastel_palette_is_deterministic():

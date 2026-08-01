@@ -20,18 +20,22 @@ from app.services.authz import (
     can_use_planning_ui,
     get_linked_team_member,
 )
-from app.services.roster_matrix import (
-    clear_roster_slot_assignment,
-    get_roster_matrix,
-    upsert_roster_slot_assignment,
-)
 from app.services.exports import export_roster_matrix_pdf, export_roster_matrix_xlsx
 from app.services.ics_export import (
     export_member_shifts_ics,
     export_single_roster_slot_ics,
     resolve_ics_date_range,
 )
-from app.services.planning import can_edit_planning_data, get_shift_group_planning_status, is_team_member_roster_visible
+from app.services.planning import (
+    can_edit_planning_data,
+    get_shift_group_planning_status,
+    is_team_member_roster_visible,
+)
+from app.services.roster_matrix import (
+    clear_roster_slot_assignment,
+    get_roster_matrix,
+    upsert_roster_slot_assignment,
+)
 
 router = APIRouter(prefix="/roster-matrix", tags=["roster-matrix"])
 export_router = APIRouter(tags=["roster-matrix"])

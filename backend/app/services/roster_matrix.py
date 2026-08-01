@@ -19,13 +19,16 @@ from app.schemas import (
     RosterSlotRead,
 )
 from app.services.audit import record_audit
-from app.services.constraints import evaluate_assignment_constraints, find_blocking_constraint, resolve_slot_constraints
-from app.services.unavailable_overlap import (
-    evaluate_unavailable_overlap_for_slot,
-    find_blocking_unavailable_overlap,
+from app.services.constraints import (
+    evaluate_assignment_constraints,
+    find_blocking_constraint,
+    resolve_slot_constraints,
 )
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
-from app.services.member_planning_patterns import evaluate_member_planning_patterns, list_team_member_planning_patterns
+from app.services.member_planning_patterns import (
+    evaluate_member_planning_patterns,
+    list_team_member_planning_patterns,
+)
 from app.services.planning import can_edit_planning_data, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
@@ -37,9 +40,17 @@ from app.services.shift_groups import (
     shift_template_ids_in_shift_group,
     team_member_may_cover_template,
 )
+from app.services.shift_templates import (
+    GeneratedSlot,
+    generate_slots_for_month,
+    list_shift_templates,
+)
 from app.services.team_member_property_values import property_value_dict_for_member
 from app.services.tenancy import require_planning_period_in_org
-from app.services.shift_templates import GeneratedSlot, generate_slots_for_month, list_shift_templates
+from app.services.unavailable_overlap import (
+    evaluate_unavailable_overlap_for_slot,
+    find_blocking_unavailable_overlap,
+)
 
 
 class RosterSyncPublishedError(Exception):
@@ -133,9 +144,10 @@ def sync_roster_slots_for_period(
     for slot in existing_slots:
         if slot.source != "template":
             continue
-        if template_filter is not None:
-            if slot.shift_template_id is None or slot.shift_template_id not in template_filter:
-                continue
+        if template_filter is not None and (
+            slot.shift_template_id is None or slot.shift_template_id not in template_filter
+        ):
+            continue
         if slot.shift_variant_id is None:
             continue
         existing_by_key[_slot_key(slot.slot_date, slot.shift_variant_id, slot.position)] = slot

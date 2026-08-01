@@ -5,8 +5,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.models import Organization, TeamMember, TeamMemberPropertyDefinition
 from app.models.base import Base
-from app.schemas import TeamMemberPropertyDefinitionCreate, ShiftConstraint
-from app.services.shift_templates import ShiftConstraintInvalidError, validate_shift_constraint_payloads
+from app.schemas import ShiftConstraint, TeamMemberPropertyDefinitionCreate
+from app.services.shift_templates import (
+    ShiftConstraintInvalidError,
+    validate_shift_constraint_payloads,
+)
 from app.services.team_member_property_definitions import create_team_member_property_definition
 from app.services.team_member_property_requirements import (
     TeamMemberPropertyRequirementError,

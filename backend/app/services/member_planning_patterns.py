@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 from app.models import Organization, RosterSlot, TeamMember, TeamMemberPlanningPattern
 from app.schemas import (
     ALL_PATTERN_WEEKDAYS,
+    AllowedCalendarWeekParityMemberPatternRule,
     AvoidTimeWindowBand,
     AvoidTimeWindowMemberPatternRule,
-    AllowedCalendarWeekParityMemberPatternRule,
     IsoWeekCycleMemberPatternRule,
     MemberPlanningPatternRule,
     OrganizationMemberPatternPolicy,
@@ -22,15 +22,13 @@ from app.schemas import (
     TeamMemberPlanningPatternsReplace,
     ValidationWarning,
 )
+from app.services.audit import record_audit
+from app.services.planning_day_status_definitions import assert_valid_planning_cell_status
 from app.services.shift_intervals import (
     is_iso_week_cycle_on_week,
     resolve_slot_interval,
 )
-from app.services.audit import record_audit
-from app.services.planning_day_status_definitions import assert_valid_planning_cell_status
 from app.services.tenancy import require_team_member_in_org
-
-PatternWeekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 _WEEKDAY_TO_INDEX: dict[PatternWeekday, int] = {
     "mon": 0,

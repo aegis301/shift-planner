@@ -128,8 +128,7 @@ def validate_property_requirement_expr(
         if isinstance(current, TeamMemberPropertyRequirementAtom):
             _validate_atom(db, current, organization_id)
             continue
-        for child in reversed(current.items):
-            stack.append(child)
+        stack.extend(reversed(current.items))
 
 
 def load_property_definitions_map(db: Session, *, organization_id: int) -> dict[int, TeamMemberPropertyDefinition]:

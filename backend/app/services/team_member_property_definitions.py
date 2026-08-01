@@ -117,9 +117,12 @@ def update_team_member_property_definition(
         raise ValueError("options are required for select and multi_select property types")
     if new_type not in _SELECT_TYPES and new_options:
         raise ValueError("options are only allowed for select and multi_select property types")
-    if new_type != row.type or new_options != list(row.options or []):
-        if _definition_has_invalid_values_after_change(db, row, new_type=new_type, new_options=new_options):
-            raise ValueError("Cannot change type or options while member values would become invalid")
+    if (
+        new_type != row.type or new_options != list(row.options or [])
+    ) and _definition_has_invalid_values_after_change(
+        db, row, new_type=new_type, new_options=new_options
+    ):
+        raise ValueError("Cannot change type or options while member values would become invalid")
     for key, value in data.items():
         setattr(row, key, value)
     db.flush()

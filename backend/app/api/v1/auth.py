@@ -38,15 +38,6 @@ from app.schemas import (
     UserRead,
 )
 from app.services.authz import get_linked_team_member
-from app.services.registration import (
-    create_additional_organization_membership,
-    onboarding_create_organization,
-    onboarding_join_organization,
-    register_account_only,
-    register_create_organization,
-    register_join_organization,
-    request_join_additional_organization,
-)
 from app.services.join_requests import (
     create_join_request_for_applicant,
     get_pending_join_request_for_user,
@@ -57,6 +48,15 @@ from app.services.organization_invites import (
     decline_membership_invite,
     invite_pending_to_read,
     list_pending_invites_for_account,
+)
+from app.services.registration import (
+    create_additional_organization_membership,
+    onboarding_create_organization,
+    onboarding_join_organization,
+    register_account_only,
+    register_create_organization,
+    register_join_organization,
+    request_join_additional_organization,
 )
 from app.services.team_members import team_member_to_read
 from app.services.users import (

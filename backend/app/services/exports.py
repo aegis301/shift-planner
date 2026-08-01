@@ -394,8 +394,10 @@ def export_roster_matrix_pdf(
         db, planning_period_id, organization_id=organization_id, shift_group_id=shift_group_id
     )
     data: list[list[str]] = [["Wochentag", "Datum", *[column.title for column in table.columns]]]
-    for row in table.rows:
-        data.append([row.weekday, row.day.strftime("%d.%m.%Y"), *[(cell.member_name if cell else "") for cell in row.cells]])
+    data.extend(
+        [row.weekday, row.day.strftime("%d.%m.%Y"), *[(cell.member_name if cell else "") for cell in row.cells]]
+        for row in table.rows
+    )
 
     buffer = BytesIO()
     document = SimpleDocTemplate(
@@ -695,8 +697,10 @@ def export_version_roster_matrix_pdf(
     )
     table = build_roster_export_table_by_template_from_matrix(matrix)
     data: list[list[str]] = [["Wochentag", "Datum", *[column.title for column in table.columns]]]
-    for row in table.rows:
-        data.append([row.weekday, row.day.strftime("%d.%m.%Y"), *[(cell.member_name if cell else "") for cell in row.cells]])
+    data.extend(
+        [row.weekday, row.day.strftime("%d.%m.%Y"), *[(cell.member_name if cell else "") for cell in row.cells]]
+        for row in table.rows
+    )
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer,

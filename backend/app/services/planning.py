@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -174,7 +174,7 @@ def _sync_period_aggregate_status(db: Session, period: PlanningPeriod) -> None:
     if all(status == PLANNING_PERIOD_STATUS_PUBLISHED for status in statuses):
         period.status = PLANNING_PERIOD_STATUS_PUBLISHED
         if period.published_at is None:
-            period.published_at = datetime.now(timezone.utc)
+            period.published_at = datetime.now(UTC)
     elif any(status == PLANNING_PERIOD_STATUS_DRAFT for status in statuses):
         period.status = PLANNING_PERIOD_STATUS_DRAFT
         period.published_at = None

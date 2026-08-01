@@ -34,7 +34,11 @@ from app.services.matrix import (
     save_team_member_period_note,
     upsert_planning_cell,
 )
-from app.services.planning import can_edit_planning_data, can_team_member_edit_wishes_matrix, get_shift_group_planning_status
+from app.services.planning import (
+    can_edit_planning_data,
+    can_team_member_edit_wishes_matrix,
+    get_shift_group_planning_status,
+)
 
 router = APIRouter(prefix="/matrix", tags=["matrix"])
 

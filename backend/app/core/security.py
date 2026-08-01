@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from passlib.context import CryptContext
@@ -35,7 +35,7 @@ def create_user_session_token(user_id: int) -> str:
             "v": SESSION_PAYLOAD_VERSION,
             "typ": SESSION_KIND_USER,
             "sub": user_id,
-            "iat": datetime.now(timezone.utc).isoformat(),
+            "iat": datetime.now(UTC).isoformat(),
         }
     )
 
@@ -46,7 +46,7 @@ def create_account_session_token(account_id: int) -> str:
             "v": SESSION_PAYLOAD_VERSION,
             "typ": SESSION_KIND_ACCOUNT,
             "sub": account_id,
-            "iat": datetime.now(timezone.utc).isoformat(),
+            "iat": datetime.now(UTC).isoformat(),
         }
     )
 

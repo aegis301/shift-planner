@@ -1,7 +1,14 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import PlanningCell, RosterSlotAssignment, TeamMember, TeamMemberPeriodNote, TeamMemberShiftGroup, User
+from app.models import (
+    PlanningCell,
+    RosterSlotAssignment,
+    TeamMember,
+    TeamMemberPeriodNote,
+    TeamMemberShiftGroup,
+    User,
+)
 from app.schemas import TeamMemberCreate, TeamMemberRead, TeamMemberSelfUpdate, TeamMemberUpdate
 from app.services.audit import record_audit
 from app.services.authz import roles_allowed_for_team_member_user_link

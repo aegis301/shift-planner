@@ -194,7 +194,7 @@ export function PlanVersionPanel({
                 onClick={() => setSaveOpen(false)}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
               >
-                {t(locale, "cancel")}
+                {t(locale, "orgStaffModalCancel")}
               </button>
               <button
                 type="submit"
@@ -250,7 +250,7 @@ export function PlanVersionPanel({
                           <a
                             href={`${API_BASE_URL}/api/v1/planning-periods/${periodId}/versions/${version.id}/export/roster-matrix.csv`}
                             className="rounded-lg border border-slate-200 p-2 hover:bg-slate-50"
-                            title={t(locale, "exportRosterCsv")}
+                            title={t(locale, "rosterCsvExport")}
                           >
                             <Download className="h-4 w-4" />
                           </a>

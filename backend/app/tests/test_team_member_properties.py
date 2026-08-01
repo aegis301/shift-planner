@@ -3,13 +3,18 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.models import Organization, TeamMember, TeamMemberPropertyDefinition, TeamMemberPropertyValue
+from app.models import (
+    Organization,
+    TeamMember,
+    TeamMemberPropertyDefinition,
+    TeamMemberPropertyValue,
+)
 from app.models.base import Base
 from app.schemas import (
     TeamMemberPropertyDefinitionCreate,
     TeamMemberPropertyDefinitionUpdate,
-    TeamMemberPropertyValueUpsertItem,
     TeamMemberPropertyValuesReplace,
+    TeamMemberPropertyValueUpsertItem,
 )
 from app.services.team_member_property_definitions import (
     create_team_member_property_definition,

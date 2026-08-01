@@ -25,9 +25,7 @@ def _is_empty_value(value: Any) -> bool:
         return True
     if value == "":
         return True
-    if isinstance(value, list) and len(value) == 0:
-        return True
-    return False
+    return isinstance(value, list) and len(value) == 0
 
 
 def validate_property_value_for_definition(definition: TeamMemberPropertyDefinition, value: Any) -> Any:

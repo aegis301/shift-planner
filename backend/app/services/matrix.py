@@ -4,7 +4,14 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, PlanningPeriod, PlanningShiftIntent, TeamMember, TeamMemberPeriodNote, TeamMemberPlanningPattern
+from app.models import (
+    PlanningCell,
+    PlanningPeriod,
+    PlanningShiftIntent,
+    TeamMember,
+    TeamMemberPeriodNote,
+    TeamMemberPlanningPattern,
+)
 from app.schemas import (
     MatrixDay,
     MatrixTeamMember,
@@ -20,15 +27,15 @@ from app.schemas import (
     ShiftTemplateRead,
     TeamMemberPeriodNoteUpsert,
 )
+from app.services.audit import record_audit
 from app.services.authz import team_member_shift_group_ids
+from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
 from app.services.planning import is_shift_group_planning_open, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     assert_valid_planning_cell_status,
     ensure_default_planning_day_statuses,
     list_planning_day_status_definitions,
 )
-from app.services.audit import record_audit
-from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     list_shift_groups,

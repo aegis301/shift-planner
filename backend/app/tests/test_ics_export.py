@@ -1,27 +1,37 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
-from app.api.deps import get_db
-from app.core.security import hash_password
-from app.main import app
-from app.models import (Account, Organization, PlanningPeriod,
-                        PlanningPeriodShiftGroupStatus, RosterSlot,
-                        RosterSlotAssignment, ShiftGroup,
-                        ShiftGroupShiftTemplate, ShiftTemplate, ShiftVariant,
-                        TeamMember, TeamMemberShiftGroup, User)
-from app.models.base import Base
-from app.services.ics_export import (ShiftCalendarEvent, build_ics_calendar,
-                                     event_uid)
 from fastapi.testclient import TestClient
 from icalendar import Calendar
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api.deps import get_db
+from app.core.security import hash_password
+from app.main import app
+from app.models import (
+    Account,
+    Organization,
+    PlanningPeriod,
+    PlanningPeriodShiftGroupStatus,
+    RosterSlot,
+    RosterSlotAssignment,
+    ShiftGroup,
+    ShiftGroupShiftTemplate,
+    ShiftTemplate,
+    ShiftVariant,
+    TeamMember,
+    TeamMemberShiftGroup,
+    User,
+)
+from app.models.base import Base
+from app.services.ics_export import ShiftCalendarEvent, build_ics_calendar, event_uid
+
 
 def test_build_ics_calendar_timed_event():
-    start = datetime(2026, 5, 1, 8, 0, tzinfo=timezone.utc)
-    end = datetime(2026, 5, 1, 20, 0, tzinfo=timezone.utc)
+    start = datetime(2026, 5, 1, 8, 0, tzinfo=UTC)
+    end = datetime(2026, 5, 1, 20, 0, tzinfo=UTC)
     event = ShiftCalendarEvent(
         roster_slot_id=1,
         slot_date=date(2026, 5, 1),
@@ -128,8 +138,8 @@ def ics_client():
             shift_variant_id=variant.id,
             slot_date=slot_date,
             position=1,
-            starts_at=datetime.combine(slot_date, time(8, 0), tzinfo=timezone.utc),
-            ends_at=datetime.combine(slot_date, time(20, 0), tzinfo=timezone.utc),
+            starts_at=datetime.combine(slot_date, time(8, 0), tzinfo=UTC),
+            ends_at=datetime.combine(slot_date, time(20, 0), tzinfo=UTC),
             day_class="weekday",
         )
         db.add(slot)
@@ -152,8 +162,8 @@ def ics_client():
             shift_variant_id=variant.id,
             slot_date=slot_date + timedelta(days=10),
             position=1,
-            starts_at=datetime.combine(slot_date + timedelta(days=10), time(8, 0), tzinfo=timezone.utc),
-            ends_at=datetime.combine(slot_date + timedelta(days=10), time(20, 0), tzinfo=timezone.utc),
+            starts_at=datetime.combine(slot_date + timedelta(days=10), time(8, 0), tzinfo=UTC),
+            ends_at=datetime.combine(slot_date + timedelta(days=10), time(20, 0), tzinfo=UTC),
             day_class="weekday",
         )
         db.add(range_slot)

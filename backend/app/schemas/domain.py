@@ -1,6 +1,6 @@
 from datetime import date as date_type
 from datetime import datetime, time
-from typing import Annotated, Any, Literal, Self, Union
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -85,8 +85,8 @@ class AccountSessionRead(BaseModel):
     memberships: list[MembershipSummary] = Field(default_factory=list)
 
 
-AuthLoginResponse = Annotated[Union[UserRead, AccountSessionRead], Field(discriminator="auth_kind")]
-AuthMeResponse = Annotated[Union[UserRead, AccountSessionRead], Field(discriminator="auth_kind")]
+AuthLoginResponse = Annotated[UserRead | AccountSessionRead, Field(discriminator="auth_kind")]
+AuthMeResponse = Annotated[UserRead | AccountSessionRead, Field(discriminator="auth_kind")]
 
 
 class ActiveOrganizationInput(BaseModel):
@@ -504,7 +504,7 @@ class TeamMemberPropertyRequirementAny(BaseModel):
 
 
 TeamMemberPropertyRequirementExpr = Annotated[
-    Union[TeamMemberPropertyRequirementAll, TeamMemberPropertyRequirementAny, TeamMemberPropertyRequirementAtom],
+    TeamMemberPropertyRequirementAll | TeamMemberPropertyRequirementAny | TeamMemberPropertyRequirementAtom,
     Field(discriminator="kind"),
 ]
 
