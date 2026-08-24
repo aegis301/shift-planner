@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-08-24
+- **Fix team member wishes read-only:** `/my-planning` mixed the planner-only editability flag into the wishes matrix `readOnly` check, so team members could never set day statuses, wishes, no-gos, day comments, month notes, or use the day interval bar regardless of the shift group's status. Editability now derives from `teamMemberWishesEditable` on the team-member portal and `plannerPlanningEditable` on `/planning` (regression from the plan versioning change).
+
 ## 2026-08-01
 - **Backend lint baseline:** Explicit ruff rule selection (`E4`, `E7`, `E9`, `F`, `I`, `UP`, `B`, `SIM`, `PERF`, `RUF`) with FastAPI dependency markers registered as bugbear immutable calls, so `Depends`/`Query`/`Body` defaults no longer report `B008`. Repository-wide cleanup: sorted imports, `datetime.UTC`, PEP 604 unions, removed unused imports/variables, dropped the duplicate `PatternWeekday` alias in `member_planning_patterns.py`, and removed the dead `ROSTER_MATRIX_UNAVAILABLE_CONFLICT` scope branch.
 - **Roster overlap test fixes:** `test_api.py` expectations updated to `ROSTER_MATRIX_UNAVAILABLE_OVERLAP`; the overnight case now assigns before setting the blocking day status, matching preflight blocking behavior.

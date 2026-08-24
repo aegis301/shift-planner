@@ -328,6 +328,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     planningUi &&
     !viewingVersionId &&
     (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
+  const wishesEditable = teamMemberPortalUi ? teamMemberWishesEditable : plannerPlanningEditable;
   const regenerateRosterDisabled = !periodId || groupPlanningStatus?.status === "published";
 
   const loadGroupPlanningStatus = useCallback(
@@ -657,7 +658,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           versionId={viewingVersionId ?? undefined}
           editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
           teamMemberPortal={teamMemberPortalUi}
-          readOnly={(teamMemberPortalUi && !teamMemberWishesEditable) || !plannerPlanningEditable || viewingVersionId != null}
+          readOnly={!wishesEditable || viewingVersionId != null}
           dayFeedbackAlwaysVisible={Boolean(teamMemberPortalUi && teamMemberWishesEditable)}
           onChanged={handleWishesChanged}
         />
@@ -945,7 +946,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                 <PlanningDayIntervalBar
                   periodId={periodId}
                   shiftGroupId={shiftGroupId}
-                  readOnly={(teamMemberPortalUi && !teamMemberWishesEditable) || !plannerPlanningEditable}
+                  readOnly={!wishesEditable}
                   teamMemberPortal={teamMemberPortalUi}
                   editableMemberId={editableMemberId}
                   dayStatusDefinitions={dayStatusDefinitions}
