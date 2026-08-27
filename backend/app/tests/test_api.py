@@ -3229,6 +3229,43 @@ def test_team_member_property_definitions_admin_crud(client: TestClient):
     assert patched.json()["name"] == "Years in training"
 
 
+def test_team_member_property_values_matrix_admin(client: TestClient):
+    login(client)
+    defn = client.post(
+        "/api/v1/team-member-property-definitions",
+        json={"name": "Matrix years", "type": "number"},
+    ).json()
+    member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Matrix",
+            "last_name": "Member",
+            "email": "matrix-member@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()
+    assert (
+        client.put(
+            f"/api/v1/team-members/{member['id']}/property-values",
+            json={"values": [{"property_definition_id": defn["id"], "value": 7}]},
+        ).status_code
+        == 200
+    )
+    matrix = client.get("/api/v1/team-member-property-values/matrix")
+    assert matrix.status_code == 200
+    body = matrix.json()
+    assert any(row["id"] == defn["id"] for row in body["definitions"])
+    member_row = next(row for row in body["members"] if row["id"] == member["id"])
+    cell = next(item for item in member_row["values"] if item["property_definition_id"] == defn["id"])
+    assert cell["value"] == 7
+
+
+def test_team_member_property_values_matrix_requires_admin(team_member_client: TestClient):
+    login_team_member(team_member_client)
+    response = team_member_client.get("/api/v1/team-member-property-values/matrix")
+    assert response.status_code == 403
+
+
 def test_team_member_property_values_member_self_service(team_member_client: TestClient):
     login(team_member_client)
     defn = team_member_client.post(

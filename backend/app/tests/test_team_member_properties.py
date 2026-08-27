@@ -23,6 +23,7 @@ from app.services.team_member_property_definitions import (
 )
 from app.services.team_member_property_values import (
     list_property_values_for_member,
+    list_property_values_matrix,
     replace_team_member_property_values,
     validate_property_value_for_definition,
 )
@@ -210,3 +211,60 @@ def test_delete_definition_with_values_deactivates(prop_db):
     )
     db.refresh(defn)
     assert defn.is_active is False
+
+
+def test_list_property_values_matrix(prop_db):
+    db = prop_db
+    db.add(
+        TeamMember(
+            id=2,
+            organization_id=1,
+            first_name="C",
+            last_name="D",
+            email="c@example.com",
+            employment_percentage=100,
+            is_active=False,
+        )
+    )
+    db.commit()
+    years = create_team_member_property_definition(
+        db,
+        TeamMemberPropertyDefinitionCreate(name="Years", type="number"),
+        organization_id=1,
+        actor="test",
+        source="test",
+    )
+    badge = create_team_member_property_definition(
+        db,
+        TeamMemberPropertyDefinitionCreate(
+            name="Badge", type="select", options=["A", "B"], is_active=False
+        ),
+        organization_id=1,
+        actor="test",
+        source="test",
+    )
+    replace_team_member_property_values(
+        db,
+        team_member_id=1,
+        organization_id=1,
+        payload=TeamMemberPropertyValuesReplace(
+            values=[TeamMemberPropertyValueUpsertItem(property_definition_id=years.id, value=4)]
+        ),
+        actor="test",
+        source="test",
+    )
+    matrix = list_property_values_matrix(db, organization_id=1, active_definitions_only=True)
+    assert [row.id for row in matrix.definitions] == [years.id]
+    assert badge.id not in {row.id for row in matrix.definitions}
+    assert len(matrix.members) == 2
+    active_row = next(row for row in matrix.members if row.id == 1)
+    assert active_row.values[0].value == 4
+    inactive_row = next(row for row in matrix.members if row.id == 2)
+    assert inactive_row.is_active is False
+    assert inactive_row.values[0].value is None
+    active_only = list_property_values_matrix(
+        db, organization_id=1, active_definitions_only=True, active_members_only=True
+    )
+    assert [row.id for row in active_only.members] == [1]
+    all_defs = list_property_values_matrix(db, organization_id=1, active_definitions_only=False)
+    assert {row.id for row in all_defs.definitions} == {years.id, badge.id}

@@ -421,6 +421,14 @@ export const dictionaries = {
     teamMemberPropertyDefinitionEditableByMember: "Teammitglied darf Wert selbst bearbeiten",
     teamMemberPropertyDefinitionEditableByMemberShort: "selbst bearbeitbar",
     teamMemberPropertyDefinitionActive: "Aktiv",
+    teamMemberPropertyDefinitionDelete: "Eigenschaft löschen",
+    teamMemberPropertiesTableHelp:
+      "Tabelle mit Teammitgliedern und Eigenschaften. Zellen speichern automatisch. Neue Eigenschaften über „Eigenschaft hinzufügen“.",
+    teamMemberPropertiesMemberColumn: "Teammitglied",
+    teamMemberPropertiesShowInactiveMembers: "Inaktive Teammitglieder anzeigen",
+    teamMemberPropertiesShowInactiveDefinitions: "Inaktive Eigenschaften anzeigen",
+    teamMemberPropertiesNoMembers: "Keine Teammitglieder vorhanden.",
+    teamMemberPropertiesInactiveBadge: "inaktiv",
     planningDayStatusNav: "Tagesstatus",
     planningDayStatusDefinitionsTitle: "Tagesstatus",
     planningDayStatusDefinitionsHelp:
@@ -1194,6 +1202,14 @@ export const dictionaries = {
     teamMemberPropertyDefinitionEditableByMember: "Team member may edit value",
     teamMemberPropertyDefinitionEditableByMemberShort: "self-editable",
     teamMemberPropertyDefinitionActive: "Active",
+    teamMemberPropertyDefinitionDelete: "Delete property",
+    teamMemberPropertiesTableHelp:
+      "Table of team members and properties. Cells save automatically. Add new properties with “Add property”.",
+    teamMemberPropertiesMemberColumn: "Team member",
+    teamMemberPropertiesShowInactiveMembers: "Show inactive team members",
+    teamMemberPropertiesShowInactiveDefinitions: "Show inactive properties",
+    teamMemberPropertiesNoMembers: "No team members yet.",
+    teamMemberPropertiesInactiveBadge: "inactive",
     planningDayStatusNav: "Day status",
     planningDayStatusDefinitionsTitle: "Day status",
     planningDayStatusDefinitionsHelp:

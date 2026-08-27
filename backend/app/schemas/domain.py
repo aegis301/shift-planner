@@ -893,6 +893,25 @@ class TeamMemberPropertyValueRead(BaseModel):
     updated_at: datetime | None = None
 
 
+class TeamMemberPropertyMatrixCell(BaseModel):
+    property_definition_id: int
+    value: Any | None = None
+
+
+class TeamMemberPropertyMatrixMember(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    nickname: str | None = None
+    is_active: bool
+    values: list[TeamMemberPropertyMatrixCell] = Field(default_factory=list)
+
+
+class TeamMemberPropertyValuesMatrixRead(BaseModel):
+    definitions: list[TeamMemberPropertyDefinitionRead] = Field(default_factory=list)
+    members: list[TeamMemberPropertyMatrixMember] = Field(default_factory=list)
+
+
 def _normalize_weekday_allowlist(value: list[PatternWeekday] | None) -> list[PatternWeekday] | None:
     if not value:
         return None

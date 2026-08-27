@@ -1,10 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
+import { teamMemberLabel } from "@/components/ResourceForms";
 import { ApiError, apiFetch } from "@/lib/api";
+import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type TranslationKey } from "@/lib/i18n";
 
 type PropertyType = "number" | "date" | "select" | "multi_select" | "text";
@@ -19,6 +21,25 @@ type PropertyDefinition = {
   is_active: boolean;
 };
 
+type MatrixCell = {
+  property_definition_id: number;
+  value: unknown;
+};
+
+type MatrixMember = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  nickname?: string | null;
+  is_active: boolean;
+  values: MatrixCell[];
+};
+
+type MatrixPayload = {
+  definitions: PropertyDefinition[];
+  members: MatrixMember[];
+};
+
 const PROPERTY_TYPES: PropertyType[] = ["number", "date", "select", "multi_select", "text"];
 
 const PROPERTY_TYPE_KEYS: Record<PropertyType, TranslationKey> = {
@@ -28,6 +49,9 @@ const PROPERTY_TYPE_KEYS: Record<PropertyType, TranslationKey> = {
   multi_select: "teamMemberPropertyTypeMultiSelect",
   text: "teamMemberPropertyTypeText"
 };
+
+const cellInputClass =
+  "h-9 w-full min-w-[7rem] rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none ring-mint/20 transition focus:ring-4";
 
 type Draft = {
   name: string;
@@ -47,6 +71,14 @@ function emptyDraft(): Draft {
     editable_by_team_member: true,
     is_active: true
   };
+}
+
+function valuesMap(member: MatrixMember): Record<number, unknown> {
+  const out: Record<number, unknown> = {};
+  for (const cell of member.values) {
+    out[cell.property_definition_id] = cell.value;
+  }
+  return out;
 }
 
 function PropertyDefinitionModal({
@@ -231,37 +263,238 @@ function PropertyDefinitionModal({
   );
 }
 
+function PropertyCellEditor({
+  definition,
+  value,
+  onChange
+}: {
+  definition: PropertyDefinition;
+  value: unknown;
+  onChange: (next: unknown) => void;
+}) {
+  const { locale } = useLocale();
+
+  if (definition.type === "number") {
+    return (
+      <input
+        className={cellInputClass}
+        type="number"
+        value={value === null || value === undefined ? "" : String(value)}
+        onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))}
+        aria-label={definition.name}
+      />
+    );
+  }
+  if (definition.type === "date") {
+    return (
+      <input
+        className={cellInputClass}
+        type="date"
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value || null)}
+        aria-label={definition.name}
+      />
+    );
+  }
+  if (definition.type === "text") {
+    return (
+      <input
+        className={cellInputClass}
+        type="text"
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value || null)}
+        aria-label={definition.name}
+      />
+    );
+  }
+  if (definition.type === "select") {
+    return (
+      <select
+        className={cellInputClass}
+        value={typeof value === "string" ? value : ""}
+        onChange={(event) => onChange(event.target.value || null)}
+        aria-label={definition.name}
+      >
+        <option value="">{t(locale, "teamMemberPropertySelectEmpty")}</option>
+        {definition.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  const selected = Array.isArray(value) ? (value as string[]) : [];
+  return (
+    <div className="flex min-w-[10rem] flex-wrap gap-1" role="group" aria-label={definition.name}>
+      {definition.options.map((option) => {
+        const isOn = selected.includes(option);
+        return (
+          <button
+            key={option}
+            type="button"
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${
+              isOn ? "bg-ink text-white ring-ink" : "bg-white text-slate-700 ring-slate-200"
+            }`}
+            onClick={() => {
+              const next = isOn ? selected.filter((item) => item !== option) : [...selected, option];
+              onChange(next.length ? next : null);
+            }}
+          >
+            {option}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TeamMemberPropertyDefinitionsPanel() {
   const { locale } = useLocale();
-  const [rows, setRows] = useState<PropertyDefinition[]>([]);
+  const [definitions, setDefinitions] = useState<PropertyDefinition[]>([]);
+  const [members, setMembers] = useState<MatrixMember[]>([]);
+  const [cellValues, setCellValues] = useState<Record<number, Record<number, unknown>>>({});
   const [loading, setLoading] = useState(true);
+  const [showInactiveMembers, setShowInactiveMembers] = useState(false);
+  const [showInactiveDefinitions, setShowInactiveDefinitions] = useState(false);
+  const [message, setMessage] = useState("");
   const [modal, setModal] = useState<{ id: number | null; draft: Draft } | null>(null);
+  const cellValuesRef = useRef(cellValues);
+  const dirtyRef = useRef<Record<number, Set<number>>>({});
+  const persistTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  cellValuesRef.current = cellValues;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const next = await apiFetch<PropertyDefinition[]>("/api/v1/team-member-property-definitions");
-      setRows([...next].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })));
+      const params = new URLSearchParams({
+        active_definitions_only: String(!showInactiveDefinitions),
+        active_members_only: String(!showInactiveMembers)
+      });
+      const next = await apiFetch<MatrixPayload>(`/api/v1/team-member-property-values/matrix?${params}`);
+      const sortedDefs = [...next.definitions].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      );
+      setDefinitions(sortedDefs);
+      setMembers(next.members);
+      const mapped: Record<number, Record<number, unknown>> = {};
+      for (const member of next.members) {
+        mapped[member.id] = valuesMap(member);
+      }
+      cellValuesRef.current = mapped;
+      setCellValues(mapped);
+      dirtyRef.current = {};
+      setMessage("");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showInactiveDefinitions, showInactiveMembers]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const flushMember = useCallback(
+    async (memberId: number) => {
+      const dirty = dirtyRef.current[memberId];
+      if (!dirty || dirty.size === 0) {
+        return;
+      }
+      const definitionIds = [...dirty];
+      dirtyRef.current[memberId] = new Set();
+      const memberValues = cellValuesRef.current[memberId] ?? {};
+      try {
+        await apiFetch(`/api/v1/team-members/${memberId}/property-values`, {
+          method: "PUT",
+          body: JSON.stringify({
+            values: definitionIds.map((property_definition_id) => ({
+              property_definition_id,
+              value: memberValues[property_definition_id] === "" ? null : memberValues[property_definition_id]
+            }))
+          })
+        });
+        setMessage("");
+      } catch (e) {
+        for (const id of definitionIds) {
+          dirtyRef.current[memberId] = dirtyRef.current[memberId] ?? new Set();
+          dirtyRef.current[memberId].add(id);
+        }
+        if (e instanceof ApiError && typeof e.detail === "string") {
+          setMessage(e.detail);
+        } else {
+          setMessage(t(locale, "orgManagementInviteError"));
+        }
+      }
+    },
+    [locale]
+  );
+
+  const flushMemberRef = useRef(flushMember);
+  flushMemberRef.current = flushMember;
+
+  const schedulePersist = useCallback(
+    (memberId: number) => {
+      const existing = persistTimersRef.current[memberId];
+      if (existing) {
+        clearTimeout(existing);
+      }
+      persistTimersRef.current[memberId] = setTimeout(() => {
+        delete persistTimersRef.current[memberId];
+        void flushMember(memberId);
+      }, 400);
+    },
+    [flushMember]
+  );
+
+  useEffect(() => {
+    return () => {
+      const timers = persistTimersRef.current;
+      const pendingIds = Object.keys(timers).map(Number);
+      for (const timer of Object.values(timers)) {
+        clearTimeout(timer);
+      }
+      persistTimersRef.current = {};
+      for (const memberId of pendingIds) {
+        void flushMemberRef.current(memberId);
+      }
+    };
+  }, []);
+
+  function updateCell(memberId: number, definitionId: number, value: unknown) {
+    setCellValues((prev) => {
+      const next = {
+        ...prev,
+        [memberId]: {
+          ...(prev[memberId] ?? {}),
+          [definitionId]: value
+        }
+      };
+      cellValuesRef.current = next;
+      return next;
+    });
+    dirtyRef.current[memberId] = dirtyRef.current[memberId] ?? new Set();
+    dirtyRef.current[memberId].add(definitionId);
+    schedulePersist(memberId);
+  }
 
   async function removeDefinition(id: number) {
     await apiFetch(`/api/v1/team-member-property-definitions/${id}`, { method: "DELETE" });
     await load();
   }
 
+  const visibleDefinitions = useMemo(
+    () => (showInactiveDefinitions ? definitions : definitions.filter((row) => row.is_active)),
+    [definitions, showInactiveDefinitions]
+  );
+
   return (
     <Card>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-ink">{t(locale, "teamMemberPropertyDefinitionsTitle")}</h1>
-          <p className="mt-1 text-sm text-slate-600">{t(locale, "teamMemberPropertyDefinitionsHelp")}</p>
+          <p className="mt-1 text-sm text-slate-600">{t(locale, "teamMemberPropertiesTableHelp")}</p>
         </div>
         <button
           type="button"
@@ -272,56 +505,133 @@ export function TeamMemberPropertyDefinitionsPanel() {
           {t(locale, "teamMemberPropertyDefinitionAdd")}
         </button>
       </div>
-      {loading ? <p className="text-sm text-slate-600">{t(locale, "planningSessionLoading")}</p> : null}
-      <div className="grid gap-2">
-        {rows.map((row) => (
-          <div
-            key={row.id}
-            className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 ${
-              row.is_active ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 opacity-70"
-            }`}
-          >
-            <div>
-              <p className="font-semibold text-slate-800">{row.name}</p>
-              <p className="text-xs text-slate-500">
-                {t(locale, PROPERTY_TYPE_KEYS[row.type])}
-                {row.options.length ? ` · ${row.options.join(", ")}` : ""}
-                {row.editable_by_team_member
-                  ? ` · ${t(locale, "teamMemberPropertyDefinitionEditableByMemberShort")}`
-                  : ` · ${t(locale, "teamMemberPropertyAdminOnly")}`}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-700"
-                onClick={() =>
-                  setModal({
-                    id: row.id,
-                    draft: {
-                      name: row.name,
-                      type: row.type,
-                      options: [...row.options],
-                      optionInput: "",
-                      editable_by_team_member: row.editable_by_team_member,
-                      is_active: row.is_active
-                    }
-                  })
-                }
-              >
-                <Pencil size={16} />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
-                onClick={() => void removeDefinition(row.id)}
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        ))}
+      <div className="mb-3 flex flex-wrap gap-4 text-sm text-slate-700">
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={showInactiveMembers}
+            onChange={(event) => setShowInactiveMembers(event.target.checked)}
+          />
+          {t(locale, "teamMemberPropertiesShowInactiveMembers")}
+        </label>
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={showInactiveDefinitions}
+            onChange={(event) => setShowInactiveDefinitions(event.target.checked)}
+          />
+          {t(locale, "teamMemberPropertiesShowInactiveDefinitions")}
+        </label>
       </div>
+      {loading ? <p className="text-sm text-slate-600">{t(locale, "planningSessionLoading")}</p> : null}
+      {!loading && visibleDefinitions.length === 0 ? (
+        <p className="text-sm text-slate-600">{t(locale, "teamMemberPropertiesEmpty")}</p>
+      ) : null}
+      {!loading && visibleDefinitions.length > 0 ? (
+        <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
+          <table className="w-full min-w-max border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <th className="sticky left-0 z-20 bg-white px-3 py-3">
+                  {t(locale, "teamMemberPropertiesMemberColumn")}
+                </th>
+                {visibleDefinitions.map((definition) => (
+                  <th
+                    key={definition.id}
+                    className={`min-w-[10rem] px-3 py-3 align-bottom ${
+                      definition.is_active ? "" : "opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 normal-case">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{definition.name}</p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                          {t(locale, PROPERTY_TYPE_KEYS[definition.type])}
+                          {definition.editable_by_team_member
+                            ? ` · ${t(locale, "teamMemberPropertyDefinitionEditableByMemberShort")}`
+                            : ` · ${t(locale, "teamMemberPropertyAdminOnly")}`}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50"
+                          aria-label={t(locale, "teamMemberPropertyDefinitionEdit")}
+                          onClick={() =>
+                            setModal({
+                              id: definition.id,
+                              draft: {
+                                name: definition.name,
+                                type: definition.type,
+                                options: [...definition.options],
+                                optionInput: "",
+                                editable_by_team_member: definition.editable_by_team_member,
+                                is_active: definition.is_active
+                              }
+                            })
+                          }
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                          aria-label={t(locale, "teamMemberPropertyDefinitionDelete")}
+                          onClick={() => void removeDefinition(definition.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {members.length === 0 ? (
+                <tr>
+                  <td
+                    className="px-3 py-4 text-sm text-slate-600"
+                    colSpan={visibleDefinitions.length + 1}
+                  >
+                    {t(locale, "teamMemberPropertiesNoMembers")}
+                  </td>
+                </tr>
+              ) : (
+                members.map((member) => (
+                  <tr
+                    key={member.id}
+                    className={`border-b border-slate-100 ${member.is_active ? "bg-white" : "bg-slate-50 opacity-80"}`}
+                  >
+                    <td
+                      className={`sticky left-0 z-10 px-3 py-2 font-medium text-slate-800 ${
+                        member.is_active ? "bg-white" : "bg-slate-50"
+                      }`}
+                    >
+                      {teamMemberLabel(member)}
+                      {!member.is_active ? (
+                        <span className="ml-2 text-xs font-medium text-slate-500">
+                          {t(locale, "teamMemberPropertiesInactiveBadge")}
+                        </span>
+                      ) : null}
+                    </td>
+                    {visibleDefinitions.map((definition) => (
+                      <td key={definition.id} className="px-3 py-2 align-middle">
+                        <PropertyCellEditor
+                          definition={definition}
+                          value={cellValues[member.id]?.[definition.id] ?? null}
+                          onChange={(next) => updateCell(member.id, definition.id, next)}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {message ? <p className="mt-3 text-sm text-red-600">{message}</p> : null}
       {modal ? (
         <PropertyDefinitionModal
           initial={modal.draft}

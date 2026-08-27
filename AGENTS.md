@@ -42,7 +42,7 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 
 ## Team member properties
 
-Admins manage org-scoped property definitions (`GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`) and per-member values (`GET|PUT /api/v1/team-members/{id}/property-values`). Types: `number`, `date`, `select`, `multi_select`, `text`. `editable_by_team_member` gates self-service writes on `/profile`. Business logic in `team_member_property_definitions.py` and `team_member_property_values.py`; MCP mirrors REST with admin token.
+Admins manage org-scoped property definitions (`GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`) and per-member values (`GET|PUT /api/v1/team-members/{id}/property-values`). The admin matrix view is `GET /api/v1/team-member-property-values/matrix` (definitions + all members’ values) and powers Organization → Team → Properties table editing. Types: `number`, `date`, `select`, `multi_select`, `text`. `editable_by_team_member` gates self-service writes on `/profile`. Business logic in `team_member_property_definitions.py` and `team_member_property_values.py`; MCP mirrors REST with admin token (including `shift-planner://team-member-property-values/matrix`).
 
 **Nickname:** Optional `team_members.nickname` (max 64) is editable on `/profile` (`PATCH /api/v1/auth/me/team-member`) and admin `TeamMember` CRUD. Wishes matrix, final roster, planning validation/workload, and roster/matrix exports show **nickname** when set, otherwise **last name** (`team_member_planning_display_name` in `team_members.py`; `MatrixTeamMember.nickname` in API payloads). Staff directory and admin pickers keep full first + last name.
 

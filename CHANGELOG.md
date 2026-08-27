@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-08-27
+- **Team member properties table:** Organization → Team → Properties is a members × properties matrix with inline cell editing (auto-save), create/edit/delete property columns, and toggles for inactive members/definitions. New admin API `GET /api/v1/team-member-property-values/matrix` and MCP resource `shift-planner://team-member-property-values/matrix`.
+
 ## 2026-08-24
 - **Fix team member wishes read-only:** `/my-planning` mixed the planner-only editability flag into the wishes matrix `readOnly` check, so team members could never set day statuses, wishes, no-gos, day comments, month notes, or use the day interval bar regardless of the shift group's status. Editability now derives from `teamMemberWishesEditable` on the team-member portal and `plannerPlanningEditable` on `/planning` (regression from the plan versioning change).
 

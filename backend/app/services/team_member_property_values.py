@@ -7,13 +7,18 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import TeamMemberPropertyDefinition, TeamMemberPropertyValue
+from app.models import TeamMember, TeamMemberPropertyDefinition, TeamMemberPropertyValue
 from app.schemas import (
+    TeamMemberPropertyDefinitionRead,
+    TeamMemberPropertyMatrixCell,
+    TeamMemberPropertyMatrixMember,
     TeamMemberPropertyValueRead,
+    TeamMemberPropertyValuesMatrixRead,
     TeamMemberPropertyValuesReplace,
 )
 from app.services.audit import record_audit
 from app.services.tenancy import require_team_member_in_org
+from app.services.team_members import list_team_members
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _SELECT_TYPES = frozenset({"select", "multi_select"})
@@ -166,6 +171,52 @@ def property_value_maps_for_members(
     for row in rows:
         out.setdefault(row.team_member_id, {})[row.property_definition_id] = row.value
     return out
+
+
+def list_property_values_matrix(
+    db: Session,
+    *,
+    organization_id: int,
+    active_definitions_only: bool = True,
+    active_members_only: bool = False,
+) -> TeamMemberPropertyValuesMatrixRead:
+    definitions = list(
+        db.scalars(
+            select(TeamMemberPropertyDefinition)
+            .where(TeamMemberPropertyDefinition.organization_id == organization_id)
+            .order_by(TeamMemberPropertyDefinition.name)
+        )
+    )
+    if active_definitions_only:
+        definitions = [row for row in definitions if row.is_active]
+    members: list[TeamMember] = list_team_members(
+        db, organization_id=organization_id, active_only=active_members_only
+    )
+    value_maps = property_value_maps_for_members(
+        db,
+        organization_id=organization_id,
+        team_member_ids={member.id for member in members},
+    )
+    return TeamMemberPropertyValuesMatrixRead(
+        definitions=[TeamMemberPropertyDefinitionRead.model_validate(row) for row in definitions],
+        members=[
+            TeamMemberPropertyMatrixMember(
+                id=member.id,
+                first_name=member.first_name,
+                last_name=member.last_name,
+                nickname=member.nickname,
+                is_active=member.is_active,
+                values=[
+                    TeamMemberPropertyMatrixCell(
+                        property_definition_id=defn.id,
+                        value=value_maps.get(member.id, {}).get(defn.id),
+                    )
+                    for defn in definitions
+                ],
+            )
+            for member in members
+        ],
+    )
 
 
 def replace_team_member_property_values(
