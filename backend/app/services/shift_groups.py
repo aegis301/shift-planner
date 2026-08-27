@@ -19,9 +19,7 @@ from app.services.audit import record_audit
 def _stint_active_on(stint: TeamMemberShiftGroup, on_date: date) -> bool:
     if stint.start_date > on_date:
         return False
-    if stint.end_date is not None and stint.end_date < on_date:
-        return False
-    return True
+    return not (stint.end_date is not None and stint.end_date < on_date)
 
 
 def _stint_overlaps_range(

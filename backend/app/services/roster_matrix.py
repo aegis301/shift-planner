@@ -35,7 +35,6 @@ from app.services.planning_day_status_definitions import (
     list_planning_day_status_definitions,
 )
 from app.services.planning_period_rosters import (
-    assert_member_on_period_roster,
     list_period_roster_team_members,
     team_member_ids_for_period_shift_group,
 )

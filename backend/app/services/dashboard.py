@@ -39,12 +39,12 @@ from app.services.planning import (
     is_team_member_roster_visible,
     list_planning_periods,
 )
+from app.services.planning_period_rosters import team_member_ids_for_period_shift_group
 from app.services.roster_matrix import (
     ensure_roster_slots_for_period,
     list_roster_slot_assignments,
     list_roster_slots,
 )
-from app.services.planning_period_rosters import team_member_ids_for_period_shift_group
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     require_shift_group,

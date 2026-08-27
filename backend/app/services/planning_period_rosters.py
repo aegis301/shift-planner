@@ -13,11 +13,10 @@ from app.models import (
     TeamMemberPeriodNote,
 )
 from app.services.shift_groups import (
-    shift_template_ids_in_shift_group,
     require_shift_group,
+    shift_template_ids_in_shift_group,
     team_member_ids_in_shift_group_for_period,
 )
-
 
 
 def team_member_ids_for_period_shift_group(

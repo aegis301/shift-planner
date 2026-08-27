@@ -12,8 +12,9 @@ from app.services.member_planning_patterns import (
     list_patterns_for_members,
 )
 from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
-from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
 from app.services.planning_period_rosters import team_member_ids_for_period_shift_group
+from app.services.roster_matrix import list_roster_slot_assignments, list_roster_slots
+from app.services.shift_groups import require_shift_group, shift_template_ids_in_shift_group
 from app.services.team_member_property_values import property_value_maps_for_members
 from app.services.tenancy import require_planning_period_in_org
 from app.services.unavailable_overlap import evaluate_unavailable_overlap_for_slot

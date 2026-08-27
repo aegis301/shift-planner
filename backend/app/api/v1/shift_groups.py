@@ -8,7 +8,6 @@ from app.db.session import get_db
 from app.models import ShiftGroup, User
 from app.schemas import (
     ShiftGroupCreate,
-    ShiftGroupMembershipRead,
     ShiftGroupRead,
     ShiftGroupTeamMemberIdsPut,
     ShiftGroupTemplateIdsPut,
