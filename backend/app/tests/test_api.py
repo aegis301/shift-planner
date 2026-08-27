@@ -93,7 +93,7 @@ def team_member_client():
         sg = ShiftGroup(organization_id=1, code="tmportal_sg", name="Portal SG", display_order=0)
         db.add(sg)
         db.flush()
-        db.add(TeamMemberShiftGroup(team_member_id=linked_member.id, shift_group_id=sg.id))
+        db.add(TeamMemberShiftGroup(team_member_id=linked_member.id, shift_group_id=sg.id, start_date=date(2000, 1, 1)))
         db.commit()
 
     def override_get_db():
@@ -882,8 +882,8 @@ def test_roster_validation_no_go_conflict(client: TestClient):
             "required_count": 1,
         },
     )
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 5}).json()["id"]
-    request_date = date(2026, 5, 3).isoformat()
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    request_date = date(2026, 8, 3).isoformat()
     roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == request_date)
     assigned = client.put(
@@ -911,13 +911,13 @@ def test_matrix_cell_note_and_csv_export(client: TestClient):
             "shift_group_ids": [1],
         },
     ).json()["id"]
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
 
     response = client.put(
         f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
         json={
             "team_member_id": team_member_id,
-            "cell_date": "2026-07-11",
+            "cell_date": "2026-08-11",
             "status": "urlaub",
             "comment": "Urlaub aus E-Mail",
         },
@@ -933,19 +933,19 @@ def test_matrix_cell_note_and_csv_export(client: TestClient):
         f"/api/v1/matrix/{period_id}/notes?shift_group_id=1",
         json={
             "team_member_id": team_member_id,
-            "summary": "Urlaub 11.-19.07.",
-            "planning_preferences": "Hallo Christian, im Juli Urlaub vom 11.-19.07.",
+            "summary": "Urlaub 11.-19.08.",
+            "planning_preferences": "Hallo Christian, im August Urlaub vom 11.-19.08.",
             "sync_planning_preferences": True,
         },
     )
     assert note.status_code == 200
-    assert note.json()["summary"] == "Urlaub 11.-19.07."
+    assert note.json()["summary"] == "Urlaub 11.-19.08."
     matrix_after = client.get(f"/api/v1/matrix/{period_id}").json()
-    assert matrix_after["team_members"][0]["planning_preferences"] == "Hallo Christian, im Juli Urlaub vom 11.-19.07."
+    assert matrix_after["team_members"][0]["planning_preferences"] == "Hallo Christian, im August Urlaub vom 11.-19.08."
 
     csv_response = client.get(f"/api/v1/exports/matrix/{period_id}.csv")
     assert csv_response.status_code == 200
-    assert "2026-07-11" in csv_response.text
+    assert "2026-08-11" in csv_response.text
     assert "urlaub - Urlaub aus E-Mail" in csv_response.text
 
 
@@ -1023,12 +1023,12 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
             "required_count": 1,
         },
     )
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
 
     roster_matrix = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     assert roster_matrix["shift_templates"][0]["code"] == "T"
     assert len(roster_matrix["slots"]) == 31
-    slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == "2026-07-11")
+    slot = next(slot for slot in roster_matrix["slots"] if slot["slot_date"] == "2026-08-11")
 
     assignment_response = client.put(
         "/api/v1/roster-matrix/assignments",
@@ -1039,14 +1039,14 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
 
     client.put(
         f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
-        json={"team_member_id": team_member_id, "cell_date": "2026-07-11", "status": "urlaub"},
+        json={"team_member_id": team_member_id, "cell_date": "2026-08-11", "status": "urlaub"},
     )
     warnings = client.get(f"/api/v1/validation/{period_id}").json()
     assert warnings[0]["code"] == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"
 
     csv_response = client.get(f"/api/v1/exports/roster-matrix/{period_id}.csv")
     assert csv_response.status_code == 200
-    assert "2026-07-11" in csv_response.text
+    assert "2026-08-11" in csv_response.text
     assert "Tagdienst" in csv_response.text
     assert "TeamMember" in csv_response.text
     assert "final geplant" not in csv_response.text
@@ -1464,13 +1464,13 @@ def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClien
             "constraints": [{"type": "no_cross_day_into_unavailable_day", "severity": "warning"}],
         },
     )
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
     client.put(
         f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
-        json={"team_member_id": member_id, "cell_date": "2026-07-02", "status": "urlaub"},
+        json={"team_member_id": member_id, "cell_date": "2026-08-02", "status": "urlaub"},
     )
     roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
-    slot = next(row for row in roster["slots"] if row["slot_date"] == "2026-07-01" and row["shift_template_id"] == template["id"])
+    slot = next(row for row in roster["slots"] if row["slot_date"] == "2026-08-01" and row["shift_template_id"] == template["id"])
     assigned = client.put(
         "/api/v1/roster-matrix/assignments",
         json={"roster_slot_id": slot["id"], "team_member_id": member_id},
@@ -1507,14 +1507,14 @@ def test_global_unavailable_overlap_blocks_overnight_without_template_rule(clien
             "required_count": 1,
         },
     )
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
     client.put(
         f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
-        json={"team_member_id": member_id, "cell_date": "2026-07-02", "status": "urlaub"},
+        json={"team_member_id": member_id, "cell_date": "2026-08-02", "status": "urlaub"},
     )
     roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
     slot = next(
-        row for row in roster["slots"] if row["slot_date"] == "2026-07-01" and row["shift_template_id"] == template["id"]
+        row for row in roster["slots"] if row["slot_date"] == "2026-08-01" and row["shift_template_id"] == template["id"]
     )
     assigned = client.put(
         "/api/v1/roster-matrix/assignments",
@@ -2145,7 +2145,7 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     gid = group["id"]
     client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": [member_in["id"]]})
     client.put(f"/api/v1/shift-groups/{gid}/shift-templates", json={"shift_template_ids": [template["id"]]})
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
     full = client.get(f"/api/v1/matrix/{period_id}").json()
     assert len(full["team_members"]) == 2
     assert len(full["shift_templates"]) == 1
@@ -2190,6 +2190,44 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
     assert override.status_code == 200
     warnings_after = client.get(f"/api/v1/validation/{period_id}").json()
     assert all(warning["code"] != "ROSTER_TEMPLATE_NO_GO_CONFLICT" for warning in warnings_after)
+
+
+def test_period_roster_survives_shift_group_removal(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Past", "last_name": "Planner", "email": "pastplanner@example.com", "employment_percentage": 100},
+    ).json()
+    group = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "PRG", "name": "Period Roster Group", "display_order": 0},
+    ).json()
+    gid = group["id"]
+    client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": [member["id"]]})
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    before = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
+    assert len(before["team_members"]) == 1
+    assert before["team_members"][0]["id"] == member["id"]
+    client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id={gid}",
+        json={
+            "cells": [
+                {
+                    "team_member_id": member["id"],
+                    "cell_date": "2026-08-10",
+                    "status": "frei",
+                }
+            ]
+        },
+    )
+    client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": []})
+    after = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
+    assert len(after["team_members"]) == 1
+    assert after["team_members"][0]["id"] == member["id"]
+    assert len(after["cells"]) == 1
+    new_period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    future = client.get(f"/api/v1/matrix/{new_period_id}?shift_group_id={gid}").json()
+    assert future["team_members"] == []
 
 
 def test_planning_period_status_transitions(client: TestClient):
@@ -2294,7 +2332,7 @@ def planner_client():
         )
         db.add(ingroup_member)
         db.flush()
-        db.add(TeamMemberShiftGroup(team_member_id=ingroup_member.id, shift_group_id=sg.id))
+        db.add(TeamMemberShiftGroup(team_member_id=ingroup_member.id, shift_group_id=sg.id, start_date=date(2000, 1, 1)))
         other = TeamMember(
             organization_id=1,
             first_name="Out",

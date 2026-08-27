@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -6,6 +8,7 @@ from app.db.session import get_db
 from app.models import ShiftGroup, User
 from app.schemas import (
     ShiftGroupCreate,
+    ShiftGroupMembershipRead,
     ShiftGroupRead,
     ShiftGroupTeamMemberIdsPut,
     ShiftGroupTemplateIdsPut,
@@ -13,6 +16,8 @@ from app.schemas import (
 )
 from app.services.authz import is_admin
 from app.services.shift_groups import (
+    _membership_read,
+    _stint_active_on,
     create_shift_group,
     delete_shift_group,
     list_shift_groups,
@@ -26,6 +31,15 @@ router = APIRouter(prefix="/shift-groups", tags=["shift-groups"])
 
 
 def _shift_group_read(group: ShiftGroup) -> ShiftGroupRead:
+    today = date.today()
+    memberships = [_membership_read(link) for link in group.team_member_links]
+    active_member_ids = sorted(
+        {
+            link.team_member_id
+            for link in group.team_member_links
+            if _stint_active_on(link, today)
+        }
+    )
     return ShiftGroupRead(
         id=group.id,
         code=group.code,
@@ -33,7 +47,8 @@ def _shift_group_read(group: ShiftGroup) -> ShiftGroupRead:
         display_order=group.display_order,
         is_active=group.is_active,
         created_at=group.created_at,
-        team_member_ids=sorted({link.team_member_id for link in group.team_member_links}),
+        team_member_ids=active_member_ids,
+        team_member_memberships=sorted(memberships, key=lambda row: (row.team_member_id, row.start_date)),
         shift_template_ids=sorted({link.shift_template_id for link in group.template_links}),
     )
 

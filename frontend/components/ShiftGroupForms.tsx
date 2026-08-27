@@ -226,6 +226,7 @@ function ShiftGroupEditorModal({
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <div className="rounded-lg border border-slate-200 p-3">
             <p className="text-sm font-semibold text-ink">{t(locale, "shiftGroupTeamMembers")}</p>
+            <p className="mt-1 text-xs text-slate-600">{t(locale, "shiftGroupMembershipHelp")}</p>
             <div className="mt-2">
               <ShiftGroupTeamMemberPicker teamMemberOptions={teamMemberOptions} memberIds={memberIds} setMemberIds={setMemberIds} locale={locale} />
             </div>

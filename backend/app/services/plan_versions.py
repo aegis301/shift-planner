@@ -16,6 +16,7 @@ from app.models import (
     PlanVersionRosterAssignment,
     PlanVersionRosterSlot,
     PlanVersionShiftIntent,
+    PlanVersionTeamMember,
     TeamMember,
     TeamMemberPeriodNote,
 )
@@ -43,8 +44,8 @@ from app.services.planning import (
     _sync_period_aggregate_status,
     get_shift_group_planning_status,
 )
+from app.services.planning_period_rosters import list_period_roster_team_members
 from app.services.shift_groups import (
-    active_team_member_ids_in_shift_group,
     require_shift_group,
     shift_template_ids_in_shift_group,
 )
@@ -424,6 +425,40 @@ def snapshot_plan_version(
             )
         )
 
+    roster_members = list_period_roster_team_members(
+        db,
+        planning_period_id=planning_period_id,
+        organization_id=organization_id,
+        shift_group_id=shift_group_id,
+    )
+    roster_member_ids = {member.id for member in roster_members}
+    data_member_ids = {
+        cell.team_member_id for cell in cells
+    } | {intent.team_member_id for intent in intents} | {note.team_member_id for note in notes} | {
+        assignment.team_member_id for assignment in assignments
+    }
+    snapshot_member_ids = roster_member_ids | data_member_ids
+    member_rows = list(
+        db.scalars(select(TeamMember).where(TeamMember.id.in_(snapshot_member_ids))).all()
+    ) if snapshot_member_ids else []
+    member_by_id = {member.id: member for member in member_rows}
+    for team_member_id in sorted(snapshot_member_ids):
+        member = member_by_id.get(team_member_id)
+        if member is None:
+            continue
+        db.add(
+            PlanVersionTeamMember(
+                plan_version_id=version.id,
+                team_member_id=member.id,
+                first_name=member.first_name,
+                last_name=member.last_name,
+                nickname=member.nickname,
+                email=member.email,
+                employment_percentage=member.employment_percentage,
+                planning_preferences=member.planning_preferences,
+            )
+        )
+
     record_audit(
         db,
         actor=actor,
@@ -559,32 +594,25 @@ def _matrix_days(period: PlanningPeriod) -> list[MatrixDay]:
     ]
 
 
-def _team_members_for_group(
-    db: Session,
-    *,
-    organization_id: int,
-    shift_group_id: int,
-) -> list[MatrixTeamMember]:
-    allowed_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
-    members = list(
+def _team_members_for_version(db: Session, *, version_id: int) -> list[MatrixTeamMember]:
+    rows = list(
         db.scalars(
-            select(TeamMember)
-            .where(TeamMember.organization_id == organization_id, TeamMember.is_active.is_(True))
-            .order_by(TeamMember.last_name, TeamMember.first_name)
+            select(PlanVersionTeamMember)
+            .where(PlanVersionTeamMember.plan_version_id == version_id)
+            .order_by(PlanVersionTeamMember.last_name, PlanVersionTeamMember.first_name)
         )
     )
     return [
         MatrixTeamMember(
-            id=member.id,
-            first_name=member.first_name,
-            last_name=member.last_name,
-            nickname=member.nickname,
-            email=member.email,
-            employment_percentage=member.employment_percentage,
-            planning_preferences=member.planning_preferences,
+            id=row.team_member_id,
+            first_name=row.first_name,
+            last_name=row.last_name,
+            nickname=row.nickname,
+            email=row.email,
+            employment_percentage=row.employment_percentage,
+            planning_preferences=row.planning_preferences,
         )
-        for member in members
-        if member.id in allowed_ids
+        for row in rows
     ]
 
 
@@ -632,7 +660,7 @@ def get_plan_version_matrix(
     return PlanningMatrixRead(
         planning_period=PlanningPeriodRead.model_validate(period),
         shift_group_planning_status=ShiftGroupPlanningStatusRead.model_validate(status_row),
-        team_members=_team_members_for_group(db, organization_id=organization_id, shift_group_id=shift_group_id),
+        team_members=_team_members_for_version(db, version_id=version.id),
         days=_matrix_days(period),
         cells=[
             PlanningCellRead(
@@ -777,7 +805,7 @@ def get_plan_version_roster(
     return RosterMatrixRead(
         planning_period=PlanningPeriodRead.model_validate(period),
         shift_group_planning_status=ShiftGroupPlanningStatusRead.model_validate(status_row),
-        team_members=_team_members_for_group(db, organization_id=organization_id, shift_group_id=shift_group_id),
+        team_members=_team_members_for_version(db, version_id=version.id),
         days=_matrix_days(period),
         shift_templates=[ShiftTemplateRead.model_validate(template) for template in shift_templates],
         slots=slots_out,

@@ -374,6 +374,16 @@ def _normalize_optional_nickname(value: object) -> object:
     return text if text else None
 
 
+class ShiftGroupMembershipRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_member_id: int
+    shift_group_id: int
+    start_date: date_type
+    end_date: date_type | None = None
+
+
 class TeamMemberCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
@@ -430,6 +440,7 @@ class TeamMemberRead(TeamMemberCreate):
     id: int
     is_active: bool
     created_at: datetime
+    shift_group_memberships: list[ShiftGroupMembershipRead] = Field(default_factory=list)
 
 
 class ShiftGroupCreate(BaseModel):
@@ -456,6 +467,7 @@ class ShiftGroupRead(BaseModel):
     is_active: bool
     created_at: datetime
     team_member_ids: list[int] = Field(default_factory=list)
+    team_member_memberships: list[ShiftGroupMembershipRead] = Field(default_factory=list)
     shift_template_ids: list[int] = Field(default_factory=list)
 
 

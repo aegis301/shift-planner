@@ -96,8 +96,8 @@ def ics_client():
         sg = ShiftGroup(organization_id=1, code="icu", name="ICU", display_order=0)
         db.add(sg)
         db.flush()
-        db.add(TeamMemberShiftGroup(team_member_id=member.id, shift_group_id=sg.id))
-        db.add(TeamMemberShiftGroup(team_member_id=other_member.id, shift_group_id=sg.id))
+        db.add(TeamMemberShiftGroup(team_member_id=member.id, shift_group_id=sg.id, start_date=date(2000, 1, 1)))
+        db.add(TeamMemberShiftGroup(team_member_id=other_member.id, shift_group_id=sg.id, start_date=date(2000, 1, 1)))
         template = ShiftTemplate(
             organization_id=1,
             code="RD",

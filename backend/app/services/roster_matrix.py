@@ -34,9 +34,14 @@ from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
     list_planning_day_status_definitions,
 )
+from app.services.planning_period_rosters import (
+    assert_member_on_period_roster,
+    list_period_roster_team_members,
+    team_member_ids_for_period_shift_group,
+)
 from app.services.shift_groups import (
-    active_team_member_ids_in_shift_group,
     require_shift_group,
+    shift_group_ids_for_template,
     shift_template_ids_in_shift_group,
     team_member_may_cover_template,
 )
@@ -399,9 +404,14 @@ def get_roster_matrix(
     shift_intents = [PlanningShiftIntentRead.model_validate(row) for row in list_planning_shift_intents(db, planning_period_id=planning_period_id)]
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
-        allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
+        team_members = list_period_roster_team_members(
+            db,
+            planning_period_id=planning_period_id,
+            organization_id=organization_id,
+            shift_group_id=shift_group_id,
+        )
+        allowed_team_member_ids = {m.id for m in team_members}
         template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
-        team_members = [m for m in team_members if m.id in allowed_team_member_ids]
         slots = [slot for slot in slots if slot.shift_template_id is not None and slot.shift_template_id in template_ids]
         visible_template_ids = {slot.shift_template_id for slot in slots}
         shift_templates = [template for template in shift_templates if template.id in visible_template_ids]
@@ -510,6 +520,17 @@ def upsert_roster_slot_assignment(
     require_planning_period_in_org(db, slot.planning_period_id, organization_id)
     if not team_member_may_cover_template(db, team_member_id=payload.team_member_id, shift_template_id=slot.shift_template_id):
         raise ValueError("Team member is not a member of a shift group that covers this template")
+    group_ids = shift_group_ids_for_template(db, slot.shift_template_id) if slot.shift_template_id is not None else set()
+    if group_ids:
+        on_roster = any(
+            payload.team_member_id
+            in team_member_ids_for_period_shift_group(
+                db, planning_period_id=slot.planning_period_id, shift_group_id=group_id
+            )
+            for group_id in group_ids
+        )
+        if not on_roster:
+            raise ValueError("Team member is not on the roster for this planning period and shift group")
     if not payload.manual_override and _team_member_has_template_no_go(
         db,
         planning_period_id=slot.planning_period_id,

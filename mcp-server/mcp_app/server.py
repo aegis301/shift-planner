@@ -77,6 +77,8 @@ from app.services.roster_matrix import (
     upsert_roster_slot_assignment,
 )
 from app.services.shift_groups import (
+    _membership_read,
+    _stint_active_on,
     create_shift_group,
     list_shift_groups,
     replace_group_team_members,
@@ -183,12 +185,22 @@ def dashboard_admin_resource() -> dict[str, Any]:
 
 @mcp.resource("shift-planner://shift-groups")
 def shift_groups_resource() -> list[dict[str, Any]]:
-    """List shift groups with team member and shift template membership ids (`team_member_ids` in payload)."""
+    """List shift groups with active team member ids and dated membership stints."""
+    today = date.today()
     with db_session() as db:
         return [
             {
                 **serialize_model(group),
-                "team_member_ids": sorted({link.team_member_id for link in group.team_member_links}),
+                "team_member_ids": sorted(
+                    {
+                        link.team_member_id
+                        for link in group.team_member_links
+                        if _stint_active_on(link, today)
+                    }
+                ),
+                "team_member_memberships": [
+                    _membership_read(link).model_dump(mode="json") for link in group.team_member_links
+                ],
                 "shift_template_ids": sorted({link.shift_template_id for link in group.template_links}),
             }
             for group in list_shift_groups(db, organization_id=mcp_organization_id())

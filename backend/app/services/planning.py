@@ -319,6 +319,11 @@ def create_planning_period(
         ensure_shift_group_statuses_for_period(
             db, planning_period_id=existing.id, organization_id=organization_id
         )
+        from app.services.planning_period_rosters import seed_period_shift_group_rosters
+
+        seed_period_shift_group_rosters(
+            db, planning_period_id=existing.id, organization_id=organization_id, source="seeded"
+        )
         db.commit()
         return existing
     period = PlanningPeriod(
@@ -329,6 +334,11 @@ def create_planning_period(
     db.add(period)
     db.flush()
     ensure_shift_group_statuses_for_period(db, planning_period_id=period.id, organization_id=organization_id)
+    from app.services.planning_period_rosters import seed_period_shift_group_rosters
+
+    seed_period_shift_group_rosters(
+        db, planning_period_id=period.id, organization_id=organization_id, source="seeded"
+    )
     record_audit(db, actor=actor, source=source, action="create", entity_type="planning_period", entity_id=period.id)
     db.commit()
     db.refresh(period)

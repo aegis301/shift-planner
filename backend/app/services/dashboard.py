@@ -44,6 +44,7 @@ from app.services.roster_matrix import (
     list_roster_slot_assignments,
     list_roster_slots,
 )
+from app.services.planning_period_rosters import team_member_ids_for_period_shift_group
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     require_shift_group,
@@ -85,12 +86,20 @@ def _scope_template_and_member_ids(
     organization_id: int,
     shift_group_id: int | None,
     shift_group_ids: set[int] | None,
+    planning_period_id: int | None = None,
 ) -> tuple[set[int] | None, set[int] | None]:
+    def member_ids_for_group(group_id: int) -> set[int]:
+        if planning_period_id is not None:
+            return team_member_ids_for_period_shift_group(
+                db, planning_period_id=planning_period_id, shift_group_id=group_id
+            )
+        return active_team_member_ids_in_shift_group(db, group_id)
+
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
         return (
             shift_template_ids_in_shift_group(db, shift_group_id),
-            active_team_member_ids_in_shift_group(db, shift_group_id),
+            member_ids_for_group(shift_group_id),
         )
     if shift_group_ids:
         template_ids: set[int] = set()
@@ -98,7 +107,7 @@ def _scope_template_and_member_ids(
         for group_id in shift_group_ids:
             require_shift_group(db, group_id, organization_id)
             template_ids |= shift_template_ids_in_shift_group(db, group_id)
-            member_ids |= active_team_member_ids_in_shift_group(db, group_id)
+            member_ids |= member_ids_for_group(group_id)
         return template_ids, member_ids
     return None, None
 
@@ -182,6 +191,7 @@ def _period_card(
         organization_id=organization_id,
         shift_group_id=shift_group_id,
         shift_group_ids=shift_group_ids,
+        planning_period_id=period.id,
     )
     ensure_roster_slots_for_period(db, period.id, organization_id)
     slot_count, assigned_count = _period_fill(
@@ -300,6 +310,7 @@ def _roster_slices_for_period(
         organization_id=organization_id,
         shift_group_id=shift_group_id,
         shift_group_ids=shift_group_ids,
+        planning_period_id=period_id,
     )
     ensure_roster_slots_for_period(db, period_id, organization_id)
     slot_ids = _scoped_slot_ids(db, planning_period_id=period_id, template_ids=template_ids)
@@ -544,7 +555,11 @@ def get_planner_dashboard(
         if current is not None
         else []
     )
-    if shift_group_id is not None:
+    if shift_group_id is not None and current is not None:
+        allowed = team_member_ids_for_period_shift_group(
+            db, planning_period_id=current.id, shift_group_id=shift_group_id
+        )
+    elif shift_group_id is not None:
         allowed = active_team_member_ids_in_shift_group(db, shift_group_id)
     elif scoped_member_ids is not None:
         allowed = scoped_member_ids
