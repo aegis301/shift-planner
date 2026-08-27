@@ -36,8 +36,12 @@ from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
     list_planning_day_status_definitions,
 )
+from app.services.planning_period_rosters import (
+    assert_member_on_period_roster,
+    list_period_roster_team_members,
+    team_member_ids_for_period_shift_group,
+)
 from app.services.shift_groups import (
-    active_team_member_ids_in_shift_group,
     list_shift_groups,
     list_shift_template_ids_with_any_group,
     require_shift_group,
@@ -67,10 +71,15 @@ def list_planning_cells(
     return list(db.scalars(stmt))
 
 
-def _assert_member_in_shift_group(db: Session, *, team_member_id: int, shift_group_id: int) -> None:
-    allowed = active_team_member_ids_in_shift_group(db, shift_group_id)
-    if team_member_id not in allowed:
-        raise ValueError("Team member is not a member of this shift group")
+def _assert_member_in_shift_group(
+    db: Session, *, team_member_id: int, shift_group_id: int, planning_period_id: int
+) -> None:
+    assert_member_on_period_roster(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        team_member_id=team_member_id,
+    )
 
 
 def list_planning_shift_intents(db: Session, *, planning_period_id: int) -> list[PlanningShiftIntent]:
@@ -100,8 +109,13 @@ def get_planning_matrix(
     )
     if shift_group_id is not None:
         require_shift_group(db, shift_group_id, organization_id)
-        allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
-        team_members = [m for m in team_members if m.id in allowed_team_member_ids]
+        team_members = list_period_roster_team_members(
+            db,
+            planning_period_id=planning_period_id,
+            organization_id=organization_id,
+            shift_group_id=shift_group_id,
+        )
+        allowed_team_member_ids = {m.id for m in team_members}
         group_template_ids = shift_template_ids_in_shift_group(db, shift_group_id)
     days_in_month = calendar.monthrange(period.year, period.month)[1]
     days = [
@@ -219,7 +233,12 @@ def upsert_planning_cell(
 ) -> PlanningCell:
     period = _require_period_org(db, planning_period_id, organization_id)
     require_shift_group(db, shift_group_id, organization_id)
-    _assert_member_in_shift_group(db, team_member_id=payload.team_member_id, shift_group_id=shift_group_id)
+    _assert_member_in_shift_group(
+        db,
+        team_member_id=payload.team_member_id,
+        shift_group_id=shift_group_id,
+        planning_period_id=planning_period_id,
+    )
     normalized_status = payload.status.strip().lower()
     assert_valid_planning_cell_status(db, organization_id=organization_id, status=normalized_status)
     if not _cell_date_in_period(period, payload.cell_date):
@@ -285,7 +304,12 @@ def bulk_upsert_planning_cells(
         assert_valid_planning_cell_status(db, organization_id=organization_id, status=cell_payload.status)
         if not _cell_date_in_period(period, cell_payload.cell_date):
             raise ValueError("Cell date is outside the planning period month")
-        _assert_member_in_shift_group(db, team_member_id=cell_payload.team_member_id, shift_group_id=shift_group_id)
+        _assert_member_in_shift_group(
+            db,
+            team_member_id=cell_payload.team_member_id,
+            shift_group_id=shift_group_id,
+            planning_period_id=planning_period_id,
+        )
     cells = [
         _upsert_planning_cell_no_commit(
             db,
@@ -398,7 +422,9 @@ def list_team_member_period_notes(
     notes = list(db.scalars(stmt.order_by(TeamMemberPeriodNote.team_member_id)))
     if shift_group_id is None:
         return notes
-    allowed_team_member_ids = active_team_member_ids_in_shift_group(db, shift_group_id)
+    allowed_team_member_ids = team_member_ids_for_period_shift_group(
+        db, planning_period_id=planning_period_id, shift_group_id=shift_group_id
+    )
     return [note for note in notes if note.team_member_id in allowed_team_member_ids]
 
 
@@ -426,7 +452,12 @@ def save_team_member_period_note(
 ) -> TeamMemberPeriodNote:
     period = _require_period_org(db, planning_period_id, organization_id)
     require_shift_group(db, shift_group_id, organization_id)
-    _assert_member_in_shift_group(db, team_member_id=payload.team_member_id, shift_group_id=shift_group_id)
+    _assert_member_in_shift_group(
+        db,
+        team_member_id=payload.team_member_id,
+        shift_group_id=shift_group_id,
+        planning_period_id=planning_period_id,
+    )
     note = get_team_member_period_note(
         db,
         planning_period_id=planning_period_id,
@@ -484,9 +515,11 @@ def bulk_upsert_planning_shift_intents(
         if not _cell_date_in_period(period, item.cell_date):
             raise ValueError("Cell date is outside the planning period month")
         require_shift_group(db, item.shift_group_id, organization_id)
-        allowed_team_members = active_team_member_ids_in_shift_group(db, item.shift_group_id)
+        allowed_team_members = team_member_ids_for_period_shift_group(
+            db, planning_period_id=planning_period_id, shift_group_id=item.shift_group_id
+        )
         if item.team_member_id not in allowed_team_members:
-            raise ValueError("Team member is not a member of this shift group")
+            raise ValueError("Team member is not on the roster for this planning period and shift group")
         allowed_templates = shift_template_ids_in_shift_group(db, item.shift_group_id)
         if item.shift_template_id not in allowed_templates:
             raise ValueError("Shift template is not linked to this shift group")

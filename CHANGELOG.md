@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-08-27
+- **Period roster independence:** Shift-group membership is dated (`start_date`, optional `end_date`); removal end-dates the stint. Each planning month seeds a per-shift-group roster (`planning_period_shift_group_members`) so past months keep their columns when membership changes. Plan versions snapshot team member profiles (`plan_version_team_members`). Alembic `202608270001`.
+
 ## 2026-08-24
 - **Fix team member wishes read-only:** `/my-planning` mixed the planner-only editability flag into the wishes matrix `readOnly` check, so team members could never set day statuses, wishes, no-gos, day comments, month notes, or use the day interval bar regardless of the shift group's status. Editability now derives from `teamMemberWishesEditable` on the team-member portal and `plannerPlanningEditable` on `/planning` (regression from the plan versioning change).
 

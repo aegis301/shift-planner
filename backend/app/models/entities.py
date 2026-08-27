@@ -81,14 +81,38 @@ class ShiftGroup(Base):
 
 class TeamMemberShiftGroup(Base):
     __tablename__ = "team_member_shift_groups"
-    __table_args__ = (UniqueConstraint("team_member_id", "shift_group_id", name="uq_team_member_shift_group"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"))
-    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"), index=True)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     team_member: Mapped["TeamMember"] = relationship(back_populates="shift_group_links")
     shift_group: Mapped["ShiftGroup"] = relationship(back_populates="team_member_links")
+
+
+class PlanningPeriodShiftGroupMember(Base):
+    __tablename__ = "planning_period_shift_group_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "planning_period_id",
+            "shift_group_id",
+            "team_member_id",
+            name="uq_planning_period_shift_group_member",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"))
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"))
+    source: Mapped[str] = mapped_column(String(50), default="seeded")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    planning_period: Mapped["PlanningPeriod"] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
+    team_member: Mapped["TeamMember"] = relationship()
 
 
 class ShiftGroupShiftTemplate(Base):
@@ -466,6 +490,23 @@ class PlanVersionMemberNote(Base):
     team_member_id: Mapped[int] = mapped_column(Integer)
     summary: Mapped[str | None] = mapped_column(Text)
     wishes_response_received: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PlanVersionTeamMember(Base):
+    __tablename__ = "plan_version_team_members"
+    __table_args__ = (
+        UniqueConstraint("plan_version_id", "team_member_id", name="uq_plan_version_team_member"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_version_id: Mapped[int] = mapped_column(ForeignKey("planning_plan_versions.id", ondelete="CASCADE"))
+    team_member_id: Mapped[int] = mapped_column(Integer)
+    first_name: Mapped[str] = mapped_column(String(255))
+    last_name: Mapped[str] = mapped_column(String(255))
+    nickname: Mapped[str | None] = mapped_column(String(64))
+    email: Mapped[str | None] = mapped_column(String(255))
+    employment_percentage: Mapped[int | None] = mapped_column(Integer)
+    planning_preferences: Mapped[str | None] = mapped_column(Text)
 
 
 class RuleConfig(Base):

@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from datetime import date
+
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
@@ -13,7 +15,11 @@ from app.schemas import TeamMemberCreate, TeamMemberRead, TeamMemberSelfUpdate, 
 from app.services.audit import record_audit
 from app.services.authz import roles_allowed_for_team_member_user_link
 from app.services.org_limits import assert_org_allows_team_member_user_link
-from app.services.shift_groups import replace_team_member_shift_groups
+from app.services.shift_groups import (
+    _membership_read,
+    _stint_active_on,
+    replace_team_member_shift_groups,
+)
 from app.services.tenancy import get_organization
 
 _MISSING = object()
@@ -53,7 +59,11 @@ def list_team_members_for_planner(db: Session, user: User, *, active_only: bool 
         .options(joinedload(TeamMember.shift_group_links))
         .where(TeamMember.organization_id == user.organization_id)
         .join(TeamMemberShiftGroup)
-        .where(TeamMemberShiftGroup.shift_group_id.in_(gids))
+        .where(
+            TeamMemberShiftGroup.shift_group_id.in_(gids),
+            TeamMemberShiftGroup.start_date <= date.today(),
+            or_(TeamMemberShiftGroup.end_date.is_(None), TeamMemberShiftGroup.end_date >= date.today()),
+        )
         .distinct()
         .order_by(TeamMember.last_name, TeamMember.first_name)
     )
@@ -63,7 +73,10 @@ def list_team_members_for_planner(db: Session, user: User, *, active_only: bool 
 
 
 def team_member_to_read(member: TeamMember) -> TeamMemberRead:
-    link_ids = sorted({link.shift_group_id for link in member.shift_group_links})
+    today = date.today()
+    active_links = [link for link in member.shift_group_links if _stint_active_on(link, today)]
+    link_ids = sorted({link.shift_group_id for link in active_links})
+    memberships = [_membership_read(link) for link in sorted(member.shift_group_links, key=lambda row: (row.shift_group_id, row.start_date))]
     return TeamMemberRead(
         id=member.id,
         first_name=member.first_name,
@@ -74,6 +87,7 @@ def team_member_to_read(member: TeamMember) -> TeamMemberRead:
         notes=member.notes,
         planning_preferences=member.planning_preferences,
         shift_group_ids=link_ids,
+        shift_group_memberships=memberships,
         user_id=member.user_id,
         is_active=member.is_active,
         created_at=member.created_at,

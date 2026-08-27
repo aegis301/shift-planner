@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ShiftGroup, TeamMember, TeamMemberShiftGroup, User, UserShiftGroup
+from app.models import ShiftGroup, TeamMember, User, UserShiftGroup
 
 ROLE_ADMIN = "admin"
 ROLE_PLANNER = "planner"
@@ -43,9 +43,9 @@ def get_linked_team_member(db: Session, user: User) -> TeamMember | None:
 
 
 def team_member_shift_group_ids(db: Session, team_member_id: int) -> set[int]:
-    return set(
-        db.scalars(select(TeamMemberShiftGroup.shift_group_id).where(TeamMemberShiftGroup.team_member_id == team_member_id))
-    )
+    from app.services.shift_groups import active_shift_group_ids_for_team_member
+
+    return active_shift_group_ids_for_team_member(db, team_member_id)
 
 
 def list_shift_groups_for_team_member(db: Session, team_member_id: int) -> list[ShiftGroup]:

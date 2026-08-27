@@ -170,7 +170,7 @@ def test_member_upcoming_shifts_all_future(dash_db):
     )
     db.add(member)
     db.flush()
-    db.add(TeamMemberShiftGroup(team_member_id=member.id, shift_group_id=sg.id))
+    db.add(TeamMemberShiftGroup(team_member_id=member.id, shift_group_id=sg.id, start_date=date(2000, 1, 1)))
     template = ShiftTemplate(
         organization_id=1,
         code="RD",

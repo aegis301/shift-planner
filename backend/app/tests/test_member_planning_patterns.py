@@ -50,7 +50,7 @@ def pattern_db():
     db.add(TeamMember(id=1, organization_id=1, first_name="A", last_name="B", email="a@example.com", employment_percentage=100))
     db.add(ShiftGroup(organization_id=1, code="sg", name="SG", display_order=0))
     db.flush()
-    db.add(TeamMemberShiftGroup(team_member_id=1, shift_group_id=1))
+    db.add(TeamMemberShiftGroup(team_member_id=1, shift_group_id=1, start_date=date(2000, 1, 1)))
     db.commit()
     try:
         yield db

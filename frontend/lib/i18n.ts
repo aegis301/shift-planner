@@ -478,6 +478,8 @@ export const dictionaries = {
     createShiftGroup: "Dienstgruppe anlegen",
     editShiftGroup: "Dienstgruppe bearbeiten",
     shiftGroupTeamMembers: "Teammitglieder",
+    shiftGroupMembershipHelp:
+      "Entfernte Teammitglieder bleiben in bereits angelegten Planungsmonaten sichtbar. Die Mitgliedschaft endet ab heute für neue Monate.",
     shiftGroupTemplates: "Dienstvorlagen",
     deleteShiftGroup: "Dienstgruppe löschen",
     teamMemberShiftGroups: "Dienstgruppen",
@@ -1250,6 +1252,8 @@ export const dictionaries = {
     createShiftGroup: "Create shift group",
     editShiftGroup: "Edit shift group",
     shiftGroupTeamMembers: "Team members",
+    shiftGroupMembershipHelp:
+      "Removed team members stay visible in planning months that were already created. Membership ends today for newly created months.",
     shiftGroupTemplates: "Shift templates",
     deleteShiftGroup: "Delete shift group",
     teamMemberShiftGroups: "Shift groups",
