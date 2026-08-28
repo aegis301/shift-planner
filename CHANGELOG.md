@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-08-28
+- **Team member property values table:** Admins can view active team members against active property definitions in a spreadsheet-style table, edit typed values inline with automatic save feedback, include inactive members, and create properties from the same view. Added the admin-only `GET /api/v1/team-member-property-matrix` endpoint and matching MCP resource.
 - **Membership dates in the UI:** Shift-group editor now lists each membership period with start/end date inputs, an active/planned/ended badge, and supports several periods per person for rotations; group cards show current and upcoming periods. New `PUT /api/v1/shift-groups/{id}/memberships` (and MCP `set_shift_group_memberships_tool`) accept explicit dates; `TeamMemberRead` exposes `shift_group_memberships`. The team member modal shows the active period per group.
 
 ## 2026-08-27

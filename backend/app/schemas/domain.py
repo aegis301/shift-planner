@@ -864,6 +864,26 @@ class TeamMemberPropertyDefinitionRead(BaseModel):
     updated_at: datetime
 
 
+class TeamMemberPropertyMatrixMember(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    nickname: str | None = None
+    is_active: bool
+
+
+class TeamMemberPropertyMatrixValue(BaseModel):
+    team_member_id: int
+    property_definition_id: int
+    value: Any
+
+
+class TeamMemberPropertyMatrixRead(BaseModel):
+    definitions: list[TeamMemberPropertyDefinitionRead]
+    members: list[TeamMemberPropertyMatrixMember]
+    values: list[TeamMemberPropertyMatrixValue]
+
+
 class PlanningDayStatusDefinitionCreate(BaseModel):
     code: str = Field(min_length=1, max_length=32)
     label: str = Field(min_length=1, max_length=64)

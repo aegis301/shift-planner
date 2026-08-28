@@ -421,6 +421,20 @@ export const dictionaries = {
     teamMemberPropertyDefinitionEditableByMember: "Teammitglied darf Wert selbst bearbeiten",
     teamMemberPropertyDefinitionEditableByMemberShort: "selbst bearbeitbar",
     teamMemberPropertyDefinitionActive: "Aktiv",
+    teamMemberPropertyMatrixNav: "Wertetabelle",
+    teamMemberPropertyDefinitionsNav: "Felddefinitionen",
+    teamMemberPropertyMatrixTitle: "Eigenschaften der Teammitglieder",
+    teamMemberPropertyMatrixHelp:
+      "Bearbeiten Sie Eigenschaftswerte direkt in der Tabelle. Änderungen werden automatisch gespeichert.",
+    teamMemberPropertyMatrixMemberColumn: "Teammitglied",
+    teamMemberPropertyMatrixEmptyDefinitions:
+      "Erstellen Sie zuerst eine Eigenschaft, um die Wertetabelle zu verwenden.",
+    teamMemberPropertyMatrixEmptyMembers: "Keine Teammitglieder für diese Ansicht vorhanden.",
+    teamMemberPropertyMatrixShowInactiveMembers: "Inaktive Teammitglieder anzeigen",
+    teamMemberPropertyMatrixSaving: "Wird gespeichert …",
+    teamMemberPropertyMatrixSaved: "Gespeichert",
+    teamMemberPropertyMatrixSaveError: "Speichern fehlgeschlagen",
+    teamMemberPropertyMatrixLoadError: "Eigenschaftswerte konnten nicht geladen werden.",
     planningDayStatusNav: "Tagesstatus",
     planningDayStatusDefinitionsTitle: "Tagesstatus",
     planningDayStatusDefinitionsHelp:
@@ -1210,6 +1224,20 @@ export const dictionaries = {
     teamMemberPropertyDefinitionEditableByMember: "Team member may edit value",
     teamMemberPropertyDefinitionEditableByMemberShort: "self-editable",
     teamMemberPropertyDefinitionActive: "Active",
+    teamMemberPropertyMatrixNav: "Values table",
+    teamMemberPropertyDefinitionsNav: "Field definitions",
+    teamMemberPropertyMatrixTitle: "Team member properties",
+    teamMemberPropertyMatrixHelp:
+      "Edit property values directly in the table. Changes save automatically.",
+    teamMemberPropertyMatrixMemberColumn: "Team member",
+    teamMemberPropertyMatrixEmptyDefinitions:
+      "Create a property first to use the values table.",
+    teamMemberPropertyMatrixEmptyMembers: "No team members are available for this view.",
+    teamMemberPropertyMatrixShowInactiveMembers: "Show inactive team members",
+    teamMemberPropertyMatrixSaving: "Saving …",
+    teamMemberPropertyMatrixSaved: "Saved",
+    teamMemberPropertyMatrixSaveError: "Save failed",
+    teamMemberPropertyMatrixLoadError: "Property values could not be loaded.",
     planningDayStatusNav: "Day status",
     planningDayStatusDefinitionsTitle: "Day status",
     planningDayStatusDefinitionsHelp:

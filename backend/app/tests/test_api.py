@@ -3352,6 +3352,75 @@ def test_team_member_property_definitions_admin_crud(client: TestClient):
     assert patched.json()["name"] == "Years in training"
 
 
+def test_team_member_property_matrix_filters_and_values(client: TestClient):
+    login(client)
+    active_member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Active",
+            "last_name": "Member",
+            "nickname": "AM",
+            "email": "active-property-matrix@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()
+    inactive_member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Inactive",
+            "last_name": "Member",
+            "email": "inactive-property-matrix@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()
+    assert client.patch(
+        f"/api/v1/team-members/{inactive_member['id']}",
+        json={"is_active": False},
+    ).status_code == 200
+    active_definition = client.post(
+        "/api/v1/team-member-property-definitions",
+        json={"name": "Skill level", "type": "number", "display_order": 2},
+    ).json()
+    inactive_definition = client.post(
+        "/api/v1/team-member-property-definitions",
+        json={"name": "Archived skill", "type": "text", "is_active": False},
+    ).json()
+    assert client.put(
+        f"/api/v1/team-members/{active_member['id']}/property-values",
+        json={"values": [{"property_definition_id": active_definition["id"], "value": 4}]},
+    ).status_code == 200
+
+    default_matrix = client.get("/api/v1/team-member-property-matrix")
+    assert default_matrix.status_code == 200
+    default_body = default_matrix.json()
+    assert [member["id"] for member in default_body["members"]] == [active_member["id"]]
+    assert [definition["id"] for definition in default_body["definitions"]] == [
+        active_definition["id"]
+    ]
+    assert default_body["values"] == [
+        {
+            "team_member_id": active_member["id"],
+            "property_definition_id": active_definition["id"],
+            "value": 4,
+        }
+    ]
+
+    complete_matrix = client.get(
+        "/api/v1/team-member-property-matrix"
+        "?active_members_only=false&active_definitions_only=false"
+    )
+    assert complete_matrix.status_code == 200
+    complete_body = complete_matrix.json()
+    assert {member["id"] for member in complete_body["members"]} == {
+        active_member["id"],
+        inactive_member["id"],
+    }
+    assert {definition["id"] for definition in complete_body["definitions"]} == {
+        active_definition["id"],
+        inactive_definition["id"],
+    }
+
+
 def test_team_member_property_values_member_self_service(team_member_client: TestClient):
     login(team_member_client)
     defn = team_member_client.post(
@@ -3376,6 +3445,7 @@ def test_team_member_property_values_member_self_service(team_member_client: Tes
         json={"name": "X", "type": "text"},
     )
     assert denied.status_code == 403
+    assert team_member_client.get("/api/v1/team-member-property-matrix").status_code == 403
 
 
 def test_team_member_property_values_admin_only_field(team_member_client: TestClient):

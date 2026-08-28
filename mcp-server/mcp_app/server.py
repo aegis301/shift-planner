@@ -46,6 +46,7 @@ from app.services.team_member_property_definitions import (
     list_team_member_property_definitions,
     update_team_member_property_definition,
 )
+from app.services.team_member_property_matrix import get_team_member_property_matrix
 from app.services.team_member_property_values import (
     list_property_values_for_member,
     replace_team_member_property_values,
@@ -288,6 +289,16 @@ def team_member_property_definitions_resource() -> list[dict[str, Any]]:
     with db_session() as db:
         rows = list_team_member_property_definitions(db, organization_id=mcp_organization_id())
         return [TeamMemberPropertyDefinitionRead.model_validate(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.resource("shift-planner://team-member-property-matrix")
+def team_member_property_matrix_resource() -> dict[str, Any]:
+    """Return active team members and property definitions with their values."""
+    with db_session() as db:
+        return get_team_member_property_matrix(
+            db,
+            organization_id=mcp_organization_id(),
+        ).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://team-members/{team_member_id}/property-values")
