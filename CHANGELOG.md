@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-08-28
+- **Membership dates in the UI:** Shift-group editor now lists each membership period with start/end date inputs, an active/planned/ended badge, and supports several periods per person for rotations; group cards show current and upcoming periods. New `PUT /api/v1/shift-groups/{id}/memberships` (and MCP `set_shift_group_memberships_tool`) accept explicit dates; `TeamMemberRead` exposes `shift_group_memberships`. The team member modal shows the active period per group.
+
 ## 2026-08-27
 - **Period roster independence:** Shift-group membership is dated (`start_date`, optional `end_date`); removal end-dates the stint. Each planning month seeds a per-shift-group roster (`planning_period_shift_group_members`) so past months keep their columns when membership changes. Plan versions snapshot team member profiles (`plan_version_team_members`). Alembic `202608270001`.
 

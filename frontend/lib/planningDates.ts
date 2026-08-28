@@ -14,6 +14,50 @@ export function monthDateBounds(year: number, month: number): { min: string; max
   };
 }
 
+export function todayIsoDate(): string {
+  const now = new Date();
+  return toIsoDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+}
+
+export function formatIsoDate(iso: string, locale: string): string {
+  const parsed = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return iso;
+  }
+  return parsed.toLocaleDateString(locale === "de" ? "de-DE" : "en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  });
+}
+
+export type DateRangeStatus = "active" | "ended" | "planned";
+
+export function isoDateRangeStatus(
+  startDate: string,
+  endDate: string | null,
+  onDate: string = todayIsoDate()
+): DateRangeStatus {
+  if (startDate > onDate) {
+    return "planned";
+  }
+  if (endDate && endDate < onDate) {
+    return "ended";
+  }
+  return "active";
+}
+
+export function isoDateRangesOverlap(
+  firstStart: string,
+  firstEnd: string | null,
+  secondStart: string,
+  secondEnd: string | null
+): boolean {
+  const firstStop = firstEnd ?? "9999-12-31";
+  const secondStop = secondEnd ?? "9999-12-31";
+  return firstStart <= secondStop && secondStart <= firstStop;
+}
+
 export function expandInclusiveDateRange(from: string, to: string): string[] {
   const start = new Date(`${from}T12:00:00`);
   const end = new Date(`${to}T12:00:00`);

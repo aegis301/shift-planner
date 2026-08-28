@@ -10,6 +10,7 @@ import {
   type PropertyRequirementExpr
 } from "@/components/TeamMemberPropertyRequirementConstraintEditor";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { formatIsoDate, isoDateRangeStatus, todayIsoDate } from "@/lib/planningDates";
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
 import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
@@ -135,7 +136,16 @@ export type TeamMemberRecord = {
   is_active: boolean;
   created_at: string;
   shift_group_ids?: number[];
+  shift_group_memberships?: TeamMemberShiftGroupMembership[];
   user_id?: number | null;
+};
+
+type TeamMemberShiftGroupMembership = {
+  id: number;
+  team_member_id: number;
+  shift_group_id: number;
+  start_date: string;
+  end_date: string | null;
 };
 
 type ShiftGroupOption = { id: number; code: string; name: string };
@@ -2037,6 +2047,17 @@ export function TeamMemberEditorModal({
     void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
   }, []);
 
+  const activeMembershipByGroupId = useMemo(() => {
+    const today = todayIsoDate();
+    const map = new Map<number, TeamMemberShiftGroupMembership>();
+    for (const row of member.shift_group_memberships ?? []) {
+      if (isoDateRangeStatus(row.start_date, row.end_date, today) !== "ended") {
+        map.set(row.shift_group_id, row);
+      }
+    }
+    return map;
+  }, [member.shift_group_memberships]);
+
   async function submitEditor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -2150,28 +2171,38 @@ export function TeamMemberEditorModal({
         </div>
         <div className="mt-4 rounded-lg border border-slate-200 p-3">
           <p className="text-sm font-semibold text-ink">{t(locale, "teamMemberShiftGroups")}</p>
+          <p className="mt-1 text-xs text-slate-600">{t(locale, "teamMemberShiftGroupDatesHelp")}</p>
           <div className="mt-2 max-h-40 space-y-2 overflow-y-auto text-sm">
-            {shiftGroups.map((group) => (
-              <label key={group.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={selectedGroupIds.has(group.id)}
-                  onChange={() => {
-                    setSelectedGroupIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(group.id)) {
-                        next.delete(group.id);
-                      } else {
-                        next.add(group.id);
-                      }
-                      return next;
-                    });
-                  }}
-                />
-                <span className="font-mono text-xs">{group.code}</span>
-                {group.name}
-              </label>
-            ))}
+            {shiftGroups.map((group) => {
+              const membership = activeMembershipByGroupId.get(group.id);
+              return (
+                <label key={group.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedGroupIds.has(group.id)}
+                    onChange={() => {
+                      setSelectedGroupIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(group.id)) {
+                          next.delete(group.id);
+                        } else {
+                          next.add(group.id);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                  <span className="font-mono text-xs">{group.code}</span>
+                  <span>{group.name}</span>
+                  {membership ? (
+                    <span className="text-xs text-slate-500">
+                      {formatIsoDate(membership.start_date, locale)} –{" "}
+                      {membership.end_date ? formatIsoDate(membership.end_date, locale) : t(locale, "membershipOpenEnded")}
+                    </span>
+                  ) : null}
+                </label>
+              );
+            })}
           </div>
         </div>
         {isDeleteConfirmOpen ? (

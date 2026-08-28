@@ -12,7 +12,12 @@ from app.models import (
     TeamMemberShiftGroup,
     User,
 )
-from app.schemas import ShiftGroupCreate, ShiftGroupMembershipRead, ShiftGroupUpdate
+from app.schemas import (
+    ShiftGroupCreate,
+    ShiftGroupMembershipRead,
+    ShiftGroupMembershipWrite,
+    ShiftGroupUpdate,
+)
 from app.services.audit import record_audit
 
 
@@ -347,6 +352,67 @@ def replace_group_team_members(
         entity_type="shift_group_team_members",
         entity_id=shift_group_id,
         details={"team_member_ids": sorted(desired), "effective_date": on_date.isoformat()},
+    )
+    db.commit()
+
+
+def replace_group_team_member_memberships(
+    db: Session,
+    shift_group_id: int,
+    memberships: list[ShiftGroupMembershipWrite],
+    *,
+    organization_id: int,
+    actor: str,
+    source: str,
+) -> None:
+    require_shift_group(db, shift_group_id, organization_id)
+    for row in memberships:
+        member = db.get(TeamMember, row.team_member_id)
+        if member is None or member.organization_id != organization_id:
+            raise ValueError(f"Team member not found: {row.team_member_id}")
+        if row.end_date is not None and row.end_date < row.start_date:
+            raise ValueError("end_date must be on or after start_date")
+
+    by_member: dict[int, list[ShiftGroupMembershipWrite]] = {}
+    for row in memberships:
+        by_member.setdefault(row.team_member_id, []).append(row)
+    for rows in by_member.values():
+        ordered = sorted(rows, key=lambda item: item.start_date)
+        for index, row in enumerate(ordered[1:], start=1):
+            previous = ordered[index - 1]
+            if _stint_overlaps_range(
+                previous.start_date, previous.end_date, row.start_date, row.end_date or date.max
+            ):
+                raise ValueError("Shift group membership stints overlap")
+
+    db.execute(delete(TeamMemberShiftGroup).where(TeamMemberShiftGroup.shift_group_id == shift_group_id))
+    for row in sorted(memberships, key=lambda item: (item.team_member_id, item.start_date)):
+        db.add(
+            TeamMemberShiftGroup(
+                team_member_id=row.team_member_id,
+                shift_group_id=shift_group_id,
+                start_date=row.start_date,
+                end_date=row.end_date,
+            )
+        )
+    db.flush()
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="replace_memberships",
+        entity_type="shift_group_team_members",
+        entity_id=shift_group_id,
+        details={
+            "memberships": [
+                {
+                    "team_member_id": row.team_member_id,
+                    "start_date": row.start_date.isoformat(),
+                    "end_date": row.end_date.isoformat() if row.end_date else None,
+                }
+                for row in sorted(memberships, key=lambda item: (item.team_member_id, item.start_date))
+            ]
+        },
     )
     db.commit()
 

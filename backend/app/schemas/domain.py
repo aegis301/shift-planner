@@ -475,6 +475,22 @@ class ShiftGroupTeamMemberIdsPut(BaseModel):
     team_member_ids: list[int] = Field(default_factory=list)
 
 
+class ShiftGroupMembershipWrite(BaseModel):
+    team_member_id: int = Field(ge=1)
+    start_date: date_type
+    end_date: date_type | None = None
+
+    @model_validator(mode="after")
+    def _validate_range(self) -> Self:
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        return self
+
+
+class ShiftGroupMembershipsPut(BaseModel):
+    memberships: list[ShiftGroupMembershipWrite] = Field(default_factory=list)
+
+
 class ShiftGroupTemplateIdsPut(BaseModel):
     shift_template_ids: list[int] = Field(default_factory=list)
 

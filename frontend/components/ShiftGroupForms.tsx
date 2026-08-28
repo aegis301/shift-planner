@@ -5,8 +5,23 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Pencil, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { t, type Locale } from "@/lib/i18n";
+import {
+  formatIsoDate,
+  isoDateRangeStatus,
+  isoDateRangesOverlap,
+  todayIsoDate,
+  type DateRangeStatus
+} from "@/lib/planningDates";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
+
+type ShiftGroupMembership = {
+  id: number;
+  team_member_id: number;
+  shift_group_id: number;
+  start_date: string;
+  end_date: string | null;
+};
 
 type ShiftGroupRecord = {
   id: number;
@@ -16,11 +31,19 @@ type ShiftGroupRecord = {
   is_active: boolean;
   created_at: string;
   team_member_ids: number[];
+  team_member_memberships: ShiftGroupMembership[];
   shift_template_ids: number[];
 };
 
 type TeamMemberOption = { id: number; first_name: string; last_name: string };
 type TemplateOption = { id: number; code: string; name: string };
+
+type MembershipDraft = {
+  key: string;
+  team_member_id: number;
+  start_date: string;
+  end_date: string;
+};
 
 function teamMemberLabel(option: TeamMemberOption): string {
   return `${option.first_name} ${option.last_name}`.trim();
@@ -30,37 +53,80 @@ function groupLabel(locale: Locale, group: ShiftGroupRecord) {
   return group.name;
 }
 
-function ShiftGroupTeamMemberPicker({
+function membershipsToDrafts(memberships: ShiftGroupMembership[]): MembershipDraft[] {
+  return memberships.map((row) => ({
+    key: `existing-${row.id}`,
+    team_member_id: row.team_member_id,
+    start_date: row.start_date,
+    end_date: row.end_date ?? ""
+  }));
+}
+
+function statusBadgeClass(status: DateRangeStatus): string {
+  if (status === "active") {
+    return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+  }
+  if (status === "planned") {
+    return "bg-sky-50 text-sky-800 ring-sky-200";
+  }
+  return "bg-slate-100 text-slate-600 ring-slate-200";
+}
+
+function membershipValidationKey(drafts: MembershipDraft[]): "membershipInvalidRange" | "membershipOverlap" | null {
+  for (const draft of drafts) {
+    if (draft.end_date && draft.end_date < draft.start_date) {
+      return "membershipInvalidRange";
+    }
+  }
+  for (const draft of drafts) {
+    const sameMember = drafts.filter((other) => other.team_member_id === draft.team_member_id && other.key !== draft.key);
+    for (const other of sameMember) {
+      if (isoDateRangesOverlap(draft.start_date, draft.end_date || null, other.start_date, other.end_date || null)) {
+        return "membershipOverlap";
+      }
+    }
+  }
+  return null;
+}
+
+function ShiftGroupMembershipEditor({
   teamMemberOptions,
-  memberIds,
-  setMemberIds,
+  drafts,
+  setDrafts,
   locale
 }: {
   teamMemberOptions: TeamMemberOption[];
-  memberIds: Set<number>;
-  setMemberIds: Dispatch<SetStateAction<Set<number>>>;
+  drafts: MembershipDraft[];
+  setDrafts: Dispatch<SetStateAction<MembershipDraft[]>>;
   locale: Locale;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  const memberById = useMemo(
+    () => new Map(teamMemberOptions.map((option) => [option.id, option])),
+    [teamMemberOptions]
+  );
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const pool = teamMemberOptions.filter((option) => !memberIds.has(option.id));
-    if (!q) {
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
       return [];
     }
-    return pool.filter((option) => teamMemberLabel(option).toLowerCase().includes(q)).slice(0, 25);
-  }, [teamMemberOptions, memberIds, query]);
+    return teamMemberOptions
+      .filter((option) => teamMemberLabel(option).toLowerCase().includes(needle))
+      .slice(0, 25);
+  }, [teamMemberOptions, query]);
 
-  const selectedMembers = useMemo(
-    () =>
-      teamMemberOptions
-        .filter((option) => memberIds.has(option.id))
-        .sort((a, b) => teamMemberLabel(a).localeCompare(teamMemberLabel(b))),
-    [teamMemberOptions, memberIds]
-  );
+  const sortedDrafts = useMemo(() => {
+    return [...drafts].sort((a, b) => {
+      const labelA = teamMemberLabel(memberById.get(a.team_member_id) ?? { id: 0, first_name: "", last_name: "" });
+      const labelB = teamMemberLabel(memberById.get(b.team_member_id) ?? { id: 0, first_name: "", last_name: "" });
+      const byName = labelA.localeCompare(labelB);
+      return byName !== 0 ? byName : a.start_date.localeCompare(b.start_date);
+    });
+  }, [drafts, memberById]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -72,25 +138,33 @@ function ShiftGroupTeamMemberPicker({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  function addMember(id: number) {
-    setMemberIds((prev) => new Set([...prev, id]));
+  function addMembership(teamMemberId: number) {
+    setDrafts((prev) => [
+      ...prev,
+      {
+        key: `new-${teamMemberId}-${Date.now()}-${prev.length}`,
+        team_member_id: teamMemberId,
+        start_date: todayIsoDate(),
+        end_date: ""
+      }
+    ]);
     setQuery("");
     setOpen(false);
   }
 
-  function removeMember(id: number) {
-    setMemberIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+  function updateDraft(key: string, patch: Partial<MembershipDraft>) {
+    setDrafts((prev) => prev.map((draft) => (draft.key === key ? { ...draft, ...patch } : draft)));
+  }
+
+  function removeDraft(key: string) {
+    setDrafts((prev) => prev.filter((draft) => draft.key !== key));
   }
 
   const showList = open && query.trim().length > 0;
 
   return (
-    <div ref={rootRef} className="grid gap-2">
-      <p className="text-xs text-slate-600">{t(locale, "searchTeamMembersHint")}</p>
+    <div ref={rootRef} className="grid gap-3">
+      <p className="text-xs text-slate-600">{t(locale, "membershipRotationHint")}</p>
       <div className="relative">
         <input
           type="search"
@@ -113,11 +187,12 @@ function ShiftGroupTeamMemberPicker({
                 <li key={option.id}>
                   <button
                     type="button"
-                    className="w-full px-3 py-2 text-left text-sm text-ink hover:bg-slate-50"
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-slate-50"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => addMember(option.id)}
+                    onClick={() => addMembership(option.id)}
                   >
-                    {teamMemberLabel(option)}
+                    <span className="truncate">{teamMemberLabel(option)}</span>
+                    <Plus size={14} className="shrink-0 text-slate-400" />
                   </button>
                 </li>
               ))
@@ -125,27 +200,119 @@ function ShiftGroupTeamMemberPicker({
           </ul>
         ) : null}
       </div>
-      {selectedMembers.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {selectedMembers.map((option) => (
-            <span
-              key={option.id}
-              className="inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 py-1 pl-2.5 pr-1 text-xs font-medium text-slate-800 ring-1 ring-slate-200"
-            >
-              <span className="truncate">{teamMemberLabel(option)}</span>
-              <button
-                type="button"
-                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-                onClick={() => removeMember(option.id)}
-                aria-label={`${t(locale, "removeFromSelection")}: ${teamMemberLabel(option)}`}
-              >
-                <X size={14} />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {sortedDrafts.length === 0 ? (
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{t(locale, "membershipNoneYet")}</p>
+      ) : (
+        <ul className="grid gap-2">
+          {sortedDrafts.map((draft) => {
+            const option = memberById.get(draft.team_member_id);
+            const status = isoDateRangeStatus(draft.start_date, draft.end_date || null);
+            return (
+              <li key={draft.key} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink">
+                      {option ? teamMemberLabel(option) : `#${draft.team_member_id}`}
+                    </p>
+                    <span
+                      className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${statusBadgeClass(status)}`}
+                    >
+                      {t(locale, `membershipStatus${status === "active" ? "Active" : status === "planned" ? "Planned" : "Ended"}`)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-rose-700"
+                    onClick={() => removeDraft(draft.key)}
+                    aria-label={`${t(locale, "membershipRemovePeriod")}: ${option ? teamMemberLabel(option) : draft.team_member_id}`}
+                    title={t(locale, "membershipRemovePeriod")}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-medium text-slate-600">
+                    {t(locale, "membershipStartDate")}
+                    <input
+                      type="date"
+                      className={inputClass}
+                      value={draft.start_date}
+                      onChange={(event) => updateDraft(draft.key, { start_date: event.target.value })}
+                      required
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs font-medium text-slate-600">
+                    {`${t(locale, "membershipEndDate")} (${t(locale, "membershipOpenEnded")})`}
+                    <input
+                      type="date"
+                      className={inputClass}
+                      value={draft.end_date}
+                      min={draft.start_date}
+                      onChange={(event) => updateDraft(draft.key, { end_date: event.target.value })}
+                    />
+                  </label>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
+  );
+}
+
+function ShiftGroupMembershipSummary({
+  group,
+  teamMemberOptions,
+  locale
+}: {
+  group: ShiftGroupRecord;
+  teamMemberOptions: TeamMemberOption[];
+  locale: Locale;
+}) {
+  const memberById = useMemo(
+    () => new Map(teamMemberOptions.map((option) => [option.id, option])),
+    [teamMemberOptions]
+  );
+  const rows = useMemo(() => {
+    const today = todayIsoDate();
+    return [...(group.team_member_memberships ?? [])]
+      .filter((row) => isoDateRangeStatus(row.start_date, row.end_date, today) !== "ended")
+      .sort((a, b) => {
+        const labelA = teamMemberLabel(memberById.get(a.team_member_id) ?? { id: 0, first_name: "", last_name: "" });
+        const labelB = teamMemberLabel(memberById.get(b.team_member_id) ?? { id: 0, first_name: "", last_name: "" });
+        return labelA.localeCompare(labelB) || a.start_date.localeCompare(b.start_date);
+      });
+  }, [group.team_member_memberships, memberById]);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="mt-2 grid gap-1 text-xs text-slate-600">
+      {rows.slice(0, 6).map((row) => {
+        const option = memberById.get(row.team_member_id);
+        const status = isoDateRangeStatus(row.start_date, row.end_date);
+        return (
+          <li key={row.id} className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-slate-800">
+              {option ? teamMemberLabel(option) : `#${row.team_member_id}`}
+            </span>
+            <span className="text-slate-500">
+              {formatIsoDate(row.start_date, locale)} –{" "}
+              {row.end_date ? formatIsoDate(row.end_date, locale) : t(locale, "membershipOpenEnded")}
+            </span>
+            {status === "planned" ? (
+              <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ring-1 ${statusBadgeClass(status)}`}>
+                {t(locale, "membershipStatusPlanned")}
+              </span>
+            ) : null}
+          </li>
+        );
+      })}
+      {rows.length > 6 ? <li className="text-slate-400">+{rows.length - 6}</li> : null}
+    </ul>
   );
 }
 
@@ -163,16 +330,37 @@ function ShiftGroupEditorModal({
   onClose: () => void;
 }) {
   const { locale } = useLocale();
-  const [memberIds, setMemberIds] = useState<Set<number>>(new Set(group?.team_member_ids ?? []));
+  const [membershipDrafts, setMembershipDrafts] = useState<MembershipDraft[]>(() =>
+    membershipsToDrafts(group?.team_member_memberships ?? [])
+  );
   const [templateIds, setTemplateIds] = useState<Set<number>>(new Set(group?.shift_template_ids ?? []));
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    setMemberIds(new Set(group?.team_member_ids ?? []));
+    setMembershipDrafts(membershipsToDrafts(group?.team_member_memberships ?? []));
     setTemplateIds(new Set(group?.shift_template_ids ?? []));
+    setError("");
   }, [group]);
+
+  const membershipsPayload = useMemo(
+    () => ({
+      memberships: membershipDrafts.map((draft) => ({
+        team_member_id: draft.team_member_id,
+        start_date: draft.start_date,
+        end_date: draft.end_date || null
+      }))
+    }),
+    [membershipDrafts]
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const problem = membershipValidationKey(membershipDrafts);
+    if (problem) {
+      setError(t(locale, problem));
+      return;
+    }
+    setError("");
     const form = new FormData(event.currentTarget);
     const body = {
       code: String(form.get("code")),
@@ -180,27 +368,17 @@ function ShiftGroupEditorModal({
       display_order: Number(form.get("display_order")),
       is_active: form.get("is_active") === "on"
     };
-    if (group) {
-      await apiFetch(`/api/v1/shift-groups/${group.id}`, { method: "PATCH", body: JSON.stringify(body) });
-      await apiFetch(`/api/v1/shift-groups/${group.id}/team-members`, {
-        method: "PUT",
-        body: JSON.stringify({ team_member_ids: [...memberIds] })
-      });
-      await apiFetch(`/api/v1/shift-groups/${group.id}/shift-templates`, {
-        method: "PUT",
-        body: JSON.stringify({ shift_template_ids: [...templateIds] })
-      });
-    } else {
-      const created = await apiFetch<ShiftGroupRecord>("/api/v1/shift-groups", { method: "POST", body: JSON.stringify(body) });
-      await apiFetch(`/api/v1/shift-groups/${created.id}/team-members`, {
-        method: "PUT",
-        body: JSON.stringify({ team_member_ids: [...memberIds] })
-      });
-      await apiFetch(`/api/v1/shift-groups/${created.id}/shift-templates`, {
-        method: "PUT",
-        body: JSON.stringify({ shift_template_ids: [...templateIds] })
-      });
-    }
+    const groupId = group
+      ? (await apiFetch(`/api/v1/shift-groups/${group.id}`, { method: "PATCH", body: JSON.stringify(body) }), group.id)
+      : (await apiFetch<ShiftGroupRecord>("/api/v1/shift-groups", { method: "POST", body: JSON.stringify(body) })).id;
+    await apiFetch(`/api/v1/shift-groups/${groupId}/memberships`, {
+      method: "PUT",
+      body: JSON.stringify(membershipsPayload)
+    });
+    await apiFetch(`/api/v1/shift-groups/${groupId}/shift-templates`, {
+      method: "PUT",
+      body: JSON.stringify({ shift_template_ids: [...templateIds] })
+    });
     await onChanged();
     onClose();
   }
@@ -228,7 +406,12 @@ function ShiftGroupEditorModal({
             <p className="text-sm font-semibold text-ink">{t(locale, "shiftGroupTeamMembers")}</p>
             <p className="mt-1 text-xs text-slate-600">{t(locale, "shiftGroupMembershipHelp")}</p>
             <div className="mt-2">
-              <ShiftGroupTeamMemberPicker teamMemberOptions={teamMemberOptions} memberIds={memberIds} setMemberIds={setMemberIds} locale={locale} />
+              <ShiftGroupMembershipEditor
+                teamMemberOptions={teamMemberOptions}
+                drafts={membershipDrafts}
+                setDrafts={setMembershipDrafts}
+                locale={locale}
+              />
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 p-3">
@@ -258,6 +441,7 @@ function ShiftGroupEditorModal({
             </div>
           </div>
         </div>
+        {error ? <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800 ring-1 ring-rose-200">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700">
             {t(locale, "close")}
@@ -336,6 +520,7 @@ export function ShiftGroupForm() {
                 <p className="mt-2 text-sm text-slate-600">
                   {t(locale, "shiftGroupTeamMembers")}: {group.team_member_ids.length} · {t(locale, "shiftGroupTemplates")}: {group.shift_template_ids.length}
                 </p>
+                <ShiftGroupMembershipSummary group={group} teamMemberOptions={teamMemberOptions} locale={locale} />
               </div>
               <div className="flex shrink-0 gap-1">
                 <button
