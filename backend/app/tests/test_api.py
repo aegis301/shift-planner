@@ -3421,6 +3421,172 @@ def test_team_member_property_matrix_filters_and_values(client: TestClient):
     }
 
 
+def test_team_member_property_matrix_type_aware_search(client: TestClient):
+    login(client)
+    members = [
+        client.post(
+            "/api/v1/team-members",
+            json={
+                "first_name": first_name,
+                "last_name": "Filter",
+                "email": f"{first_name.lower()}-property-filter@example.com",
+                "employment_percentage": 100,
+            },
+        ).json()
+        for first_name in ["Alpha", "Beta", "Empty"]
+    ]
+    definitions = {
+        item["name"]: item
+        for item in [
+            client.post(
+                "/api/v1/team-member-property-definitions",
+                json={"name": "Description", "type": "text"},
+            ).json(),
+            client.post(
+                "/api/v1/team-member-property-definitions",
+                json={"name": "Level", "type": "select", "options": ["A", "B"]},
+            ).json(),
+            client.post(
+                "/api/v1/team-member-property-definitions",
+                json={"name": "Skills", "type": "multi_select", "options": ["X", "Y"]},
+            ).json(),
+            client.post(
+                "/api/v1/team-member-property-definitions",
+                json={"name": "Years", "type": "number"},
+            ).json(),
+            client.post(
+                "/api/v1/team-member-property-definitions",
+                json={"name": "Certified", "type": "date"},
+            ).json(),
+        ]
+    }
+    for member, values in [
+        (
+            members[0],
+            {
+                "Description": "Night specialist",
+                "Level": "A",
+                "Skills": ["X", "Y"],
+                "Years": 5,
+                "Certified": "2026-08-10",
+            },
+        ),
+        (
+            members[1],
+            {
+                "Description": "Day service",
+                "Level": "B",
+                "Skills": ["Y"],
+                "Years": 2,
+                "Certified": "2026-08-20",
+            },
+        ),
+    ]:
+        response = client.put(
+            f"/api/v1/team-members/{member['id']}/property-values",
+            json={
+                "values": [
+                    {
+                        "property_definition_id": definitions[name]["id"],
+                        "value": value,
+                    }
+                    for name, value in values.items()
+                ]
+            },
+        )
+        assert response.status_code == 200
+
+    def matching_ids(filters: list[dict]) -> set[int]:
+        response = client.post(
+            "/api/v1/team-member-property-matrix/search",
+            json={"filters": filters},
+        )
+        assert response.status_code == 200
+        return {member["id"] for member in response.json()["members"]}
+
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Description"]["id"],
+                "operator": "contains",
+                "value": "NIGHT",
+            }
+        ]
+    ) == {members[0]["id"]}
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Level"]["id"],
+                "operator": "equals",
+                "value": "B",
+            }
+        ]
+    ) == {members[1]["id"]}
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Skills"]["id"],
+                "operator": "contains_all",
+                "value": ["X", "Y"],
+            }
+        ]
+    ) == {members[0]["id"]}
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Years"]["id"],
+                "operator": "greater_or_equal",
+                "value": 5,
+            }
+        ]
+    ) == {members[0]["id"]}
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Certified"]["id"],
+                "operator": "before",
+                "value": "2026-08-15",
+            }
+        ]
+    ) == {members[0]["id"]}
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Description"]["id"],
+                "operator": "is_empty",
+            }
+        ]
+    ) == {members[2]["id"]}
+    assert matching_ids(
+        [
+            {
+                "property_definition_id": definitions["Level"]["id"],
+                "operator": "equals",
+                "value": "A",
+            },
+            {
+                "property_definition_id": definitions["Years"]["id"],
+                "operator": "greater_than",
+                "value": 4,
+            },
+        ]
+    ) == {members[0]["id"]}
+
+    invalid = client.post(
+        "/api/v1/team-member-property-matrix/search",
+        json={
+            "filters": [
+                {
+                    "property_definition_id": definitions["Years"]["id"],
+                    "operator": "contains",
+                    "value": "5",
+                }
+            ]
+        },
+    )
+    assert invalid.status_code == 400
+
+
 def test_team_member_property_values_member_self_service(team_member_client: TestClient):
     login(team_member_client)
     defn = team_member_client.post(
@@ -3446,6 +3612,13 @@ def test_team_member_property_values_member_self_service(team_member_client: Tes
     )
     assert denied.status_code == 403
     assert team_member_client.get("/api/v1/team-member-property-matrix").status_code == 403
+    assert (
+        team_member_client.post(
+            "/api/v1/team-member-property-matrix/search",
+            json={"filters": []},
+        ).status_code
+        == 403
+    )
 
 
 def test_team_member_property_values_admin_only_field(team_member_client: TestClient):
