@@ -1,6 +1,7 @@
 from app.models.entities import (
     Account,
     AuditLog,
+    EmploymentPeriod,
     Organization,
     OrganizationJoinRequest,
     OrganizationMembershipInvite,
@@ -30,13 +31,17 @@ from app.models.entities import (
     TeamMemberPropertyDefinition,
     TeamMemberPropertyValue,
     TeamMemberShiftGroup,
+    TimeAccountOpening,
+    TimeEntry,
     User,
     UserShiftGroup,
+    WorkerGroup,
 )
 
 __all__ = [
     "Account",
     "AuditLog",
+    "EmploymentPeriod",
     "Organization",
     "OrganizationJoinRequest",
     "OrganizationMembershipInvite",
@@ -66,6 +71,9 @@ __all__ = [
     "TeamMemberPropertyDefinition",
     "TeamMemberPropertyValue",
     "TeamMemberShiftGroup",
+    "TimeAccountOpening",
+    "TimeEntry",
     "User",
     "UserShiftGroup",
+    "WorkerGroup",
 ]

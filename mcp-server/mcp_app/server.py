@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import ShiftGroup, User
 from app.schemas import (
+    EmploymentPeriodWrite,
+    EmploymentPeriodsReplace,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -33,6 +35,10 @@ from app.schemas import (
     ShiftTemplateUpdate,
     ShiftVariantCreate,
     ShiftVariantUpdate,
+    TimeAccountOpeningUpsert,
+    TimeEntryCreate,
+    WorkerGroupCreate,
+    WorkerGroupUpdate,
 )
 from app.services.team_members import create_team_member, delete_team_member, list_team_members
 from app.services.member_planning_patterns import (
@@ -101,8 +107,23 @@ from app.services.shift_templates import (
     update_shift_variant,
 )
 from app.services.authz import ROLE_ADMIN
+from app.services.employment_periods import employment_period_to_read, replace_employment_periods
+from app.services.time_entries import (
+    create_time_entry,
+    opening_to_read,
+    time_entry_to_read,
+    upsert_opening_balance,
+)
+from app.services.timesheets import fill_from_roster, fill_regular_week, get_timesheet, month_bounds
 from app.services.users import admin_reset_account_password
 from app.services.validation import validate_roster
+from app.services.worker_groups import (
+    create_worker_group,
+    delete_worker_group,
+    list_worker_groups,
+    update_worker_group,
+    worker_group_to_read,
+)
 
 mcp = FastMCP("Shift Planner")
 
@@ -1220,6 +1241,176 @@ def reset_organization_user_password_tool(
             db, actor=actor, target_user_id=target_user_id, new_password=password
         )
         return {"ok": True}
+
+
+@mcp.resource("shift-planner://worker-groups")
+def worker_groups_resource() -> list[dict[str, Any]]:
+    """List worker groups (contract hours and vacation policy)."""
+    with db_session() as db:
+        return [worker_group_to_read(row).model_dump(mode="json") for row in list_worker_groups(db, organization_id=mcp_organization_id())]
+
+
+@mcp.resource("shift-planner://hours/timesheet/{team_member_id}/{year}/{month}")
+def timesheet_resource(team_member_id: int, year: int, month: int) -> dict[str, Any]:
+    """Return a computed monthly timesheet for a team member."""
+    start, end = month_bounds(year, month)
+    with db_session() as db:
+        return get_timesheet(
+            db,
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            from_date=start,
+            to_date=end,
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def create_worker_group_tool(
+    token: str,
+    name: str,
+    weekly_hours_at_100: float = 40,
+    vacation_days_at_100: float = 30,
+) -> dict[str, Any]:
+    """Create a worker group. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = create_worker_group(
+            db,
+            WorkerGroupCreate(
+                name=name,
+                weekly_hours_at_100=weekly_hours_at_100,
+                vacation_days_at_100=vacation_days_at_100,
+            ),
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return worker_group_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_worker_group_tool(token: str, worker_group_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Update a worker group. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = update_worker_group(
+            db,
+            worker_group_id,
+            WorkerGroupUpdate.model_validate(payload),
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if row is None:
+            raise ValueError("Worker group not found")
+        return worker_group_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_worker_group_tool(token: str, worker_group_id: int) -> dict[str, bool]:
+    """Delete a worker group that is not assigned. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        return {
+            "deleted": delete_worker_group(
+                db, worker_group_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+            )
+        }
+
+
+@mcp.tool
+def replace_employment_periods_tool(token: str, team_member_id: int, periods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace dated employment periods for a team member. Requires MCP admin token."""
+    require_token(token)
+    payload = EmploymentPeriodsReplace(periods=[EmploymentPeriodWrite.model_validate(item) for item in periods])
+    with db_session() as db:
+        rows = replace_employment_periods(
+            db,
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            periods=payload.periods,
+            actor="mcp",
+            source="mcp",
+        )
+        return [employment_period_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def upsert_opening_balance_tool(
+    token: str,
+    team_member_id: int,
+    as_of_date: str,
+    overtime_minutes: int = 0,
+    vacation_days_remaining: float = 0,
+    sick_days_used_ytd: float = 0,
+) -> dict[str, Any]:
+    """Set the time-account opening balance for a team member. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = upsert_opening_balance(
+            db,
+            TimeAccountOpeningUpsert(
+                as_of_date=date.fromisoformat(as_of_date),
+                overtime_minutes=overtime_minutes,
+                vacation_days_remaining=vacation_days_remaining,
+                sick_days_used_ytd=sick_days_used_ytd,
+            ),
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return opening_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def create_time_entry_tool(token: str, team_member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Create a time entry. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        row = create_time_entry(
+            db,
+            TimeEntryCreate.model_validate(payload),
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return time_entry_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def fill_timesheet_from_roster_tool(token: str, team_member_id: int, from_date: str, to_date: str) -> dict[str, int]:
+    """Create time entries from roster assignments without overwriting manual days. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        created = fill_from_roster(
+            db,
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            from_date=date.fromisoformat(from_date),
+            to_date=date.fromisoformat(to_date),
+            actor="mcp",
+            source="mcp",
+        )
+        return {"created": created}
+
+
+@mcp.tool
+def fill_timesheet_regular_week_tool(token: str, team_member_id: int, from_date: str, to_date: str) -> dict[str, int]:
+    """Fill empty days from the worker-group regular week pattern. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        created = fill_regular_week(
+            db,
+            team_member_id=team_member_id,
+            organization_id=mcp_organization_id(),
+            from_date=date.fromisoformat(from_date),
+            to_date=date.fromisoformat(to_date),
+            actor="mcp",
+            source="mcp",
+        )
+        return {"created": created}
 
 
 if __name__ == "__main__":

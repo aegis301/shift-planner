@@ -79,6 +79,26 @@ export function DashboardMemberPanel({
         <DashboardKpiTile label={t(locale, "dashboardMyWarnings")} value={data.my_validation_warnings} />
         <DashboardKpiTile label={t(locale, "dashboardFillRate")} value={data.current_period ? `${fill}%` : "—"} />
       </div>
+      {data.hours_summary ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <DashboardKpiTile
+            label={t(locale, "hoursDashboardWorked")}
+            value={`${data.hours_summary.worked_hours} h`}
+          />
+          <DashboardKpiTile
+            label={t(locale, "hoursExpected")}
+            value={`${data.hours_summary.expected_hours} h`}
+          />
+          <DashboardKpiTile
+            label={t(locale, "hoursOvertime")}
+            value={`${data.hours_summary.overtime_hours} h`}
+          />
+          <DashboardKpiTile
+            label={t(locale, "hoursVacationRemaining")}
+            value={data.hours_summary.vacation_days_remaining}
+          />
+        </div>
+      ) : null}
       <DashboardSection title={t(locale, "dashboardUpcomingShifts")}>
         <p className="mb-3 text-sm text-slate-600">{t(locale, "dashboardUpcomingShiftsHint")}</p>
         <DashboardUpcomingShiftsTable locale={locale} slots={data.upcoming_slots} showIcsExport />
@@ -138,6 +158,9 @@ export function DashboardMemberPanel({
         className="inline-flex rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
       >
         {t(locale, "dashboardOpenMyPlanning")}
+      </Link>
+      <Link href="/my-hours" className="inline-flex text-sm font-semibold text-emerald-800 underline">
+        {t(locale, "myHoursNav")}
       </Link>
     </div>
   );

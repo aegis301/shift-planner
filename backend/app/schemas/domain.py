@@ -434,6 +434,211 @@ class TeamMemberSelfUpdate(BaseModel):
         return _normalize_optional_nickname(value)
 
 
+class RegularWeekdayHours(BaseModel):
+    weekday: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    starts_at: time
+    ends_at: time
+
+
+class WorkerGroupCategoryRule(BaseModel):
+    category: Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
+    counts_toward_contract: bool = True
+    credit_mode: Literal["duration", "none"] = "duration"
+
+
+class WorkerGroupStatusMapping(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    absence_kind: Literal["vacation", "sick", "other", "none"] = "none"
+    consumes_vacation: bool = False
+    counts_as_work_day: bool = True
+
+
+class WorkerGroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    weekly_hours_at_100: float = Field(default=40, gt=0, le=80)
+    vacation_days_at_100: float = Field(default=30, ge=0, le=50)
+    regular_week_pattern: list[RegularWeekdayHours] = Field(default_factory=list)
+    category_rules: list[WorkerGroupCategoryRule] = Field(default_factory=list)
+    status_mappings: list[WorkerGroupStatusMapping] = Field(default_factory=list)
+    display_order: int = 0
+    is_active: bool = True
+
+
+class WorkerGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    weekly_hours_at_100: float | None = Field(default=None, gt=0, le=80)
+    vacation_days_at_100: float | None = Field(default=None, ge=0, le=50)
+    regular_week_pattern: list[RegularWeekdayHours] | None = None
+    category_rules: list[WorkerGroupCategoryRule] | None = None
+    status_mappings: list[WorkerGroupStatusMapping] | None = None
+    display_order: int | None = None
+    is_active: bool | None = None
+
+
+class WorkerGroupRead(WorkerGroupCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class EmploymentPeriodWrite(BaseModel):
+    worker_group_id: int
+    employment_percentage: int = Field(default=100, ge=1, le=100)
+    start_date: date_type
+    end_date: date_type | None = None
+
+
+class EmploymentPeriodRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_member_id: int
+    worker_group_id: int
+    worker_group_name: str | None = None
+    employment_percentage: int
+    start_date: date_type
+    end_date: date_type | None = None
+
+
+class EmploymentPeriodsReplace(BaseModel):
+    periods: list[EmploymentPeriodWrite] = Field(default_factory=list)
+
+
+class TimeAccountOpeningUpsert(BaseModel):
+    as_of_date: date_type
+    overtime_minutes: int = 0
+    vacation_days_remaining: float = Field(default=0, ge=0)
+    sick_days_used_ytd: float = Field(default=0, ge=0)
+
+
+class TimeAccountOpeningRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_member_id: int
+    as_of_date: date_type
+    overtime_minutes: int
+    vacation_days_remaining: float
+    sick_days_used_ytd: float
+
+
+class TimeEntryCreate(BaseModel):
+    entry_date: date_type
+    kind: Literal["work", "absence"] = "work"
+    source: Literal["manual", "roster_fill", "regular_hours"] = "manual"
+    all_day: bool = False
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=0)
+    counts_toward_contract: bool | None = None
+    shift_template_category: Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"] | None = None
+    planning_day_status_code: str | None = None
+    roster_slot_id: int | None = None
+    comment: str | None = None
+
+
+class TimeEntryUpdate(BaseModel):
+    entry_date: date_type | None = None
+    kind: Literal["work", "absence"] | None = None
+    all_day: bool | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=0)
+    counts_toward_contract: bool | None = None
+    shift_template_category: Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"] | None = None
+    planning_day_status_code: str | None = None
+    comment: str | None = None
+
+
+class TimeEntryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_member_id: int
+    entry_date: date_type
+    kind: str
+    source: str
+    all_day: bool
+    started_at: datetime | None
+    ended_at: datetime | None
+    duration_minutes: int
+    counts_toward_contract: bool
+    shift_template_category: str | None
+    planning_day_status_code: str | None
+    roster_slot_id: int | None
+    comment: str | None
+
+
+class TimesheetFillRequest(BaseModel):
+    from_date: date_type
+    to_date: date_type
+
+
+class TimesheetDayPlanInterval(BaseModel):
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int = 0
+    category: str | None = None
+    roster_slot_id: int | None = None
+    counts_toward_contract: bool = True
+
+
+class TimesheetDayRead(BaseModel):
+    date: date_type
+    expected_minutes: int = 0
+    worked_contract_minutes: int = 0
+    worked_extra_minutes: int = 0
+    absence_kind: str | None = None
+    vacation_days: float = 0
+    sick_days: float = 0
+    roster_plan_minutes: int = 0
+    delta_minutes: int = 0
+    entries: list[TimeEntryRead] = Field(default_factory=list)
+    roster_plan: list[TimesheetDayPlanInterval] = Field(default_factory=list)
+
+
+class TimesheetRead(BaseModel):
+    team_member_id: int
+    name: str
+    from_date: date_type
+    to_date: date_type
+    worker_group_name: str | None = None
+    employment_percentage: int | None = None
+    expected_minutes: int = 0
+    worked_contract_minutes: int = 0
+    worked_extra_minutes: int = 0
+    overtime_minutes: int = 0
+    vacation_days: float = 0
+    sick_days: float = 0
+    vacation_days_remaining: float = 0
+    days: list[TimesheetDayRead] = Field(default_factory=list)
+
+
+class TimesheetSummaryRead(BaseModel):
+    team_member_id: int
+    name: str
+    worker_group_name: str | None = None
+    employment_percentage: int | None = None
+    expected_minutes: int = 0
+    worked_contract_minutes: int = 0
+    worked_extra_minutes: int = 0
+    overtime_minutes: int = 0
+    vacation_days: float = 0
+    sick_days: float = 0
+    vacation_days_remaining: float = 0
+    roster_plan_minutes: int = 0
+
+
+class DashboardHoursSummary(BaseModel):
+    worked_hours: float = 0
+    expected_hours: float = 0
+    overtime_hours: float = 0
+    vacation_days_remaining: float = 0
+    sick_days: float = 0
+
+
 class TeamMemberRead(TeamMemberCreate):
     model_config = ConfigDict(from_attributes=True)
 
@@ -441,6 +646,7 @@ class TeamMemberRead(TeamMemberCreate):
     is_active: bool
     created_at: datetime
     shift_group_memberships: list[ShiftGroupMembershipRead] = Field(default_factory=list)
+    employment_periods: list[EmploymentPeriodRead] = Field(default_factory=list)
 
 
 class ShiftGroupCreate(BaseModel):
@@ -1491,6 +1697,7 @@ class PlannerDashboardRead(BaseModel):
     wishes_response_percent: int
     wishes_responded_count: int
     wishes_total_count: int
+    hours_rows: list[TimesheetSummaryRead] = Field(default_factory=list)
 
 
 class TeamMemberDashboardRead(BaseModel):
@@ -1505,3 +1712,4 @@ class TeamMemberDashboardRead(BaseModel):
     my_validation_warnings: int
     upcoming_slots: list[DashboardUpcomingSlot]
     past_slots: list[DashboardUpcomingSlot] = []
+    hours_summary: DashboardHoursSummary | None = None

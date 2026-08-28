@@ -8,6 +8,7 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  Clock,
   Languages,
   LayoutGrid,
   LogOut,
@@ -182,6 +183,12 @@ export function AppShell({
           icon: CalendarDays,
           match: (p) => p.startsWith("/planning"),
         });
+        sidebarNavItems.push({
+          href: "/hours",
+          key: "hoursNav",
+          icon: Clock,
+          match: (p) => p.startsWith("/hours"),
+        });
       }
       if (me.capabilities.team_member_portal) {
         sidebarNavItems.push({
@@ -189,6 +196,12 @@ export function AppShell({
           key: "myPlanning",
           icon: CalendarDays,
           match: (p) => p.startsWith("/my-planning"),
+        });
+        sidebarNavItems.push({
+          href: "/my-hours",
+          key: "myHoursNav",
+          icon: Clock,
+          match: (p) => p.startsWith("/my-hours"),
         });
         sidebarNavItems.push({
           href: "/profile",

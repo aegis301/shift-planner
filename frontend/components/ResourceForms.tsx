@@ -14,6 +14,7 @@ import { formatIsoDate, isoDateRangeStatus, todayIsoDate } from "@/lib/planningD
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
 import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
+import { EmploymentPeriodsEditor } from "@/components/EmploymentPeriodsEditor";
 import { useLocale } from "@/components/LocaleProvider";
 
 type AnyRecord = Record<string, unknown>;
@@ -2205,6 +2206,7 @@ export function TeamMemberEditorModal({
             })}
           </div>
         </div>
+        <EmploymentPeriodsEditor teamMemberId={member.id} />
         {isDeleteConfirmOpen ? (
           <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
             <div className="flex gap-3">

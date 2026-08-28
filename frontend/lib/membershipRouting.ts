@@ -40,10 +40,10 @@ export function pathnameCompatibleWithMembership(pathname: string, me: SessionMe
   if (p.startsWith("/pending-onboarding")) {
     return false;
   }
-  if (p.startsWith("/planning")) {
+  if (p.startsWith("/planning") || p.startsWith("/hours")) {
     return me.capabilities.planning;
   }
-  if (p.startsWith("/my-planning") || p.startsWith("/profile")) {
+  if (p.startsWith("/my-planning") || p.startsWith("/profile") || p.startsWith("/my-hours")) {
     return me.capabilities.team_member_portal;
   }
   if (p.startsWith("/organization")) {

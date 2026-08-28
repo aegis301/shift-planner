@@ -179,6 +179,31 @@ def assert_team_member_property_values_read(db: Session, user: User, team_member
     raise PermissionError("Not allowed to read property values for this team member")
 
 
+def assert_hours_member_access(db: Session, user: User, team_member_id: int, *, write: bool = False) -> None:
+    if is_admin(user):
+        return
+    if write:
+        if can_use_planning_ui(user):
+            from app.services.team_members import list_team_members_for_planner
+
+            allowed_ids = {member.id for member in list_team_members_for_planner(db, user)}
+            if team_member_id not in allowed_ids:
+                raise PermissionError("Team member is outside planner scope")
+            return
+        raise PermissionError("Not allowed to edit timesheets")
+    if can_use_planning_ui(user):
+        from app.services.team_members import list_team_members_for_planner
+
+        allowed_ids = {member.id for member in list_team_members_for_planner(db, user)}
+        if team_member_id not in allowed_ids:
+            raise PermissionError("Team member is outside planner scope")
+        return
+    member = get_linked_team_member(db, user)
+    if member is not None and member.id == team_member_id:
+        return
+    raise PermissionError("Not allowed to access this timesheet")
+
+
 def writable_property_definition_ids_for_user(db: Session, user: User, team_member_id: int) -> set[int] | None:
     if is_admin(user):
         return None

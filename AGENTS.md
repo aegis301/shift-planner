@@ -44,6 +44,10 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 
 Admins manage org-scoped property definitions (`GET|POST|PATCH|DELETE /api/v1/team-member-property-definitions`) and per-member values (`GET|PUT /api/v1/team-members/{id}/property-values`). Types: `number`, `date`, `select`, `multi_select`, `text`. `editable_by_team_member` gates self-service writes on `/profile`. Business logic in `team_member_property_definitions.py` and `team_member_property_values.py`; MCP mirrors REST with admin token.
 
+## Working hours and timesheets
+
+Org-scoped **worker groups** (`worker_groups`) hold contract policy: weekly hours and vacation days at 100%, optional regular week pattern, which shift-template categories count toward contract time, and how wishes day-status codes map to vacation/sick/other. **Employment periods** are dated stints (`worker_group_id`, `employment_percentage`); the active-today stint syncs `TeamMember.employment_percentage`. **Opening balances** (`time_account_openings`) record overtime minutes and vacation remaining as of a date for system cutover. **Time entries** are the source of truth (`work` / `absence`); the published roster is a plan (fill-from-roster and plan-vs-actual on the timesheet). REST under `/api/v1/worker-groups` and `/api/v1/hours/*`; planners edit members in their shift-group scope; linked team members read `/my-hours`. Services: `worker_groups.py`, `employment_periods.py`, `time_entries.py`, `timesheets.py`. MCP resources/tools (mutations `MCP_ADMIN_TOKEN`). Shift-count **workload** on planning Analysis stays; hours sit beside it.
+
 **Nickname:** Optional `team_members.nickname` (max 64) is editable on `/profile` (`PATCH /api/v1/auth/me/team-member`) and admin `TeamMember` CRUD. Wishes matrix, final roster, planning validation/workload, and roster/matrix exports show **nickname** when set, otherwise **last name** (`team_member_planning_display_name` in `team_members.py`; `MatrixTeamMember.nickname` in API payloads). Staff directory and admin pickers keep full first + last name.
 
 ## Shift groups (Dienstgruppen)

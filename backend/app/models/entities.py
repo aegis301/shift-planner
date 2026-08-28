@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -194,6 +195,15 @@ class TeamMember(Base):
     )
     property_values: Mapped[list["TeamMemberPropertyValue"]] = relationship(
         back_populates="team_member", cascade="all, delete-orphan"
+    )
+    employment_periods: Mapped[list["EmploymentPeriod"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+    time_entries: Mapped[list["TimeEntry"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+    time_account_opening: Mapped["TimeAccountOpening | None"] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan", uselist=False
     )
 
 
@@ -706,6 +716,92 @@ class OrganizationMembershipInvite(Base):
     invitee_account: Mapped["Account"] = relationship(foreign_keys=[invitee_account_id])
     invited_by: Mapped["User | None"] = relationship(foreign_keys=[invited_by_user_id])
     precreated_team_member: Mapped["TeamMember | None"] = relationship(foreign_keys=[precreated_team_member_id])
+
+
+class WorkerGroup(Base):
+    __tablename__ = "worker_groups"
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_worker_group_org_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    weekly_hours_at_100: Mapped[float] = mapped_column(Numeric(6, 2), default=40)
+    vacation_days_at_100: Mapped[float] = mapped_column(Numeric(6, 2), default=30)
+    regular_week_pattern: Mapped[list] = mapped_column(JSON, default=list)
+    category_rules: Mapped[list] = mapped_column(JSON, default=list)
+    status_mappings: Mapped[list] = mapped_column(JSON, default=list)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    employment_periods: Mapped[list["EmploymentPeriod"]] = relationship(back_populates="worker_group")
+
+
+class EmploymentPeriod(Base):
+    __tablename__ = "employment_periods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    worker_group_id: Mapped[int] = mapped_column(ForeignKey("worker_groups.id", ondelete="RESTRICT"), index=True)
+    employment_percentage: Mapped[int] = mapped_column(Integer, default=100)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="employment_periods")
+    worker_group: Mapped["WorkerGroup"] = relationship(back_populates="employment_periods")
+
+
+class TimeAccountOpening(Base):
+    __tablename__ = "time_account_openings"
+    __table_args__ = (UniqueConstraint("team_member_id", name="uq_time_account_opening_member"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    as_of_date: Mapped[date] = mapped_column(Date)
+    overtime_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    vacation_days_remaining: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
+    sick_days_used_ytd: Mapped[float] = mapped_column(Numeric(8, 2), default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="time_account_opening")
+
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    entry_date: Mapped[date] = mapped_column(Date, index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    counts_toward_contract: Mapped[bool] = mapped_column(Boolean, default=True)
+    shift_template_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    planning_day_status_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    roster_slot_id: Mapped[int | None] = mapped_column(ForeignKey("roster_slots.id", ondelete="SET NULL"), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="time_entries")
 
 
 class AuditLog(Base):

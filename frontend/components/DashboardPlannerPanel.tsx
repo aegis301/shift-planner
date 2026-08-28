@@ -76,6 +76,19 @@ export function DashboardPlannerPanel({
           hrefForPeriod={(id) => planningDeepLink(id, shiftGroupId)}
         />
       </DashboardSection>
+      {data.hours_rows.length ? (
+        <DashboardSection title={t(locale, "hoursDashboardTitle")}>
+          <DashboardHorizontalBarChart
+            data={data.hours_rows.slice(0, 12).map((row) => ({
+              name: row.name,
+              value: Math.round(row.worked_contract_minutes / 60),
+            }))}
+          />
+          <Link href="/hours" className="mt-3 inline-flex text-sm font-semibold text-emerald-800 underline">
+            {t(locale, "hoursOpenTimesheet")}
+          </Link>
+        </DashboardSection>
+      ) : null}
       <Link
         href={data.current_period ? planningDeepLink(data.current_period.period_id, shiftGroupId) : "/planning"}
         className="inline-flex rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"

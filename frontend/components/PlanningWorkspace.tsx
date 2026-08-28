@@ -35,6 +35,7 @@ import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrix
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
+import { fetchHoursSummaries, formatHoursFromMinutes, type TimesheetSummary } from "@/lib/hours";
 import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashboard";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
@@ -157,6 +158,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [versionMinor, setVersionMinor] = useState("");
   const [versionNote, setVersionNote] = useState("");
   const [versionMajorUpdate, setVersionMajorUpdate] = useState(false);
+  const [hoursRows, setHoursRows] = useState<TimesheetSummary[]>([]);
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
 
@@ -305,6 +307,16 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       .finally(() => setMemberShiftsLoading(false));
   }, [teamMemberPortalUi, shiftGroupId, activePeriod?.year]);
   const stats = useMemo(() => buildMemberWorkloadRows(rosterMatrix, warnings), [rosterMatrix, warnings]);
+
+  useEffect(() => {
+    if (teamMemberPortalUi || !activePeriod) {
+      setHoursRows([]);
+      return;
+    }
+    void fetchHoursSummaries(activePeriod.year, activePeriod.month)
+      .then(setHoursRows)
+      .catch(() => setHoursRows([]));
+  }, [teamMemberPortalUi, activePeriod?.year, activePeriod?.month]);
   const duplicateMemberDayKeys = useMemo(() => duplicateMemberDayKeysFromWarnings(warnings), [warnings]);
   const duplicateDayWarningsCount = useMemo(
     () => warnings.filter((w) => w.code === "ROSTER_MATRIX_DUPLICATE_DAY").length,
@@ -712,6 +724,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
+      <HoursTimesheetStats rows={hoursRows} />
     </section>
   ) : null;
 
@@ -1697,6 +1710,47 @@ function InlineValidation({
           <p className="text-sm text-slate-600">{t(locale, "noConflicts")}</p>
         )}
       </div>
+    </Card>
+  );
+}
+
+function HoursTimesheetStats({ rows }: { rows: TimesheetSummary[] }) {
+  const { locale } = useLocale();
+  return (
+    <Card>
+      <h2 className="text-lg font-semibold text-ink">{t(locale, "hoursAnalysisHours")}</h2>
+      {rows.length ? (
+        <div className={`${dataTableScrollShellClassName} mt-4 rounded-lg border border-slate-200`}>
+          <table className="min-w-full text-sm">
+            <thead className="text-left text-slate-600">
+              <tr>
+                <th className="p-3">{t(locale, "teamMembers")}</th>
+                <th className="p-3 text-right">{t(locale, "hoursWorked")}</th>
+                <th className="p-3 text-right">{t(locale, "hoursExpected")}</th>
+                <th className="p-3 text-right">{t(locale, "hoursExtra")}</th>
+                <th className="p-3 text-right">{t(locale, "hoursPlan")}</th>
+                <th className="p-3 text-right">{t(locale, "hoursOvertime")}</th>
+                <th className="p-3 text-right">{t(locale, "hoursVacationRemaining")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.team_member_id} className="border-t border-slate-100">
+                  <td className="p-3 font-medium text-ink">{row.name}</td>
+                  <td className="p-3 text-right tabular-nums">{formatHoursFromMinutes(row.worked_contract_minutes)}</td>
+                  <td className="p-3 text-right tabular-nums">{formatHoursFromMinutes(row.expected_minutes)}</td>
+                  <td className="p-3 text-right tabular-nums">{formatHoursFromMinutes(row.worked_extra_minutes)}</td>
+                  <td className="p-3 text-right tabular-nums">{formatHoursFromMinutes(row.roster_plan_minutes)}</td>
+                  <td className="p-3 text-right tabular-nums">{formatHoursFromMinutes(row.overtime_minutes)}</td>
+                  <td className="p-3 text-right tabular-nums">{row.vacation_days_remaining}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-slate-500">{t(locale, "noData")}</p>
+      )}
     </Card>
   );
 }

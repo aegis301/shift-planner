@@ -83,6 +83,20 @@ export type PlannerDashboard = {
   wishes_response_percent: number;
   wishes_responded_count: number;
   wishes_total_count: number;
+  hours_rows: {
+    team_member_id: number;
+    name: string;
+    worker_group_name: string | null;
+    employment_percentage: number | null;
+    expected_minutes: number;
+    worked_contract_minutes: number;
+    worked_extra_minutes: number;
+    overtime_minutes: number;
+    vacation_days: number;
+    sick_days: number;
+    vacation_days_remaining: number;
+    roster_plan_minutes: number;
+  }[];
 };
 
 export type TeamMemberDashboard = {
@@ -121,6 +135,13 @@ export type TeamMemberDashboard = {
     period_year: number | null;
     period_month: number | null;
   }[];
+  hours_summary: {
+    worked_hours: number;
+    expected_hours: number;
+    overtime_hours: number;
+    vacation_days_remaining: number;
+    sick_days: number;
+  } | null;
 };
 
 export function periodLabel(year: number, month: number): string {

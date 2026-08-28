@@ -4,6 +4,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
+    EmploymentPeriod,
     PlanningCell,
     RosterSlotAssignment,
     TeamMember,
@@ -11,7 +12,13 @@ from app.models import (
     TeamMemberShiftGroup,
     User,
 )
-from app.schemas import TeamMemberCreate, TeamMemberRead, TeamMemberSelfUpdate, TeamMemberUpdate
+from app.schemas import (
+    EmploymentPeriodRead,
+    TeamMemberCreate,
+    TeamMemberRead,
+    TeamMemberSelfUpdate,
+    TeamMemberUpdate,
+)
 from app.services.audit import record_audit
 from app.services.authz import roles_allowed_for_team_member_user_link
 from app.services.org_limits import assert_org_allows_team_member_user_link
@@ -37,7 +44,10 @@ def team_member_planning_display_name(member: TeamMember) -> str:
 def list_team_members(db: Session, *, organization_id: int, active_only: bool = False) -> list[TeamMember]:
     stmt = (
         select(TeamMember)
-        .options(joinedload(TeamMember.shift_group_links))
+        .options(
+            joinedload(TeamMember.shift_group_links),
+            joinedload(TeamMember.employment_periods).joinedload(EmploymentPeriod.worker_group),
+        )
         .where(TeamMember.organization_id == organization_id)
         .order_by(TeamMember.last_name, TeamMember.first_name)
     )
@@ -56,7 +66,10 @@ def list_team_members_for_planner(db: Session, user: User, *, active_only: bool 
         return []
     stmt = (
         select(TeamMember)
-        .options(joinedload(TeamMember.shift_group_links))
+        .options(
+            joinedload(TeamMember.shift_group_links),
+            joinedload(TeamMember.employment_periods).joinedload(EmploymentPeriod.worker_group),
+        )
         .where(TeamMember.organization_id == user.organization_id)
         .join(TeamMemberShiftGroup)
         .where(
@@ -88,6 +101,21 @@ def team_member_to_read(member: TeamMember) -> TeamMemberRead:
         planning_preferences=member.planning_preferences,
         shift_group_ids=link_ids,
         shift_group_memberships=memberships,
+        employment_periods=[
+            EmploymentPeriodRead(
+                id=row.id,
+                team_member_id=row.team_member_id,
+                worker_group_id=row.worker_group_id,
+                worker_group_name=row.worker_group.name if row.worker_group is not None else None,
+                employment_percentage=row.employment_percentage,
+                start_date=row.start_date,
+                end_date=row.end_date,
+            )
+            for row in sorted(
+                member.employment_periods,
+                key=lambda item: (item.start_date, item.id),
+            )
+        ],
         user_id=member.user_id,
         is_active=member.is_active,
         created_at=member.created_at,

@@ -11,9 +11,11 @@ from app.models import (
     RosterSlot,
     RosterSlotAssignment,
     ShiftTemplate,
+    TeamMember,
 )
 from app.schemas import (
     AdminDashboardRead,
+    DashboardHoursSummary,
     DashboardKpiCounts,
     DashboardPeriodCard,
     DashboardPeriodStatusCount,
@@ -52,6 +54,7 @@ from app.services.shift_groups import (
 )
 from app.services.shift_templates import list_shift_templates
 from app.services.team_members import list_team_members
+from app.services.timesheets import get_timesheet, list_timesheet_summaries, month_bounds
 from app.services.validation import validate_roster
 from app.services.workload import (
     WorkloadAssignmentSlice,
@@ -570,6 +573,21 @@ def get_planner_dashboard(
     total_wishes = len(allowed)
     responded = sum(1 for note in notes if note.wishes_response_received and note.team_member_id in allowed)
     wishes_percent = round(100 * responded / total_wishes) if total_wishes else 0
+    hours_rows = []
+    if current is not None:
+        start, end = month_bounds(current.year, current.month)
+        scoped_members = [
+            member
+            for member in list_team_members(db, organization_id=organization_id, active_only=True)
+            if member.id in allowed
+        ]
+        hours_rows = list_timesheet_summaries(
+            db,
+            organization_id=organization_id,
+            members=scoped_members,
+            from_date=start,
+            to_date=end,
+        )
     return PlannerDashboardRead(
         year=selected_year,
         shift_group_id=shift_group_id,
@@ -585,6 +603,7 @@ def get_planner_dashboard(
         wishes_response_percent=wishes_percent,
         wishes_responded_count=responded,
         wishes_total_count=total_wishes,
+        hours_rows=hours_rows,
     )
 
 
@@ -903,6 +922,30 @@ def get_team_member_dashboard(
             for status, count in sorted(status_tallies.items())
         ]
 
+    hours_summary = None
+    member = db.get(TeamMember, team_member_id)
+    if member is not None:
+        hours_month = current.month if current is not None else _today().month
+        hours_year = current.year if current is not None else selected_year
+        start, end = month_bounds(hours_year, hours_month)
+        try:
+            sheet = get_timesheet(
+                db,
+                team_member_id=team_member_id,
+                organization_id=organization_id,
+                from_date=start,
+                to_date=end,
+            )
+            hours_summary = DashboardHoursSummary(
+                worked_hours=round((sheet.worked_contract_minutes + sheet.worked_extra_minutes) / 60, 1),
+                expected_hours=round(sheet.expected_minutes / 60, 1),
+                overtime_hours=round(sheet.overtime_minutes / 60, 1),
+                vacation_days_remaining=sheet.vacation_days_remaining,
+                sick_days=sheet.sick_days,
+            )
+        except ValueError:
+            hours_summary = None
+
     return TeamMemberDashboardRead(
         year=selected_year,
         shift_group_id=shift_group_id,
@@ -921,6 +964,7 @@ def get_team_member_dashboard(
         my_validation_warnings=my_warnings,
         upcoming_slots=upcoming,
         past_slots=past,
+        hours_summary=hours_summary,
     )
 
 

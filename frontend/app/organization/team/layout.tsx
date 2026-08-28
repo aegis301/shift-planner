@@ -37,7 +37,9 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
               !p.startsWith(`${TEAM_BASE}/requests`) &&
               !p.startsWith(`${TEAM_BASE}/organization`) &&
               !p.startsWith(`${TEAM_BASE}/properties`) &&
-              !p.startsWith(`${TEAM_BASE}/day-statuses`),
+              !p.startsWith(`${TEAM_BASE}/day-statuses`) &&
+              !p.startsWith(`${TEAM_BASE}/worker-groups`) &&
+              !p.startsWith(`${TEAM_BASE}/hours-openings`),
           },
           {
             href: `${TEAM_BASE}/properties`,
@@ -48,6 +50,16 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
             href: `${TEAM_BASE}/day-statuses`,
             labelKey: "planningDayStatusNav",
             isActive: (p) => p.startsWith(`${TEAM_BASE}/day-statuses`),
+          },
+          {
+            href: `${TEAM_BASE}/worker-groups`,
+            labelKey: "hoursWorkerGroupsNav",
+            isActive: (p) => p.startsWith(`${TEAM_BASE}/worker-groups`),
+          },
+          {
+            href: `${TEAM_BASE}/hours-openings`,
+            labelKey: "hoursOpeningsNav",
+            isActive: (p) => p.startsWith(`${TEAM_BASE}/hours-openings`),
           },
           {
             href: `${TEAM_BASE}/requests`,
