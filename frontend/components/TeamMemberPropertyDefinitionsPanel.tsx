@@ -114,7 +114,7 @@ export function TeamMemberPropertyDefinitionsPanel() {
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700"
                 onClick={() => void removeDefinition(row.id)}
-                aria-label={t(locale, "delete")}
+                aria-label={t(locale, "teamMemberPropertyDefinitionDelete")}
               >
                 <Trash2 size={16} />
               </button>
