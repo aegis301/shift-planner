@@ -50,7 +50,7 @@ Point the `dev-tunnel` ingress at `http://localhost:18130` (frontend) and, if ne
 
 ## GitHub Actions
 
-- **CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes to `main` and on pull requests (backend Ruff + pytest, frontend lint, typecheck, build, and a `container-smoke` job that boots `postgres`, `backend`, and `frontend` from `docker-compose.prod.yml`).
+- **CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and merge-queue groups (backend Ruff + pytest, frontend lint, typecheck, build, and a `container-smoke` job that boots `postgres`, `backend`, and `frontend` from `docker-compose.prod.yml`). Pull request jobs merge the latest base branch before those checks. [.github/workflows/refresh-pr-ci.yml](../.github/workflows/refresh-pr-ci.yml) re-runs open same-repo PR checks after each `main` push.
 - **Deploy:** [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) runs on `workflow_dispatch` and automatically after the **CI** workflow finishes successfully for `main`. Configure repository secrets:
 
 | Secret | Required | Description |
@@ -63,7 +63,7 @@ Point the `dev-tunnel` ingress at `http://localhost:18130` (frontend) and, if ne
 
 The server must already contain a valid `.env` in `DEPLOY_PATH`. The workflow checks out the triggering commit SHA and runs `docker compose -f docker-compose.prod.yml build` and `up -d`. Use a **full** git clone on the server (not `--depth 1`) so `git fetch` can retrieve arbitrary commit SHAs from the remote.
 
-To enforce "no merge before checks", enable branch protection for `main` in GitHub and require CI status checks (including `container-smoke`) before merge.
+To enforce "no merge before checks", protect `main` in GitHub: require the CI jobs (`backend`, `frontend`, `container-smoke`) and **Require branches to be up to date before merging**. A merge queue is optional and is already wired via the `merge_group` trigger.
 
 ## Postgres backups
 

@@ -100,7 +100,8 @@ Any implementation that changes setup, behavior, architecture, API shape, MCP ca
 
 - Backend changes should include or update pytest coverage for services and API behavior.
 - MCP changes should test resources/tools, authorization for mutations, and parity with backend services.
-- Frontend changes should keep TypeScript, linting, and i18n key coverage passing.
+- Frontend changes should keep TypeScript, linting, and i18n key coverage passing. German and English dictionaries in `frontend/lib/i18n.ts` must have the same keys (`true satisfies` parity check).
+- Pull request CI merges the latest base branch before tests so combined `main` + PR is what is checked. Enable **Require branches to be up to date before merging** (or a merge queue) on `main` so GitHub cannot merge a PR whose last green run predates newer `main` commits.
 - Docker startup should remain the baseline development path.
 
 ## Style
