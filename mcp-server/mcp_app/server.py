@@ -27,6 +27,7 @@ from app.schemas import (
     RosterSlotAssignmentClear,
     RosterSlotAssignmentUpsert,
     ShiftGroupCreate,
+    ShiftGroupMembershipWrite,
     ShiftTemplateCreate,
     ShiftTemplateUpdate,
     ShiftVariantCreate,
@@ -81,8 +82,9 @@ from app.services.shift_groups import (
     _stint_active_on,
     create_shift_group,
     list_shift_groups,
-    replace_group_team_members,
     replace_group_shift_templates,
+    replace_group_team_member_memberships,
+    replace_group_team_members,
 )
 from app.services.shift_templates import (
     ShiftConstraintInvalidError,
@@ -493,6 +495,37 @@ def set_shift_group_team_members_tool(token: str, shift_group_id: int, team_memb
         return {
             **serialize_model(match),
             "team_member_ids": sorted({link.team_member_id for link in match.team_member_links}),
+            "shift_template_ids": sorted({link.shift_template_id for link in match.template_links}),
+        }
+
+
+@mcp.tool
+def set_shift_group_memberships_tool(
+    token: str, shift_group_id: int, memberships: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Replace dated shift-group memberships. Each row needs `team_member_id`, `start_date` (YYYY-MM-DD), and optional `end_date` (null = open-ended). Requires MCP admin token."""
+    require_token(token)
+    rows = [
+        ShiftGroupMembershipWrite(
+            team_member_id=int(row["team_member_id"]),
+            start_date=date.fromisoformat(str(row["start_date"])),
+            end_date=date.fromisoformat(str(row["end_date"])) if row.get("end_date") else None,
+        )
+        for row in memberships
+    ]
+    with db_session() as db:
+        replace_group_team_member_memberships(
+            db, shift_group_id, rows, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        match = db.get(ShiftGroup, shift_group_id)
+        if match is None:
+            return {"shift_group_id": shift_group_id, "team_member_memberships": [], "shift_template_ids": []}
+        db.refresh(match, attribute_names=["team_member_links", "template_links"])
+        return {
+            **serialize_model(match),
+            "team_member_memberships": [
+                _membership_read(link).model_dump(mode="json") for link in match.team_member_links
+            ],
             "shift_template_ids": sorted({link.shift_template_id for link in match.template_links}),
         }
 

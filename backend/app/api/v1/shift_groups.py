@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models import ShiftGroup, User
 from app.schemas import (
     ShiftGroupCreate,
+    ShiftGroupMembershipsPut,
     ShiftGroupRead,
     ShiftGroupTeamMemberIdsPut,
     ShiftGroupTemplateIdsPut,
@@ -22,6 +23,7 @@ from app.services.shift_groups import (
     list_shift_groups,
     list_shift_groups_for_planner,
     replace_group_shift_templates,
+    replace_group_team_member_memberships,
     replace_group_team_members,
     update_shift_group,
 )
@@ -117,6 +119,31 @@ def put_shift_group_team_members(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    group = db.get(ShiftGroup, shift_group_id)
+    if group is None or group.organization_id != user.organization_id:
+        raise HTTPException(status_code=404, detail="Shift group not found")
+    db.refresh(group, attribute_names=["team_member_links", "template_links"])
+    return _shift_group_read(group)
+
+
+@router.put("/{shift_group_id}/memberships", response_model=ShiftGroupRead)
+def put_shift_group_memberships(
+    shift_group_id: int,
+    payload: ShiftGroupMembershipsPut,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+):
+    try:
+        replace_group_team_member_memberships(
+            db,
+            shift_group_id,
+            payload.memberships,
+            organization_id=user.organization_id,
+            actor=user.email,
+            source="rest",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     group = db.get(ShiftGroup, shift_group_id)
     if group is None or group.organization_id != user.organization_id:
         raise HTTPException(status_code=404, detail="Shift group not found")

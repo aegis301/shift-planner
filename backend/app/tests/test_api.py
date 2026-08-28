@@ -2230,6 +2230,91 @@ def test_period_roster_survives_shift_group_removal(client: TestClient):
     assert future["team_members"] == []
 
 
+def test_shift_group_membership_dates_roundtrip(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Rot", "last_name": "Ation", "email": "rotation@example.com", "employment_percentage": 100},
+    ).json()
+    group = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "ROT", "name": "Rotation Group", "display_order": 0},
+    ).json()
+    gid = group["id"]
+
+    saved = client.put(
+        f"/api/v1/shift-groups/{gid}/memberships",
+        json={
+            "memberships": [
+                {"team_member_id": member["id"], "start_date": "2026-01-01", "end_date": "2026-03-31"},
+                {"team_member_id": member["id"], "start_date": "2026-07-01", "end_date": None},
+            ]
+        },
+    )
+    assert saved.status_code == 200
+    body = saved.json()
+    assert len(body["team_member_memberships"]) == 2
+    assert body["team_member_memberships"][0]["start_date"] == "2026-01-01"
+    assert body["team_member_memberships"][0]["end_date"] == "2026-03-31"
+    assert body["team_member_memberships"][1]["end_date"] is None
+    assert body["team_member_ids"] == [member["id"]]
+
+    listed = client.get("/api/v1/shift-groups").json()
+    listed_group = next(row for row in listed if row["id"] == gid)
+    assert len(listed_group["team_member_memberships"]) == 2
+
+    detail = client.get("/api/v1/team-members").json()
+    member_row = next(row for row in detail if row["id"] == member["id"])
+    assert len(member_row["shift_group_memberships"]) == 2
+
+    overlapping = client.put(
+        f"/api/v1/shift-groups/{gid}/memberships",
+        json={
+            "memberships": [
+                {"team_member_id": member["id"], "start_date": "2026-01-01", "end_date": "2026-06-30"},
+                {"team_member_id": member["id"], "start_date": "2026-05-01", "end_date": None},
+            ]
+        },
+    )
+    assert overlapping.status_code == 400
+
+    invalid_range = client.put(
+        f"/api/v1/shift-groups/{gid}/memberships",
+        json={"memberships": [{"team_member_id": member["id"], "start_date": "2026-05-01", "end_date": "2026-04-01"}]},
+    )
+    assert invalid_range.status_code == 422
+
+
+def test_membership_dates_scope_period_roster_seeding(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Window", "last_name": "Member", "email": "window@example.com", "employment_percentage": 100},
+    ).json()
+    group = client.post(
+        "/api/v1/shift-groups",
+        json={"code": "WIN", "name": "Window Group", "display_order": 0},
+    ).json()
+    gid = group["id"]
+    client.put(
+        f"/api/v1/shift-groups/{gid}/memberships",
+        json={
+            "memberships": [
+                {"team_member_id": member["id"], "start_date": "2027-03-01", "end_date": "2027-04-30"},
+            ]
+        },
+    )
+
+    inside = client.post("/api/v1/planning-periods", json={"year": 2027, "month": 4}).json()["id"]
+    outside = client.post("/api/v1/planning-periods", json={"year": 2027, "month": 6}).json()["id"]
+
+    inside_matrix = client.get(f"/api/v1/matrix/{inside}?shift_group_id={gid}").json()
+    assert [row["id"] for row in inside_matrix["team_members"]] == [member["id"]]
+
+    outside_matrix = client.get(f"/api/v1/matrix/{outside}?shift_group_id={gid}").json()
+    assert outside_matrix["team_members"] == []
+
+
 def test_planning_period_status_transitions(client: TestClient):
     login(client)
     pid = client.post("/api/v1/planning-periods", json={"year": 2028, "month": 1}).json()["id"]
