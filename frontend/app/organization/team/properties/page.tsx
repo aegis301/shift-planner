@@ -1,7 +1,5 @@
-"use client";
-
-import { TeamMemberPropertyDefinitionsPanel } from "@/components/TeamMemberPropertyDefinitionsPanel";
+import { redirect } from "next/navigation";
 
 export default function TeamPropertyDefinitionsPage() {
-  return <TeamMemberPropertyDefinitionsPanel />;
+  redirect("/organization/team/properties/values");
 }
