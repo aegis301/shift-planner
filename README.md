@@ -40,6 +40,8 @@ If the public hostname differs from `localhost`, set `BACKEND_CORS_ORIGINS` and 
 
 Use `docker compose -f docker-compose.prod.yml --env-file .env up -d --build` with a production `.env` (see [.env.example](.env.example)). Details: Caddy routing, Cloudflare, GitHub Actions CI/CD, backups, and required secrets are documented in [deploy/README.md](deploy/README.md). Continuous integration runs in [.github/workflows/ci.yml](.github/workflows/ci.yml); optional server deploy runs from [.github/workflows/deploy.yml](.github/workflows/deploy.yml) on `workflow_dispatch` or `v*` tags.
 
+Pull request CI checks out the PR and **merges the latest target branch** (`main`) before lint, typecheck, tests, and the container smoke job, so two independently green branches cannot hide a combined type error. After each push to `main`, [.github/workflows/refresh-pr-ci.yml](.github/workflows/refresh-pr-ci.yml) re-runs CI on open same-repo PRs so those merges happen again against the new `main`. That still races if someone merges a PR before the re-run finishes: in GitHub → Settings → Branches (or Rulesets) protect `main` with required checks (`backend`, `frontend`, `container-smoke`) and **Require branches to be up to date before merging**. A **merge queue** is even stronger; CI also listens for `merge_group` so queue entries are tested.
+
 ## Backend Development
 
 ```bash

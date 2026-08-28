@@ -1,0 +1,52 @@
+name: Refresh PR CI
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  rerun-open-pr-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: "open",
+              base: "main",
+              per_page: 100,
+            });
+            for (const pr of pulls) {
+              if (pr.head.repo && pr.head.repo.full_name !== `${owner}/${repo}`) {
+                continue;
+              }
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: "ci.yml",
+                event: "pull_request",
+                branch: pr.head.ref,
+                per_page: 1,
+              });
+              const run = runs.data.workflow_runs[0];
+              if (!run || run.status !== "completed") {
+                continue;
+              }
+              try {
+                await github.rest.actions.reRunWorkflow({
+                  owner,
+                  repo,
+                  run_id: run.id,
+                });
+                core.info(`Re-ran CI for PR #${pr.number} (${pr.head.ref})`);
+              } catch (error) {
+                core.warning(`Could not re-run CI for PR #${pr.number}: ${error.message}`);
+              }
+            }

@@ -4,6 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   backend:
@@ -12,8 +20,12 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Merge latest base branch
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/merge-latest-base.sh"
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -31,8 +43,12 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Merge latest base branch
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/merge-latest-base.sh"
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -52,7 +68,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend, frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Merge latest base branch
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/merge-latest-base.sh"
       - name: Build and start production app services
         env:
           DOCKER_BUILDKIT: 1
