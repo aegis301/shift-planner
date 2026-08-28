@@ -884,6 +884,37 @@ class TeamMemberPropertyMatrixRead(BaseModel):
     values: list[TeamMemberPropertyMatrixValue]
 
 
+TeamMemberPropertyFilterOperator = Literal[
+    "is_empty",
+    "is_not_empty",
+    "contains",
+    "equals",
+    "not_equals",
+    "contains_any",
+    "contains_all",
+    "greater_than",
+    "greater_or_equal",
+    "less_than",
+    "less_or_equal",
+    "before",
+    "on_or_before",
+    "after",
+    "on_or_after",
+]
+
+
+class TeamMemberPropertyMatrixFilter(BaseModel):
+    property_definition_id: int
+    operator: TeamMemberPropertyFilterOperator
+    value: Any = None
+
+
+class TeamMemberPropertyMatrixSearch(BaseModel):
+    active_members_only: bool = True
+    active_definitions_only: bool = True
+    filters: list[TeamMemberPropertyMatrixFilter] = Field(default_factory=list, max_length=20)
+
+
 class PlanningDayStatusDefinitionCreate(BaseModel):
     code: str = Field(min_length=1, max_length=32)
     label: str = Field(min_length=1, max_length=64)

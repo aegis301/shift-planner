@@ -17,6 +17,7 @@ from app.schemas import (
     TeamMemberPlanningPatternUpsertItem,
     TeamMemberPropertyDefinitionCreate,
     TeamMemberPropertyDefinitionUpdate,
+    TeamMemberPropertyMatrixFilter,
     TeamMemberPropertyValuesReplace,
     TeamMemberPropertyValueUpsertItem,
     PlanningCellBulkUpsert,
@@ -298,6 +299,27 @@ def team_member_property_matrix_resource() -> dict[str, Any]:
         return get_team_member_property_matrix(
             db,
             organization_id=mcp_organization_id(),
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def filter_team_member_property_matrix_tool(
+    filters: list[dict[str, Any]],
+    active_members_only: bool = True,
+    active_definitions_only: bool = True,
+) -> dict[str, Any]:
+    """Filter team members by typed property conditions combined with AND semantics."""
+    parsed_filters = [
+        TeamMemberPropertyMatrixFilter.model_validate(property_filter)
+        for property_filter in filters
+    ]
+    with db_session() as db:
+        return get_team_member_property_matrix(
+            db,
+            organization_id=mcp_organization_id(),
+            active_members_only=active_members_only,
+            active_definitions_only=active_definitions_only,
+            filters=parsed_filters,
         ).model_dump(mode="json")
 
 

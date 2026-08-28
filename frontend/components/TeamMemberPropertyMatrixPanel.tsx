@@ -8,6 +8,10 @@ import {
   emptyTeamMemberPropertyDefinitionDraft,
   TeamMemberPropertyDefinitionModal
 } from "@/components/TeamMemberPropertyDefinitionModal";
+import {
+  completeTeamMemberPropertyFilters,
+  TeamMemberPropertyFilterBuilder
+} from "@/components/TeamMemberPropertyFilterBuilder";
 import { TeamMemberPropertyCellEditor } from "@/components/TeamMemberPropertyCellEditor";
 import { useLocale } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -15,7 +19,8 @@ import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t } from "@/lib/i18n";
 import {
   TEAM_MEMBER_PROPERTY_TYPE_KEYS,
-  type TeamMemberPropertyDefinition
+  type TeamMemberPropertyDefinition,
+  type TeamMemberPropertyFilter
 } from "@/lib/teamMemberProperties";
 
 type PropertyMatrixMember = {
@@ -53,21 +58,43 @@ export function TeamMemberPropertyMatrixPanel() {
   });
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [statuses, setStatuses] = useState<Record<string, SaveStatus>>({});
+  const [filters, setFilters] = useState<TeamMemberPropertyFilter[]>([]);
   const [showInactiveMembers, setShowInactiveMembers] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [definitionModalOpen, setDefinitionModalOpen] = useState(false);
   const persistTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const loadRequestId = useRef(0);
+  const filterDefinitionsRef = useRef(matrix.definitions);
+  filterDefinitionsRef.current = matrix.definitions;
+  const completeFilters = completeTeamMemberPropertyFilters(filters, matrix.definitions);
+  const definitionSignature = matrix.definitions
+    .map((definition) => `${definition.id}:${definition.type}:${definition.options.join("\u0000")}`)
+    .join("\u0001");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (activeFilters: TeamMemberPropertyFilter[]) => {
+    const requestId = loadRequestId.current + 1;
+    loadRequestId.current = requestId;
     setLoading(true);
     setMessage("");
     try {
-      const next = await apiFetch<PropertyMatrix>(
-        `/api/v1/team-member-property-matrix?active_members_only=${
-          showInactiveMembers ? "false" : "true"
-        }`
-      );
+      const next =
+        activeFilters.length === 0
+          ? await apiFetch<PropertyMatrix>(
+              `/api/v1/team-member-property-matrix?active_members_only=${
+                showInactiveMembers ? "false" : "true"
+              }`
+            )
+          : await apiFetch<PropertyMatrix>("/api/v1/team-member-property-matrix/search", {
+              method: "POST",
+              body: JSON.stringify({
+                active_members_only: !showInactiveMembers,
+                filters: activeFilters
+              })
+            });
+      if (requestId !== loadRequestId.current) {
+        return;
+      }
       setMatrix(next);
       setValues(
         Object.fromEntries(
@@ -79,19 +106,32 @@ export function TeamMemberPropertyMatrixPanel() {
       );
       setStatuses({});
     } catch (error) {
+      if (requestId !== loadRequestId.current) {
+        return;
+      }
       setMessage(
         error instanceof ApiError && typeof error.detail === "string"
           ? error.detail
           : t(locale, "teamMemberPropertyMatrixLoadError")
       );
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) {
+        setLoading(false);
+      }
     }
   }, [locale, showInactiveMembers]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    const activeFilters = completeTeamMemberPropertyFilters(
+      filters,
+      filterDefinitionsRef.current
+    );
+    const timer = setTimeout(
+      () => void load(activeFilters),
+      filters.length > 0 ? 250 : 0
+    );
+    return () => clearTimeout(timer);
+  }, [definitionSignature, filters, load]);
 
   useEffect(() => {
     const timers = persistTimers.current;
@@ -116,6 +156,9 @@ export function TeamMemberPropertyMatrixPanel() {
       });
       setStatuses((previous) => ({ ...previous, [key]: "saved" }));
       setMessage("");
+      if (completeFilters.length > 0) {
+        void load(completeFilters);
+      }
     } catch (error) {
       setStatuses((previous) => ({ ...previous, [key]: "error" }));
       setMessage(
@@ -158,7 +201,7 @@ export function TeamMemberPropertyMatrixPanel() {
           <button
             type="button"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700"
-            onClick={() => void load()}
+            onClick={() => void load(completeFilters)}
           >
             <RefreshCw size={16} />
             {t(locale, "refresh")}
@@ -189,6 +232,16 @@ export function TeamMemberPropertyMatrixPanel() {
           {t(locale, "teamMemberPropertyDefinitionsNav")}
         </Link>
       </div>
+      <TeamMemberPropertyFilterBuilder
+        definitions={matrix.definitions}
+        filters={filters}
+        onChange={setFilters}
+      />
+      {completeFilters.length > 0 ? (
+        <p className="mb-3 text-xs font-medium text-slate-600">
+          {t(locale, "teamMemberPropertyFiltersActive")}: {completeFilters.length}
+        </p>
+      ) : null}
       {loading ? (
         <p className="text-sm text-slate-600">{t(locale, "planningSessionLoading")}</p>
       ) : null}
@@ -211,7 +264,12 @@ export function TeamMemberPropertyMatrixPanel() {
       matrix.definitions.length > 0 &&
       matrix.members.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-600">
-          {t(locale, "teamMemberPropertyMatrixEmptyMembers")}
+          {t(
+            locale,
+            completeFilters.length > 0
+              ? "teamMemberPropertyFiltersNoMatches"
+              : "teamMemberPropertyMatrixEmptyMembers"
+          )}
         </p>
       ) : null}
       {!loading && matrix.definitions.length > 0 && matrix.members.length > 0 ? (
@@ -299,7 +357,7 @@ export function TeamMemberPropertyMatrixPanel() {
           initial={emptyTeamMemberPropertyDefinitionDraft()}
           definitionId={null}
           onClose={() => setDefinitionModalOpen(false)}
-          onSaved={load}
+          onSaved={() => load(completeFilters)}
         />
       ) : null}
     </Card>
