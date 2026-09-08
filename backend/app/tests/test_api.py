@@ -133,6 +133,29 @@ def login_team_member(cl: TestClient) -> None:
     assert response.status_code == 200
 
 
+def set_shift_group_membership(
+    client: TestClient,
+    *,
+    shift_group_id: int,
+    team_member_id: int,
+    start_date: str = "2026-01-01",
+    end_date: str | None = None,
+) -> None:
+    response = client.put(
+        f"/api/v1/shift-groups/{shift_group_id}/memberships",
+        json={
+            "memberships": [
+                {
+                    "team_member_id": team_member_id,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+
+
 def test_health(client: TestClient):
     assert client.get("/health").json() == {"status": "ok"}
 
@@ -863,6 +886,7 @@ def test_roster_validation_no_go_conflict(client: TestClient):
             "shift_group_ids": [1],
         },
     ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=team_member_id)
     template = client.post(
         "/api/v1/shift-templates",
         json={
@@ -911,6 +935,7 @@ def test_matrix_cell_note_and_csv_export(client: TestClient):
             "shift_group_ids": [1],
         },
     ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=team_member_id)
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
 
     response = client.put(
@@ -961,6 +986,7 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
             "shift_group_ids": [1],
         },
     ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=team_member_id)
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
 
     response = client.put(
@@ -1004,6 +1030,7 @@ def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
             "shift_group_ids": [1],
         },
     ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=team_member_id)
     template = client.post(
         "/api/v1/shift-templates",
         json={
@@ -1448,6 +1475,7 @@ def test_validation_warns_for_cross_day_unavailable_constraint(client: TestClien
             "shift_group_ids": [1],
         },
     ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=member_id)
     template = client.post(
         "/api/v1/shift-templates",
         json={"code": "CRS", "name": "Nacht", "category": "other"},
@@ -1492,6 +1520,7 @@ def test_global_unavailable_overlap_blocks_overnight_without_template_rule(clien
             "shift_group_ids": [1],
         },
     ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=member_id)
     template = client.post(
         "/api/v1/shift-templates",
         json={"code": "GLO", "name": "Nacht Global", "category": "other"},
@@ -2143,7 +2172,7 @@ def test_shift_group_filters_matrix_and_assignment_eligibility(client: TestClien
         json={"code": "SG", "name": "Gruppe", "display_order": 0},
     ).json()
     gid = group["id"]
-    client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": [member_in["id"]]})
+    set_shift_group_membership(client, shift_group_id=gid, team_member_id=member_in["id"])
     client.put(f"/api/v1/shift-groups/{gid}/shift-templates", json={"shift_template_ids": [template["id"]]})
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
     full = client.get(f"/api/v1/matrix/{period_id}").json()
@@ -2203,7 +2232,7 @@ def test_period_roster_survives_shift_group_removal(client: TestClient):
         json={"code": "PRG", "name": "Period Roster Group", "display_order": 0},
     ).json()
     gid = group["id"]
-    client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": [member["id"]]})
+    set_shift_group_membership(client, shift_group_id=gid, team_member_id=member["id"])
     period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
     before = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
     assert len(before["team_members"]) == 1
@@ -2220,7 +2249,12 @@ def test_period_roster_survives_shift_group_removal(client: TestClient):
             ]
         },
     )
-    client.put(f"/api/v1/shift-groups/{gid}/team-members", json={"team_member_ids": []})
+    set_shift_group_membership(
+        client,
+        shift_group_id=gid,
+        team_member_id=member["id"],
+        end_date="2026-08-31",
+    )
     after = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={gid}").json()
     assert len(after["team_members"]) == 1
     assert after["team_members"][0]["id"] == member["id"]
