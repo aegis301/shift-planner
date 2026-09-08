@@ -5,10 +5,13 @@ description = "FastAPI backend for the AI-first shift planner."
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13.0",
+  "anthropic>=0.40.0",
+  "cryptography>=43.0.0",
   "email-validator>=2.1.0",
   "icalendar>=6.0.0",
   "fastapi>=0.115.0",
   "itsdangerous>=2.2.0",
+  "openai>=1.50.0",
   "openpyxl>=3.1.5",
   "passlib>=1.7.4",
   "psycopg>=3.2.0,<3.4",

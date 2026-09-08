@@ -15,8 +15,13 @@ class Settings(BaseSettings):
     planner_seed_email: str | None = None
     planner_seed_password: str = "change-me-planner"
     mcp_admin_token: str = "change-me-mcp-token"
+    mcp_jwt_secret: str = "change-me-mcp-jwt-secret"
     mcp_organization_id: int | None = None
     default_organization_id: int = 1
+    ai_credentials_key: str = "change-me-ai-credentials-key"
+    langfuse_host: str = ""
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
     backend_cors_origins: str = "http://localhost:18130"
     session_cookie_secure: bool = False
     session_cookie_domain: str | None = None

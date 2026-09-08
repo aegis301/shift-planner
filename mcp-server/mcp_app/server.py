@@ -7,7 +7,6 @@ from fastmcp import FastMCP
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import ShiftGroup, User
 from app.schemas import (
@@ -107,6 +106,12 @@ from app.services.shift_templates import (
     update_shift_variant,
 )
 from app.services.authz import ROLE_ADMIN
+from app.services.mcp_access import (
+    assert_mcp_read_scope,
+    mcp_organization_id,
+    require_mcp_access,
+    require_token,
+)
 from app.services.employment_periods import employment_period_to_read, replace_employment_periods
 from app.services.time_entries import (
     create_time_entry,
@@ -137,17 +142,6 @@ def db_session():
         db.close()
 
 
-def require_token(token: str) -> None:
-    if token != settings.mcp_admin_token:
-        raise PermissionError("Invalid MCP admin token")
-
-
-def mcp_organization_id() -> int:
-    if settings.mcp_organization_id is not None:
-        return settings.mcp_organization_id
-    return settings.default_organization_id
-
-
 def serialize_model(model: Any) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for column in model.__table__.columns:
@@ -164,9 +158,11 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "shift-planner-mcp"}
 
 
-@mcp.resource("shift-planner://team-members")
-def team_members_resource() -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://team-members/{access_token}")
+def team_members_resource(access_token: str) -> list[dict[str, Any]]:
     """List all team members in the default organization."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [
             {
@@ -177,9 +173,11 @@ def team_members_resource() -> list[dict[str, Any]]:
         ]
 
 
-@mcp.resource("shift-planner://shift-templates")
-def shift_templates_resource() -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://shift-templates/{access_token}")
+def shift_templates_resource(access_token: str) -> list[dict[str, Any]]:
     """List all shift templates with variant metadata."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [
             {
@@ -190,27 +188,33 @@ def shift_templates_resource() -> list[dict[str, Any]]:
         ]
 
 
-@mcp.resource("shift-planner://planning-periods")
-def planning_periods_resource() -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://planning-periods/{access_token}")
+def planning_periods_resource(access_token: str) -> list[dict[str, Any]]:
     """List monthly planning periods."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [
             serialize_model(period) for period in list_planning_periods(db, organization_id=mcp_organization_id())
         ]
 
 
-@mcp.resource("shift-planner://dashboard/admin")
-def dashboard_admin_resource() -> dict[str, Any]:
+@mcp.resource("shift-planner://dashboard/admin/{access_token}")
+def dashboard_admin_resource(access_token: str) -> dict[str, Any]:
     """Organization admin dashboard aggregates (KPIs, planning pipeline, year shift distribution)."""
+    require_mcp_access(access_token, need='admin')
+    assert_mcp_read_scope(None)
     from app.services.dashboard import get_admin_dashboard
 
     with db_session() as db:
         return get_admin_dashboard(db, organization_id=mcp_organization_id()).model_dump(mode="json")
 
 
-@mcp.resource("shift-planner://shift-groups")
-def shift_groups_resource() -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://shift-groups/{access_token}")
+def shift_groups_resource(access_token: str) -> list[dict[str, Any]]:
     """List shift groups with active team member ids and dated membership stints."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     today = date.today()
     with db_session() as db:
         return [
@@ -232,45 +236,55 @@ def shift_groups_resource() -> list[dict[str, Any]]:
         ]
 
 
-@mcp.resource("shift-planner://matrix/{planning_period_id}")
-def matrix_resource(planning_period_id: int) -> dict[str, Any]:
+@mcp.resource("shift-planner://matrix/{planning_period_id}/{access_token}")
+def matrix_resource(planning_period_id: int, access_token: str) -> dict[str, Any]:
     """Return the monthly planning matrix with days, `team_members`, and cells."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return get_planning_matrix(
             db, planning_period_id, organization_id=mcp_organization_id()
         ).model_dump(mode="json")
 
 
-@mcp.resource("shift-planner://matrix/{planning_period_id}/shift-group/{shift_group_id}")
-def matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+@mcp.resource("shift-planner://matrix/{planning_period_id}/shift-group/{shift_group_id}/{access_token}")
+def matrix_filtered_resource(planning_period_id: int, shift_group_id: int, access_token: str) -> dict[str, Any]:
     """Return the planning matrix filtered to one shift group."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(shift_group_id)
     with db_session() as db:
         return get_planning_matrix(
             db, planning_period_id, organization_id=mcp_organization_id(), shift_group_id=shift_group_id
         ).model_dump(mode="json")
 
 
-@mcp.resource("shift-planner://roster-matrix/{planning_period_id}")
-def roster_matrix_resource(planning_period_id: int) -> dict[str, Any]:
+@mcp.resource("shift-planner://roster-matrix/{planning_period_id}/{access_token}")
+def roster_matrix_resource(planning_period_id: int, access_token: str) -> dict[str, Any]:
     """Return the final roster matrix with days, shift slots, `team_members`, and assignments."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return get_roster_matrix(db, planning_period_id, organization_id=mcp_organization_id()).model_dump(
             mode="json"
         )
 
 
-@mcp.resource("shift-planner://roster-matrix/{planning_period_id}/shift-group/{shift_group_id}")
-def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+@mcp.resource("shift-planner://roster-matrix/{planning_period_id}/shift-group/{shift_group_id}/{access_token}")
+def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int, access_token: str) -> dict[str, Any]:
     """Return the final roster matrix filtered to one shift group."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(shift_group_id)
     with db_session() as db:
         return get_roster_matrix(
             db, planning_period_id, organization_id=mcp_organization_id(), shift_group_id=shift_group_id
         ).model_dump(mode="json")
 
 
-@mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}")
-def team_member_period_notes_resource(planning_period_id: int) -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}/{access_token}")
+def team_member_period_notes_resource(planning_period_id: int, access_token: str) -> list[dict[str, Any]]:
     """Return monthly notes per team member for a planning period."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [
             serialize_model(note)
@@ -280,9 +294,11 @@ def team_member_period_notes_resource(planning_period_id: int) -> list[dict[str,
         ]
 
 
-@mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}/shift-group/{shift_group_id}")
-def team_member_period_notes_filtered_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}/shift-group/{shift_group_id}/{access_token}")
+def team_member_period_notes_filtered_resource(planning_period_id: int, shift_group_id: int, access_token: str) -> list[dict[str, Any]]:
     """Return period notes filtered to team members in a shift group."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(shift_group_id)
     with db_session() as db:
         return [
             serialize_model(note)
@@ -295,9 +311,11 @@ def team_member_period_notes_filtered_resource(planning_period_id: int, shift_gr
         ]
 
 
-@mcp.resource("shift-planner://team-members/{team_member_id}/planning-patterns")
-def team_member_planning_patterns_resource(team_member_id: int) -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://team-members/{team_member_id}/planning-patterns/{access_token}")
+def team_member_planning_patterns_resource(team_member_id: int, access_token: str) -> list[dict[str, Any]]:
     """Return recurring planning patterns for one team member."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         rows = list_team_member_planning_patterns(
             db, team_member_id=team_member_id, organization_id=mcp_organization_id()
@@ -305,17 +323,21 @@ def team_member_planning_patterns_resource(team_member_id: int) -> list[dict[str
         return [pattern_to_read(row).model_dump(mode="json") for row in rows]
 
 
-@mcp.resource("shift-planner://team-member-property-definitions")
-def team_member_property_definitions_resource() -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://team-member-property-definitions/{access_token}")
+def team_member_property_definitions_resource(access_token: str) -> list[dict[str, Any]]:
     """Return org-scoped team member property definitions (competency fields)."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         rows = list_team_member_property_definitions(db, organization_id=mcp_organization_id())
         return [TeamMemberPropertyDefinitionRead.model_validate(row).model_dump(mode="json") for row in rows]
 
 
-@mcp.resource("shift-planner://team-member-property-matrix")
-def team_member_property_matrix_resource() -> dict[str, Any]:
+@mcp.resource("shift-planner://team-member-property-matrix/{access_token}")
+def team_member_property_matrix_resource(access_token: str) -> dict[str, Any]:
     """Return active team members and property definitions with their values."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return get_team_member_property_matrix(
             db,
@@ -325,11 +347,14 @@ def team_member_property_matrix_resource() -> dict[str, Any]:
 
 @mcp.tool
 def filter_team_member_property_matrix_tool(
+    access_token: str,
     filters: list[dict[str, Any]],
     active_members_only: bool = True,
     active_definitions_only: bool = True,
 ) -> dict[str, Any]:
     """Filter team members by typed property conditions combined with AND semantics."""
+    require_mcp_access(access_token, need="planning")
+    assert_mcp_read_scope(None)
     parsed_filters = [
         TeamMemberPropertyMatrixFilter.model_validate(property_filter)
         for property_filter in filters
@@ -344,9 +369,11 @@ def filter_team_member_property_matrix_tool(
         ).model_dump(mode="json")
 
 
-@mcp.resource("shift-planner://team-members/{team_member_id}/property-values")
-def team_member_property_values_resource(team_member_id: int) -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://team-members/{team_member_id}/property-values/{access_token}")
+def team_member_property_values_resource(team_member_id: int, access_token: str) -> list[dict[str, Any]]:
     """Return property values for one team member (includes definition metadata)."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [
             row.model_dump(mode="json")
@@ -367,7 +394,7 @@ def create_team_member_property_definition_tool(
     is_active: bool = True,
 ) -> dict[str, Any]:
     """Create a team member property definition. Types: number, date, select, multi_select, text. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         row = create_team_member_property_definition(
             db,
@@ -398,7 +425,7 @@ def update_team_member_property_definition_tool(
     is_active: bool | None = None,
 ) -> dict[str, Any]:
     """Update a team member property definition. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     payload = TeamMemberPropertyDefinitionUpdate(
         name=name,
         type=type,
@@ -424,7 +451,7 @@ def update_team_member_property_definition_tool(
 @mcp.tool
 def delete_team_member_property_definition_tool(token: str, definition_id: int) -> dict[str, bool]:
     """Deactivate or delete a property definition. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         ok = delete_team_member_property_definition(
             db,
@@ -445,7 +472,7 @@ def replace_team_member_property_values_tool(
     values: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Replace team member property values (partial upsert by property_definition_id). Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     payload = TeamMemberPropertyValuesReplace(
         values=[TeamMemberPropertyValueUpsertItem.model_validate(item) for item in values]
     )
@@ -463,8 +490,10 @@ def replace_team_member_property_values_tool(
 
 
 @mcp.tool
-def get_validation_warnings(planning_period_id: int, shift_group_id: int | None = None) -> list[dict[str, Any]]:
+def get_validation_warnings(access_token: str, planning_period_id: int, shift_group_id: int | None = None) -> list[dict[str, Any]]:
     """Validate a planning period and return structured warnings (matrix, roster, no-go, duplicate day, consecutive weekends, template constraints, member planning patterns). Optionally filter to one shift group."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(shift_group_id)
     with db_session() as db:
         return [
             warning.model_dump(mode="json")
@@ -485,7 +514,7 @@ def create_team_member_tool(
     shift_group_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Create a team member row. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         member = create_team_member(
             db,
@@ -517,7 +546,7 @@ def create_shift_group_tool(
     is_active: bool = True,
 ) -> dict[str, Any]:
     """Create a shift group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         group = create_shift_group(
             db,
@@ -537,7 +566,7 @@ def create_shift_group_tool(
 @mcp.tool
 def set_shift_group_team_members_tool(token: str, shift_group_id: int, team_member_ids: list[int]) -> dict[str, Any]:
     """Replace team members assigned to a shift group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         replace_group_team_members(
             db, shift_group_id, team_member_ids, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
@@ -558,7 +587,7 @@ def set_shift_group_memberships_tool(
     token: str, shift_group_id: int, memberships: list[dict[str, Any]]
 ) -> dict[str, Any]:
     """Replace dated shift-group memberships. Each row needs `team_member_id`, `start_date` (YYYY-MM-DD), and optional `end_date` (null = open-ended). Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     rows = [
         ShiftGroupMembershipWrite(
             team_member_id=int(row["team_member_id"]),
@@ -587,7 +616,7 @@ def set_shift_group_memberships_tool(
 @mcp.tool
 def set_shift_group_templates_tool(token: str, shift_group_id: int, shift_template_ids: list[int]) -> dict[str, Any]:
     """Replace shift templates covered by a shift group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         replace_group_shift_templates(
             db, shift_group_id, shift_template_ids, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
@@ -606,7 +635,7 @@ def set_shift_group_templates_tool(token: str, shift_group_id: int, shift_templa
 @mcp.tool
 def delete_team_member_tool(token: str, team_member_id: int) -> dict[str, bool]:
     """Delete a team member and clear related wishes, notes, and assignments. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         return {
             "deleted": delete_team_member(
@@ -625,7 +654,7 @@ def create_shift_template_tool(
     constraints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Create a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift (paired_shift_variant_id, partner_day_offset, severity)."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         try:
             template = create_shift_template(
@@ -660,7 +689,7 @@ def update_shift_template_tool(
     constraints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Update a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         try:
             template = update_shift_template(
@@ -690,7 +719,7 @@ def update_shift_template_tool(
 @mcp.tool
 def delete_shift_template_tool(token: str, shift_template_id: int) -> dict[str, bool]:
     """Delete a shift template, its variants, generated slots, and assignments. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         return {
             "deleted": delete_shift_template(
@@ -716,7 +745,7 @@ def create_shift_variant_tool(
     constraints: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Create a shift template variant. Requires MCP admin token. Constraints may include requires_coupled_shift (paired variant in same org; not self)."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         try:
             variant = create_shift_variant(
@@ -764,7 +793,7 @@ def update_shift_variant_tool(
     is_active: bool | None = None,
 ) -> dict[str, Any]:
     """Update a shift template variant. Requires MCP admin token. Constraints may include requires_coupled_shift."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         try:
             variant = update_shift_variant(
@@ -796,8 +825,10 @@ def update_shift_variant_tool(
 
 
 @mcp.tool
-def preview_shift_slots_tool(year: int, month: int) -> list[dict[str, Any]]:
+def preview_shift_slots_tool(access_token: str, year: int, month: int) -> list[dict[str, Any]]:
     """Preview generated concrete roster slots for a month."""
+    require_mcp_access(access_token, need='planning')
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [
             slot.model_dump(mode="json")
@@ -810,7 +841,7 @@ def preview_shift_slots_tool(year: int, month: int) -> list[dict[str, Any]]:
 @mcp.tool
 def create_planning_period_tool(token: str, year: int, month: int) -> dict[str, Any]:
     """Create or return a monthly planning period. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         period = create_planning_period(
             db,
@@ -827,7 +858,7 @@ def regenerate_planning_period_roster_tool(
     token: str, planning_period_id: int, shift_group_id: int | None = None
 ) -> dict[str, Any]:
     """Delete roster slots and assignments for a period (optionally one shift group), then regenerate slots from current templates."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         reset_roster_slots_for_period(
             db,
@@ -850,7 +881,7 @@ def sync_planning_period_roster_tool(
     token: str, planning_period_id: int, shift_group_id: int | None = None
 ) -> dict[str, Any]:
     """Sync roster slots from current shift templates for a period (optionally one shift group). Adds, updates, and removes template slots while preserving assignments on unchanged slots. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         try:
             sync_result = sync_roster_slots_for_period(
@@ -883,7 +914,7 @@ def sync_planning_period_roster_tool(
 @mcp.tool
 def delete_planning_period_tool(token: str, planning_period_id: int) -> dict[str, bool]:
     """Delete a planning period and all related wishes, notes, roster slots, and assignments."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         return {
             "deleted": delete_planning_period(
@@ -903,7 +934,7 @@ def upsert_planning_cell_tool(
     comment: str | None = None,
 ) -> dict[str, Any]:
     """Set one matrix cell status/comment for a shift group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         cell = upsert_planning_cell(
             db,
@@ -930,7 +961,7 @@ def bulk_upsert_planning_cells_tool(
     cells: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Set multiple matrix cells atomically for a shift group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     payload = PlanningCellBulkUpsert(
         cells=[
             PlanningCellUpsert(
@@ -964,7 +995,7 @@ def bulk_upsert_planning_shift_intents_tool(
     intents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Create, update, or clear per-shift-group wish/no-go rows (kind null clears). Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     intent_rows: list[PlanningShiftIntentUpsert] = []
     for row in intents:
         raw_kind = row.get("kind")
@@ -1000,7 +1031,7 @@ def save_team_member_period_note_tool(
     sync_planning_preferences: bool = False,
 ) -> dict[str, Any]:
     """Save a team member's monthly matrix note for a shift group; optionally sync permanent planning preferences on the team member. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         note = save_team_member_period_note(
             db,
@@ -1030,7 +1061,7 @@ def publish_shift_group_planning_tool(
     note: str | None = None,
 ) -> dict[str, Any]:
     """Publish the roster for one shift group in a planning month. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         row = publish_shift_group_planning(
             db,
@@ -1057,7 +1088,7 @@ def set_shift_group_planning_preliminary_tool(
     is_major_update: bool = False,
 ) -> dict[str, Any]:
     """Set one shift group's plan to preliminary. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         row = set_shift_group_planning_to_preliminary(
             db,
@@ -1077,7 +1108,7 @@ def set_shift_group_planning_preliminary_tool(
 @mcp.tool
 def list_plan_versions_tool(token: str, planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
     """List saved plan versions for a shift group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         payload = list_plan_versions(
             db,
@@ -1098,7 +1129,7 @@ def save_plan_version_tool(
     note: str | None = None,
 ) -> dict[str, Any]:
     """Manually save a plan version snapshot while preliminary. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         version = manual_save_plan_version(
             db,
@@ -1118,7 +1149,7 @@ def save_plan_version_tool(
 @mcp.tool
 def set_shift_group_planning_draft_tool(token: str, planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
     """Set one shift group's plan back to draft. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         row = set_shift_group_planning_to_draft(
             db,
@@ -1138,7 +1169,7 @@ def replace_team_member_planning_patterns_tool(
     patterns: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Replace recurring planning patterns for a team member (`avoid_time_window` with `windows[]`; `iso_week_cycle` with `cycle_weeks`, `on_weeks`, `anchor_iso_year`, `anchor_iso_week`, optional `wishes_weekdays`, `allow_weekend_roster`, and `off_status`; legacy `allowed_calendar_week_parity`; `recurring_weekday_status`). Avoid time window is info-only on roster. `iso_week_cycle` and parity off-status write wishes-matrix cells in draft/preliminary months. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         org = db.get(Organization, mcp_organization_id())
         if org is None:
@@ -1168,7 +1199,7 @@ def upsert_roster_slot_assignment_tool(
     manual_override: bool = False,
 ) -> dict[str, Any]:
     """Assign a team member (team_member_id) to one final roster slot. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         assignment = upsert_roster_slot_assignment(
             db,
@@ -1188,7 +1219,7 @@ def upsert_roster_slot_assignment_tool(
 @mcp.tool
 def clear_roster_slot_assignment_tool(token: str, roster_slot_id: int) -> dict[str, bool]:
     """Clear one final roster slot assignment. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         deleted = clear_roster_slot_assignment(
             db,
@@ -1203,7 +1234,7 @@ def clear_roster_slot_assignment_tool(token: str, roster_slot_id: int) -> dict[s
 @mcp.tool
 def delete_shift_variant_tool(token: str, shift_variant_id: int) -> dict[str, bool]:
     """Delete a shift variant and clear generated slots/assignments for it. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         return {
             "deleted": delete_shift_variant(
@@ -1220,7 +1251,7 @@ def reset_organization_user_password_tool(
     password_confirm: str,
 ) -> dict[str, bool]:
     """Reset login password for a user in the MCP target organization. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     if password != password_confirm:
         raise ValueError("passwords_do_not_match")
     if len(password) < 8:
@@ -1243,16 +1274,20 @@ def reset_organization_user_password_tool(
         return {"ok": True}
 
 
-@mcp.resource("shift-planner://worker-groups")
-def worker_groups_resource() -> list[dict[str, Any]]:
+@mcp.resource("shift-planner://worker-groups/{access_token}")
+def worker_groups_resource(access_token: str) -> list[dict[str, Any]]:
     """List worker groups (contract hours and vacation policy)."""
+    require_mcp_access(access_token, need="planning")
+    assert_mcp_read_scope(None)
     with db_session() as db:
         return [worker_group_to_read(row).model_dump(mode="json") for row in list_worker_groups(db, organization_id=mcp_organization_id())]
 
 
-@mcp.resource("shift-planner://hours/timesheet/{team_member_id}/{year}/{month}")
-def timesheet_resource(team_member_id: int, year: int, month: int) -> dict[str, Any]:
+@mcp.resource("shift-planner://hours/timesheet/{team_member_id}/{year}/{month}/{access_token}")
+def timesheet_resource(team_member_id: int, year: int, month: int, access_token: str) -> dict[str, Any]:
     """Return a computed monthly timesheet for a team member."""
+    require_mcp_access(access_token, need="planning")
+    assert_mcp_read_scope(None)
     start, end = month_bounds(year, month)
     with db_session() as db:
         return get_timesheet(
@@ -1272,7 +1307,7 @@ def create_worker_group_tool(
     vacation_days_at_100: float = 30,
 ) -> dict[str, Any]:
     """Create a worker group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         row = create_worker_group(
             db,
@@ -1291,7 +1326,7 @@ def create_worker_group_tool(
 @mcp.tool
 def update_worker_group_tool(token: str, worker_group_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     """Update a worker group. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         row = update_worker_group(
             db,
@@ -1309,7 +1344,7 @@ def update_worker_group_tool(token: str, worker_group_id: int, payload: dict[str
 @mcp.tool
 def delete_worker_group_tool(token: str, worker_group_id: int) -> dict[str, bool]:
     """Delete a worker group that is not assigned. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         return {
             "deleted": delete_worker_group(
@@ -1321,7 +1356,7 @@ def delete_worker_group_tool(token: str, worker_group_id: int) -> dict[str, bool
 @mcp.tool
 def replace_employment_periods_tool(token: str, team_member_id: int, periods: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Replace dated employment periods for a team member. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     payload = EmploymentPeriodsReplace(periods=[EmploymentPeriodWrite.model_validate(item) for item in periods])
     with db_session() as db:
         rows = replace_employment_periods(
@@ -1345,7 +1380,7 @@ def upsert_opening_balance_tool(
     sick_days_used_ytd: float = 0,
 ) -> dict[str, Any]:
     """Set the time-account opening balance for a team member. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="admin")
     with db_session() as db:
         row = upsert_opening_balance(
             db,
@@ -1366,7 +1401,7 @@ def upsert_opening_balance_tool(
 @mcp.tool
 def create_time_entry_tool(token: str, team_member_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     """Create a time entry. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         row = create_time_entry(
             db,
@@ -1382,7 +1417,7 @@ def create_time_entry_tool(token: str, team_member_id: int, payload: dict[str, A
 @mcp.tool
 def fill_timesheet_from_roster_tool(token: str, team_member_id: int, from_date: str, to_date: str) -> dict[str, int]:
     """Create time entries from roster assignments without overwriting manual days. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         created = fill_from_roster(
             db,
@@ -1399,7 +1434,7 @@ def fill_timesheet_from_roster_tool(token: str, team_member_id: int, from_date: 
 @mcp.tool
 def fill_timesheet_regular_week_tool(token: str, team_member_id: int, from_date: str, to_date: str) -> dict[str, int]:
     """Fill empty days from the worker-group regular week pattern. Requires MCP admin token."""
-    require_token(token)
+    require_mcp_access(token, need="planning")
     with db_session() as db:
         created = fill_regular_week(
             db,
@@ -1411,6 +1446,65 @@ def fill_timesheet_regular_week_tool(token: str, team_member_id: int, from_date:
             source="mcp",
         )
         return {"created": created}
+
+
+@mcp.tool
+def get_planning_matrix_tool(
+    access_token: str, planning_period_id: int, shift_group_id: int | None = None
+) -> dict[str, Any]:
+    """Return the wishes matrix. Planners must pass shift_group_id."""
+    require_mcp_access(access_token, need="planning")
+    assert_mcp_read_scope(shift_group_id)
+    with db_session() as db:
+        return get_planning_matrix(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def get_roster_matrix_tool(
+    access_token: str, planning_period_id: int, shift_group_id: int | None = None
+) -> dict[str, Any]:
+    """Return the roster matrix. Planners must pass shift_group_id."""
+    require_mcp_access(access_token, need="planning")
+    assert_mcp_read_scope(shift_group_id)
+    with db_session() as db:
+        return get_roster_matrix(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def list_team_members_tool(access_token: str, shift_group_id: int | None = None) -> list[dict[str, Any]]:
+    """List team members for the authenticated organization."""
+    require_mcp_access(access_token, need="planning")
+    assert_mcp_read_scope(shift_group_id)
+    with db_session() as db:
+        members = list_team_members(db, organization_id=mcp_organization_id())
+        rows = []
+        for member in members:
+            group_ids = sorted({link.shift_group_id for link in member.shift_group_links})
+            if shift_group_id is not None and shift_group_id not in group_ids:
+                continue
+            rows.append({**serialize_model(member), "shift_group_ids": group_ids})
+        return rows
+
+
+@mcp.tool
+def get_organization_ai_settings_tool(access_token: str) -> dict[str, Any]:
+    """Return AI assistant metadata for the organization. Never includes API keys."""
+    require_mcp_access(access_token, need="admin")
+    from app.services.ai_settings import get_or_create_ai_settings, settings_to_public
+
+    with db_session() as db:
+        row = get_or_create_ai_settings(db, organization_id=mcp_organization_id())
+        return settings_to_public(row, include_last4=True)
 
 
 if __name__ == "__main__":

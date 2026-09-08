@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    ai_assistant,
     auth,
     dashboard,
     hours,
@@ -21,6 +22,7 @@ api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth.router)
 api_router.include_router(organizations_public.router)
 api_router.include_router(organization_admin.router)
+api_router.include_router(ai_assistant.router)
 api_router.include_router(team_members.router)
 api_router.include_router(team_member_property_definitions.router)
 api_router.include_router(team_member_property_matrix.router)

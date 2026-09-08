@@ -28,6 +28,11 @@ services:
       PLANNER_SEED_EMAIL: ${PLANNER_SEED_EMAIL:-}
       PLANNER_SEED_PASSWORD: ${PLANNER_SEED_PASSWORD:-change-me-planner}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-change-me-mcp-token}
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-change-me-mcp-jwt-secret}
+      AI_CREDENTIALS_KEY: ${AI_CREDENTIALS_KEY:-change-me-ai-credentials-key}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:18130}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       SESSION_COOKIE_DOMAIN: ${SESSION_COOKIE_DOMAIN:-}
@@ -49,6 +54,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev-session-secret-change-me}
       DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-change-me-mcp-token}
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-change-me-mcp-jwt-secret}
       MCP_ORGANIZATION_ID: ${MCP_ORGANIZATION_ID:-}
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0

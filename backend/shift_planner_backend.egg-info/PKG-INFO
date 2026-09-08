@@ -4,13 +4,19 @@ Version: 0.1.0
 Summary: FastAPI backend for the AI-first shift planner.
 Requires-Python: >=3.11
 Requires-Dist: alembic>=1.13.0
+Requires-Dist: anthropic>=0.40.0
+Requires-Dist: cryptography>=43.0.0
 Requires-Dist: email-validator>=2.1.0
+Requires-Dist: icalendar>=6.0.0
 Requires-Dist: fastapi>=0.115.0
 Requires-Dist: itsdangerous>=2.2.0
+Requires-Dist: openai>=1.50.0
+Requires-Dist: openpyxl>=3.1.5
 Requires-Dist: passlib>=1.7.4
 Requires-Dist: psycopg<3.4,>=3.2.0
 Requires-Dist: pydantic-settings>=2.5.0
 Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: reportlab>=4.2.5
 Requires-Dist: sqlalchemy>=2.0.0
 Requires-Dist: uvicorn[standard]>=0.30.0
 Provides-Extra: dev

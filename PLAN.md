@@ -4,14 +4,16 @@
 Hours ledger (worker groups, timesheets, opening balances) shipped alongside the unified `/planning` workflow.
 
 ## Next Steps
-1. Run Alembic migrations against Postgres after pulling the hours migration (`202608280001`) and the plan-versions migration (`202606180001`).
-2. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
-3. Configure worker groups and employment periods, then use `/hours` fill-from-roster on a published month and `/my-hours` as a linked team member.
-4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
+1. Run Alembic migrations including `202609050001` (org AI settings and task-run audit).
+2. Set `AI_CREDENTIALS_KEY` and `MCP_JWT_SECRET` in `.env`. Admins paste a provider key under Team → Organisation.
+3. Exercise `/planning` Analysis AI tasks on a draft/preliminary shift group; apply roster proposals only after review.
+4. Optionally start Langfuse via `docker-compose.observability.yml` and set `LANGFUSE_*` on the backend.
 5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing (day-interval bar shipped; multi-member ranges and clear-range still open).
 6. Improve the workload stats with configurable fairness targets and percentage-aware expectations.
 
 ## Roadmap
+- Full conversational planning agent with mutation tools and human confirmation.
+- OR-Tools (or similar) solver tool the assistant can call for fair rosters.
 - Team-member clock-in and timesheet correction requests.
 - Month lock / payroll-oriented hours export.
 - Night / Sunday / holiday supplements on the time account.

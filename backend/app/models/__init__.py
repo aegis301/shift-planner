@@ -1,8 +1,10 @@
 from app.models.entities import (
     Account,
+    AiTaskRun,
     AuditLog,
     EmploymentPeriod,
     Organization,
+    OrganizationAiSettings,
     OrganizationJoinRequest,
     OrganizationMembershipInvite,
     PlanningCell,
@@ -40,9 +42,11 @@ from app.models.entities import (
 
 __all__ = [
     "Account",
+    "AiTaskRun",
     "AuditLog",
     "EmploymentPeriod",
     "Organization",
+    "OrganizationAiSettings",
     "OrganizationJoinRequest",
     "OrganizationMembershipInvite",
     "PlanVersionMemberNote",

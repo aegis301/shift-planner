@@ -22,6 +22,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
+import { PlanningAiPanel } from "@/components/PlanningAiPanel";
 import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
 import { PlanVersionPanel } from "@/components/PlanVersionPanel";
 import { Card, Field, inputClass } from "@/components/Card";
@@ -725,6 +726,16 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       </div>
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
       <HoursTimesheetStats rows={hoursRows} />
+      <PlanningAiPanel
+        planningPeriodId={periodId ? Number(periodId) : null}
+        shiftGroupId={shiftGroupId ? Number(shiftGroupId) : null}
+        groupPublished={groupPlanningStatus?.status === "published"}
+        plannerPlanningEditable={plannerPlanningEditable}
+        onApplied={() => {
+          setRosterReloadToken((value) => value + 1);
+          setMatrixReloadToken((value) => value + 1);
+        }}
+      />
     </section>
   ) : null;
 

@@ -2,7 +2,7 @@
 
 ## Stack
 
-[`docker-compose.prod.yml`](../docker-compose.prod.yml) runs Postgres (internal network only), FastAPI, Next.js (production build), and Caddy. Caddy terminates TLS and routes `/api/*` to the backend and everything else to the frontend.
+[`docker-compose.prod.yml`](../docker-compose.prod.yml) runs Postgres (internal network only), FastAPI, Next.js (production build), Caddy, and an **internal MCP** service (no host port; do not proxy `/mcp` through Caddy). Caddy terminates TLS and routes `/api/*` to the backend and everything else to the frontend.
 
 ## Server preparation
 
@@ -19,6 +19,10 @@ Copy [`.env.example`](../.env.example) to `.env` and adjust values. Important ke
 |----------|---------|
 | `PUBLIC_HOST` | Hostname Caddy serves (e.g. `plan.example.com`). Defaults to `localhost` for local trials. |
 | `SESSION_SECRET` | Long random secret for session signing. |
+| `MCP_JWT_SECRET` | Signs short-lived MCP access tokens for the in-app assistant. |
+| `AI_CREDENTIALS_KEY` | Encrypts organization LLM API keys at rest. |
+| `LANGFUSE_HOST` | Optional. Langfuse base URL; leave empty to disable tracing. |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Optional Langfuse ingestion credentials. |
 | `SESSION_COOKIE_SECURE` | Set `true` when users reach the app over HTTPS (default in compose). |
 | `DATABASE_URL` | SQLAlchemy URL pointing at the `postgres` service (see `.env.example`). |
 | `BACKEND_CORS_ORIGINS` | Browser origins allowed by the API (comma-separated). For the bundled Caddy layout, use `https://<PUBLIC_HOST>`. |
@@ -63,7 +67,7 @@ Point the `dev-tunnel` ingress at `http://localhost:18130` (frontend) and, if ne
 
 The server must already contain a valid `.env` in `DEPLOY_PATH`. The workflow checks out the triggering commit SHA and runs `docker compose -f docker-compose.prod.yml build` and `up -d`. Use a **full** git clone on the server (not `--depth 1`) so `git fetch` can retrieve arbitrary commit SHAs from the remote.
 
-To enforce "no merge before checks", protect `main` in GitHub: require the CI jobs (`backend`, `frontend`, `container-smoke`) and **Require branches to be up to date before merging**. A merge queue is optional and is already wired via the `merge_group` trigger.
+To enforce "no merge before checks", protect `main` in GitHub: require the CI jobs (`backend`, `mcp`, `frontend`, `container-smoke`) and **Require branches to be up to date before merging**. A merge queue is optional and is already wired via the `merge_group` trigger.
 
 ## Postgres backups
 
@@ -74,3 +78,13 @@ sh deploy/scripts/backup-postgres.sh
 ```
 
 Optional first argument: output file path. Schedule with cron, for example hourly dumps to a persistent directory and sync copies off-server.
+
+## Langfuse (optional, operator-only)
+
+Do **not** start Langfuse from the default GitHub Actions smoke job. On a host with enough RAM (about 4 vCPU / 16 GiB):
+
+```bash
+docker compose -f docker-compose.observability.yml --env-file .env up -d
+```
+
+Create Langfuse users in that UI only for operators. Point the planner backend at it with `LANGFUSE_HOST` (for a merged compose network, `http://langfuse-web:3000`) plus project keys. Traces include planning-task metadata; redact keys yourself and set retention in Langfuse. ClickHouse/MinIO volumes are separate from `backup-postgres.sh`.

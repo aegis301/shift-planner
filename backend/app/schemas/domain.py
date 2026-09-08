@@ -1713,3 +1713,56 @@ class TeamMemberDashboardRead(BaseModel):
     upcoming_slots: list[DashboardUpcomingSlot]
     past_slots: list[DashboardUpcomingSlot] = []
     hours_summary: DashboardHoursSummary | None = None
+
+
+AiProviderName = Literal["anthropic", "openai"]
+AiTaskId = Literal["summarize_wishes", "explain_validation", "draft_fair_roster"]
+
+
+class OrganizationAiSettingsRead(BaseModel):
+    provider: str
+    default_model: str
+    enabled_task_ids: list[str]
+    monthly_token_budget: int | None = None
+    is_enabled: bool
+    has_api_key: bool
+    assistant_ready: bool
+    key_last4: str | None = None
+
+
+class OrganizationAiSettingsUpdate(BaseModel):
+    provider: AiProviderName | None = None
+    default_model: str | None = None
+    enabled_task_ids: list[AiTaskId] | None = None
+    monthly_token_budget: int | None = None
+    is_enabled: bool | None = None
+    api_key: str | None = None
+    clear_api_key: bool = False
+
+
+class AiTaskRunCreate(BaseModel):
+    planning_period_id: int
+    shift_group_id: int | None = None
+
+
+class AiTaskRunRead(BaseModel):
+    id: int
+    task_id: str
+    status: str
+    planning_period_id: int
+    shift_group_id: int | None = None
+    output: dict | None = None
+    error_message: str | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    applied_assignment_ids: list[int] = Field(default_factory=list)
+    created_at: str | None = None
+
+
+class AiRosterDraftApply(BaseModel):
+    roster_slot_ids: list[int]
+
+
+class AiRosterDraftApplyResult(BaseModel):
+    applied_slot_ids: list[int]
+    errors: list[dict]

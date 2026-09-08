@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-05
+- **Org AI assistant (v1):** Admins store an encrypted Anthropic/OpenAI key per organization. Planners and admins run three Analysis tasks (summarize wishes, explain validation, draft fair roster with confirm-to-apply). MCP reads now require `access_token` (JWT bound to the active membership, or `MCP_ADMIN_TOKEN` for admin). Production Compose runs MCP on the internal network only. Optional self-hosted Langfuse via `docker-compose.observability.yml`. Alembic `202609050001`.
+
 ## 2026-08-28
 - **Working hours and timesheets:** Worker groups (contract hours, vacation at 100%, shift-category credit, day-status mapping), dated employment periods, opening balances, and time entries as the hours source of truth. Planner `/hours` editor, team-member `/my-hours` (read-only), fill from roster or regular week without overwriting manual days, CSV export, dashboard widgets, and hours table on planning Analysis. REST `/api/v1/worker-groups` and `/api/v1/hours/*`; MCP resources and admin tools. Alembic `202608280001`. Shift-count workload is unchanged.
 - **Filter team member properties:** The property values table supports AND-combined, type-aware filters for text, selections, numbers, dates, and empty values. Filtering is service-backed through `POST /api/v1/team-member-property-matrix/search` and the read-only MCP `filter_team_member_property_matrix_tool`.

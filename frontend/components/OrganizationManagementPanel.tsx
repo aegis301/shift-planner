@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Building2, Trash2, UserPlus } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
+import { OrganizationAiSettingsCard } from "@/components/OrganizationAiSettingsCard";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
@@ -526,6 +527,7 @@ export function OrganizationManagementPanel() {
           </table>
         </div>
       </Card>
+      <OrganizationAiSettingsCard />
       <Card>
         <div className="flex items-start gap-3">
           <Trash2 className="mt-0.5 shrink-0 text-red-600" aria-hidden />

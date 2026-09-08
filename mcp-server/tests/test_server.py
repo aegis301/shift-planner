@@ -11,13 +11,17 @@ from mcp_app.server import (
     delete_shift_variant_tool,
     delete_team_member_tool,
     filter_team_member_property_matrix_tool,
+    get_validation_warnings,
     regenerate_planning_period_roster_tool,
     replace_team_member_planning_patterns_tool,
     require_token,
     sync_planning_period_roster_tool,
+    team_members_resource,
     upsert_planning_cell_tool,
     upsert_roster_slot_assignment_tool,
 )
+from app.core.config import settings
+from app.services.mcp_access import mint_mcp_access_token
 
 
 def test_require_token_rejects_invalid_token():
@@ -49,6 +53,7 @@ def test_filter_team_member_property_matrix_tool_uses_service(monkeypatch):
     monkeypatch.setattr(server, "get_team_member_property_matrix", get_matrix)
 
     result = filter_team_member_property_matrix_tool(
+            access_token=settings.mcp_admin_token,
         filters=[
             {
                 "property_definition_id": 4,
@@ -125,3 +130,29 @@ def test_hours_tools_reject_invalid_token_before_db_access():
         create_worker_group_tool(token="wrong-token", name="Doctors")
     with pytest.raises(PermissionError):
         create_time_entry_tool(token="wrong-token", team_member_id=1, payload={"entry_date": "2026-08-03", "kind": "absence", "all_day": True})
+
+
+def test_read_resource_rejects_invalid_token():
+    with pytest.raises(PermissionError):
+        team_members_resource(access_token="wrong-token")
+
+
+def test_read_tool_rejects_invalid_token():
+    with pytest.raises(PermissionError):
+        get_validation_warnings(access_token="wrong-token", planning_period_id=1, shift_group_id=1)
+
+
+def test_planner_jwt_cannot_use_admin_tools():
+    token = mint_mcp_access_token(
+        user_id=9,
+        organization_id=1,
+        role="planner",
+        shift_group_ids=[1],
+    )
+    with pytest.raises(PermissionError):
+        create_shift_template_tool(
+            token=token,
+            code="RD",
+            name="Rufdienst",
+            category="rufdienst",
+        )

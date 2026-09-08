@@ -30,7 +30,12 @@ services:
       PLANNER_SEED_EMAIL: ${PLANNER_SEED_EMAIL:-}
       PLANNER_SEED_PASSWORD: ${PLANNER_SEED_PASSWORD:-}
       MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-}
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-change-me-mcp-jwt-secret}
       MCP_ORGANIZATION_ID: ${MCP_ORGANIZATION_ID:-}
+      AI_CREDENTIALS_KEY: ${AI_CREDENTIALS_KEY:-change-me-ai-credentials-key}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
     expose:
       - "8000"
@@ -48,6 +53,30 @@ services:
       timeout: 5s
       retries: 6
       start_period: 60s
+    restart: unless-stopped
+    networks:
+      - internal
+
+  mcp:
+    build:
+      context: .
+      dockerfile: mcp-server/Dockerfile.prod
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://shift_planner:shift_planner@postgres:5432/shift_planner}
+      PYTHONPATH: /workspace/backend:/app
+      SESSION_SECRET: ${SESSION_SECRET:-replace-with-openssl-rand-base64-32}
+      DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
+      MCP_ADMIN_TOKEN: ${MCP_ADMIN_TOKEN:-}
+      MCP_JWT_SECRET: ${MCP_JWT_SECRET:-change-me-mcp-jwt-secret}
+      MCP_ORGANIZATION_ID: ${MCP_ORGANIZATION_ID:-}
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8001
+    expose:
+      - "8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - internal

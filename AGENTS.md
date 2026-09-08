@@ -26,8 +26,8 @@ This project is an AI-first shift planning tool for **healthcare teams**; people
 
 - Backend: Python, FastAPI, SQLAlchemy, Alembic, Postgres.
 - Frontend: Next.js App Router, TypeScript, Tailwind CSS, PWA-ready, mobile first.
-- MCP: FastMCP from the start. MCP tools and resources must reuse the same backend service layer as REST endpoints. MCP targeting uses **`MCP_ORGANIZATION_ID`** when set, otherwise the default organization id (see `README.md`); it is not tied to a browser user’s active membership.
-- Runtime: Docker Compose for local development with Postgres, backend, frontend, and MCP services. Production-oriented stack and Cloudflare/GitHub Actions notes live in [deploy/README.md](deploy/README.md) and [docker-compose.prod.yml](docker-compose.prod.yml).
+- MCP: FastMCP from the start. MCP tools and resources must reuse the same backend service layer as REST endpoints. Every resource and tool (except `health`) requires an **`access_token`**: a short-lived MCP JWT minted for the active **`User`** (org, role, planner shift groups) or the break-glass **`MCP_ADMIN_TOKEN`**. Reads are authenticated. Planners cannot call admin tools. Production MCP is internal-only (no public port).
+- Runtime: Docker Compose for local development with Postgres, backend, frontend, and MCP services. Optional Langfuse is **`docker-compose.observability.yml`** (operator-only; not in CI smoke). Production-oriented stack and Cloudflare/GitHub Actions notes live in [deploy/README.md](deploy/README.md) and [docker-compose.prod.yml](docker-compose.prod.yml).
 
 ## AI-First / FastMCP Rule
 
@@ -38,7 +38,11 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 - Return predictable validation errors and warnings.
 - Consider whether a read resource and/or guarded mutating FastMCP tool should be added.
 - Update MCP docs and tests when MCP-visible behavior changes.
-- Mutating MCP tools must require explicit authorization, currently through `MCP_ADMIN_TOKEN`.
+- Mutating MCP tools must require explicit authorization: MCP JWT with **`need="planning"`** or **`need="admin"`**, or break-glass **`MCP_ADMIN_TOKEN`** (admin).
+
+## Org AI assistant
+
+Admins store an encrypted provider API key (`PUT /api/v1/organization/ai-settings`). Planners and admins run three planning tasks (`POST /api/v1/ai/tasks/{task_id}/runs`): summarize wishes, explain validation, draft fair roster (human apply via `POST /api/v1/ai/runs/{id}/apply`). The agent uses the same read tools as MCP under the signed-in user’s scope. Optional Langfuse tracing when `LANGFUSE_HOST` is set.
 
 ## Team member properties
 
