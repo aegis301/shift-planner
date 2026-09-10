@@ -33,6 +33,7 @@ from app.models.entities import (
     TeamMemberPropertyValue,
     TeamMemberShiftGroup,
     TimeAccountOpening,
+    TimeEntry,
     User,
     UserShiftGroup,
 )
@@ -72,6 +73,7 @@ __all__ = [
     "TeamMemberPropertyValue",
     "TeamMemberShiftGroup",
     "TimeAccountOpening",
+    "TimeEntry",
     "User",
     "UserShiftGroup",
 ]

@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from mcp_app import server
@@ -17,6 +19,7 @@ from mcp_app.server import (
     sync_planning_period_roster_tool,
     upsert_planning_cell_tool,
     upsert_roster_slot_assignment_tool,
+    upsert_time_entry_tool,
 )
 
 
@@ -30,6 +33,16 @@ def test_contract_group_and_employment_writes_require_token():
         create_contract_group_tool(token="wrong-token", name="X")
     with pytest.raises(PermissionError):
         replace_employment_periods_tool(token="wrong-token", team_member_id=1, periods=[])
+
+
+def test_upsert_time_entry_requires_token():
+    with pytest.raises(PermissionError):
+        upsert_time_entry_tool(
+            token="wrong-token",
+            team_member_id=1,
+            entry_date=date(2026, 8, 1),
+            kind="work",
+        )
 
 
 def test_filter_team_member_property_matrix_tool_uses_service(monkeypatch):

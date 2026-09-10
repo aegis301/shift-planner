@@ -16,6 +16,7 @@ from app.api.v1 import (
     team_member_property_definitions,
     team_member_property_matrix,
     team_members,
+    time_entries,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -28,6 +29,7 @@ api_router.include_router(team_member_property_matrix.router)
 api_router.include_router(planning_day_status_definitions.router)
 api_router.include_router(contract_groups.router)
 api_router.include_router(employment_periods.router)
+api_router.include_router(time_entries.router)
 api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)
 api_router.include_router(planning.router)

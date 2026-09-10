@@ -587,6 +587,78 @@ class TimeAccountOpeningRead(BaseModel):
     sick_days_used_ytd: Decimal
 
 
+TimeEntryKind = Literal["work", "absence", "call_out", "in_duty_activity"]
+TimeEntrySource = Literal["roster", "day_status", "manual"]
+
+
+class TimeEntryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    team_member_id: int
+    entry_date: date_type
+    kind: TimeEntryKind
+    source: TimeEntrySource
+    all_day: bool
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int
+    counts_toward_contract: bool
+    consumes_vacation: bool
+    shift_template_category: str | None = None
+    planning_day_status_code: str | None = None
+    roster_slot_id: int | None = None
+    shift_group_id: int | None = None
+    comment: str | None = None
+    corrected_fields: list[str] = Field(default_factory=list)
+
+
+class TimeEntryCreate(BaseModel):
+    team_member_id: int
+    entry_date: date_type
+    kind: TimeEntryKind
+    all_day: bool = False
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int = Field(default=0, ge=0)
+    counts_toward_contract: bool = True
+    consumes_vacation: bool = False
+    shift_template_category: str | None = None
+    planning_day_status_code: str | None = None
+    comment: str | None = None
+
+
+class TimeEntryUpdate(BaseModel):
+    kind: TimeEntryKind | None = None
+    all_day: bool | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=0)
+    counts_toward_contract: bool | None = None
+    consumes_vacation: bool | None = None
+    shift_template_category: str | None = None
+    planning_day_status_code: str | None = None
+    comment: str | None = None
+
+
+class TimeEntryDeriveRequest(BaseModel):
+    start_date: date_type
+    end_date: date_type
+    member_ids: list[int] | None = None
+
+
+class TimeEntryReconciliationItem(BaseModel):
+    id: int
+    team_member_id: int
+    entry_date: date_type
+    source: TimeEntrySource
+    derived: dict[str, Any] | None = None
+    effective: TimeEntryRead
+    corrected_fields: list[str] = Field(default_factory=list)
+    diverges: bool
+
+
 class ShiftGroupCreate(BaseModel):
     code: str = Field(min_length=1, max_length=50)
     name: str = Field(min_length=1, max_length=255)

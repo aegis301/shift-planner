@@ -26,6 +26,10 @@ from app.services.rules.state import (
     index_assignments_by_member,
     index_slots_by_date,
 )
+from app.services.time_entries import (
+    load_employment_periods_for_members,
+    load_time_entries_for_window,
+)
 
 
 def _lookback_calendar_days(lookback: timedelta) -> int:
@@ -343,6 +347,21 @@ def build_plan_state(
         ),
         property_definitions_by_id=frozen_mapping({row.id: row for row in property_definitions}),
         shift_intents=tuple(intents),
-        time_entries_by_member_id=frozen_mapping({}),
-        employment_periods_by_member_id=frozen_mapping({}),
+        time_entries_by_member_id=frozen_mapping(
+            load_time_entries_for_window(
+                db,
+                organization_id=organization_id,
+                team_member_ids=member_ids,
+                start_date=load_start,
+                end_date=load_end,
+            )
+        ),
+        employment_periods_by_member_id=frozen_mapping(
+            load_employment_periods_for_members(
+                db,
+                team_member_ids=member_ids,
+                start_date=load_start,
+                end_date=load_end,
+            )
+        ),
     )

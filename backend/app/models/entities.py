@@ -7,6 +7,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -203,6 +204,9 @@ class TeamMember(Base):
     time_account_opening: Mapped["TimeAccountOpening | None"] = relationship(
         back_populates="team_member", uselist=False, cascade="all, delete-orphan"
     )
+    time_entries: Mapped[list["TimeEntry"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
 
 
 class ContractGroup(Base):
@@ -251,6 +255,44 @@ class TimeAccountOpening(Base):
     sick_days_used_ytd: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
 
     team_member: Mapped["TeamMember"] = relationship(back_populates="time_account_opening")
+
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+    __table_args__ = (
+        Index("ix_time_entries_member_date", "team_member_id", "entry_date"),
+        Index("ix_time_entries_roster_slot_id", "roster_slot_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"))
+    entry_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(32))
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    counts_toward_contract: Mapped[bool] = mapped_column(Boolean, default=True)
+    consumes_vacation: Mapped[bool] = mapped_column(Boolean, default=False)
+    shift_template_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    planning_day_status_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    roster_slot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("roster_slots.id", ondelete="CASCADE"), nullable=True
+    )
+    shift_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shift_groups.id", ondelete="SET NULL"), nullable=True
+    )
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    derived_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    corrected_fields: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="time_entries")
 
 
 class TeamMemberPropertyDefinition(Base):

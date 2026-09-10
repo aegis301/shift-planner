@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.models import (
+    ContractGroup,
+    EmploymentPeriod,
     Organization,
     PlanningPeriod,
     RosterSlot,
@@ -18,6 +21,7 @@ from app.models import (
     TeamMember,
     TeamMemberPropertyDefinition,
     TeamMemberPropertyValue,
+    TimeEntry,
 )
 from app.models.base import Base
 from app.services.rules import build_plan_state, clear_rules, register_rule
@@ -375,6 +379,48 @@ def test_build_plan_state_cross_year_window(plan_db):
     )
     assert dec_asg.id in state.assignments_by_id
     assert jan_asg.id in state.assignments_by_id
+
+
+def test_build_plan_state_loads_time_entries_and_employment_periods(plan_db):
+    db, _engine = plan_db
+    member = _add_member(db, email="ledger@example.com")
+    group = ContractGroup(
+        organization_id=1,
+        name="Standard",
+        weekly_hours_at_100=Decimal("40"),
+        vacation_days_at_100=Decimal("30"),
+        regular_week_pattern=[],
+        category_rules=[],
+        status_mappings=[],
+    )
+    db.add(group)
+    db.flush()
+    period = EmploymentPeriod(
+        team_member_id=member.id,
+        contract_group_id=group.id,
+        employment_percentage=80,
+        start_date=date(2026, 1, 1),
+        end_date=None,
+    )
+    db.add(period)
+    entry = TimeEntry(
+        organization_id=1,
+        team_member_id=member.id,
+        entry_date=date(2026, 2, 1),
+        kind="work",
+        source="manual",
+        duration_minutes=60,
+    )
+    db.add(entry)
+    db.commit()
+    state = build_plan_state(
+        db,
+        organization_id=1,
+        start_date=date(2026, 2, 1),
+        end_date=date(2026, 2, 1),
+    )
+    assert state.employment_periods_by_member_id[member.id][0].id == period.id
+    assert state.time_entries_by_member_id[member.id][0].id == entry.id
 
 
 def test_no_existing_module_imports_rules_package():

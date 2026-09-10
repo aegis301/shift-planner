@@ -286,6 +286,16 @@ def upsert_planning_cell(
     )
     db.commit()
     db.refresh(cell)
+    from app.services.time_entries import refresh_derived_window
+
+    refresh_derived_window(
+        db,
+        organization_id=organization_id,
+        member_ids=[cell.team_member_id],
+        start_date=cell.cell_date,
+        end_date=cell.cell_date,
+    )
+    db.refresh(cell)
     return cell
 
 
@@ -325,6 +335,18 @@ def bulk_upsert_planning_cells(
     db.commit()
     for cell in cells:
         db.refresh(cell)
+    if cells:
+        from app.services.time_entries import refresh_derived_window
+
+        refresh_derived_window(
+            db,
+            organization_id=organization_id,
+            member_ids=list({cell.team_member_id for cell in cells}),
+            start_date=min(cell.cell_date for cell in cells),
+            end_date=max(cell.cell_date for cell in cells),
+        )
+        for cell in cells:
+            db.refresh(cell)
     return cells
 
 

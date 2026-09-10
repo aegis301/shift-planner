@@ -15,6 +15,9 @@ from app.schemas import (
     ContractGroupUpdate,
     EmploymentPeriodWrite,
     TimeAccountOpeningUpsert,
+    TimeEntryCreate,
+    TimeEntryDeriveRequest,
+    TimeEntryUpdate,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -53,6 +56,13 @@ from app.services.employment_periods import (
     replace_employment_periods,
     time_account_opening_to_read,
     upsert_time_account_opening,
+)
+from app.services.time_entries import (
+    create_manual_entry,
+    derive_entries,
+    list_time_entries,
+    time_entry_to_read,
+    update_time_entry,
 )
 from app.services.member_planning_patterns import (
     list_team_member_planning_patterns,
@@ -1407,6 +1417,101 @@ def upsert_time_account_opening_tool(
             source="mcp",
         )
         return time_account_opening_to_read(row).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://time-entries/{team_member_id}")
+def time_entries_resource(team_member_id: int) -> list[dict[str, Any]]:
+    """Return time ledger entries for one team member."""
+    with db_session() as db:
+        rows = list_time_entries(
+            db,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+        )
+        return [time_entry_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def upsert_time_entry_tool(
+    token: str,
+    team_member_id: int,
+    entry_date: date,
+    kind: str,
+    time_entry_id: int | None = None,
+    all_day: bool = False,
+    duration_minutes: int = 0,
+    counts_toward_contract: bool = True,
+    consumes_vacation: bool = False,
+    shift_template_category: str | None = None,
+    planning_day_status_code: str | None = None,
+    comment: str | None = None,
+) -> dict[str, Any]:
+    """Create or update a manual time entry. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        if time_entry_id is not None:
+            payload = TimeEntryUpdate.model_validate(
+                {
+                    "kind": kind,
+                    "all_day": all_day,
+                    "duration_minutes": duration_minutes,
+                    "counts_toward_contract": counts_toward_contract,
+                    "consumes_vacation": consumes_vacation,
+                    "shift_template_category": shift_template_category,
+                    "planning_day_status_code": planning_day_status_code,
+                    "comment": comment,
+                }
+            )
+            row = update_time_entry(
+                db,
+                time_entry_id,
+                payload,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+            )
+            if row is None:
+                raise ValueError("Time entry not found")
+            return time_entry_to_read(row).model_dump(mode="json")
+        payload = TimeEntryCreate.model_validate(
+            {
+                "team_member_id": team_member_id,
+                "entry_date": entry_date,
+                "kind": kind,
+                "all_day": all_day,
+                "duration_minutes": duration_minutes,
+                "counts_toward_contract": counts_toward_contract,
+                "consumes_vacation": consumes_vacation,
+                "shift_template_category": shift_template_category,
+                "planning_day_status_code": planning_day_status_code,
+                "comment": comment,
+            }
+        )
+        row = create_manual_entry(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return time_entry_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def derive_time_entries_tool(
+    token: str,
+    start_date: date,
+    end_date: date,
+    member_ids: list[int] | None = None,
+) -> dict[str, bool]:
+    """Reconcile derived roster and day-status time entries. Requires MCP admin token."""
+    require_token(token)
+    payload = TimeEntryDeriveRequest(start_date=start_date, end_date=end_date, member_ids=member_ids)
+    with db_session() as db:
+        derive_entries(
+            db,
+            organization_id=mcp_organization_id(),
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            member_ids=payload.member_ids,
+        )
+        return {"ok": True}
 
 
 if __name__ == "__main__":

@@ -596,6 +596,7 @@ def upsert_roster_slot_assignment(
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )
+    previous_member_id = assignment.team_member_id if assignment is not None else None
     if assignment is None:
         assignment = RosterSlotAssignment(
             roster_slot_id=payload.roster_slot_id,
@@ -628,6 +629,19 @@ def upsert_roster_slot_assignment(
     )
     db.commit()
     db.refresh(assignment)
+    from app.services.time_entries import refresh_derived_window
+
+    member_ids = [payload.team_member_id]
+    if previous_member_id is not None and previous_member_id not in member_ids:
+        member_ids.append(previous_member_id)
+    refresh_derived_window(
+        db,
+        organization_id=organization_id,
+        member_ids=member_ids,
+        start_date=slot.slot_date,
+        end_date=slot.slot_date,
+    )
+    db.refresh(assignment)
     return assignment
 
 
@@ -648,6 +662,8 @@ def clear_roster_slot_assignment(
     if slot is None:
         return False
     require_planning_period_in_org(db, slot.planning_period_id, organization_id)
+    member_id = assignment.team_member_id
+    slot_date = slot.slot_date
     record_audit(
         db,
         actor=actor,
@@ -659,4 +675,13 @@ def clear_roster_slot_assignment(
     )
     db.delete(assignment)
     db.commit()
+    from app.services.time_entries import refresh_derived_window
+
+    refresh_derived_window(
+        db,
+        organization_id=organization_id,
+        member_ids=[member_id],
+        start_date=slot_date,
+        end_date=slot_date,
+    )
     return True

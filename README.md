@@ -95,6 +95,8 @@ Wishes matrix **day statuses** are configured per organization (`GET|POST|PATCH|
 
 **Contract groups** (`GET|POST|PATCH|DELETE /api/v1/contract-groups`) store weekly hours, vacation days, category credit rules (including `statutory_factor`), and day-status mappings. Dated **employment periods** and a per-member **time-account opening** replace `team_members.employment_percentage`. Admin UI: **Team** → **Verträge** and the staff-directory row detail. MCP: `shift-planner://contract-groups` and token-gated mutating tools.
 
+**Time entries** (`GET|POST /api/v1/time-entries`, `PATCH|DELETE /api/v1/time-entries/{id}`, reconciliation and `POST .../derive`) store the dated work/absence ledger. Roster and day-status rows are derived; members manage their own entries (`team_member_portal=true`). MCP: `shift-planner://time-entries/{team_member_id}` and token-gated upsert/derive tools. There is no ledger UI yet.
+
 `GET /api/v1/matrix/{id}` always returns `shift_templates`, `template_slot_days`, and `shift_intents` for wish/no-go editing: **with** `shift_group_id`, they are limited to that group; **without** it (admin full-org view), templates are every template linked to any shift group, each `template_slot_days` row includes `shift_group_id`, and intents list all rows for team members in the matrix. Use `PUT /api/v1/matrix/{id}/shift-intents/bulk` with `{ "intents": [ { "team_member_id", "cell_date", "shift_group_id", "shift_template_id", "kind": "wish" | "no_go" | null } ] }` — `kind` null removes that intent row.
 
 Team member month notes now store only month-specific summaries. Permanent preference text is stored on `team_members.planning_preferences` and reused in `/profile` and the matrix note modal.
