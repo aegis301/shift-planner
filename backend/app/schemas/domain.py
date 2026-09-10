@@ -859,6 +859,35 @@ class WorkTimeRuleSetRead(BaseModel):
     updated_at: datetime
 
 
+class WorkTimePresetContractGroup(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    weekly_hours_at_100: Decimal = Field(ge=0, le=168)
+    vacation_days_at_100: Decimal = Field(ge=0, le=366)
+    category_rules: list[ContractCategoryRule] = Field(default_factory=list)
+
+
+class WorkTimeRuleSetPresetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    values_confirmed: bool
+    rules: list[WorkTimeRule]
+    contract_groups: list[WorkTimePresetContractGroup]
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkTimeRuleSetAdoptRequest(BaseModel):
+    is_active: bool | None = None
+
+
+class WorkTimeRuleSetAdoptRead(BaseModel):
+    rule_set: WorkTimeRuleSetRead
+    contract_groups: list[ContractGroupRead]
+
+
 _PROPERTY_REQUIREMENT_MAX_ITEMS = 32
 _PROPERTY_REQUIREMENT_MAX_DEPTH = 8
 _PROPERTY_REQUIREMENT_MAX_NODES = 64

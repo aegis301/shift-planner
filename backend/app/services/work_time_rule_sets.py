@@ -107,6 +107,7 @@ def create_work_time_rule_set(
     organization_id: int,
     actor: str,
     source: str,
+    commit: bool = True,
 ) -> WorkTimeRuleSet:
     existing_active = get_active_work_time_rule_set(db, organization_id=organization_id)
     activate = payload.is_active if payload.is_active is not None else existing_active is None
@@ -129,8 +130,9 @@ def create_work_time_rule_set(
         entity_type="work_time_rule_set",
         entity_id=row.id,
     )
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
     return row
 
 

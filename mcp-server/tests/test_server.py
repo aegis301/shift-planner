@@ -23,6 +23,7 @@ from mcp_app.server import (
     get_hours_ledger_tool,
     create_work_time_rule_set_tool,
     delete_work_time_rule_set_tool,
+    adopt_work_time_rule_set_preset_tool,
     update_work_time_rule_set_tool,
 )
 
@@ -56,6 +57,8 @@ def test_work_time_rule_set_writes_require_token():
         update_work_time_rule_set_tool(token="wrong-token", rule_set_id=1, name="ArbZG")
     with pytest.raises(PermissionError):
         delete_work_time_rule_set_tool(token="wrong-token", rule_set_id=1)
+    with pytest.raises(PermissionError):
+        adopt_work_time_rule_set_preset_tool(token="wrong-token", code="tv_aerzte_tdl")
 
 
 def test_get_hours_ledger_tool_uses_service(monkeypatch):

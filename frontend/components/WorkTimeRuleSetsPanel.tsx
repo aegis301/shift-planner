@@ -49,6 +49,14 @@ type WorkTimeRuleSet = {
   rules: WorkTimeRule[];
 };
 
+type WorkTimePreset = {
+  id: number;
+  code: string;
+  name: string;
+  values_confirmed: boolean;
+  rules: WorkTimeRule[];
+};
+
 const RULE_TYPES: RuleType[] = [
   "max_daily_working_time",
   "min_rest_period",
@@ -118,6 +126,7 @@ function emptyRule(type: RuleType): WorkTimeRule {
 export function WorkTimeRuleSetsPanel() {
   const { locale } = useLocale();
   const [rows, setRows] = useState<WorkTimeRuleSet[]>([]);
+  const [presets, setPresets] = useState<WorkTimePreset[]>([]);
   const [name, setName] = useState("");
   const [rules, setRules] = useState<WorkTimeRule[]>([emptyRule("max_consecutive_work_days")]);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -126,7 +135,12 @@ export function WorkTimeRuleSetsPanel() {
 
   async function load() {
     try {
-      setRows(await apiFetch<WorkTimeRuleSet[]>("/api/v1/work-time-rule-sets"));
+      const [ruleSets, presetRows] = await Promise.all([
+        apiFetch<WorkTimeRuleSet[]>("/api/v1/work-time-rule-sets"),
+        apiFetch<WorkTimePreset[]>("/api/v1/work-time-rule-sets/presets")
+      ]);
+      setRows(ruleSets);
+      setPresets(presetRows);
       setError(false);
     } catch {
       setError(true);
@@ -167,6 +181,22 @@ export function WorkTimeRuleSetsPanel() {
     }
   }
 
+  async function adoptPreset(code: string) {
+    setBusy(true);
+    try {
+      await apiFetch(`/api/v1/work-time-rule-sets/presets/${code}/adopt`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      resetForm();
+      await load();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function activate(id: number) {
     setBusy(true);
     try {
@@ -195,6 +225,38 @@ export function WorkTimeRuleSetsPanel() {
         <p className="mt-1 max-w-3xl text-sm text-slate-600">{t(locale, "workTimeRuleSetsHelp")}</p>
       </div>
       {error ? <p className="text-sm text-red-600">{t(locale, "apiUnavailable")}</p> : null}
+      <Card>
+        <h2 className="text-lg font-semibold text-slate-900">{t(locale, "workTimePresetsTitle")}</h2>
+        <p className="mt-2 text-sm text-slate-600">{t(locale, "workTimePresetDisclaimer")}</p>
+        <div className="mt-3 grid gap-3">
+          {presets.map((preset) => (
+            <div key={preset.code} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 p-3">
+              <div>
+                <p className="font-semibold text-slate-900">
+                  {preset.name}
+                  {preset.values_confirmed ? "" : ` · ${t(locale, "workTimePresetUnconfirmed")}`}
+                </p>
+                <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
+                  {preset.rules.map((rule, index) => (
+                    <li key={`${preset.code}-${index}`}>
+                      {t(locale, RULE_TYPE_KEYS[rule.type])}
+                      {rule.source_note ? ` — ${rule.source_note}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                type="button"
+                className="inline-flex h-10 items-center rounded-lg bg-ink px-3 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={busy}
+                onClick={() => void adoptPreset(preset.code)}
+              >
+                {t(locale, "workTimePresetAdopt")}
+              </button>
+            </div>
+          ))}
+        </div>
+      </Card>
       <Card>
         <form className="grid gap-3" onSubmit={(event) => void onSubmit(event)}>
           <Field label={t(locale, "workTimeRuleSetName")}>
@@ -522,7 +584,10 @@ export function WorkTimeRuleSetsPanel() {
                 </p>
                 <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
                   {row.rules.map((rule, index) => (
-                    <li key={`${row.id}-${index}`}>{t(locale, RULE_TYPE_KEYS[rule.type])}</li>
+                    <li key={`${row.id}-${index}`}>
+                      {t(locale, RULE_TYPE_KEYS[rule.type])}
+                      {rule.source_note ? ` — ${rule.source_note}` : ""}
+                    </li>
                   ))}
                 </ul>
               </div>

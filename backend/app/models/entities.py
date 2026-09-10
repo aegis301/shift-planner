@@ -615,6 +615,21 @@ class PlanVersionTeamMember(Base):
     planning_preferences: Mapped[str | None] = mapped_column(Text)
 
 
+class WorkTimeRuleSetPreset(Base):
+    __tablename__ = "work_time_rule_set_presets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    values_confirmed: Mapped[bool] = mapped_column(Boolean, default=True)
+    rules: Mapped[list] = mapped_column(JSON, default=list)
+    contract_groups: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class WorkTimeRuleSet(Base):
     __tablename__ = "work_time_rule_sets"
     __table_args__ = (

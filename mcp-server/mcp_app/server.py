@@ -67,6 +67,11 @@ from app.services.time_entries import (
     time_entry_to_read,
     update_time_entry,
 )
+from app.services.work_time_presets import (
+    adopt_work_time_rule_set_preset,
+    list_work_time_rule_set_presets,
+    work_time_rule_set_preset_to_read,
+)
 from app.services.work_time_rule_sets import (
     create_work_time_rule_set,
     delete_work_time_rule_set,
@@ -1275,6 +1280,38 @@ def work_time_rule_sets_resource() -> list[dict[str, Any]]:
             work_time_rule_set_to_read(row).model_dump(mode="json")
             for row in list_work_time_rule_sets(db, organization_id=mcp_organization_id())
         ]
+
+
+@mcp.resource("shift-planner://work-time-rule-set-presets")
+def work_time_rule_set_presets_resource() -> list[dict[str, Any]]:
+    """List seed work-time rule-set presets."""
+    with db_session() as db:
+        return [
+            work_time_rule_set_preset_to_read(row).model_dump(mode="json")
+            for row in list_work_time_rule_set_presets(db)
+        ]
+
+
+@mcp.tool
+def adopt_work_time_rule_set_preset_tool(
+    token: str,
+    code: str,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Copy a work-time preset into the MCP target organization. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        adopted = adopt_work_time_rule_set_preset(
+            db,
+            code,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+            is_active=is_active,
+        )
+        if adopted is None:
+            raise ValueError("Work time rule set preset not found")
+        return adopted.model_dump(mode="json")
 
 
 @mcp.tool

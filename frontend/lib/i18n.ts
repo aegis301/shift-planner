@@ -523,6 +523,11 @@ export const dictionaries = {
     workTimeRuleAdditionalAllowance: "Zusatz je Quartal",
     workTimeRuleThresholdHours: "Schwelle (Stunden)",
     workTimeRuleRetentionMonths: "Aufbewahrung (Monate)",
+    workTimePresetsTitle: "Vorlagen",
+    workTimePresetAdopt: "Übernehmen",
+    workTimePresetUnconfirmed: "Werte unbestätigt",
+    workTimePresetDisclaimer:
+      "Vorlagen sind technische Ausgangswerte und keine Rechtsberatung. Vor dem Einsatz müssen Betriebsrat und Rechtsberatung die Zahlen bestätigen.",
     contractGroupsTitle: "Vertragsgruppen",
     contractGroupsHelp:
       "Vertragsgruppen legen Wochenstunden, Urlaubsanspruch, Anrechnungsregeln je Dienstkategorie und die Zuordnung von Tagesstatus fest. Beschäftigungsanteile liegen in datierten Perioden je Teammitglied.",
@@ -1465,6 +1470,11 @@ export const dictionaries = {
     workTimeRuleAdditionalAllowance: "Additional allowance per quarter",
     workTimeRuleThresholdHours: "Threshold (hours)",
     workTimeRuleRetentionMonths: "Retention (months)",
+    workTimePresetsTitle: "Presets",
+    workTimePresetAdopt: "Adopt",
+    workTimePresetUnconfirmed: "Values unconfirmed",
+    workTimePresetDisclaimer:
+      "Presets are engineering defaults, not legal advice. Confirm the numbers with the works council and legal counsel before use.",
     contractGroupsTitle: "Contract groups",
     contractGroupsHelp:
       "Contract groups define weekly hours, vacation entitlement, per-category credit rules, and day-status mappings. Employment percentage lives on dated periods per team member.",

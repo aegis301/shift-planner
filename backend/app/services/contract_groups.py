@@ -87,6 +87,7 @@ def create_contract_group(
     organization_id: int,
     actor: str,
     source: str,
+    commit: bool = True,
 ) -> ContractGroup:
     row = ContractGroup(
         organization_id=organization_id,
@@ -102,8 +103,9 @@ def create_contract_group(
     db.add(row)
     db.flush()
     record_audit(db, actor=actor, source=source, action="create", entity_type="contract_group", entity_id=row.id)
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
     return row
 
 
