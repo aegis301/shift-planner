@@ -277,6 +277,7 @@ def overlay_candidate_assignment(
     slot: RosterSlot,
     team_member_id: int,
     assignment_id: int | None,
+    manual_override: bool = False,
 ) -> PlanState:
     slots_by_id = dict(state.slots_by_id)
     slots_by_id[slot.id] = slot
@@ -286,6 +287,7 @@ def overlay_candidate_assignment(
         if existing.team_member_id == team_member_id:
             if existing.roster_slot is None:
                 existing.roster_slot = slot
+            existing.manual_override = existing.manual_override or manual_override
             return replace(
                 state,
                 slots_by_id=frozen_mapping(slots_by_id),
@@ -297,6 +299,7 @@ def overlay_candidate_assignment(
         id=new_id,
         roster_slot_id=slot.id,
         team_member_id=team_member_id,
+        manual_override=manual_override,
     )
     row.roster_slot = slot
     assignments[new_id] = row
@@ -377,7 +380,7 @@ class UnavailableOverlapPolicyRule:
         warnings: list[ValidationWarning] = []
         for assignment in state.assignments_by_id.values():
             slot = assignment.roster_slot
-            if slot is None:
+            if slot is None or not (state.start_date <= slot.slot_date <= state.end_date):
                 continue
             resolved = resolve_slot_constraints_from_loaded(slot)
             policy = _resolve_unavailable_overlap_policy(resolved)
@@ -509,7 +512,7 @@ def _evaluate_type_on_state(state: PlanState, constraint_type: str) -> list[Vali
     defs_map = dict(state.property_definitions_by_id)
     for assignment in state.assignments_by_id.values():
         slot = assignment.roster_slot
-        if slot is None:
+        if slot is None or not (state.start_date <= slot.slot_date <= state.end_date):
             continue
         resolved = [
             row for row in resolve_slot_constraints_from_loaded(slot) if row.rule.type == constraint_type

@@ -46,7 +46,6 @@ def prop_db():
             first_name="A",
             last_name="B",
             email="a@example.com",
-            employment_percentage=100,
         )
     )
     db.commit()

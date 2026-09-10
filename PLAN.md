@@ -4,8 +4,8 @@
 Refine the unified `/planning` workflow with shared month state, wishes, final roster assignment, inline validation, exports, workload stats, and **per-shift-group plan versioning**.
 
 ## Next Steps
-1. R1 evaluation layer (`PlanState` / `Rule` protocol) exists unused; consumers still validate by `planning_period_id`.
-2. Run Alembic migrations against Postgres after pulling the plan-versions migration (`202606180001`).
+1. R1 contract groups, dated employment periods, and opening balances exist; the time ledger is still open.
+2. Run Alembic migrations against Postgres after pulling `202609100001`.
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing (day-interval bar shipped; multi-member ranges and clear-range still open).

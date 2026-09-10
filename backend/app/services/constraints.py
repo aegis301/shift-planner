@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, RosterSlot, RosterSlotAssignment
+from app.models import RosterSlot
 from app.schemas import ValidationWarning
 from app.services.rules.shift_constraints import (
     ResolvedConstraint,
@@ -22,12 +22,9 @@ def evaluate_assignment_constraints(
     slot: RosterSlot,
     team_member_id: int,
     resolved_constraints: list[ResolvedConstraint],
-    assigned_slots_for_member: list[RosterSlotAssignment],
-    planning_cells_for_member: list[PlanningCell],
     assignment_id: int | None = None,
     member_property_values: dict[int, object],
 ) -> list[ValidationWarning]:
-    del assigned_slots_for_member, planning_cells_for_member
     return evaluate_shift_constraints_for_slot(
         db=db,
         slot=slot,

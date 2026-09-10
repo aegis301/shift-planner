@@ -41,7 +41,6 @@ def test_team_member_planning_display_name_from_model(nick_db):
         last_name="Schmidt",
         nickname="AS",
         email="a@example.com",
-        employment_percentage=100,
     )
     db.add(member)
     db.commit()

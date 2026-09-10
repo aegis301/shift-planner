@@ -3,6 +3,7 @@ import pytest
 from mcp_app import server
 from mcp_app.server import (
     bulk_upsert_planning_shift_intents_tool,
+    create_contract_group_tool,
     create_shift_template_tool,
     delete_planning_period_tool,
     delete_shift_template_tool,
@@ -10,6 +11,7 @@ from mcp_app.server import (
     delete_team_member_tool,
     filter_team_member_property_matrix_tool,
     regenerate_planning_period_roster_tool,
+    replace_employment_periods_tool,
     replace_team_member_planning_patterns_tool,
     require_token,
     sync_planning_period_roster_tool,
@@ -21,6 +23,13 @@ from mcp_app.server import (
 def test_require_token_rejects_invalid_token():
     with pytest.raises(PermissionError):
         require_token("wrong-token")
+
+
+def test_contract_group_and_employment_writes_require_token():
+    with pytest.raises(PermissionError):
+        create_contract_group_tool(token="wrong-token", name="X")
+    with pytest.raises(PermissionError):
+        replace_employment_periods_tool(token="wrong-token", team_member_id=1, periods=[])
 
 
 def test_filter_team_member_property_matrix_tool_uses_service(monkeypatch):

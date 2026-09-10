@@ -11,6 +11,10 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import ShiftGroup, User
 from app.schemas import (
+    ContractGroupCreate,
+    ContractGroupUpdate,
+    EmploymentPeriodWrite,
+    TimeAccountOpeningUpsert,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -34,13 +38,29 @@ from app.schemas import (
     ShiftVariantCreate,
     ShiftVariantUpdate,
 )
-from app.services.team_members import create_team_member, delete_team_member, list_team_members
+from app.services.contract_groups import (
+    contract_group_to_read,
+    create_contract_group,
+    delete_contract_group,
+    ensure_default_contract_group,
+    list_contract_groups,
+    update_contract_group,
+)
+from app.services.employment_periods import (
+    employment_period_to_read,
+    get_time_account_opening,
+    list_employment_periods,
+    replace_employment_periods,
+    time_account_opening_to_read,
+    upsert_time_account_opening,
+)
 from app.services.member_planning_patterns import (
     list_team_member_planning_patterns,
     pattern_to_read,
     read_organization_member_pattern_policy,
     replace_team_member_planning_patterns,
 )
+from app.services.team_members import create_team_member, delete_team_member, list_team_members, team_member_to_read
 from app.services.team_member_property_definitions import (
     create_team_member_property_definition,
     delete_team_member_property_definition,
@@ -148,10 +168,7 @@ def team_members_resource() -> list[dict[str, Any]]:
     """List all team members in the default organization."""
     with db_session() as db:
         return [
-            {
-                **serialize_model(member),
-                "shift_group_ids": sorted({link.shift_group_id for link in member.shift_group_links}),
-            }
+            team_member_to_read(member).model_dump(mode="json")
             for member in list_team_members(db, organization_id=mcp_organization_id())
         ]
 
@@ -480,11 +497,8 @@ def create_team_member_tool(
             actor="mcp",
             source="mcp",
         )
-        db.refresh(member, attribute_names=["shift_group_links"])
-        return {
-            **serialize_model(member),
-            "shift_group_ids": sorted({link.shift_group_id for link in member.shift_group_links}),
-        }
+        db.refresh(member, attribute_names=["shift_group_links", "employment_periods"])
+        return team_member_to_read(member).model_dump(mode="json")
 
 
 @mcp.tool
@@ -1220,6 +1234,179 @@ def reset_organization_user_password_tool(
             db, actor=actor, target_user_id=target_user_id, new_password=password
         )
         return {"ok": True}
+
+
+@mcp.resource("shift-planner://contract-groups")
+def contract_groups_resource() -> list[dict[str, Any]]:
+    """List contract groups in the MCP target organization."""
+    with db_session() as db:
+        ensure_default_contract_group(db, organization_id=mcp_organization_id())
+        db.commit()
+        return [
+            contract_group_to_read(row).model_dump(mode="json")
+            for row in list_contract_groups(db, organization_id=mcp_organization_id())
+        ]
+
+
+@mcp.tool
+def create_contract_group_tool(
+    token: str,
+    name: str,
+    weekly_hours_at_100: float = 40,
+    vacation_days_at_100: float = 30,
+    display_order: int = 0,
+    is_active: bool = True,
+    regular_week_pattern: list[dict[str, Any]] | None = None,
+    category_rules: list[dict[str, Any]] | None = None,
+    status_mappings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Create a contract group. Requires MCP admin token."""
+    require_token(token)
+    payload = ContractGroupCreate.model_validate(
+        {
+            "name": name,
+            "weekly_hours_at_100": weekly_hours_at_100,
+            "vacation_days_at_100": vacation_days_at_100,
+            "display_order": display_order,
+            "is_active": is_active,
+            "regular_week_pattern": regular_week_pattern or [],
+            "category_rules": category_rules or [],
+            "status_mappings": status_mappings or [],
+        }
+    )
+    with db_session() as db:
+        row = create_contract_group(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return contract_group_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_contract_group_tool(
+    token: str,
+    contract_group_id: int,
+    name: str | None = None,
+    weekly_hours_at_100: float | None = None,
+    vacation_days_at_100: float | None = None,
+    display_order: int | None = None,
+    is_active: bool | None = None,
+    regular_week_pattern: list[dict[str, Any]] | None = None,
+    category_rules: list[dict[str, Any]] | None = None,
+    status_mappings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Update a contract group. Requires MCP admin token."""
+    require_token(token)
+    payload = ContractGroupUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "name": name,
+                "weekly_hours_at_100": weekly_hours_at_100,
+                "vacation_days_at_100": vacation_days_at_100,
+                "display_order": display_order,
+                "is_active": is_active,
+                "regular_week_pattern": regular_week_pattern,
+                "category_rules": category_rules,
+                "status_mappings": status_mappings,
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        row = update_contract_group(
+            db,
+            contract_group_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if row is None:
+            raise ValueError("Contract group not found")
+        return contract_group_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_contract_group_tool(token: str, contract_group_id: int) -> dict[str, bool]:
+    """Delete a contract group if it is not referenced. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = delete_contract_group(
+            db, contract_group_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return {"deleted": deleted}
+
+
+@mcp.tool
+def list_employment_periods_tool(team_member_id: int) -> list[dict[str, Any]]:
+    """List dated employment periods for a team member."""
+    with db_session() as db:
+        return [
+            employment_period_to_read(row).model_dump(mode="json")
+            for row in list_employment_periods(
+                db, team_member_id, organization_id=mcp_organization_id()
+            )
+        ]
+
+
+@mcp.tool
+def replace_employment_periods_tool(
+    token: str,
+    team_member_id: int,
+    periods: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace employment periods for a team member. Requires MCP admin token."""
+    require_token(token)
+    parsed = [EmploymentPeriodWrite.model_validate(item) for item in periods]
+    with db_session() as db:
+        rows = replace_employment_periods(
+            db,
+            team_member_id,
+            parsed,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return [employment_period_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def get_time_account_opening_tool(team_member_id: int) -> dict[str, Any] | None:
+    """Read the time-account opening balance for a team member."""
+    with db_session() as db:
+        row = get_time_account_opening(db, team_member_id, organization_id=mcp_organization_id())
+        if row is None:
+            return None
+        return time_account_opening_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def upsert_time_account_opening_tool(
+    token: str,
+    team_member_id: int,
+    as_of_date: date,
+    overtime_minutes: int = 0,
+    vacation_days_remaining: float = 0,
+    sick_days_used_ytd: float = 0,
+) -> dict[str, Any]:
+    """Set the time-account opening balance for a team member. Requires MCP admin token."""
+    require_token(token)
+    payload = TimeAccountOpeningUpsert(
+        as_of_date=as_of_date,
+        overtime_minutes=overtime_minutes,
+        vacation_days_remaining=vacation_days_remaining,
+        sick_days_used_ytd=sick_days_used_ytd,
+    )
+    with db_session() as db:
+        row = upsert_time_account_opening(
+            db,
+            team_member_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return time_account_opening_to_read(row).model_dump(mode="json")
 
 
 if __name__ == "__main__":

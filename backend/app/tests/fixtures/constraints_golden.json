@@ -1,9 +1,10 @@
 {
   "notes": [
-    "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster.",
+    "Baseline snapshot of evaluate_assignment_constraints and validate_roster over PlanState windows.",
     "Issue #02 / #57: ROSTER_CONSTRAINT_MIN_REST_HOURS now includes the 24h June 30 duty vs July 1 follow-on (slots 11 and 13).",
     "Issue #02 / #57: ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED now evaluates a partner date in the following month (slot 12 -> 2026-07-01).",
-    "Issue #03 / #58: in-month MEMBER_PATTERN_AVOID_TIME_WINDOW on slot 10 and ROSTER_TEMPLATE_NO_GO_CONFLICT on slot 9."
+    "Issue #03 / #58: in-month MEMBER_PATTERN_AVOID_TIME_WINDOW on slot 10 and ROSTER_TEMPLATE_NO_GO_CONFLICT on slot 9.",
+    "Issue #04 / #59: validate_roster runs the rule registry; warning order may differ from the previous helper sequence."
   ],
   "per_assignment": [
     {
@@ -305,86 +306,6 @@
   ],
   "validate_june": [
     {
-      "code": "ROSTER_MATRIX_UNAVAILABLE_OVERLAP",
-      "severity": "error",
-      "team_member_id": 1,
-      "date": "2026-06-16",
-      "details": {
-        "roster_slot_id": 10,
-        "shift_template_id": 6,
-        "shift_variant_id": 8,
-        "overlap_days": [
-          "2026-06-16"
-        ],
-        "conflicts": [
-          {
-            "cell_date": "2026-06-16",
-            "unavailable_status": "urlaub"
-          }
-        ],
-        "unavailable_overlap_policy": "block",
-        "unavailable_status": "urlaub",
-        "roster_slot_assignment_id": 9
-      }
-    },
-    {
-      "code": "ROSTER_TEMPLATE_NO_GO_CONFLICT",
-      "severity": "error",
-      "team_member_id": 1,
-      "date": "2026-06-20",
-      "details": {
-        "roster_slot_id": 9,
-        "roster_slot_assignment_id": 8,
-        "shift_template_id": 5,
-        "shift_variant_id": 7,
-        "shift_group_id": 1
-      }
-    },
-    {
-      "code": "ROSTER_MATRIX_DUPLICATE_DAY",
-      "severity": "warning",
-      "team_member_id": 1,
-      "date": "2026-06-05",
-      "details": {
-        "roster_slot_ids": [
-          1,
-          2
-        ],
-        "count": 2
-      }
-    },
-    {
-      "code": "ROSTER_MATRIX_DUPLICATE_DAY",
-      "severity": "warning",
-      "team_member_id": 1,
-      "date": "2026-06-08",
-      "details": {
-        "roster_slot_ids": [
-          5,
-          6
-        ],
-        "count": 2
-      }
-    },
-    {
-      "code": "ROSTER_CONSECUTIVE_WEEKENDS",
-      "severity": "warning",
-      "team_member_id": 1,
-      "date": null,
-      "details": {
-        "pairs": [
-          {
-            "first_weekend_saturday": "2026-06-13",
-            "second_weekend_saturday": "2026-06-20"
-          }
-        ],
-        "roster_slot_ids": [
-          4,
-          9
-        ]
-      }
-    },
-    {
       "code": "ROSTER_CONSTRAINT_SAME_DAY",
       "severity": "error",
       "team_member_id": 1,
@@ -459,6 +380,48 @@
       }
     },
     {
+      "code": "ROSTER_CONSTRAINT_MIN_REST_HOURS",
+      "severity": "warning",
+      "team_member_id": 1,
+      "date": "2026-06-30",
+      "details": {
+        "constraint_type": "min_rest_hours",
+        "constraint_source": "variant",
+        "constraint_severity": "warning",
+        "roster_slot_id": 11,
+        "shift_template_id": 2,
+        "shift_variant_id": 2,
+        "roster_slot_assignment_id": 10,
+        "required_rest_hours": 11.0,
+        "actual_rest_hours": 2.0,
+        "related_roster_slot_id": 13,
+        "direction": "after"
+      }
+    },
+    {
+      "code": "ROSTER_MATRIX_UNAVAILABLE_OVERLAP",
+      "severity": "error",
+      "team_member_id": 1,
+      "date": "2026-06-16",
+      "details": {
+        "roster_slot_id": 10,
+        "shift_template_id": 6,
+        "shift_variant_id": 8,
+        "overlap_days": [
+          "2026-06-16"
+        ],
+        "conflicts": [
+          {
+            "cell_date": "2026-06-16",
+            "unavailable_status": "urlaub"
+          }
+        ],
+        "unavailable_overlap_policy": "block",
+        "unavailable_status": "urlaub",
+        "roster_slot_assignment_id": 9
+      }
+    },
+    {
       "code": "ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES",
       "severity": "warning",
       "team_member_id": 1,
@@ -484,22 +447,83 @@
       }
     },
     {
-      "code": "ROSTER_CONSTRAINT_MIN_REST_HOURS",
+      "code": "MEMBER_PATTERN_AVOID_TIME_WINDOW",
+      "severity": "info",
+      "team_member_id": 1,
+      "date": "2026-06-15",
+      "details": {
+        "pattern_id": 1,
+        "pattern_label": "Avoid Monday nights",
+        "pattern_type": "avoid_time_window",
+        "constraint_severity": "info",
+        "roster_slot_id": 10,
+        "shift_template_id": 6,
+        "shift_variant_id": 8,
+        "roster_slot_assignment_id": 9,
+        "weekday": "mon",
+        "window_start": "20:00",
+        "window_end": "06:00",
+        "slot_starts_at": "2026-06-15T20:00:00",
+        "slot_ends_at": "2026-06-16T06:00:00",
+        "anchor": "any_overlap_day",
+        "window_band_index": 0
+      }
+    },
+    {
+      "code": "ROSTER_TEMPLATE_NO_GO_CONFLICT",
+      "severity": "error",
+      "team_member_id": 1,
+      "date": "2026-06-20",
+      "details": {
+        "roster_slot_id": 9,
+        "roster_slot_assignment_id": 8,
+        "shift_template_id": 5,
+        "shift_variant_id": 7,
+        "shift_group_id": 1
+      }
+    },
+    {
+      "code": "ROSTER_MATRIX_DUPLICATE_DAY",
       "severity": "warning",
       "team_member_id": 1,
-      "date": "2026-06-30",
+      "date": "2026-06-05",
       "details": {
-        "constraint_type": "min_rest_hours",
-        "constraint_source": "variant",
-        "constraint_severity": "warning",
-        "roster_slot_id": 11,
-        "shift_template_id": 2,
-        "shift_variant_id": 2,
-        "roster_slot_assignment_id": 10,
-        "required_rest_hours": 11.0,
-        "actual_rest_hours": 2.0,
-        "related_roster_slot_id": 13,
-        "direction": "after"
+        "roster_slot_ids": [
+          1,
+          2
+        ],
+        "count": 2
+      }
+    },
+    {
+      "code": "ROSTER_MATRIX_DUPLICATE_DAY",
+      "severity": "warning",
+      "team_member_id": 1,
+      "date": "2026-06-08",
+      "details": {
+        "roster_slot_ids": [
+          5,
+          6
+        ],
+        "count": 2
+      }
+    },
+    {
+      "code": "ROSTER_CONSECUTIVE_WEEKENDS",
+      "severity": "warning",
+      "team_member_id": 1,
+      "date": null,
+      "details": {
+        "pairs": [
+          {
+            "first_weekend_saturday": "2026-06-13",
+            "second_weekend_saturday": "2026-06-20"
+          }
+        ],
+        "roster_slot_ids": [
+          4,
+          9
+        ]
       }
     },
     {
@@ -557,29 +581,6 @@
         "source_roster_slot_ids": [
           12
         ]
-      }
-    },
-    {
-      "code": "MEMBER_PATTERN_AVOID_TIME_WINDOW",
-      "severity": "info",
-      "team_member_id": 1,
-      "date": "2026-06-15",
-      "details": {
-        "pattern_id": 1,
-        "pattern_label": "Avoid Monday nights",
-        "pattern_type": "avoid_time_window",
-        "constraint_severity": "info",
-        "roster_slot_id": 10,
-        "shift_template_id": 6,
-        "shift_variant_id": 8,
-        "roster_slot_assignment_id": 9,
-        "weekday": "mon",
-        "window_start": "20:00",
-        "window_end": "06:00",
-        "slot_starts_at": "2026-06-15T20:00:00",
-        "slot_ends_at": "2026-06-16T06:00:00",
-        "anchor": "any_overlap_day",
-        "window_band_index": 0
       }
     }
   ],

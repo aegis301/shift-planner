@@ -98,7 +98,6 @@ def _add_member(db: Session, *, email: str, first_name: str = "A") -> TeamMember
         first_name=first_name,
         last_name="B",
         email=email,
-        employment_percentage=100,
         is_active=True,
     )
     db.add(member)
@@ -387,6 +386,10 @@ def test_no_existing_module_imports_rules_package():
         if "/services/rules/" in posix or posix.endswith("/tests/test_plan_state.py"):
             continue
         if posix.endswith("/services/constraints.py") or posix.endswith("/services/validation.py"):
+            continue
+        if posix.endswith("/services/roster_matrix.py") or posix.endswith("/services/workload.py"):
+            continue
+        if posix.endswith("/services/dashboard.py"):
             continue
         if posix.endswith("/tests/test_constraints_golden.py") or posix.endswith("/tests/test_plan_state.py"):
             continue

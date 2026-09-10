@@ -30,6 +30,7 @@ from app.schemas import (
     TeamMemberDashboardRead,
 )
 from app.services.authz import get_linked_team_member, team_member_shift_group_ids
+from app.services.employment_periods import employment_percentage_on
 from app.services.join_requests import list_join_requests_for_org
 from app.services.matrix import list_team_member_period_notes
 from app.services.organization_directory import list_organization_staff_directory
@@ -45,6 +46,7 @@ from app.services.roster_matrix import (
     list_roster_slot_assignments,
     list_roster_slots,
 )
+from app.services.rules import build_plan_state
 from app.services.shift_groups import (
     active_team_member_ids_in_shift_group,
     require_shift_group,
@@ -58,6 +60,7 @@ from app.services.workload import (
     WorkloadMemberSlice,
     WorkloadSlotSlice,
     build_member_workload_rows,
+    slices_from_plan_state,
     validation_counts_by_code,
 )
 
@@ -313,28 +316,25 @@ def _roster_slices_for_period(
         planning_period_id=period_id,
     )
     ensure_roster_slots_for_period(db, period_id, organization_id)
+    period = db.get(PlanningPeriod, period_id)
+    if period is None:
+        return [], [], []
+    start_date = date(period.year, period.month, 1)
+    end_date = date(period.year, period.month, calendar.monthrange(period.year, period.month)[1])
+    state = build_plan_state(
+        db,
+        organization_id=organization_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
     slot_ids = _scoped_slot_ids(db, planning_period_id=period_id, template_ids=template_ids)
-    slots_raw = [slot for slot in list_roster_slots(db, planning_period_id=period_id) if slot.id in slot_ids]
-    slots: list[WorkloadSlotSlice] = []
-    for slot in slots_raw:
-        category = slot.shift_template.category if slot.shift_template else None
-        slots.append(
-            WorkloadSlotSlice(
-                id=slot.id,
-                shift_template_id=slot.shift_template_id,
-                category=category,
-                slot_date=slot.slot_date,
-                starts_at=slot.starts_at,
-                ends_at=slot.ends_at,
-            )
-        )
-    assignments: list[WorkloadAssignmentSlice] = []
-    for row in list_roster_slot_assignments(db, planning_period_id=period_id):
-        if row.roster_slot_id not in slot_ids:
-            continue
-        if member_ids is not None and row.team_member_id not in member_ids:
-            continue
-        assignments.append(WorkloadAssignmentSlice(roster_slot_id=row.roster_slot_id, team_member_id=row.team_member_id))
+    slots_all, assignments_all = slices_from_plan_state(state)
+    slots = [slot for slot in slots_all if slot.id in slot_ids]
+    assignments = [
+        row
+        for row in assignments_all
+        if row.roster_slot_id in slot_ids and (member_ids is None or row.team_member_id in member_ids)
+    ]
     if member_ids is not None:
         allowed = member_ids
     else:
@@ -345,7 +345,7 @@ def _roster_slices_for_period(
             first_name=member.first_name,
             last_name=member.last_name,
             nickname=member.nickname,
-            employment_percentage=member.employment_percentage,
+            employment_percentage=employment_percentage_on(member, start_date),
         )
         for member in list_team_members(db, organization_id=organization_id, active_only=True)
         if member.id in allowed

@@ -83,7 +83,6 @@ def seed_constraints_golden_fixture(db: Session) -> None:
         first_name="Alice",
         last_name="Gold",
         email="alice.gold@example.com",
-        employment_percentage=100,
         is_active=True,
     )
     bob = TeamMember(
@@ -92,7 +91,6 @@ def seed_constraints_golden_fixture(db: Session) -> None:
         first_name="Bob",
         last_name="Gold",
         email="bob.gold@example.com",
-        employment_percentage=100,
         is_active=True,
     )
     db.add_all([alice, bob])
@@ -488,32 +486,22 @@ def seed_constraints_golden_fixture(db: Session) -> None:
 
 
 def capture_constraint_snapshots(db: Session) -> dict:
-    from app.services.matrix import list_planning_cells
     from app.services.roster_matrix import list_roster_slot_assignments
 
     june_assignments = list_roster_slot_assignments(db, planning_period_id=1)
     july_assignments = list_roster_slot_assignments(db, planning_period_id=2)
-    june_cells = list_planning_cells(db, planning_period_id=1)
     member_ids = {1, 2}
     value_maps = property_value_maps_for_members(db, organization_id=1, team_member_ids=member_ids)
     per_assignment: list[dict] = []
     for assignment in [*june_assignments, *july_assignments]:
         slot = assignment.roster_slot
         period_id = slot.planning_period_id
-        member_assignments = [
-            row
-            for row in (june_assignments if period_id == 1 else july_assignments)
-            if row.team_member_id == assignment.team_member_id
-        ]
-        member_cells = [row for row in june_cells if row.team_member_id == assignment.team_member_id]
         resolved = resolve_slot_constraints(db, slot)
         warnings = evaluate_assignment_constraints(
             db=db,
             slot=slot,
             team_member_id=assignment.team_member_id,
             resolved_constraints=resolved,
-            assigned_slots_for_member=member_assignments,
-            planning_cells_for_member=member_cells,
             assignment_id=assignment.id,
             member_property_values=value_maps.get(assignment.team_member_id, {}),
         )
@@ -527,10 +515,11 @@ def capture_constraint_snapshots(db: Session) -> dict:
         )
     return {
         "notes": [
-            "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster.",
+            "Baseline snapshot of evaluate_assignment_constraints and validate_roster over PlanState windows.",
             "Issue #02 / #57: ROSTER_CONSTRAINT_MIN_REST_HOURS now includes the 24h June 30 duty vs July 1 follow-on (slots 11 and 13).",
             "Issue #02 / #57: ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED now evaluates a partner date in the following month (slot 12 -> 2026-07-01).",
             "Issue #03 / #58: in-month MEMBER_PATTERN_AVOID_TIME_WINDOW on slot 10 and ROSTER_TEMPLATE_NO_GO_CONFLICT on slot 9.",
+            "Issue #04 / #59: validate_roster runs the rule registry; warning order may differ from the previous helper sequence.",
         ],
         "per_assignment": per_assignment,
         "validate_june": [_warning_snapshot(row) for row in validate_roster(db, 1, organization_id=1)],
@@ -677,4 +666,21 @@ def test_template_no_go_respects_manual_override(golden_db):
     snapshot = capture_constraint_snapshots(db)
     no_go = [row for row in snapshot["validate_june"] if row["code"] == "ROSTER_TEMPLATE_NO_GO_CONFLICT"]
     assert no_go == []
+
+
+def test_constraints_module_has_no_month_arithmetic():
+    source = Path(__file__).resolve().parents[1] / "services" / "constraints.py"
+    text = source.read_text()
+    assert "slot_date.year" not in text
+    assert "slot_date.month" not in text
+    assert "planning_period" not in text
+    assert "assigned_slots_for_member" not in text
+
+
+def test_mcp_get_validation_warnings_calls_validate_roster():
+    server = Path(__file__).resolve().parents[3] / "mcp-server" / "mcp_app" / "server.py"
+    text = server.read_text()
+    start = text.index("def get_validation_warnings")
+    chunk = text[start : start + 800]
+    assert "validate_roster(" in chunk
 

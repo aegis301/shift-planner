@@ -29,6 +29,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.authz import team_member_shift_group_ids
+from app.services.employment_periods import employment_percentage_on
 from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
 from app.services.planning import is_shift_group_planning_open, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
@@ -207,7 +208,7 @@ def get_planning_matrix(
                 last_name=m.last_name,
                 nickname=m.nickname,
                 email=m.email,
-                employment_percentage=m.employment_percentage,
+                employment_percentage=employment_percentage_on(m, date(period.year, period.month, 1)),
                 planning_preferences=m.planning_preferences,
             )
             for m in team_members

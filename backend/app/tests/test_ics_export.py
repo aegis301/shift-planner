@@ -79,7 +79,6 @@ def ics_client():
             first_name="Pat",
             last_name="Nurse",
             email="pat@example.com",
-            employment_percentage=100,
             user_id=portal_user.id,
         )
         other_member = TeamMember(
@@ -87,7 +86,6 @@ def ics_client():
             first_name="Other",
             last_name="Nurse",
             email="other@example.com",
-            employment_percentage=100,
             user_id=other_user.id,
         )
         db.add(member)

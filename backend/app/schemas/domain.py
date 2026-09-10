@@ -1,5 +1,6 @@
 from datetime import date as date_type
 from datetime import datetime, time
+from decimal import Decimal
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -424,7 +425,6 @@ class TeamMemberSelfUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
     nickname: str | None = Field(default=None, max_length=64)
     email: EmailStr | None = None
-    employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
     planning_preferences: str | None = None
 
@@ -441,6 +441,150 @@ class TeamMemberRead(TeamMemberCreate):
     is_active: bool
     created_at: datetime
     shift_group_memberships: list[ShiftGroupMembershipRead] = Field(default_factory=list)
+
+
+ShiftTemplateCategoryCode = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
+CreditMode = Literal["duration", "factor", "none"]
+AbsenceKind = Literal["vacation", "sick", "other", "none"]
+ContractWeekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+class RegularWeekPatternDay(BaseModel):
+    weekday: ContractWeekday
+    start: time
+    end: time
+
+
+class ContractCategoryRule(BaseModel):
+    category: ShiftTemplateCategoryCode
+    counts_toward_contract: bool = True
+    credit_mode: CreditMode
+    credit_factor: Decimal | None = None
+    holiday_credit_bonus: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    statutory_factor: Decimal = Field(ge=0, le=1)
+    call_outs_count_as_work: bool = False
+
+    @model_validator(mode="after")
+    def validate_credit_factor(self) -> Self:
+        if self.credit_mode == "factor":
+            if self.credit_factor is None:
+                raise ValueError("credit_factor is required when credit_mode is factor")
+            if self.credit_factor < 0 or self.credit_factor > 1:
+                raise ValueError("credit_factor must be between 0 and 1")
+        elif self.credit_factor is not None:
+            raise ValueError("credit_factor is only allowed when credit_mode is factor")
+        return self
+
+
+class ContractStatusMapping(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    absence_kind: AbsenceKind
+    consumes_vacation: bool = False
+    counts_as_work_day: bool = False
+
+
+class ContractGroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    display_order: int = 0
+    is_active: bool = True
+    weekly_hours_at_100: Decimal = Field(ge=0, le=168)
+    vacation_days_at_100: Decimal = Field(ge=0, le=366)
+    regular_week_pattern: list[RegularWeekPatternDay] = Field(default_factory=list)
+    category_rules: list[ContractCategoryRule] = Field(default_factory=list)
+    status_mappings: list[ContractStatusMapping] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_nested_collections(self) -> Self:
+        categories = [rule.category for rule in self.category_rules]
+        if len(categories) != len(set(categories)):
+            raise ValueError("category_rules must not repeat a category")
+        codes = [row.code for row in self.status_mappings]
+        if len(codes) != len(set(codes)):
+            raise ValueError("status_mappings must not repeat a code")
+        return self
+
+
+class ContractGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    display_order: int | None = None
+    is_active: bool | None = None
+    weekly_hours_at_100: Decimal | None = Field(default=None, ge=0, le=168)
+    vacation_days_at_100: Decimal | None = Field(default=None, ge=0, le=366)
+    regular_week_pattern: list[RegularWeekPatternDay] | None = None
+    category_rules: list[ContractCategoryRule] | None = None
+    status_mappings: list[ContractStatusMapping] | None = None
+
+    @model_validator(mode="after")
+    def validate_nested_collections(self) -> Self:
+        if self.category_rules is not None:
+            categories = [rule.category for rule in self.category_rules]
+            if len(categories) != len(set(categories)):
+                raise ValueError("category_rules must not repeat a category")
+        if self.status_mappings is not None:
+            codes = [row.code for row in self.status_mappings]
+            if len(codes) != len(set(codes)):
+                raise ValueError("status_mappings must not repeat a code")
+        return self
+
+
+class ContractGroupRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    display_order: int
+    is_active: bool
+    weekly_hours_at_100: Decimal
+    vacation_days_at_100: Decimal
+    regular_week_pattern: list[RegularWeekPatternDay]
+    category_rules: list[ContractCategoryRule]
+    status_mappings: list[ContractStatusMapping]
+    created_at: datetime
+
+
+class EmploymentPeriodWrite(BaseModel):
+    contract_group_id: int
+    employment_percentage: int = Field(ge=1, le=100)
+    start_date: date_type
+    end_date: date_type | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        return self
+
+
+class EmploymentPeriodRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_member_id: int
+    contract_group_id: int
+    employment_percentage: int
+    start_date: date_type
+    end_date: date_type | None = None
+
+
+class EmploymentPeriodsReplace(BaseModel):
+    periods: list[EmploymentPeriodWrite]
+
+
+class TimeAccountOpeningUpsert(BaseModel):
+    as_of_date: date_type
+    overtime_minutes: int = 0
+    vacation_days_remaining: Decimal = Field(default=Decimal("0"))
+    sick_days_used_ytd: Decimal = Field(default=Decimal("0"))
+
+
+class TimeAccountOpeningRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    team_member_id: int
+    as_of_date: date_type
+    overtime_minutes: int
+    vacation_days_remaining: Decimal
+    sick_days_used_ytd: Decimal
 
 
 class ShiftGroupCreate(BaseModel):

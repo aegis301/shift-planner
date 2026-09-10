@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -7,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -38,6 +40,7 @@ class Organization(Base):
     planning_periods: Mapped[list["PlanningPeriod"]] = relationship(back_populates="organization")
     join_requests: Mapped[list["OrganizationJoinRequest"]] = relationship(back_populates="organization")
     membership_invites: Mapped[list["OrganizationMembershipInvite"]] = relationship(back_populates="organization")
+    contract_groups: Mapped[list["ContractGroup"]] = relationship(back_populates="organization")
 
 
 class Account(Base):
@@ -177,7 +180,6 @@ class TeamMember(Base):
     last_name: Mapped[str] = mapped_column(String(255))
     nickname: Mapped[str | None] = mapped_column(String(64))
     email: Mapped[str] = mapped_column(String(255), index=True)
-    employment_percentage: Mapped[int] = mapped_column(Integer, default=100)
     notes: Mapped[str | None] = mapped_column(Text)
     planning_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -195,6 +197,60 @@ class TeamMember(Base):
     property_values: Mapped[list["TeamMemberPropertyValue"]] = relationship(
         back_populates="team_member", cascade="all, delete-orphan"
     )
+    employment_periods: Mapped[list["EmploymentPeriod"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+    time_account_opening: Mapped["TimeAccountOpening | None"] = relationship(
+        back_populates="team_member", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class ContractGroup(Base):
+    __tablename__ = "contract_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    weekly_hours_at_100: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    vacation_days_at_100: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    regular_week_pattern: Mapped[list] = mapped_column(JSON, default=list)
+    category_rules: Mapped[list] = mapped_column(JSON, default=list)
+    status_mappings: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    organization: Mapped["Organization"] = relationship(back_populates="contract_groups")
+    employment_periods: Mapped[list["EmploymentPeriod"]] = relationship(back_populates="contract_group")
+
+
+class EmploymentPeriod(Base):
+    __tablename__ = "employment_periods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    contract_group_id: Mapped[int] = mapped_column(ForeignKey("contract_groups.id", ondelete="RESTRICT"), index=True)
+    employment_percentage: Mapped[int] = mapped_column(Integer)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="employment_periods")
+    contract_group: Mapped["ContractGroup"] = relationship(back_populates="employment_periods")
+
+
+class TimeAccountOpening(Base):
+    __tablename__ = "time_account_openings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_member_id: Mapped[int] = mapped_column(
+        ForeignKey("team_members.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    as_of_date: Mapped[date] = mapped_column(Date)
+    overtime_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    vacation_days_remaining: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+    sick_days_used_ytd: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="time_account_opening")
 
 
 class TeamMemberPropertyDefinition(Base):
