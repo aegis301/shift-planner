@@ -7,6 +7,7 @@ from typing import TypeVar
 from app.models import (
     PlanningCell,
     PlanningDayStatusDefinition,
+    PlanningShiftIntent,
     RosterSlot,
     RosterSlotAssignment,
     TeamMember,
@@ -41,6 +42,7 @@ class PlanState:
     patterns_by_member_id: Mapping[int, tuple[TeamMemberPlanningPattern, ...]]
     property_values_by_member_id: Mapping[int, Mapping[int, object]]
     property_definitions_by_id: Mapping[int, TeamMemberPropertyDefinition]
+    shift_intents: tuple[PlanningShiftIntent, ...]
     time_entries_by_member_id: Mapping[int, tuple[object, ...]]
     employment_periods_by_member_id: Mapping[int, tuple[object, ...]]
 
@@ -73,6 +75,7 @@ def empty_indexed_state(
         patterns_by_member_id=frozen_mapping({}),
         property_values_by_member_id=frozen_mapping({}),
         property_definitions_by_id=frozen_mapping({}),
+        shift_intents=(),
         time_entries_by_member_id=frozen_mapping({}),
         employment_periods_by_member_id=frozen_mapping({}),
     )

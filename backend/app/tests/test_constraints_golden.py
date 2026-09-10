@@ -13,12 +13,14 @@ from app.models import (
     PlanningCell,
     PlanningDayStatusDefinition,
     PlanningPeriod,
+    PlanningShiftIntent,
     RosterSlot,
     RosterSlotAssignment,
     ShiftGroup,
     ShiftTemplate,
     ShiftVariant,
     TeamMember,
+    TeamMemberPlanningPattern,
     TeamMemberPropertyDefinition,
     TeamMemberPropertyValue,
 )
@@ -109,6 +111,24 @@ def seed_constraints_golden_fixture(db: Session) -> None:
             team_member_id=1,
             property_definition_id=1,
             value=1,
+        )
+    )
+    db.add(
+        TeamMemberPlanningPattern(
+            organization_id=1,
+            team_member_id=1,
+            label="Avoid Monday nights",
+            is_active=True,
+            rule={
+                "type": "avoid_time_window",
+                "weekdays": ["mon"],
+                "window_start": "20:00",
+                "window_end": "06:00",
+                "match_mode": "overlap",
+                "anchor": "any_overlap_day",
+            },
+            severity="error",
+            display_order=0,
         )
     )
 
@@ -449,6 +469,16 @@ def seed_constraints_golden_fixture(db: Session) -> None:
             status="urlaub",
         )
     )
+    db.add(
+        PlanningShiftIntent(
+            planning_period_id=1,
+            team_member_id=1,
+            cell_date=date(2026, 6, 20),
+            shift_group_id=1,
+            shift_template_id=5,
+            kind="no_go",
+        )
+    )
 
     for slot_id in (1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 13):
         db.add(RosterSlotAssignment(roster_slot_id=slot_id, team_member_id=1))
@@ -500,6 +530,7 @@ def capture_constraint_snapshots(db: Session) -> dict:
             "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster.",
             "Issue #02 / #57: ROSTER_CONSTRAINT_MIN_REST_HOURS now includes the 24h June 30 duty vs July 1 follow-on (slots 11 and 13).",
             "Issue #02 / #57: ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED now evaluates a partner date in the following month (slot 12 -> 2026-07-01).",
+            "Issue #03 / #58: in-month MEMBER_PATTERN_AVOID_TIME_WINDOW on slot 10 and ROSTER_TEMPLATE_NO_GO_CONFLICT on slot 9.",
         ],
         "per_assignment": per_assignment,
         "validate_june": [_warning_snapshot(row) for row in validate_roster(db, 1, organization_id=1)],
@@ -560,4 +591,90 @@ def test_max_assignments_and_coupled_warnings_still_merge(golden_db):
     ]
     assert len(in_month_coupled) == 1
     assert in_month_coupled[0]["details"]["source_roster_slot_ids"] == [7]
+
+
+def test_golden_in_month_pattern_and_builtin_codes(golden_db):
+    snapshot = capture_constraint_snapshots(golden_db)
+    june = snapshot["validate_june"]
+    codes = {row["code"] for row in june}
+    assert "ROSTER_TEMPLATE_NO_GO_CONFLICT" in codes
+    assert "ROSTER_MATRIX_DUPLICATE_DAY" in codes
+    assert "ROSTER_CONSECUTIVE_WEEKENDS" in codes
+    assert "MEMBER_PATTERN_AVOID_TIME_WINDOW" in codes
+    no_go = [row for row in june if row["code"] == "ROSTER_TEMPLATE_NO_GO_CONFLICT"]
+    assert len(no_go) == 1
+    assert no_go[0]["date"] == "2026-06-20"
+    assert no_go[0]["details"]["roster_slot_id"] == 9
+    avoid = [row for row in june if row["code"] == "MEMBER_PATTERN_AVOID_TIME_WINDOW"]
+    assert len(avoid) == 1
+    assert avoid[0]["severity"] == "info"
+    assert avoid[0]["date"] == "2026-06-15"
+    assert avoid[0]["details"]["roster_slot_id"] == 10
+    cons = [row for row in june if row["code"] == "ROSTER_CONSECUTIVE_WEEKENDS"]
+    assert len(cons) == 1
+    assert cons[0]["details"]["pairs"] == [
+        {
+            "first_weekend_saturday": "2026-06-13",
+            "second_weekend_saturday": "2026-06-20",
+        }
+    ]
+    assert cons[0]["details"]["roster_slot_ids"] == [4, 9]
+
+
+def test_consecutive_weekends_last_saturday_of_month_and_first_of_next(golden_db):
+    db = golden_db
+    june_slot = RosterSlot(
+        id=15,
+        planning_period_id=1,
+        shift_template_id=1,
+        shift_variant_id=1,
+        slot_date=date(2026, 6, 27),
+        position=1,
+        starts_at=_utc(2026, 6, 27, 8),
+        ends_at=_utc(2026, 6, 27, 16),
+    )
+    july_slot = RosterSlot(
+        id=16,
+        planning_period_id=2,
+        shift_template_id=1,
+        shift_variant_id=1,
+        slot_date=date(2026, 7, 4),
+        position=1,
+        starts_at=_utc(2026, 7, 4, 8),
+        ends_at=_utc(2026, 7, 4, 16),
+    )
+    db.add_all([june_slot, july_slot])
+    db.flush()
+    db.add(RosterSlotAssignment(roster_slot_id=15, team_member_id=2))
+    db.add(RosterSlotAssignment(roster_slot_id=16, team_member_id=2))
+    db.commit()
+
+    def weekend_pairs(warnings: list[ValidationWarning], member_id: int) -> list[dict]:
+        return [
+            row.details["pairs"]
+            for row in warnings
+            if row.code == "ROSTER_CONSECUTIVE_WEEKENDS" and row.team_member_id == member_id
+        ]
+
+    expected = [
+        {
+            "first_weekend_saturday": "2026-06-27",
+            "second_weekend_saturday": "2026-07-04",
+        }
+    ]
+    june_pairs = weekend_pairs(validate_roster(db, 1, organization_id=1), 2)
+    july_pairs = weekend_pairs(validate_roster(db, 2, organization_id=1), 2)
+    assert june_pairs == [expected]
+    assert july_pairs == [expected]
+
+
+def test_template_no_go_respects_manual_override(golden_db):
+    db = golden_db
+    assignment = db.get(RosterSlotAssignment, 8)
+    assert assignment is not None
+    assignment.manual_override = True
+    db.commit()
+    snapshot = capture_constraint_snapshots(db)
+    no_go = [row for row in snapshot["validate_june"] if row["code"] == "ROSTER_TEMPLATE_NO_GO_CONFLICT"]
+    assert no_go == []
 

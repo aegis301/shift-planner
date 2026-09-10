@@ -386,7 +386,9 @@ def test_no_existing_module_imports_rules_package():
         posix = path.as_posix()
         if "/services/rules/" in posix or posix.endswith("/tests/test_plan_state.py"):
             continue
-        if posix.endswith("/services/constraints.py") or posix.endswith("/tests/test_constraints_golden.py"):
+        if posix.endswith("/services/constraints.py") or posix.endswith("/services/validation.py"):
+            continue
+        if posix.endswith("/tests/test_constraints_golden.py") or posix.endswith("/tests/test_plan_state.py"):
             continue
         if forbidden in path.read_text():
             offenders.append(str(path.relative_to(app_root)))

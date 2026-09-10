@@ -9,6 +9,7 @@ from app.models import (
     PlanningDayStatusDefinition,
     PlanningPeriod,
     PlanningPeriodShiftGroupMember,
+    PlanningShiftIntent,
     RosterSlot,
     RosterSlotAssignment,
     ShiftGroupShiftTemplate,
@@ -173,6 +174,28 @@ def _load_cells(
     return list(db.scalars(stmt))
 
 
+def _load_intents(
+    db: Session,
+    *,
+    organization_id: int,
+    load_start: date,
+    load_end: date,
+    shift_group_id: int | None,
+) -> list[PlanningShiftIntent]:
+    stmt = (
+        select(PlanningShiftIntent)
+        .join(PlanningPeriod, PlanningPeriod.id == PlanningShiftIntent.planning_period_id)
+        .where(
+            PlanningPeriod.organization_id == organization_id,
+            PlanningShiftIntent.cell_date >= load_start,
+            PlanningShiftIntent.cell_date <= load_end,
+        )
+    )
+    if shift_group_id is not None:
+        stmt = stmt.where(PlanningShiftIntent.shift_group_id == shift_group_id)
+    return list(db.scalars(stmt))
+
+
 def _load_day_statuses(db: Session, *, organization_id: int) -> list[PlanningDayStatusDefinition]:
     return list(
         db.scalars(
@@ -264,6 +287,13 @@ def build_plan_state(
         load_end=load_end,
         shift_group_id=shift_group_id,
     )
+    intents = _load_intents(
+        db,
+        organization_id=organization_id,
+        load_start=load_start,
+        load_end=load_end,
+        shift_group_id=shift_group_id,
+    )
     day_statuses = _load_day_statuses(db, organization_id=organization_id)
     member_ids = {member.id for member in members}
     patterns = _load_patterns(db, organization_id=organization_id, team_member_ids=member_ids)
@@ -281,6 +311,8 @@ def build_plan_state(
     patterns_grouped: dict[int, list[TeamMemberPlanningPattern]] = {}
     for pattern in patterns:
         patterns_grouped.setdefault(pattern.team_member_id, []).append(pattern)
+    for member_id, rows in patterns_grouped.items():
+        patterns_grouped[member_id] = sorted(rows, key=lambda item: (item.display_order, item.id))
 
     property_maps: dict[int, dict[int, object]] = {}
     for row in property_values:
@@ -310,6 +342,7 @@ def build_plan_state(
             {member_id: frozen_mapping(values) for member_id, values in property_maps.items()}
         ),
         property_definitions_by_id=frozen_mapping({row.id: row for row in property_definitions}),
+        shift_intents=tuple(intents),
         time_entries_by_member_id=frozen_mapping({}),
         employment_periods_by_member_id=frozen_mapping({}),
     )

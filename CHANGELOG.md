@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-10
+- **Patterns and builtin roster checks on PlanState:** Member planning patterns that apply to the roster and the built-in duplicate-day, template no-go, and consecutive-weekend checks evaluate through `Rule` implementations. Consecutive weekends now see the previous month’s last weekend. `avoid_time_window` stays info-only on the roster; cycle and parity `error` severity still require the org `member_pattern_policy` gate. Wishes-cell materialization is unchanged.
 - **Template constraints on PlanState:** Shift template/variant constraints evaluate through `Rule` implementations over a date-window `PlanState`. `min_rest_hours` and `requires_coupled_shift` now see assignments in the adjacent month. Assignment preflight and month validation still call the existing wrappers; warning codes, messages, and `details` keys are unchanged.
 
 ## 2026-09-08
