@@ -7,13 +7,20 @@ from app.api.deps import get_current_planning_user, get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    HoursLedgerRead,
     TimeEntryCreate,
     TimeEntryDeriveRequest,
     TimeEntryRead,
     TimeEntryReconciliationItem,
     TimeEntryUpdate,
 )
-from app.services.authz import can_use_planning_ui, get_linked_team_member, is_admin
+from app.services.authz import (
+    assert_planning_shift_group_scope,
+    can_use_planning_ui,
+    get_linked_team_member,
+    is_admin,
+)
+from app.services.hours_ledger import get_hours_ledger, member_in_shift_group
 from app.services.team_members import list_team_members_for_planner
 from app.services.time_entries import (
     create_manual_entry,
@@ -40,6 +47,31 @@ def _assert_read(db: Session, user: User, team_member_id: int, *, team_member_po
     allowed = {member.id for member in list_team_members_for_planner(db, user)}
     if team_member_id not in allowed:
         raise PermissionError("Team member is outside planner scope")
+
+
+def _assert_hours_ledger_read(
+    db: Session,
+    user: User,
+    team_member_id: int,
+    *,
+    team_member_portal: bool,
+    shift_group_id: int | None,
+) -> None:
+    _assert_read(db, user, team_member_id, team_member_portal=team_member_portal)
+    if team_member_portal or not can_use_planning_ui(user):
+        return
+    if is_admin(user):
+        if shift_group_id is None:
+            return
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+        if not member_in_shift_group(db, team_member_id=team_member_id, shift_group_id=shift_group_id):
+            raise PermissionError("Team member is not in this shift group")
+        return
+    if shift_group_id is None:
+        raise PermissionError("shift_group_id is required")
+    assert_planning_shift_group_scope(db, user, shift_group_id)
+    if not member_in_shift_group(db, team_member_id=team_member_id, shift_group_id=shift_group_id):
+        raise PermissionError("Team member is not in this shift group")
 
 
 def _assert_write(db: Session, user: User, team_member_id: int, *, team_member_portal: bool) -> None:
@@ -103,6 +135,39 @@ def get_reconciliation(
         start_date=start_date,
         end_date=end_date,
     )
+
+
+@router.get("/ledger", response_model=HoursLedgerRead)
+def get_ledger(
+    team_member_id: int,
+    start_date: date,
+    end_date: date,
+    shift_group_id: int | None = Query(default=None),
+    team_member_portal: bool = Query(default=False),
+    include_reconciliation: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> HoursLedgerRead:
+    try:
+        _assert_hours_ledger_read(
+            db,
+            user,
+            team_member_id,
+            team_member_portal=team_member_portal,
+            shift_group_id=shift_group_id,
+        )
+        return get_hours_ledger(
+            db,
+            organization_id=user.organization_id,
+            team_member_id=team_member_id,
+            start_date=start_date,
+            end_date=end_date,
+            include_reconciliation=include_reconciliation and not team_member_portal,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/derive")

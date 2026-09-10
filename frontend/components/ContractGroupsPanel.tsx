@@ -302,7 +302,7 @@ function ContractGroupModal({
                           onChange={(event) => updateRule(category, { holiday_credit_bonus: event.target.value })}
                         />
                       </Field>
-                      <Field label={t(locale, "contractStatutoryFactor")}>
+                      <Field label={t(locale, "contractStatutoryFactor")} hint={t(locale, "contractStatutoryFactorHelp")}>
                         <input
                           className={inputClass}
                           type="number"

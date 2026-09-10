@@ -20,6 +20,7 @@ from mcp_app.server import (
     upsert_planning_cell_tool,
     upsert_roster_slot_assignment_tool,
     upsert_time_entry_tool,
+    get_hours_ledger_tool,
 )
 
 
@@ -43,6 +44,40 @@ def test_upsert_time_entry_requires_token():
             entry_date=date(2026, 8, 1),
             kind="work",
         )
+
+
+def test_get_hours_ledger_tool_uses_service(monkeypatch):
+    class LedgerResult:
+        def model_dump(self, *, mode: str):
+            assert mode == "json"
+            return {"team_member_id": 4, "totals": {"statutory_minutes": 10, "credited_minutes": 20}}
+
+    class DbContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    calls = []
+
+    def fake_ledger(db, **kwargs):
+        calls.append((db, kwargs))
+        return LedgerResult()
+
+    monkeypatch.setattr(server, "db_session", lambda: DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 23)
+    monkeypatch.setattr(server, "get_hours_ledger", fake_ledger)
+
+    result = get_hours_ledger_tool(
+        team_member_id=4,
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+    )
+    assert result["totals"]["statutory_minutes"] == 10
+    assert result["totals"]["credited_minutes"] == 20
+    assert calls[0][1]["organization_id"] == 23
+    assert calls[0][1]["include_reconciliation"] is True
 
 
 def test_filter_team_member_property_matrix_tool_uses_service(monkeypatch):

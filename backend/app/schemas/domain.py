@@ -604,6 +604,8 @@ class TimeEntryRead(BaseModel):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     duration_minutes: int
+    statutory_minutes: int = 0
+    credited_minutes: int = 0
     counts_toward_contract: bool
     consumes_vacation: bool
     shift_template_category: str | None = None
@@ -611,6 +613,7 @@ class TimeEntryRead(BaseModel):
     roster_slot_id: int | None = None
     shift_group_id: int | None = None
     comment: str | None = None
+    derived_snapshot: dict[str, Any] | None = None
     corrected_fields: list[str] = Field(default_factory=list)
 
 
@@ -622,6 +625,8 @@ class TimeEntryCreate(BaseModel):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     duration_minutes: int = Field(default=0, ge=0)
+    statutory_minutes: int = Field(default=0, ge=0)
+    credited_minutes: int = Field(default=0, ge=0)
     counts_toward_contract: bool = True
     consumes_vacation: bool = False
     shift_template_category: str | None = None
@@ -635,6 +640,8 @@ class TimeEntryUpdate(BaseModel):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     duration_minutes: int | None = Field(default=None, ge=0)
+    statutory_minutes: int | None = Field(default=None, ge=0)
+    credited_minutes: int | None = Field(default=None, ge=0)
     counts_toward_contract: bool | None = None
     consumes_vacation: bool | None = None
     shift_template_category: str | None = None
@@ -657,6 +664,28 @@ class TimeEntryReconciliationItem(BaseModel):
     effective: TimeEntryRead
     corrected_fields: list[str] = Field(default_factory=list)
     diverges: bool
+
+
+class HoursLedgerTotals(BaseModel):
+    contract_target_minutes: int
+    statutory_minutes: int
+    credited_minutes: int
+    credited_minutes_toward_contract: int
+    absence_count: int
+    vacation_days_consumed: Decimal
+    opening_overtime_minutes: int
+    running_overtime_minutes: int
+    vacation_days_remaining: Decimal | None = None
+
+
+class HoursLedgerRead(BaseModel):
+    team_member_id: int
+    start_date: date_type
+    end_date: date_type
+    opening: TimeAccountOpeningRead | None = None
+    totals: HoursLedgerTotals
+    entries: list[TimeEntryRead]
+    reconciliation: list[TimeEntryReconciliationItem] = Field(default_factory=list)
 
 
 class ShiftGroupCreate(BaseModel):
@@ -1262,6 +1291,7 @@ class ShiftTemplateCreate(BaseModel):
     category: ShiftTemplateCategory = "bereitschaftsdienst"
     display_order: int = 0
     constraints: list[ShiftConstraint] = Field(default_factory=list)
+    valuation_override: ContractCategoryRule | None = None
 
 
 class ShiftTemplateUpdate(BaseModel):
@@ -1271,6 +1301,7 @@ class ShiftTemplateUpdate(BaseModel):
     display_order: int | None = None
     constraints: list[ShiftConstraint] | None = None
     is_active: bool | None = None
+    valuation_override: ContractCategoryRule | None = None
 
 
 class ShiftTemplateRead(ShiftTemplateCreate):

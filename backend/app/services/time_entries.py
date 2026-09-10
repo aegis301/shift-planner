@@ -24,7 +24,9 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.contract_groups import list_contract_groups
+from app.services.holidays import classify_day
 from app.services.shift_groups import _stint_active_on
+from app.services.work_time_valuation import statutory_work_minutes, tariff_credit_minutes
 
 SOURCE_ROSTER = "roster"
 SOURCE_DAY_STATUS = "day_status"
@@ -39,12 +41,15 @@ _APPLY_FIELDS = (
     "started_at",
     "ended_at",
     "duration_minutes",
+    "statutory_minutes",
+    "credited_minutes",
     "counts_toward_contract",
     "consumes_vacation",
     "shift_template_category",
     "planning_day_status_code",
     "comment",
 )
+_STICKY_VALUATION_FIELDS = frozenset({"statutory_minutes", "credited_minutes"})
 
 
 def time_entry_to_read(row: TimeEntry) -> TimeEntryRead:
@@ -118,6 +123,26 @@ def _desired_from_assignment(
     category = slot.shift_template.category if slot.shift_template is not None else None
     started_at = slot.starts_at
     ended_at = slot.ends_at
+    day_class = classify_day(slot.slot_date)
+    template = slot.shift_template
+    if template is not None:
+        statutory = statutory_work_minutes(
+            slot=slot,
+            contract_group=group,
+            template=template,
+            day_class=day_class,
+            episodes=(),
+        )
+        credited = tariff_credit_minutes(
+            slot=slot,
+            contract_group=group,
+            template=template,
+            day_class=day_class,
+            episodes=(),
+        )
+    else:
+        statutory = 0
+        credited = 0
     return {
         "organization_id": organization_id,
         "team_member_id": assignment.team_member_id,
@@ -128,6 +153,8 @@ def _desired_from_assignment(
         "started_at": started_at,
         "ended_at": ended_at,
         "duration_minutes": _duration_minutes(started_at, ended_at),
+        "statutory_minutes": statutory,
+        "credited_minutes": credited,
         "counts_toward_contract": _category_counts_toward(group, category),
         "consumes_vacation": False,
         "shift_template_category": category,
@@ -156,6 +183,8 @@ def _desired_from_cell(
         "started_at": None,
         "ended_at": None,
         "duration_minutes": 0,
+        "statutory_minutes": 0,
+        "credited_minutes": 0,
         "counts_toward_contract": mapping.counts_as_work_day,
         "consumes_vacation": mapping.consumes_vacation,
         "shift_template_category": None,
@@ -177,6 +206,8 @@ def _apply_derived(row: TimeEntry, desired: dict[str, Any]) -> None:
     row.shift_group_id = desired.get("shift_group_id")
     for field in _APPLY_FIELDS:
         if field in corrected:
+            continue
+        if field in _STICKY_VALUATION_FIELDS and row.id is not None:
             continue
         setattr(row, field, desired[field])
 
@@ -389,6 +420,8 @@ def create_manual_entry(
         started_at=payload.started_at,
         ended_at=payload.ended_at,
         duration_minutes=payload.duration_minutes,
+        statutory_minutes=payload.statutory_minutes,
+        credited_minutes=payload.credited_minutes,
         counts_toward_contract=payload.counts_toward_contract,
         consumes_vacation=payload.consumes_vacation,
         shift_template_category=payload.shift_template_category,

@@ -57,6 +57,7 @@ from app.services.employment_periods import (
     time_account_opening_to_read,
     upsert_time_account_opening,
 )
+from app.services.hours_ledger import get_hours_ledger
 from app.services.time_entries import (
     create_manual_entry,
     derive_entries,
@@ -626,6 +627,7 @@ def create_shift_template_tool(
     category: str = "bereitschaftsdienst",
     display_order: int = 0,
     constraints: list[dict[str, Any]] | None = None,
+    valuation_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift (paired_shift_variant_id, partner_day_offset, severity)."""
     require_token(token)
@@ -639,6 +641,7 @@ def create_shift_template_tool(
                     category=category,  # type: ignore[arg-type]
                     display_order=display_order,
                     constraints=constraints or [],
+                    valuation_override=valuation_override,
                 ),
                 organization_id=mcp_organization_id(),
                 actor="mcp",
@@ -661,22 +664,31 @@ def update_shift_template_tool(
     display_order: int | None = None,
     is_active: bool | None = None,
     constraints: list[dict[str, Any]] | None = None,
+    valuation_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Update a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift."""
     require_token(token)
     with db_session() as db:
         try:
+            payload = ShiftTemplateUpdate.model_validate(
+                {
+                    key: value
+                    for key, value in {
+                        "code": code,
+                        "name": name,
+                        "category": category,
+                        "display_order": display_order,
+                        "is_active": is_active,
+                        "constraints": constraints,
+                        "valuation_override": valuation_override,
+                    }.items()
+                    if value is not None
+                }
+            )
             template = update_shift_template(
                 db,
                 shift_template_id,
-                ShiftTemplateUpdate(
-                    code=code,
-                    name=name,
-                    category=category,  # type: ignore[arg-type]
-                    display_order=display_order,
-                    is_active=is_active,
-                    constraints=constraints,
-                ),
+                payload,
                 organization_id=mcp_organization_id(),
                 actor="mcp",
                 source="mcp",
@@ -1429,6 +1441,25 @@ def time_entries_resource(team_member_id: int) -> list[dict[str, Any]]:
             team_member_id=team_member_id,
         )
         return [time_entry_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def get_hours_ledger_tool(
+    team_member_id: int,
+    start_date: date,
+    end_date: date,
+    include_reconciliation: bool = True,
+) -> dict[str, Any]:
+    """Return hours ledger totals and entries for one team member in a date window."""
+    with db_session() as db:
+        return get_hours_ledger(
+            db,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+            start_date=start_date,
+            end_date=end_date,
+            include_reconciliation=include_reconciliation,
+        ).model_dump(mode="json")
 
 
 @mcp.tool
