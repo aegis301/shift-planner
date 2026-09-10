@@ -21,6 +21,9 @@ from mcp_app.server import (
     upsert_roster_slot_assignment_tool,
     upsert_time_entry_tool,
     get_hours_ledger_tool,
+    create_work_time_rule_set_tool,
+    delete_work_time_rule_set_tool,
+    update_work_time_rule_set_tool,
 )
 
 
@@ -44,6 +47,15 @@ def test_upsert_time_entry_requires_token():
             entry_date=date(2026, 8, 1),
             kind="work",
         )
+
+
+def test_work_time_rule_set_writes_require_token():
+    with pytest.raises(PermissionError):
+        create_work_time_rule_set_tool(token="wrong-token", name="ArbZG")
+    with pytest.raises(PermissionError):
+        update_work_time_rule_set_tool(token="wrong-token", rule_set_id=1, name="ArbZG")
+    with pytest.raises(PermissionError):
+        delete_work_time_rule_set_tool(token="wrong-token", rule_set_id=1)
 
 
 def test_get_hours_ledger_tool_uses_service(monkeypatch):

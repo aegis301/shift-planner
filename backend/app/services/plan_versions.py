@@ -52,6 +52,7 @@ from app.services.shift_groups import (
 )
 from app.services.shift_templates import list_shift_templates
 from app.services.tenancy import require_planning_period_in_org
+from app.services.work_time_rule_sets import get_active_work_time_rule_set
 
 VERSION_TRIGGER_STATUS_PRELIMINARY = "status_preliminary"
 VERSION_TRIGGER_STATUS_PUBLISHED = "status_published"
@@ -336,6 +337,7 @@ def snapshot_plan_version(
             )
         )
     )
+    active_rule_set = get_active_work_time_rule_set(db, organization_id=organization_id)
 
     version = PlanningPlanVersion(
         organization_id=organization_id,
@@ -347,6 +349,7 @@ def snapshot_plan_version(
         trigger=trigger,
         note=note,
         created_by_user_id=created_by_user_id,
+        work_time_rule_set_version_id=active_rule_set.id if active_rule_set is not None else None,
     )
     db.add(version)
     db.flush()

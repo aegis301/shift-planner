@@ -743,6 +743,121 @@ class ShiftGroupTemplateIdsPut(BaseModel):
 DayClass = Literal["any", "weekday", "weekend", "holiday"]
 ShiftTemplateCategory = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
 ConstraintSeverity = Literal["info", "warning", "error"]
+WorkTimeCallOutHandling = Literal["interrupt", "restart", "ignore"]
+WorkTimeDutyPeriod = Literal["week", "month", "quarter", "year"]
+
+
+class WorkTimeRuleMaxDailyWorkingTime(BaseModel):
+    type: Literal["max_daily_working_time"] = "max_daily_working_time"
+    severity: ConstraintSeverity = "error"
+    source_note: str = ""
+    base_hours: Decimal = Field(gt=0, le=24)
+    extended_hours: Decimal = Field(gt=0, le=24)
+    extension_requires_duty_hours: Decimal = Field(ge=0, le=24)
+
+
+class WorkTimeRuleMinRestPeriod(BaseModel):
+    type: Literal["min_rest_period"] = "min_rest_period"
+    severity: ConstraintSeverity = "error"
+    source_note: str = ""
+    hours: Decimal = Field(gt=0, le=48)
+    reducible_to_hours: Decimal | None = Field(default=None, gt=0, le=48)
+    compensation_window_days: int = Field(ge=1, le=365)
+    call_out_handling: WorkTimeCallOutHandling = "interrupt"
+
+
+class WorkTimeRuleRestAfterLongDuty(BaseModel):
+    type: Literal["rest_after_long_duty"] = "rest_after_long_duty"
+    severity: ConstraintSeverity = "error"
+    source_note: str = ""
+    trigger_hours: Decimal = Field(gt=0, le=48)
+    mandatory_rest_hours: Decimal = Field(gt=0, le=48)
+
+
+class WorkTimeRuleWeeklyAverageCap(BaseModel):
+    type: Literal["weekly_average_cap"] = "weekly_average_cap"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    hours: Decimal = Field(gt=0, le=168)
+    reference_period_months: int = Field(ge=1, le=24)
+    rolling: bool = True
+
+
+class WorkTimeRuleOptOutWeeklyCap(BaseModel):
+    type: Literal["opt_out_weekly_cap"] = "opt_out_weekly_cap"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    hours_by_tier: dict[str, Decimal]
+    reference_period_months: int = Field(ge=1, le=24)
+
+    @model_validator(mode="after")
+    def validate_tiers(self) -> Self:
+        if not self.hours_by_tier:
+            raise ValueError("hours_by_tier must not be empty")
+        return self
+
+
+class WorkTimeRuleMaxConsecutiveWorkDays(BaseModel):
+    type: Literal["max_consecutive_work_days"] = "max_consecutive_work_days"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    days: int = Field(ge=1, le=31)
+
+
+class WorkTimeRuleMaxDutiesPerPeriod(BaseModel):
+    type: Literal["max_duties_per_period"] = "max_duties_per_period"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    count: int = Field(ge=1, le=366)
+    period: WorkTimeDutyPeriod
+    additional_allowance_per_quarter: int = Field(default=0, ge=0, le=31)
+
+
+class WorkTimeRuleDocumentationRequirement(BaseModel):
+    type: Literal["documentation_requirement"] = "documentation_requirement"
+    severity: ConstraintSeverity = "info"
+    source_note: str = ""
+    threshold_hours: Decimal = Field(ge=0, le=24)
+    retention_months: int = Field(ge=1, le=120)
+
+
+WorkTimeRule = Annotated[
+    WorkTimeRuleMaxDailyWorkingTime
+    | WorkTimeRuleMinRestPeriod
+    | WorkTimeRuleRestAfterLongDuty
+    | WorkTimeRuleWeeklyAverageCap
+    | WorkTimeRuleOptOutWeeklyCap
+    | WorkTimeRuleMaxConsecutiveWorkDays
+    | WorkTimeRuleMaxDutiesPerPeriod
+    | WorkTimeRuleDocumentationRequirement,
+    Field(discriminator="type"),
+]
+
+
+class WorkTimeRuleSetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    rules: list[WorkTimeRule] = Field(default_factory=list)
+    is_active: bool | None = None
+
+
+class WorkTimeRuleSetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    rules: list[WorkTimeRule] | None = None
+    is_active: bool | None = None
+
+
+class WorkTimeRuleSetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    name: str
+    version: int
+    is_active: bool
+    rules: list[WorkTimeRule]
+    created_at: datetime
+    updated_at: datetime
+
 
 _PROPERTY_REQUIREMENT_MAX_ITEMS = 32
 _PROPERTY_REQUIREMENT_MAX_DEPTH = 8
@@ -1365,6 +1480,7 @@ class PlanVersionRead(BaseModel):
     trigger: PlanVersionTrigger
     note: str | None = None
     created_by_user_id: int | None = None
+    work_time_rule_set_version_id: int | None = None
     created_at: datetime
 
     @property
@@ -1581,16 +1697,6 @@ class TeamMemberPeriodNoteRead(BaseModel):
     wishes_response_received: bool
     created_at: datetime
     updated_at: datetime
-
-
-class RuleConfigRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    max_consecutive_work_days: int
-    min_rest_hours: int
-    max_monthly_nights_full_time: int
 
 
 class ValidationWarning(BaseModel):

@@ -21,7 +21,6 @@ from app.models.entities import (
     PlanVersionTeamMember,
     RosterSlot,
     RosterSlotAssignment,
-    RuleConfig,
     ShiftGroup,
     ShiftGroupShiftTemplate,
     ShiftTemplate,
@@ -36,6 +35,7 @@ from app.models.entities import (
     TimeEntry,
     User,
     UserShiftGroup,
+    WorkTimeRuleSet,
 )
 
 __all__ = [
@@ -61,7 +61,6 @@ __all__ = [
     "PlanningShiftIntent",
     "RosterSlot",
     "RosterSlotAssignment",
-    "RuleConfig",
     "ShiftGroup",
     "ShiftGroupShiftTemplate",
     "ShiftTemplate",
@@ -76,4 +75,5 @@ __all__ = [
     "TimeEntry",
     "User",
     "UserShiftGroup",
+    "WorkTimeRuleSet",
 ]

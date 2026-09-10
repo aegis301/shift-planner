@@ -38,7 +38,8 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
               !p.startsWith(`${TEAM_BASE}/organization`) &&
               !p.startsWith(`${TEAM_BASE}/properties`) &&
               !p.startsWith(`${TEAM_BASE}/day-statuses`) &&
-              !p.startsWith(`${TEAM_BASE}/contract-groups`),
+              !p.startsWith(`${TEAM_BASE}/contract-groups`) &&
+              !p.startsWith(`${TEAM_BASE}/work-time-rules`),
           },
           {
             href: `${TEAM_BASE}/properties`,
@@ -54,6 +55,11 @@ export default function TeamManagementLayout({ children }: { children: React.Rea
             href: `${TEAM_BASE}/contract-groups`,
             labelKey: "contractGroupsNav",
             isActive: (p) => p.startsWith(`${TEAM_BASE}/contract-groups`),
+          },
+          {
+            href: `${TEAM_BASE}/work-time-rules`,
+            labelKey: "workTimeRuleSetsNav",
+            isActive: (p) => p.startsWith(`${TEAM_BASE}/work-time-rules`),
           },
           {
             href: `${TEAM_BASE}/requests`,

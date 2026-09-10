@@ -482,6 +482,11 @@ class PlanningPlanVersion(Base):
     trigger: Mapped[str] = mapped_column(String(50))
     note: Mapped[str | None] = mapped_column(Text)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    work_time_rule_set_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_time_rule_sets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     planning_period: Mapped[PlanningPeriod] = relationship()
@@ -610,15 +615,22 @@ class PlanVersionTeamMember(Base):
     planning_preferences: Mapped[str | None] = mapped_column(Text)
 
 
-class RuleConfig(Base):
-    __tablename__ = "rule_configs"
+class WorkTimeRuleSet(Base):
+    __tablename__ = "work_time_rule_sets"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", "version", name="uq_work_time_rule_set_org_name_version"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True)
-    max_consecutive_work_days: Mapped[int] = mapped_column(Integer, default=6)
-    min_rest_hours: Mapped[int] = mapped_column(Integer, default=11)
-    max_monthly_nights_full_time: Mapped[int] = mapped_column(Integer, default=7)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    rules: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RosterSlot(Base):

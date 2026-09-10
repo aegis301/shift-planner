@@ -18,6 +18,8 @@ from app.schemas import (
     TimeEntryCreate,
     TimeEntryDeriveRequest,
     TimeEntryUpdate,
+    WorkTimeRuleSetCreate,
+    WorkTimeRuleSetUpdate,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -64,6 +66,13 @@ from app.services.time_entries import (
     list_time_entries,
     time_entry_to_read,
     update_time_entry,
+)
+from app.services.work_time_rule_sets import (
+    create_work_time_rule_set,
+    delete_work_time_rule_set,
+    list_work_time_rule_sets,
+    update_work_time_rule_set,
+    work_time_rule_set_to_read,
 )
 from app.services.member_planning_patterns import (
     list_team_member_planning_patterns,
@@ -1256,6 +1265,77 @@ def reset_organization_user_password_tool(
             db, actor=actor, target_user_id=target_user_id, new_password=password
         )
         return {"ok": True}
+
+
+@mcp.resource("shift-planner://work-time-rule-sets")
+def work_time_rule_sets_resource() -> list[dict[str, Any]]:
+    """List versioned statutory work-time rule sets in the MCP target organization."""
+    with db_session() as db:
+        return [
+            work_time_rule_set_to_read(row).model_dump(mode="json")
+            for row in list_work_time_rule_sets(db, organization_id=mcp_organization_id())
+        ]
+
+
+@mcp.tool
+def create_work_time_rule_set_tool(
+    token: str,
+    name: str,
+    rules: list[dict[str, Any]] | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Create a work-time rule set. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeRuleSetCreate.model_validate(
+        {"name": name, "rules": rules or [], "is_active": is_active}
+    )
+    with db_session() as db:
+        row = create_work_time_rule_set(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return work_time_rule_set_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_work_time_rule_set_tool(
+    token: str,
+    rule_set_id: int,
+    name: str | None = None,
+    rules: list[dict[str, Any]] | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Update a work-time rule set, versioning if a plan snapshot references it. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeRuleSetUpdate.model_validate(
+        {
+            key: value
+            for key, value in {"name": name, "rules": rules, "is_active": is_active}.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        row = update_work_time_rule_set(
+            db,
+            rule_set_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if row is None:
+            raise ValueError("Work time rule set not found")
+        return work_time_rule_set_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_work_time_rule_set_tool(token: str, rule_set_id: int) -> dict[str, bool]:
+    """Delete an unreferenced work-time rule set. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = delete_work_time_rule_set(
+            db, rule_set_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return {"deleted": deleted}
 
 
 @mcp.resource("shift-planner://contract-groups")

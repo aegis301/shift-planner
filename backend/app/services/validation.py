@@ -4,7 +4,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.models import PlanningCell, PlanningPeriod, RuleConfig
+from app.models import PlanningCell, PlanningPeriod
 from app.schemas import PLANNED_DUTY_STATUSES, ValidationWarning
 from app.services.matrix import list_planning_cells
 from app.services.planning_day_status_definitions import cell_status_blocks_roster_assignment
@@ -13,17 +13,6 @@ from app.services.roster_matrix import list_roster_slots
 from app.services.rules import build_plan_state, evaluate_plan_state
 from app.services.shift_groups import require_shift_group, shift_template_ids_in_shift_group
 from app.services.tenancy import require_planning_period_in_org
-
-
-def get_default_rule_config(db: Session) -> RuleConfig:
-    config = db.query(RuleConfig).filter(RuleConfig.name == "default").one_or_none()
-    if config:
-        return config
-    config = RuleConfig(name="default")
-    db.add(config)
-    db.commit()
-    db.refresh(config)
-    return config
 
 
 def _warning_in_shift_group_scope(
