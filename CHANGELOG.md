@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-08
+- **PlanState rule layer:** Added `backend/app/services/rules/` with an immutable date-window `PlanState`, a `Rule` protocol, and a registry-driven lookback. No user-facing behaviour change; existing validation and assignment preflight are unchanged.
+
 ## 2026-08-28
 - **Filter team member properties:** The property values table supports AND-combined, type-aware filters for text, selections, numbers, dates, and empty values. Filtering is service-backed through `POST /api/v1/team-member-property-matrix/search` and the read-only MCP `filter_team_member_property_matrix_tool`.
 - **Harden CI against stale PR merges:** Pull request jobs merge the latest base branch before checks; pushing to `main` re-runs CI on open same-repo PRs. German/English i18n dictionaries are type-checked for matching keys. Protect `main` with required checks plus **Require branches to be up to date** (or a merge queue) so a PR cannot land on a green run that predates newer `main` commits.

@@ -80,6 +80,10 @@ When a schema changes in a way that makes old local data incompatible, prefer a 
 
 Team member month notes belong in the wishes matrix header as per-column modal actions, not as a separate full-width form below the matrix.
 
+## Rule evaluation layer
+
+Shared rule evaluation lives in `backend/app/services/rules/`. `build_plan_state` loads an immutable `PlanState` from a **date window** (`start_date`, `end_date`), never a `planning_period_id`, and widens the loaded range by `max(rule.lookback)` from the rule registry. Rules implement `evaluate(state) -> list[ValidationWarning]` (optional `to_cpsat` is reserved for the solver). New statutory, template, pattern, and builtin checks go in this package against `PlanState`; do not add them to `constraints.py`. `time_entries_by_member_id` and `employment_periods_by_member_id` are typed empty collections until the time ledger exists. Month validation, assignment preflight, and MCP still use the existing period-scoped services until those consumers are rewired.
+
 ## Internationalization
 
 Every user-visible frontend string must exist in both German and English dictionaries. Do not hardcode UI copy inside components unless it is a non-visible test fixture.
