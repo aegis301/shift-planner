@@ -20,7 +20,9 @@ def resolve_active_rules(
     end_date: date,
 ) -> tuple[Rule, ...]:
     del organization_id, start_date, end_date
-    return tuple(_RULES)
+    from app.services.rules.shift_constraints import shift_constraint_rules
+
+    return shift_constraint_rules() + tuple(_RULES)
 
 
 def max_lookback(rules: Sequence[Rule]) -> timedelta:

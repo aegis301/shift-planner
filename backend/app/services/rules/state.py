@@ -11,6 +11,7 @@ from app.models import (
     RosterSlotAssignment,
     TeamMember,
     TeamMemberPlanningPattern,
+    TeamMemberPropertyDefinition,
 )
 
 K = TypeVar("K")
@@ -39,6 +40,7 @@ class PlanState:
     day_status_by_code: Mapping[str, PlanningDayStatusDefinition]
     patterns_by_member_id: Mapping[int, tuple[TeamMemberPlanningPattern, ...]]
     property_values_by_member_id: Mapping[int, Mapping[int, object]]
+    property_definitions_by_id: Mapping[int, TeamMemberPropertyDefinition]
     time_entries_by_member_id: Mapping[int, tuple[object, ...]]
     employment_periods_by_member_id: Mapping[int, tuple[object, ...]]
 
@@ -70,6 +72,7 @@ def empty_indexed_state(
         day_status_by_code=frozen_mapping({}),
         patterns_by_member_id=frozen_mapping({}),
         property_values_by_member_id=frozen_mapping({}),
+        property_definitions_by_id=frozen_mapping({}),
         time_entries_by_member_id=frozen_mapping({}),
         employment_periods_by_member_id=frozen_mapping({}),
     )

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-10
+- **Template constraints on PlanState:** Shift template/variant constraints evaluate through `Rule` implementations over a date-window `PlanState`. `min_rest_hours` and `requires_coupled_shift` now see assignments in the adjacent month. Assignment preflight and month validation still call the existing wrappers; warning codes, messages, and `details` keys are unchanged.
+
 ## 2026-09-08
 - **PlanState rule layer:** Added `backend/app/services/rules/` with an immutable date-window `PlanState`, a `Rule` protocol, and a registry-driven lookback. No user-facing behaviour change; existing validation and assignment preflight are unchanged.
 

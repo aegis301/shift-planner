@@ -458,8 +458,8 @@ def seed_constraints_golden_fixture(db: Session) -> None:
 
 
 def capture_constraint_snapshots(db: Session) -> dict:
-    from app.services.roster_matrix import list_roster_slot_assignments
     from app.services.matrix import list_planning_cells
+    from app.services.roster_matrix import list_roster_slot_assignments
 
     june_assignments = list_roster_slot_assignments(db, planning_period_id=1)
     july_assignments = list_roster_slot_assignments(db, planning_period_id=2)
@@ -497,7 +497,9 @@ def capture_constraint_snapshots(db: Session) -> dict:
         )
     return {
         "notes": [
-            "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster."
+            "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster.",
+            "Issue #02 / #57: ROSTER_CONSTRAINT_MIN_REST_HOURS now includes the 24h June 30 duty vs July 1 follow-on (slots 11 and 13).",
+            "Issue #02 / #57: ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED now evaluates a partner date in the following month (slot 12 -> 2026-07-01).",
         ],
         "per_assignment": per_assignment,
         "validate_june": [_warning_snapshot(row) for row in validate_roster(db, 1, organization_id=1)],
@@ -512,3 +514,50 @@ def test_constraints_golden_matches_current_evaluation(golden_db):
         GOLDEN_PATH.write_text(json.dumps(actual, indent=2, sort_keys=False) + "\n")
     expected = json.loads(GOLDEN_PATH.read_text())
     assert actual == expected
+
+
+def _warnings_for_slot(snapshot: dict, slot_id: int) -> list[dict]:
+    for row in snapshot["per_assignment"]:
+        if row["roster_slot_id"] == slot_id:
+            return row["warnings"]
+    raise AssertionError(f"slot {slot_id} missing from snapshot")
+
+
+def test_min_rest_hours_considers_assignment_outside_planning_period(golden_db):
+    snapshot = capture_constraint_snapshots(golden_db)
+    june_duty = _warnings_for_slot(snapshot, 11)
+    rest = [row for row in june_duty if row["code"] == "ROSTER_CONSTRAINT_MIN_REST_HOURS"]
+    assert len(rest) == 1
+    assert rest[0]["details"]["related_roster_slot_id"] == 13
+    assert rest[0]["details"]["direction"] == "after"
+    july_follow_on = _warnings_for_slot(snapshot, 13)
+    rest_july = [row for row in july_follow_on if row["code"] == "ROSTER_CONSTRAINT_MIN_REST_HOURS"]
+    assert len(rest_july) == 1
+    assert rest_july[0]["details"]["related_roster_slot_id"] == 11
+
+
+def test_requires_coupled_shift_evaluates_partner_in_following_month(golden_db):
+    snapshot = capture_constraint_snapshots(golden_db)
+    warnings = _warnings_for_slot(snapshot, 12)
+    coupled = [row for row in warnings if row["code"] == "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED"]
+    assert len(coupled) == 1
+    assert coupled[0]["details"]["partner_date"] == "2026-07-01"
+    assert coupled[0]["team_member_id"] == 2
+
+
+def test_max_assignments_and_coupled_warnings_still_merge(golden_db):
+    snapshot = capture_constraint_snapshots(golden_db)
+    max_rows = [
+        row for row in snapshot["validate_june"] if row["code"] == "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH"
+    ]
+    assert len(max_rows) == 1
+    assert max_rows[0]["details"]["violating_roster_slot_ids"] == [5, 6]
+    in_month_coupled = [
+        row
+        for row in snapshot["validate_june"]
+        if row["code"] == "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED"
+        and row["details"].get("partner_date") == "2026-06-11"
+    ]
+    assert len(in_month_coupled) == 1
+    assert in_month_coupled[0]["details"]["source_roster_slot_ids"] == [7]
+

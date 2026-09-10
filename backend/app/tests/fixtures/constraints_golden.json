@@ -1,6 +1,8 @@
 {
   "notes": [
-    "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster."
+    "Baseline snapshot of month-scoped evaluate_assignment_constraints and validate_roster.",
+    "Issue #02 / #57: ROSTER_CONSTRAINT_MIN_REST_HOURS now includes the 24h June 30 duty vs July 1 follow-on (slots 11 and 13).",
+    "Issue #02 / #57: ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED now evaluates a partner date in the following month (slot 12 -> 2026-07-01)."
   ],
   "per_assignment": [
     {
@@ -226,19 +228,78 @@
       "roster_slot_id": 11,
       "assignment_id": 10,
       "planning_period_id": 1,
-      "warnings": []
+      "warnings": [
+        {
+          "code": "ROSTER_CONSTRAINT_MIN_REST_HOURS",
+          "severity": "warning",
+          "team_member_id": 1,
+          "date": "2026-06-30",
+          "details": {
+            "constraint_type": "min_rest_hours",
+            "constraint_source": "variant",
+            "constraint_severity": "warning",
+            "roster_slot_id": 11,
+            "shift_template_id": 2,
+            "shift_variant_id": 2,
+            "roster_slot_assignment_id": 10,
+            "required_rest_hours": 11.0,
+            "actual_rest_hours": 2.0,
+            "related_roster_slot_id": 13,
+            "direction": "after"
+          }
+        }
+      ]
     },
     {
       "roster_slot_id": 12,
       "assignment_id": 13,
       "planning_period_id": 1,
-      "warnings": []
+      "warnings": [
+        {
+          "code": "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED",
+          "severity": "warning",
+          "team_member_id": 2,
+          "date": "2026-06-30",
+          "details": {
+            "constraint_type": "requires_coupled_shift",
+            "constraint_source": "variant",
+            "constraint_severity": "warning",
+            "roster_slot_id": 12,
+            "shift_template_id": 4,
+            "shift_variant_id": 5,
+            "roster_slot_assignment_id": 13,
+            "paired_shift_variant_id": 6,
+            "partner_date": "2026-07-01",
+            "partner_day_offset": 1
+          }
+        }
+      ]
     },
     {
       "roster_slot_id": 13,
       "assignment_id": 11,
       "planning_period_id": 2,
-      "warnings": []
+      "warnings": [
+        {
+          "code": "ROSTER_CONSTRAINT_MIN_REST_HOURS",
+          "severity": "warning",
+          "team_member_id": 1,
+          "date": "2026-07-01",
+          "details": {
+            "constraint_type": "min_rest_hours",
+            "constraint_source": "variant",
+            "constraint_severity": "warning",
+            "roster_slot_id": 13,
+            "shift_template_id": 2,
+            "shift_variant_id": 3,
+            "roster_slot_assignment_id": 11,
+            "required_rest_hours": 11.0,
+            "actual_rest_hours": 2.0,
+            "related_roster_slot_id": 11,
+            "direction": "before"
+          }
+        }
+      ]
     }
   ],
   "validate_june": [
@@ -409,6 +470,25 @@
       }
     },
     {
+      "code": "ROSTER_CONSTRAINT_MIN_REST_HOURS",
+      "severity": "warning",
+      "team_member_id": 1,
+      "date": "2026-06-30",
+      "details": {
+        "constraint_type": "min_rest_hours",
+        "constraint_source": "variant",
+        "constraint_severity": "warning",
+        "roster_slot_id": 11,
+        "shift_template_id": 2,
+        "shift_variant_id": 2,
+        "roster_slot_assignment_id": 10,
+        "required_rest_hours": 11.0,
+        "actual_rest_hours": 2.0,
+        "related_roster_slot_id": 13,
+        "direction": "after"
+      }
+    },
+    {
       "code": "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH",
       "severity": "warning",
       "team_member_id": 1,
@@ -445,7 +525,46 @@
           7
         ]
       }
+    },
+    {
+      "code": "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED",
+      "severity": "warning",
+      "team_member_id": 2,
+      "date": null,
+      "details": {
+        "constraint_type": "requires_coupled_shift",
+        "constraint_source": "variant",
+        "constraint_severity": "warning",
+        "shift_template_id": 4,
+        "shift_variant_id": 5,
+        "paired_shift_variant_id": 6,
+        "partner_date": "2026-07-01",
+        "partner_day_offset": 1,
+        "source_roster_slot_ids": [
+          12
+        ]
+      }
     }
   ],
-  "validate_july": []
+  "validate_july": [
+    {
+      "code": "ROSTER_CONSTRAINT_MIN_REST_HOURS",
+      "severity": "warning",
+      "team_member_id": 1,
+      "date": "2026-07-01",
+      "details": {
+        "constraint_type": "min_rest_hours",
+        "constraint_source": "variant",
+        "constraint_severity": "warning",
+        "roster_slot_id": 13,
+        "shift_template_id": 2,
+        "shift_variant_id": 3,
+        "roster_slot_assignment_id": 11,
+        "required_rest_hours": 11.0,
+        "actual_rest_hours": 2.0,
+        "related_roster_slot_id": 11,
+        "direction": "before"
+      }
+    }
+  ]
 }

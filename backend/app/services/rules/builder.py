@@ -14,6 +14,7 @@ from app.models import (
     ShiftGroupShiftTemplate,
     TeamMember,
     TeamMemberPlanningPattern,
+    TeamMemberPropertyDefinition,
     TeamMemberPropertyValue,
 )
 from app.services.rules.registry import max_lookback, resolve_active_rules
@@ -34,7 +35,8 @@ def _lookback_calendar_days(lookback: timedelta) -> int:
 
 
 def _load_bounds(start_date: date, end_date: date, lookback: timedelta) -> tuple[date, date]:
-    return start_date - timedelta(days=_lookback_calendar_days(lookback)), end_date
+    extra = timedelta(days=_lookback_calendar_days(lookback))
+    return start_date - extra, end_date + extra
 
 
 def _year_months(start: date, end: date) -> list[tuple[int, int]]:
@@ -268,6 +270,13 @@ def build_plan_state(
     property_values = _load_property_values(
         db, organization_id=organization_id, team_member_ids=member_ids
     )
+    property_definitions = list(
+        db.scalars(
+            select(TeamMemberPropertyDefinition).where(
+                TeamMemberPropertyDefinition.organization_id == organization_id
+            )
+        )
+    )
 
     patterns_grouped: dict[int, list[TeamMemberPlanningPattern]] = {}
     for pattern in patterns:
@@ -300,6 +309,7 @@ def build_plan_state(
         property_values_by_member_id=frozen_mapping(
             {member_id: frozen_mapping(values) for member_id, values in property_maps.items()}
         ),
+        property_definitions_by_id=frozen_mapping({row.id: row for row in property_definitions}),
         time_entries_by_member_id=frozen_mapping({}),
         employment_periods_by_member_id=frozen_mapping({}),
     )
