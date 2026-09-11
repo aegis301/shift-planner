@@ -12,6 +12,7 @@ import {
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { formatIsoDate, isoDateRangeStatus, todayIsoDate } from "@/lib/planningDates";
 import { Card, Field, inputClass } from "@/components/Card";
+import type { ContractCategoryRule } from "@/components/ContractGroupsPanel";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
 import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
 import { useLocale } from "@/components/LocaleProvider";
@@ -122,6 +123,7 @@ type ShiftTemplateRecord = {
   is_active: boolean;
   constraints?: ShiftConstraintRecord[];
   variants?: ShiftVariantRecord[];
+  valuation_override?: ContractCategoryRule | null;
 };
 
 export type TeamMemberRecord = {
@@ -1569,6 +1571,18 @@ function useTeamMemberPropertyDefinitions(): PropertyDefinitionBrief[] {
   return defs;
 }
 
+function defaultValuationOverride(category: ShiftTemplateCategory): ContractCategoryRule {
+  return {
+    category,
+    counts_toward_contract: true,
+    credit_mode: "factor",
+    credit_factor: 0.6,
+    holiday_credit_bonus: 25,
+    statutory_factor: 1,
+    call_outs_count_as_work: false
+  };
+}
+
 function ShiftTemplateEditorModal({
   template,
   allTemplates,
@@ -1605,9 +1619,15 @@ function ShiftTemplateEditorModal({
   );
   const [variantDeleteCandidate, setVariantDeleteCandidate] = useState<ShiftVariantRecord | null>(null);
   const [editorSaveError, setEditorSaveError] = useState<string | null>(null);
+  const [useValuationOverride, setUseValuationOverride] = useState(() => Boolean(template.valuation_override));
+  const [valuationOverride, setValuationOverride] = useState<ContractCategoryRule>(
+    () => template.valuation_override ?? defaultValuationOverride(template.category)
+  );
 
   useEffect(() => {
     setEditorSaveError(null);
+    setUseValuationOverride(Boolean(template.valuation_override));
+    setValuationOverride(template.valuation_override ?? defaultValuationOverride(template.category));
     setTemplateConstraints(parseShiftConstraintList(template.constraints));
     setTemplateRulePickerOpen(false);
     setNextTemplateRuleType(SHIFT_CONSTRAINT_OPTIONS[0].type);
@@ -1621,7 +1641,7 @@ function ShiftTemplateEditorModal({
         (template.variants ?? []).map((variant) => [variant.id, applicabilityStateFromVariant(variant)])
       )
     );
-  }, [template.id]);
+  }, [template.id]); // eslint-disable-line react-hooks/exhaustive-deps -- reset when switching templates
 
   function addPendingVariant() {
     setPendingVariants((current) => [
@@ -1684,7 +1704,10 @@ function ShiftTemplateEditorModal({
           name: form.get("name"),
           category: form.get("category"),
           constraints: shiftConstraintsToApi(templateConstraints),
-          is_active: form.get("is_active") === "on"
+          is_active: form.get("is_active") === "on",
+          valuation_override: useValuationOverride
+            ? { ...valuationOverride, category: form.get("category") as ShiftTemplateCategory }
+            : null
         })
       });
     } catch (error) {
@@ -1803,6 +1826,96 @@ function ShiftTemplateEditorModal({
           >
             {t(locale, "addRule")}
           </button>
+        </div>
+        <div className="mt-3 rounded-lg bg-white p-3 ring-1 ring-slate-200">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <input
+              type="checkbox"
+              checked={useValuationOverride}
+              onChange={(event) => setUseValuationOverride(event.target.checked)}
+            />
+            {t(locale, "shiftTemplateValuationOverride")}
+          </label>
+          <p className="mt-1 text-xs font-normal text-slate-500">{t(locale, "shiftTemplateValuationOverrideHelp")}</p>
+          {useValuationOverride ? (
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <Field label={t(locale, "contractCreditMode")}>
+                <select
+                  className={`${inputClass} w-full`}
+                  value={valuationOverride.credit_mode}
+                  onChange={(event) =>
+                    setValuationOverride((current) => ({
+                      ...current,
+                      credit_mode: event.target.value as ContractCategoryRule["credit_mode"],
+                      credit_factor: event.target.value === "factor" ? Number(current.credit_factor ?? 0.6) : null
+                    }))
+                  }
+                >
+                  <option value="duration">duration</option>
+                  <option value="factor">factor</option>
+                  <option value="none">none</option>
+                </select>
+              </Field>
+              <Field label={t(locale, "contractCreditFactor")}>
+                <input
+                  className={`${inputClass} w-full`}
+                  type="number"
+                  min={0}
+                  max={1}
+                  step="0.05"
+                  disabled={valuationOverride.credit_mode !== "factor"}
+                  value={valuationOverride.credit_factor ?? ""}
+                  onChange={(event) =>
+                    setValuationOverride((current) => ({ ...current, credit_factor: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field label={t(locale, "contractHolidayBonus")}>
+                <input
+                  className={`${inputClass} w-full`}
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="1"
+                  value={valuationOverride.holiday_credit_bonus}
+                  onChange={(event) =>
+                    setValuationOverride((current) => ({ ...current, holiday_credit_bonus: event.target.value }))
+                  }
+                />
+              </Field>
+              <Field
+                label={t(locale, "contractStatutoryFactor")}
+                hint={t(locale, "contractStatutoryFactorHelp")}
+              >
+                <input
+                  className={`${inputClass} w-full`}
+                  type="number"
+                  min={0}
+                  max={1}
+                  step="0.05"
+                  value={valuationOverride.statutory_factor}
+                  onChange={(event) =>
+                    setValuationOverride((current) => ({ ...current, statutory_factor: event.target.value }))
+                  }
+                />
+              </Field>
+              <label className="flex items-center gap-2 self-end text-sm font-medium text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={valuationOverride.call_outs_count_as_work}
+                  onChange={(event) =>
+                    setValuationOverride((current) => ({
+                      ...current,
+                      call_outs_count_as_work: event.target.checked
+                    }))
+                  }
+                />
+                {t(locale, "contractCallOuts")}
+              </label>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">{t(locale, "shiftTemplateUseGroupValuation")}</p>
+          )}
         </div>
         {templateRulePickerOpen ? (
           <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-white p-3 md:grid-cols-[minmax(20rem,1fr)_auto]">

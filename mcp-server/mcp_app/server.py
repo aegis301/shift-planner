@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date, time
+from datetime import date, datetime, time
 import os
 from typing import Any
 
@@ -11,6 +11,21 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import ShiftGroup, User
 from app.schemas import (
+    ContractGroupCreate,
+    ContractGroupUpdate,
+    EmploymentPeriodWrite,
+    TimeAccountOpeningUpsert,
+    DutyActivityAccessPolicyUpdate,
+    DutyActivityCreate,
+    DutyActivityUpdate,
+    FairnessPolicyUpdate,
+    TimeEntryCreate,
+    TimeEntryDeriveRequest,
+    TimeEntryUpdate,
+    WorkTimeRuleSetCreate,
+    WorkTimeRuleSetUpdate,
+    WorkTimeConsentCreate,
+    WorkTimeConsentRevoke,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -34,13 +49,70 @@ from app.schemas import (
     ShiftVariantCreate,
     ShiftVariantUpdate,
 )
-from app.services.team_members import create_team_member, delete_team_member, list_team_members
+from app.services.contract_groups import (
+    contract_group_to_read,
+    create_contract_group,
+    delete_contract_group,
+    ensure_default_contract_group,
+    list_contract_groups,
+    update_contract_group,
+)
+from app.services.employment_periods import (
+    employment_period_to_read,
+    get_time_account_opening,
+    list_employment_periods,
+    replace_employment_periods,
+    time_account_opening_to_read,
+    upsert_time_account_opening,
+)
+from app.services.hours_ledger import get_hours_ledger
+from app.services.compliance_report import build_compliance_report
+from app.services.fairness import (
+    build_fairness_accounts,
+    read_fairness_policy,
+    update_fairness_policy,
+)
+from app.services.duty_activity import duty_activity_to_read, record_duty_activity, update_duty_activity
+from app.services.duty_activity_privacy import (
+    build_works_council_duty_rows,
+    purge_expired_duty_activity_episodes,
+    read_duty_activity_access_policy,
+    update_duty_activity_access_policy,
+    works_council_row_to_dict,
+)
+from app.services.duty_utilization import period_utilization
+from app.services.time_entries import (
+    create_manual_entry,
+    derive_entries,
+    list_time_entries,
+    time_entry_to_read,
+    update_time_entry,
+)
+from app.services.work_time_consents import (
+    list_work_time_consents,
+    record_work_time_consent,
+    revoke_work_time_consent,
+    work_time_consent_to_read,
+)
+from app.services.work_time_presets import (
+    adopt_work_time_rule_set_preset,
+    list_work_time_rule_set_presets,
+    work_time_rule_set_preset_to_read,
+)
+from app.services.work_time_rule_sets import (
+    create_work_time_rule_set,
+    delete_work_time_rule_set,
+    list_work_time_rule_sets,
+    update_work_time_rule_set,
+    work_time_rule_set_to_read,
+)
 from app.services.member_planning_patterns import (
     list_team_member_planning_patterns,
     pattern_to_read,
     read_organization_member_pattern_policy,
     replace_team_member_planning_patterns,
 )
+from app.services.team_members import create_team_member, delete_team_member, list_team_members, team_member_to_read
 from app.services.team_member_property_definitions import (
     create_team_member_property_definition,
     delete_team_member_property_definition,
@@ -148,10 +220,7 @@ def team_members_resource() -> list[dict[str, Any]]:
     """List all team members in the default organization."""
     with db_session() as db:
         return [
-            {
-                **serialize_model(member),
-                "shift_group_ids": sorted({link.shift_group_id for link in member.shift_group_links}),
-            }
+            team_member_to_read(member).model_dump(mode="json")
             for member in list_team_members(db, organization_id=mcp_organization_id())
         ]
 
@@ -480,11 +549,8 @@ def create_team_member_tool(
             actor="mcp",
             source="mcp",
         )
-        db.refresh(member, attribute_names=["shift_group_links"])
-        return {
-            **serialize_model(member),
-            "shift_group_ids": sorted({link.shift_group_id for link in member.shift_group_links}),
-        }
+        db.refresh(member, attribute_names=["shift_group_links", "employment_periods"])
+        return team_member_to_read(member).model_dump(mode="json")
 
 
 @mcp.tool
@@ -602,6 +668,7 @@ def create_shift_template_tool(
     category: str = "bereitschaftsdienst",
     display_order: int = 0,
     constraints: list[dict[str, Any]] | None = None,
+    valuation_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift (paired_shift_variant_id, partner_day_offset, severity)."""
     require_token(token)
@@ -615,6 +682,7 @@ def create_shift_template_tool(
                     category=category,  # type: ignore[arg-type]
                     display_order=display_order,
                     constraints=constraints or [],
+                    valuation_override=valuation_override,
                 ),
                 organization_id=mcp_organization_id(),
                 actor="mcp",
@@ -637,22 +705,31 @@ def update_shift_template_tool(
     display_order: int | None = None,
     is_active: bool | None = None,
     constraints: list[dict[str, Any]] | None = None,
+    valuation_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Update a shift template. Requires MCP admin token. Constraints may include requires_coupled_shift."""
     require_token(token)
     with db_session() as db:
         try:
+            payload = ShiftTemplateUpdate.model_validate(
+                {
+                    key: value
+                    for key, value in {
+                        "code": code,
+                        "name": name,
+                        "category": category,
+                        "display_order": display_order,
+                        "is_active": is_active,
+                        "constraints": constraints,
+                        "valuation_override": valuation_override,
+                    }.items()
+                    if value is not None
+                }
+            )
             template = update_shift_template(
                 db,
                 shift_template_id,
-                ShiftTemplateUpdate(
-                    code=code,
-                    name=name,
-                    category=category,  # type: ignore[arg-type]
-                    display_order=display_order,
-                    is_active=is_active,
-                    constraints=constraints,
-                ),
+                payload,
                 organization_id=mcp_organization_id(),
                 actor="mcp",
                 source="mcp",
@@ -1218,6 +1295,701 @@ def reset_organization_user_password_tool(
             raise ValueError("No admin user in MCP target organization")
         admin_reset_account_password(
             db, actor=actor, target_user_id=target_user_id, new_password=password
+        )
+        return {"ok": True}
+
+
+@mcp.resource("shift-planner://work-time-rule-sets")
+def work_time_rule_sets_resource() -> list[dict[str, Any]]:
+    """List versioned statutory work-time rule sets in the MCP target organization."""
+    with db_session() as db:
+        return [
+            work_time_rule_set_to_read(row).model_dump(mode="json")
+            for row in list_work_time_rule_sets(db, organization_id=mcp_organization_id())
+        ]
+
+
+@mcp.resource("shift-planner://team-members/{team_member_id}/work-time-consents")
+def work_time_consents_resource(team_member_id: int) -> list[dict[str, Any]]:
+    """List working-time opt-out consents for one team member."""
+    with db_session() as db:
+        return [
+            work_time_consent_to_read(row).model_dump(mode="json")
+            for row in list_work_time_consents(
+                db, team_member_id, organization_id=mcp_organization_id()
+            )
+        ]
+
+
+@mcp.tool
+def record_work_time_consent_tool(
+    token: str,
+    team_member_id: int,
+    tier: str,
+    valid_from: date,
+    signed_document_reference: str | None = None,
+    notice_period_months: int = 6,
+    consent_type: str = "opt_out",
+) -> dict[str, Any]:
+    """Record an immutable working-time opt-out consent. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeConsentCreate(
+        consent_type=consent_type,
+        tier=tier,
+        valid_from=valid_from,
+        signed_document_reference=signed_document_reference,
+        notice_period_months=notice_period_months,
+    )
+    with db_session() as db:
+        row = record_work_time_consent(
+            db,
+            team_member_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            recorded_by_user_id=None,
+            actor="mcp",
+            source="mcp",
+        )
+        return work_time_consent_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def revoke_work_time_consent_tool(
+    token: str,
+    consent_id: int,
+    revoked_at: date | None = None,
+    notice_period_months: int | None = None,
+) -> dict[str, Any]:
+    """Revoke a working-time consent and list affected future published plans. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeConsentRevoke(revoked_at=revoked_at, notice_period_months=notice_period_months)
+    with db_session() as db:
+        row, findings = revoke_work_time_consent(
+            db,
+            consent_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return {
+            "consent": work_time_consent_to_read(row).model_dump(mode="json"),
+            "affected_plans": [item.model_dump(mode="json") for item in findings],
+        }
+
+
+@mcp.resource("shift-planner://work-time-rule-set-presets")
+def work_time_rule_set_presets_resource() -> list[dict[str, Any]]:
+    """List seed work-time rule-set presets."""
+    with db_session() as db:
+        return [
+            work_time_rule_set_preset_to_read(row).model_dump(mode="json")
+            for row in list_work_time_rule_set_presets(db)
+        ]
+
+
+@mcp.tool
+def adopt_work_time_rule_set_preset_tool(
+    token: str,
+    code: str,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Copy a work-time preset into the MCP target organization. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        adopted = adopt_work_time_rule_set_preset(
+            db,
+            code,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+            is_active=is_active,
+        )
+        if adopted is None:
+            raise ValueError("Work time rule set preset not found")
+        return adopted.model_dump(mode="json")
+
+
+@mcp.tool
+def create_work_time_rule_set_tool(
+    token: str,
+    name: str,
+    rules: list[dict[str, Any]] | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Create a work-time rule set. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeRuleSetCreate.model_validate(
+        {"name": name, "rules": rules or [], "is_active": is_active}
+    )
+    with db_session() as db:
+        row = create_work_time_rule_set(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return work_time_rule_set_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_work_time_rule_set_tool(
+    token: str,
+    rule_set_id: int,
+    name: str | None = None,
+    rules: list[dict[str, Any]] | None = None,
+    is_active: bool | None = None,
+) -> dict[str, Any]:
+    """Update a work-time rule set, versioning if a plan snapshot references it. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeRuleSetUpdate.model_validate(
+        {
+            key: value
+            for key, value in {"name": name, "rules": rules, "is_active": is_active}.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        row = update_work_time_rule_set(
+            db,
+            rule_set_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if row is None:
+            raise ValueError("Work time rule set not found")
+        return work_time_rule_set_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_work_time_rule_set_tool(token: str, rule_set_id: int) -> dict[str, bool]:
+    """Delete an unreferenced work-time rule set. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = delete_work_time_rule_set(
+            db, rule_set_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return {"deleted": deleted}
+
+
+@mcp.resource("shift-planner://contract-groups")
+def contract_groups_resource() -> list[dict[str, Any]]:
+    """List contract groups in the MCP target organization."""
+    with db_session() as db:
+        ensure_default_contract_group(db, organization_id=mcp_organization_id())
+        db.commit()
+        return [
+            contract_group_to_read(row).model_dump(mode="json")
+            for row in list_contract_groups(db, organization_id=mcp_organization_id())
+        ]
+
+
+@mcp.tool
+def create_contract_group_tool(
+    token: str,
+    name: str,
+    weekly_hours_at_100: float = 40,
+    vacation_days_at_100: float = 30,
+    display_order: int = 0,
+    is_active: bool = True,
+    regular_week_pattern: list[dict[str, Any]] | None = None,
+    category_rules: list[dict[str, Any]] | None = None,
+    status_mappings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Create a contract group. Requires MCP admin token."""
+    require_token(token)
+    payload = ContractGroupCreate.model_validate(
+        {
+            "name": name,
+            "weekly_hours_at_100": weekly_hours_at_100,
+            "vacation_days_at_100": vacation_days_at_100,
+            "display_order": display_order,
+            "is_active": is_active,
+            "regular_week_pattern": regular_week_pattern or [],
+            "category_rules": category_rules or [],
+            "status_mappings": status_mappings or [],
+        }
+    )
+    with db_session() as db:
+        row = create_contract_group(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return contract_group_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_contract_group_tool(
+    token: str,
+    contract_group_id: int,
+    name: str | None = None,
+    weekly_hours_at_100: float | None = None,
+    vacation_days_at_100: float | None = None,
+    display_order: int | None = None,
+    is_active: bool | None = None,
+    regular_week_pattern: list[dict[str, Any]] | None = None,
+    category_rules: list[dict[str, Any]] | None = None,
+    status_mappings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Update a contract group. Requires MCP admin token."""
+    require_token(token)
+    payload = ContractGroupUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "name": name,
+                "weekly_hours_at_100": weekly_hours_at_100,
+                "vacation_days_at_100": vacation_days_at_100,
+                "display_order": display_order,
+                "is_active": is_active,
+                "regular_week_pattern": regular_week_pattern,
+                "category_rules": category_rules,
+                "status_mappings": status_mappings,
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        row = update_contract_group(
+            db,
+            contract_group_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        if row is None:
+            raise ValueError("Contract group not found")
+        return contract_group_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_contract_group_tool(token: str, contract_group_id: int) -> dict[str, bool]:
+    """Delete a contract group if it is not referenced. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = delete_contract_group(
+            db, contract_group_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return {"deleted": deleted}
+
+
+@mcp.tool
+def list_employment_periods_tool(team_member_id: int) -> list[dict[str, Any]]:
+    """List dated employment periods for a team member."""
+    with db_session() as db:
+        return [
+            employment_period_to_read(row).model_dump(mode="json")
+            for row in list_employment_periods(
+                db, team_member_id, organization_id=mcp_organization_id()
+            )
+        ]
+
+
+@mcp.tool
+def replace_employment_periods_tool(
+    token: str,
+    team_member_id: int,
+    periods: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Replace employment periods for a team member. Requires MCP admin token."""
+    require_token(token)
+    parsed = [EmploymentPeriodWrite.model_validate(item) for item in periods]
+    with db_session() as db:
+        rows = replace_employment_periods(
+            db,
+            team_member_id,
+            parsed,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return [employment_period_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def get_time_account_opening_tool(team_member_id: int) -> dict[str, Any] | None:
+    """Read the time-account opening balance for a team member."""
+    with db_session() as db:
+        row = get_time_account_opening(db, team_member_id, organization_id=mcp_organization_id())
+        if row is None:
+            return None
+        return time_account_opening_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def upsert_time_account_opening_tool(
+    token: str,
+    team_member_id: int,
+    as_of_date: date,
+    overtime_minutes: int = 0,
+    vacation_days_remaining: float = 0,
+    sick_days_used_ytd: float = 0,
+) -> dict[str, Any]:
+    """Set the time-account opening balance for a team member. Requires MCP admin token."""
+    require_token(token)
+    payload = TimeAccountOpeningUpsert(
+        as_of_date=as_of_date,
+        overtime_minutes=overtime_minutes,
+        vacation_days_remaining=vacation_days_remaining,
+        sick_days_used_ytd=sick_days_used_ytd,
+    )
+    with db_session() as db:
+        row = upsert_time_account_opening(
+            db,
+            team_member_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return time_account_opening_to_read(row).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://time-entries/{team_member_id}")
+def time_entries_resource(team_member_id: int) -> list[dict[str, Any]]:
+    """Return time ledger entries for one team member."""
+    with db_session() as db:
+        rows = list_time_entries(
+            db,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+        )
+        return [time_entry_to_read(row).model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def get_hours_ledger_tool(
+    team_member_id: int,
+    start_date: date,
+    end_date: date,
+    include_reconciliation: bool = True,
+) -> dict[str, Any]:
+    """Return hours ledger totals and entries for one team member in a date window."""
+    with db_session() as db:
+        return get_hours_ledger(
+            db,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+            start_date=start_date,
+            end_date=end_date,
+            include_reconciliation=include_reconciliation,
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def upsert_time_entry_tool(
+    token: str,
+    team_member_id: int,
+    entry_date: date,
+    kind: str,
+    time_entry_id: int | None = None,
+    all_day: bool = False,
+    duration_minutes: int = 0,
+    counts_toward_contract: bool = True,
+    consumes_vacation: bool = False,
+    shift_template_category: str | None = None,
+    planning_day_status_code: str | None = None,
+    comment: str | None = None,
+) -> dict[str, Any]:
+    """Create or update a manual time entry. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        if time_entry_id is not None:
+            payload = TimeEntryUpdate.model_validate(
+                {
+                    "kind": kind,
+                    "all_day": all_day,
+                    "duration_minutes": duration_minutes,
+                    "counts_toward_contract": counts_toward_contract,
+                    "consumes_vacation": consumes_vacation,
+                    "shift_template_category": shift_template_category,
+                    "planning_day_status_code": planning_day_status_code,
+                    "comment": comment,
+                }
+            )
+            row = update_time_entry(
+                db,
+                time_entry_id,
+                payload,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+            )
+            if row is None:
+                raise ValueError("Time entry not found")
+            return time_entry_to_read(row).model_dump(mode="json")
+        payload = TimeEntryCreate.model_validate(
+            {
+                "team_member_id": team_member_id,
+                "entry_date": entry_date,
+                "kind": kind,
+                "all_day": all_day,
+                "duration_minutes": duration_minutes,
+                "counts_toward_contract": counts_toward_contract,
+                "consumes_vacation": consumes_vacation,
+                "shift_template_category": shift_template_category,
+                "planning_day_status_code": planning_day_status_code,
+                "comment": comment,
+            }
+        )
+        row = create_manual_entry(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return time_entry_to_read(row).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://duty-utilization/{planning_period_id}")
+def duty_utilization_resource(planning_period_id: int) -> dict[str, Any]:
+    """Return duty utilization ratios, tariff bands, and coverage for one planning period."""
+    with db_session() as db:
+        return period_utilization(
+            db,
+            organization_id=mcp_organization_id(),
+            planning_period_id=planning_period_id,
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://compliance-report/{planning_period_id}")
+def compliance_report_resource(planning_period_id: int) -> dict[str, Any]:
+    """Return the statutory compliance report for one planning period."""
+    with db_session() as db:
+        return build_compliance_report(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://fairness/{planning_period_id}")
+def fairness_accounts_resource(planning_period_id: int) -> dict[str, Any]:
+    """Return rolling fairness accounts for one planning period."""
+    with db_session() as db:
+        return build_fairness_accounts(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://fairness/{planning_period_id}/shift-group/{shift_group_id}")
+def fairness_accounts_shift_group_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Return rolling fairness accounts for one planning period and shift group."""
+    with db_session() as db:
+        return build_fairness_accounts(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://fairness-policy")
+def fairness_policy_resource() -> dict[str, Any]:
+    """Return the organization's fairness window and dimension policy."""
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return read_fairness_policy(org).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://duty-activity-access-policy")
+def duty_activity_access_policy_resource() -> dict[str, Any]:
+    """Return the organization's duty-activity visibility, retention, and purpose policy."""
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return read_duty_activity_access_policy(org).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://duty-activity/works-council/{planning_period_id}")
+def works_council_duty_utilization_resource(planning_period_id: int) -> list[dict[str, Any]]:
+    """Return aggregate works-council duty utilization rows (no individual attribution)."""
+    with db_session() as db:
+        return [
+            works_council_row_to_dict(row)
+            for row in build_works_council_duty_rows(
+                db,
+                organization_id=mcp_organization_id(),
+                planning_period_id=planning_period_id,
+            )
+        ]
+
+
+@mcp.tool
+def update_duty_activity_access_policy_tool(
+    token: str,
+    individual_read_roles: list[str] | None = None,
+    retention_months: int | None = None,
+    purpose_statement: str | None = None,
+    small_group_threshold: int | None = None,
+) -> dict[str, Any]:
+    """Update duty-activity access policy. Requires MCP admin token."""
+    require_token(token)
+    payload = DutyActivityAccessPolicyUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "individual_read_roles": individual_read_roles,
+                "retention_months": retention_months,
+                "purpose_statement": purpose_statement,
+                "small_group_threshold": small_group_threshold,
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return update_duty_activity_access_policy(
+            db,
+            org,
+            payload,
+            actor="mcp",
+            source="mcp",
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def update_fairness_policy_tool(
+    token: str,
+    window_months: int | None = None,
+    dimensions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Update fairness window and dimensions. Requires MCP admin token."""
+    require_token(token)
+    payload = FairnessPolicyUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "window_months": window_months,
+                "dimensions": dimensions,
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return update_fairness_policy(
+            db,
+            org,
+            payload,
+            actor="mcp",
+            source="mcp",
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def purge_duty_activity_episodes_tool(
+    token: str,
+    as_of: date | None = None,
+) -> dict[str, int]:
+    """Delete duty-activity episodes past the organization's retention. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = purge_expired_duty_activity_episodes(
+            db,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+            as_of=as_of,
+        )
+        return {"deleted": deleted}
+
+
+@mcp.tool
+def record_duty_activity_tool(
+    token: str,
+    team_member_id: int,
+    roster_slot_id: int,
+    kind: str,
+    started_at: datetime,
+    ended_at: datetime | None = None,
+    reason_code: str | None = None,
+    reason_note: str | None = None,
+) -> dict[str, Any]:
+    """Record a call-out or in-duty activity episode. Omit ended_at to start a running episode. Requires MCP admin token."""
+    require_token(token)
+    payload = DutyActivityCreate.model_validate(
+        {
+            "team_member_id": team_member_id,
+            "roster_slot_id": roster_slot_id,
+            "kind": kind,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "reason": None
+            if reason_code is None and reason_note is None
+            else {"code": reason_code, "note": reason_note},
+        }
+    )
+    with db_session() as db:
+        row = record_duty_activity(
+            db,
+            payload,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+            actor="mcp",
+            source="mcp",
+        )
+        return duty_activity_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_duty_activity_tool(
+    token: str,
+    entry_id: int,
+    team_member_id: int,
+    ended_at: datetime | None = None,
+    reason_code: str | None = None,
+    reason_note: str | None = None,
+) -> dict[str, Any]:
+    """Stop or annotate a duty-activity episode. Requires MCP admin token."""
+    require_token(token)
+    payload = DutyActivityUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "ended_at": ended_at,
+                "reason": None
+                if reason_code is None and reason_note is None
+                else {"code": reason_code, "note": reason_note},
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        row = update_duty_activity(
+            db,
+            entry_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+            actor="mcp",
+            source="mcp",
+        )
+        return duty_activity_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def derive_time_entries_tool(
+    token: str,
+    start_date: date,
+    end_date: date,
+    member_ids: list[int] | None = None,
+) -> dict[str, bool]:
+    """Reconcile derived roster and day-status time entries. Requires MCP admin token."""
+    require_token(token)
+    payload = TimeEntryDeriveRequest(start_date=start_date, end_date=end_date, member_ids=member_ids)
+    with db_session() as db:
+        derive_entries(
+            db,
+            organization_id=mcp_organization_id(),
+            start_date=payload.start_date,
+            end_date=payload.end_date,
+            member_ids=payload.member_ids,
         )
         return {"ok": True}
 

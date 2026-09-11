@@ -1,5 +1,6 @@
 from datetime import date as date_type
 from datetime import datetime, time
+from decimal import Decimal
 from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -424,7 +425,6 @@ class TeamMemberSelfUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=255)
     nickname: str | None = Field(default=None, max_length=64)
     email: EmailStr | None = None
-    employment_percentage: int | None = Field(default=None, ge=1, le=100)
     notes: str | None = None
     planning_preferences: str | None = None
 
@@ -441,6 +441,402 @@ class TeamMemberRead(TeamMemberCreate):
     is_active: bool
     created_at: datetime
     shift_group_memberships: list[ShiftGroupMembershipRead] = Field(default_factory=list)
+
+
+ShiftTemplateCategoryCode = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
+CreditMode = Literal["duration", "factor", "none"]
+AbsenceKind = Literal["vacation", "sick", "other", "none"]
+ContractWeekday = Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+class RegularWeekPatternDay(BaseModel):
+    weekday: ContractWeekday
+    start: time
+    end: time
+
+
+class ContractCategoryRule(BaseModel):
+    category: ShiftTemplateCategoryCode
+    counts_toward_contract: bool = True
+    credit_mode: CreditMode
+    credit_factor: Decimal | None = None
+    holiday_credit_bonus: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    statutory_factor: Decimal = Field(ge=0, le=1)
+    call_outs_count_as_work: bool = False
+
+    @model_validator(mode="after")
+    def validate_credit_factor(self) -> Self:
+        if self.credit_mode == "factor":
+            if self.credit_factor is None:
+                raise ValueError("credit_factor is required when credit_mode is factor")
+            if self.credit_factor < 0 or self.credit_factor > 1:
+                raise ValueError("credit_factor must be between 0 and 1")
+        elif self.credit_factor is not None:
+            raise ValueError("credit_factor is only allowed when credit_mode is factor")
+        return self
+
+
+class ContractStatusMapping(BaseModel):
+    code: str = Field(min_length=1, max_length=64)
+    absence_kind: AbsenceKind
+    consumes_vacation: bool = False
+    counts_as_work_day: bool = False
+
+
+class ContractGroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    display_order: int = 0
+    is_active: bool = True
+    weekly_hours_at_100: Decimal = Field(ge=0, le=168)
+    vacation_days_at_100: Decimal = Field(ge=0, le=366)
+    regular_week_pattern: list[RegularWeekPatternDay] = Field(default_factory=list)
+    category_rules: list[ContractCategoryRule] = Field(default_factory=list)
+    status_mappings: list[ContractStatusMapping] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_nested_collections(self) -> Self:
+        categories = [rule.category for rule in self.category_rules]
+        if len(categories) != len(set(categories)):
+            raise ValueError("category_rules must not repeat a category")
+        codes = [row.code for row in self.status_mappings]
+        if len(codes) != len(set(codes)):
+            raise ValueError("status_mappings must not repeat a code")
+        return self
+
+
+class ContractGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    display_order: int | None = None
+    is_active: bool | None = None
+    weekly_hours_at_100: Decimal | None = Field(default=None, ge=0, le=168)
+    vacation_days_at_100: Decimal | None = Field(default=None, ge=0, le=366)
+    regular_week_pattern: list[RegularWeekPatternDay] | None = None
+    category_rules: list[ContractCategoryRule] | None = None
+    status_mappings: list[ContractStatusMapping] | None = None
+
+    @model_validator(mode="after")
+    def validate_nested_collections(self) -> Self:
+        if self.category_rules is not None:
+            categories = [rule.category for rule in self.category_rules]
+            if len(categories) != len(set(categories)):
+                raise ValueError("category_rules must not repeat a category")
+        if self.status_mappings is not None:
+            codes = [row.code for row in self.status_mappings]
+            if len(codes) != len(set(codes)):
+                raise ValueError("status_mappings must not repeat a code")
+        return self
+
+
+class ContractGroupRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    display_order: int
+    is_active: bool
+    weekly_hours_at_100: Decimal
+    vacation_days_at_100: Decimal
+    regular_week_pattern: list[RegularWeekPatternDay]
+    category_rules: list[ContractCategoryRule]
+    status_mappings: list[ContractStatusMapping]
+    created_at: datetime
+
+
+class EmploymentPeriodWrite(BaseModel):
+    contract_group_id: int
+    employment_percentage: int = Field(ge=1, le=100)
+    start_date: date_type
+    end_date: date_type | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        return self
+
+
+class EmploymentPeriodRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    team_member_id: int
+    contract_group_id: int
+    employment_percentage: int
+    start_date: date_type
+    end_date: date_type | None = None
+
+
+class EmploymentPeriodsReplace(BaseModel):
+    periods: list[EmploymentPeriodWrite]
+
+
+class TimeAccountOpeningUpsert(BaseModel):
+    as_of_date: date_type
+    overtime_minutes: int = 0
+    vacation_days_remaining: Decimal = Field(default=Decimal("0"))
+    sick_days_used_ytd: Decimal = Field(default=Decimal("0"))
+    fairness_balances: dict[str, float] = Field(default_factory=dict)
+
+
+class TimeAccountOpeningRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    team_member_id: int
+    as_of_date: date_type
+    overtime_minutes: int
+    vacation_days_remaining: Decimal
+    sick_days_used_ytd: Decimal
+    fairness_balances: dict[str, float] = Field(default_factory=dict)
+
+
+WorkTimeConsentType = Literal["opt_out"]
+
+
+class WorkTimeConsentCreate(BaseModel):
+    consent_type: WorkTimeConsentType = "opt_out"
+    tier: str = Field(min_length=1, max_length=64)
+    valid_from: date_type
+    signed_document_reference: str | None = Field(default=None, max_length=255)
+    notice_period_months: int = Field(default=6, ge=1, le=24)
+
+
+class WorkTimeConsentRevoke(BaseModel):
+    revoked_at: date_type | None = None
+    notice_period_months: int | None = Field(default=None, ge=1, le=24)
+
+
+class WorkTimeConsentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    team_member_id: int
+    consent_type: WorkTimeConsentType
+    tier: str
+    valid_from: date_type
+    signed_document_reference: str | None = None
+    recorded_by_user_id: int | None = None
+    revoked_at: date_type | None = None
+    notice_period_months: int
+    effective_until: date_type | None = None
+    created_at: datetime
+
+
+class WorkTimeConsentPlanFinding(BaseModel):
+    planning_plan_version_id: int
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int
+    warning_codes: list[str] = Field(default_factory=list)
+
+
+class WorkTimeConsentRevokeRead(BaseModel):
+    consent: WorkTimeConsentRead
+    affected_plans: list[WorkTimeConsentPlanFinding] = Field(default_factory=list)
+
+
+TimeEntryKind = Literal["work", "absence", "call_out", "in_duty_activity"]
+TimeEntrySource = Literal["roster", "day_status", "manual", "duty_activity"]
+DutyActivityKind = Literal["call_out", "in_duty_activity"]
+DutyUtilizationBandCode = Literal["stufe_i", "stufe_ii", "full_work"]
+
+
+class TimeEntryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    team_member_id: int
+    entry_date: date_type
+    kind: TimeEntryKind
+    source: TimeEntrySource
+    all_day: bool
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int
+    statutory_minutes: int = 0
+    credited_minutes: int = 0
+    counts_toward_contract: bool
+    consumes_vacation: bool
+    shift_template_category: str | None = None
+    planning_day_status_code: str | None = None
+    roster_slot_id: int | None = None
+    shift_group_id: int | None = None
+    comment: str | None = None
+    reason: dict[str, Any] | None = None
+    derived_snapshot: dict[str, Any] | None = None
+    corrected_fields: list[str] = Field(default_factory=list)
+
+
+class TimeEntryCreate(BaseModel):
+    team_member_id: int
+    entry_date: date_type
+    kind: TimeEntryKind
+    all_day: bool = False
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int = Field(default=0, ge=0)
+    statutory_minutes: int = Field(default=0, ge=0)
+    credited_minutes: int = Field(default=0, ge=0)
+    counts_toward_contract: bool = True
+    consumes_vacation: bool = False
+    shift_template_category: str | None = None
+    planning_day_status_code: str | None = None
+    comment: str | None = None
+
+
+class TimeEntryUpdate(BaseModel):
+    kind: TimeEntryKind | None = None
+    all_day: bool | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=0)
+    statutory_minutes: int | None = Field(default=None, ge=0)
+    credited_minutes: int | None = Field(default=None, ge=0)
+    counts_toward_contract: bool | None = None
+    consumes_vacation: bool | None = None
+    shift_template_category: str | None = None
+    planning_day_status_code: str | None = None
+    comment: str | None = None
+
+
+class DutyActivityReason(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    code: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+DutyActivityViewerRole = Literal["admin", "planner"]
+
+
+class DutyActivityAccessPolicy(BaseModel):
+    individual_read_roles: list[DutyActivityViewerRole] = Field(default_factory=list)
+    retention_months: int = Field(default=24, ge=1, le=120)
+    purpose_statement: str = ""
+    small_group_threshold: int = Field(default=5, ge=2, le=100)
+
+    @field_validator("individual_read_roles", mode="before")
+    @classmethod
+    def _unique_roles(cls, value: object) -> object:
+        if not value:
+            return []
+        if isinstance(value, list):
+            seen: list[str] = []
+            for item in value:
+                if item in {"admin", "planner"} and item not in seen:
+                    seen.append(item)
+            return seen
+        return value
+
+
+class DutyActivityAccessPolicyUpdate(BaseModel):
+    individual_read_roles: list[DutyActivityViewerRole] | None = None
+    retention_months: int | None = Field(default=None, ge=1, le=120)
+    purpose_statement: str | None = None
+    small_group_threshold: int | None = Field(default=None, ge=2, le=100)
+
+
+class DutyActivityPurposeRead(BaseModel):
+    purpose_statement: str
+    acknowledged: bool
+    acknowledged_at: datetime | None = None
+
+
+class DutyActivityCreate(BaseModel):
+    roster_slot_id: int = Field(ge=1)
+    kind: DutyActivityKind
+    started_at: datetime
+    ended_at: datetime | None = None
+    reason: DutyActivityReason | None = None
+    team_member_id: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> Self:
+        if self.ended_at is not None and self.ended_at <= self.started_at:
+            raise ValueError("ended_at must be after started_at")
+        return self
+
+
+class DutyActivityUpdate(BaseModel):
+    ended_at: datetime | None = None
+    reason: DutyActivityReason | None = None
+
+
+class DutyUtilizationCoverage(BaseModel):
+    recorded_duty_count: int
+    duty_count: int
+    coverage_ratio: Decimal
+
+
+class DutyUtilizationSlotRead(BaseModel):
+    roster_slot_id: int
+    shift_template_id: int | None = None
+    slot_date: date_type
+    duty_minutes: int
+    worked_minutes: int
+    utilization_ratio: Decimal
+    utilization_percent: Decimal
+    band: DutyUtilizationBandCode | None = None
+    exceeds_on_call_threshold: bool
+    has_activity_record: bool
+
+
+class DutyUtilizationAggregateRead(BaseModel):
+    shift_template_id: int | None = None
+    worked_minutes: int
+    duty_minutes: int
+    utilization_ratio: Decimal
+    utilization_percent: Decimal
+    band: DutyUtilizationBandCode | None = None
+    exceeds_on_call_threshold: bool
+    coverage: DutyUtilizationCoverage
+
+
+class DutyUtilizationPeriodRead(DutyUtilizationAggregateRead):
+    planning_period_id: int
+    templates: list[DutyUtilizationAggregateRead] = Field(default_factory=list)
+    slots: list[DutyUtilizationSlotRead] = Field(default_factory=list)
+
+
+class TimeEntryDeriveRequest(BaseModel):
+    start_date: date_type
+    end_date: date_type
+    member_ids: list[int] | None = None
+
+
+class TimeEntryReconciliationItem(BaseModel):
+    id: int
+    team_member_id: int
+    entry_date: date_type
+    source: TimeEntrySource
+    derived: dict[str, Any] | None = None
+    effective: TimeEntryRead
+    corrected_fields: list[str] = Field(default_factory=list)
+    diverges: bool
+
+
+class HoursLedgerTotals(BaseModel):
+    contract_target_minutes: int
+    statutory_minutes: int
+    credited_minutes: int
+    credited_minutes_toward_contract: int
+    absence_count: int
+    vacation_days_consumed: Decimal
+    opening_overtime_minutes: int
+    running_overtime_minutes: int
+    vacation_days_remaining: Decimal | None = None
+
+
+class HoursLedgerRead(BaseModel):
+    team_member_id: int
+    start_date: date_type
+    end_date: date_type
+    opening: TimeAccountOpeningRead | None = None
+    totals: HoursLedgerTotals
+    entries: list[TimeEntryRead]
+    reconciliation: list[TimeEntryReconciliationItem] = Field(default_factory=list)
 
 
 class ShiftGroupCreate(BaseModel):
@@ -498,6 +894,165 @@ class ShiftGroupTemplateIdsPut(BaseModel):
 DayClass = Literal["any", "weekday", "weekend", "holiday"]
 ShiftTemplateCategory = Literal["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"]
 ConstraintSeverity = Literal["info", "warning", "error"]
+WorkTimeCallOutHandling = Literal["interrupt", "restart", "ignore"]
+WorkTimeDutyPeriod = Literal["week", "month", "quarter", "year"]
+
+
+class WorkTimeRuleMaxDailyWorkingTime(BaseModel):
+    type: Literal["max_daily_working_time"] = "max_daily_working_time"
+    severity: ConstraintSeverity = "error"
+    source_note: str = ""
+    base_hours: Decimal = Field(gt=0, le=24)
+    extended_hours: Decimal = Field(gt=0, le=24)
+    extension_requires_duty_hours: Decimal = Field(ge=0, le=24)
+
+
+class WorkTimeRuleMinRestPeriod(BaseModel):
+    type: Literal["min_rest_period"] = "min_rest_period"
+    severity: ConstraintSeverity = "error"
+    source_note: str = ""
+    hours: Decimal = Field(gt=0, le=48)
+    reducible_to_hours: Decimal | None = Field(default=None, gt=0, le=48)
+    compensation_window_days: int = Field(ge=1, le=365)
+    call_out_handling: WorkTimeCallOutHandling = "interrupt"
+
+
+class WorkTimeRuleRestAfterLongDuty(BaseModel):
+    type: Literal["rest_after_long_duty"] = "rest_after_long_duty"
+    severity: ConstraintSeverity = "error"
+    source_note: str = ""
+    trigger_hours: Decimal = Field(gt=0, le=48)
+    mandatory_rest_hours: Decimal = Field(gt=0, le=48)
+
+
+class WorkTimeRuleWeeklyAverageCap(BaseModel):
+    type: Literal["weekly_average_cap"] = "weekly_average_cap"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    hours: Decimal = Field(gt=0, le=168)
+    reference_period_months: int = Field(ge=1, le=24)
+    rolling: bool = True
+
+
+class WorkTimeRuleOptOutWeeklyCap(BaseModel):
+    type: Literal["opt_out_weekly_cap"] = "opt_out_weekly_cap"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    hours_by_tier: dict[str, Decimal]
+    reference_period_months: int = Field(ge=1, le=24)
+
+    @model_validator(mode="after")
+    def validate_tiers(self) -> Self:
+        if not self.hours_by_tier:
+            raise ValueError("hours_by_tier must not be empty")
+        return self
+
+
+class WorkTimeRuleMaxConsecutiveWorkDays(BaseModel):
+    type: Literal["max_consecutive_work_days"] = "max_consecutive_work_days"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    days: int = Field(ge=1, le=31)
+
+
+class WorkTimeRuleMaxDutiesPerPeriod(BaseModel):
+    type: Literal["max_duties_per_period"] = "max_duties_per_period"
+    severity: ConstraintSeverity = "warning"
+    source_note: str = ""
+    count: int = Field(ge=1, le=366)
+    period: WorkTimeDutyPeriod
+    additional_allowance_per_quarter: int = Field(default=0, ge=0, le=31)
+
+
+class WorkTimeRuleDocumentationRequirement(BaseModel):
+    type: Literal["documentation_requirement"] = "documentation_requirement"
+    severity: ConstraintSeverity = "info"
+    source_note: str = ""
+    threshold_hours: Decimal = Field(ge=0, le=24)
+    retention_months: int = Field(ge=1, le=120)
+
+
+class WorkTimeRuleDutyUtilizationBands(BaseModel):
+    type: Literal["duty_utilization_bands"] = "duty_utilization_bands"
+    severity: ConstraintSeverity = "info"
+    source_note: str = ""
+    stufe_i_max_percent: Decimal = Field(ge=0, le=100)
+    on_call_max_percent: Decimal = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_band_order(self) -> Self:
+        if self.on_call_max_percent < self.stufe_i_max_percent:
+            raise ValueError("on_call_max_percent must be on or after stufe_i_max_percent")
+        return self
+
+
+WorkTimeRule = Annotated[
+    WorkTimeRuleMaxDailyWorkingTime
+    | WorkTimeRuleMinRestPeriod
+    | WorkTimeRuleRestAfterLongDuty
+    | WorkTimeRuleWeeklyAverageCap
+    | WorkTimeRuleOptOutWeeklyCap
+    | WorkTimeRuleMaxConsecutiveWorkDays
+    | WorkTimeRuleMaxDutiesPerPeriod
+    | WorkTimeRuleDocumentationRequirement
+    | WorkTimeRuleDutyUtilizationBands,
+    Field(discriminator="type"),
+]
+
+
+class WorkTimeRuleSetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    rules: list[WorkTimeRule] = Field(default_factory=list)
+    is_active: bool | None = None
+
+
+class WorkTimeRuleSetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    rules: list[WorkTimeRule] | None = None
+    is_active: bool | None = None
+
+
+class WorkTimeRuleSetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    name: str
+    version: int
+    is_active: bool
+    rules: list[WorkTimeRule]
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkTimePresetContractGroup(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    weekly_hours_at_100: Decimal = Field(ge=0, le=168)
+    vacation_days_at_100: Decimal = Field(ge=0, le=366)
+    category_rules: list[ContractCategoryRule] = Field(default_factory=list)
+
+
+class WorkTimeRuleSetPresetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    values_confirmed: bool
+    rules: list[WorkTimeRule]
+    contract_groups: list[WorkTimePresetContractGroup]
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkTimeRuleSetAdoptRequest(BaseModel):
+    is_active: bool | None = None
+
+
+class WorkTimeRuleSetAdoptRead(BaseModel):
+    rule_set: WorkTimeRuleSetRead
+    contract_groups: list[ContractGroupRead]
+
 
 _PROPERTY_REQUIREMENT_MAX_ITEMS = 32
 _PROPERTY_REQUIREMENT_MAX_DEPTH = 8
@@ -1046,6 +1601,7 @@ class ShiftTemplateCreate(BaseModel):
     category: ShiftTemplateCategory = "bereitschaftsdienst"
     display_order: int = 0
     constraints: list[ShiftConstraint] = Field(default_factory=list)
+    valuation_override: ContractCategoryRule | None = None
 
 
 class ShiftTemplateUpdate(BaseModel):
@@ -1055,6 +1611,7 @@ class ShiftTemplateUpdate(BaseModel):
     display_order: int | None = None
     constraints: list[ShiftConstraint] | None = None
     is_active: bool | None = None
+    valuation_override: ContractCategoryRule | None = None
 
 
 class ShiftTemplateRead(ShiftTemplateCreate):
@@ -1118,6 +1675,7 @@ class PlanVersionRead(BaseModel):
     trigger: PlanVersionTrigger
     note: str | None = None
     created_by_user_id: int | None = None
+    work_time_rule_set_version_id: int | None = None
     created_at: datetime
 
     @property
@@ -1336,16 +1894,6 @@ class TeamMemberPeriodNoteRead(BaseModel):
     updated_at: datetime
 
 
-class RuleConfigRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    max_consecutive_work_days: int
-    min_rest_hours: int
-    max_monthly_nights_full_time: int
-
-
 class ValidationWarning(BaseModel):
     code: str
     severity: Literal["info", "warning", "error"] = "warning"
@@ -1355,6 +1903,117 @@ class ValidationWarning(BaseModel):
     request_id: int | None = None
     date: date_type | None = None
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ComplianceRestViolation(BaseModel):
+    code: str
+    severity: str
+    date: date_type | None = None
+    message: str
+    rest_minutes: int | None = None
+    compensation_pending: bool = False
+
+
+class ComplianceMemberReport(BaseModel):
+    team_member_id: int
+    display_name: str
+    statutory_minutes: int
+    credited_minutes: int
+    weekly_average_minutes: int
+    weekly_cap_minutes: int
+    weekly_cap_source: Literal["base", "opt_out"]
+    weekly_cap_tier: str | None = None
+    weekly_cap_consent_id: int | None = None
+    consecutive_work_days: int
+    consecutive_work_days_limit: int | None = None
+    duty_count: int
+    duty_count_allowed: int | None = None
+    duty_count_period: str | None = None
+    documentation_days_above_threshold: int
+    documentation_days_recorded: int
+    rest_violations: list[ComplianceRestViolation] = Field(default_factory=list)
+    findings: list[ValidationWarning] = Field(default_factory=list)
+
+
+class ComplianceRuleSetRef(BaseModel):
+    id: int
+    name: str
+    version: int
+
+
+class ComplianceReportRead(BaseModel):
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int | None = None
+    generated_at: datetime
+    rule_set: ComplianceRuleSetRef | None = None
+    members: list[ComplianceMemberReport] = Field(default_factory=list)
+    findings: list[ValidationWarning] = Field(default_factory=list)
+
+
+FairnessMetric = Literal["duty_count", "statutory_minutes"]
+FairnessDayFilter = Literal["any", "weekend_holiday"]
+
+
+class FairnessDimension(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    metric: FairnessMetric
+    day_filter: FairnessDayFilter = "any"
+    night: bool = False
+    category: str | None = None
+
+
+class FairnessPolicy(BaseModel):
+    window_months: int = Field(default=12, ge=1, le=36)
+    dimensions: list[FairnessDimension] = Field(default_factory=list)
+
+    @field_validator("dimensions")
+    @classmethod
+    def _unique_dimension_ids(cls, value: list[FairnessDimension]) -> list[FairnessDimension]:
+        seen: set[str] = set()
+        for item in value:
+            if item.id in seen:
+                raise ValueError("dimension ids must be unique")
+            seen.add(item.id)
+        return value
+
+
+class FairnessPolicyUpdate(BaseModel):
+    window_months: int | None = Field(default=None, ge=1, le=36)
+    dimensions: list[FairnessDimension] | None = None
+
+
+class FairnessDimensionValue(BaseModel):
+    dimension_id: str
+    actual: float
+    expected: float
+    deviation_absolute: float
+    deviation_normalized: float
+
+
+class FairnessMemberAccount(BaseModel):
+    team_member_id: int
+    display_name: str
+    dimensions: list[FairnessDimensionValue] = Field(default_factory=list)
+
+
+class FairnessWindow(BaseModel):
+    start_year: int
+    start_month: int
+    end_year: int
+    end_month: int
+    months: int
+
+
+class FairnessAccountsRead(BaseModel):
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int | None = None
+    window: FairnessWindow
+    dimensions: list[FairnessDimension] = Field(default_factory=list)
+    members: list[FairnessMemberAccount] = Field(default_factory=list)
 
 
 class AuditLogRead(BaseModel):

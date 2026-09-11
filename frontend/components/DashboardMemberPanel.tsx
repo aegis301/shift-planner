@@ -8,6 +8,7 @@ import {
   DashboardTemplateBarChart,
 } from "@/components/dashboardCharts";
 import { DashboardUpcomingShiftsTable } from "@/components/DashboardUpcomingShiftsTable";
+import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
 import { DashboardKpiTile, DashboardPeriodCards, DashboardSection } from "@/components/DashboardShared";
 import type { TeamMemberDashboard } from "@/lib/dashboard";
 import {
@@ -73,6 +74,7 @@ export function DashboardMemberPanel({
 
   return (
     <div className="grid gap-5">
+      <DutyActivityLiveBanner slots={[...data.upcoming_slots, ...data.past_slots]} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <DashboardKpiTile label={t(locale, "dashboardMyShiftsYear")} value={totalShiftsYear} />
         <DashboardKpiTile label={t(locale, "dashboardMyErrors")} value={data.my_validation_errors} />

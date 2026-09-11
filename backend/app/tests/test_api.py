@@ -85,7 +85,6 @@ def team_member_client():
             first_name="Seeded",
             last_name="TeamMember",
             email="docperson@example.com",
-            employment_percentage=100,
             user_id=portal_user.id,
         )
         db.add(linked_member)
@@ -2043,6 +2042,79 @@ def test_validation_no_consecutive_weekend_when_weekends_not_adjacent(client: Te
     assert not any(w["code"] == "ROSTER_CONSECUTIVE_WEEKENDS" for w in warnings)
 
 
+def test_assignment_preflight_blocks_rest_violation_across_month_boundary(client: TestClient):
+    login(client)
+    member_id = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Rest",
+            "last_name": "Boundary",
+            "email": "rest-boundary@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={
+            "code": "RESTX",
+            "name": "Rest boundary",
+            "category": "bereitschaftsdienst",
+            "constraints": [{"type": "min_rest_hours", "severity": "error", "min_rest_hours": 11}],
+        },
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "24h",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "08:00:00",
+            "end_day_offset": 1,
+            "required_count": 1,
+        },
+    )
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Follow-on",
+            "start_day_class": "any",
+            "starts_at": "10:00:00",
+            "ends_at": "18:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    june_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 6}).json()["id"]
+    july_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 7}).json()["id"]
+    june_roster = client.get(f"/api/v1/roster-matrix/{june_id}").json()
+    july_roster = client.get(f"/api/v1/roster-matrix/{july_id}").json()
+    june_duty = next(
+        row
+        for row in june_roster["slots"]
+        if row["slot_date"] == "2026-06-30"
+        and row["shift_template_id"] == template["id"]
+        and row["variant_label"] == "24h"
+    )
+    july_follow = next(
+        row
+        for row in july_roster["slots"]
+        if row["slot_date"] == "2026-07-01"
+        and row["shift_template_id"] == template["id"]
+        and row["variant_label"] == "Follow-on"
+    )
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": june_duty["id"], "team_member_id": member_id},
+    )
+    assert assigned.status_code == 200
+    blocked = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": july_follow["id"], "team_member_id": member_id},
+    )
+    assert blocked.status_code == 400
+    assert blocked.json()["detail"] == "Constraint violation: minimum rest time between shifts is not met."
+
+
 def test_delete_planning_period_removes_period_and_related_data(client: TestClient):
     login(client)
     team_member_id = client.post(
@@ -2447,7 +2519,6 @@ def planner_client():
             first_name="In",
             last_name="Group",
             email="ingroup@example.com",
-            employment_percentage=100,
         )
         db.add(ingroup_member)
         db.flush()
@@ -2457,7 +2528,6 @@ def planner_client():
             first_name="Out",
             last_name="Group",
             email="outgroup@example.com",
-            employment_percentage=100,
         )
         db.add(other)
         db.commit()

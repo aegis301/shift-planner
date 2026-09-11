@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import RosterSlot, RosterSlotAssignment, ShiftTemplate, ShiftVariant
 from app.schemas import (
+    ContractCategoryRule,
     GeneratedRosterSlotPreview,
     ShiftConstraint,
     ShiftTemplateCreate,
@@ -140,7 +141,8 @@ def create_shift_template(
     if _shift_template_code_in_use(db, payload.code, organization_id):
         raise ShiftTemplateCodeConflictError(payload.code)
     validate_shift_constraint_payloads(db, payload.constraints, organization_id=organization_id)
-    template = ShiftTemplate(**payload.model_dump(), organization_id=organization_id)
+    data = payload.model_dump(mode="json")
+    template = ShiftTemplate(**data, organization_id=organization_id)
     db.add(template)
     db.flush()
     record_audit(db, actor=actor, source=source, action="create", entity_type="shift_template", entity_id=template.id)
@@ -165,6 +167,10 @@ def update_shift_template(
         raise ShiftTemplateCodeConflictError(new_code)
     if "constraints" in data and data["constraints"] is not None:
         validate_shift_constraint_payloads(db, data["constraints"], organization_id=organization_id)
+    if "valuation_override" in data and data["valuation_override"] is not None:
+        data["valuation_override"] = ContractCategoryRule.model_validate(data["valuation_override"]).model_dump(
+            mode="json"
+        )
     for key, value in data.items():
         setattr(template, key, value)
     record_audit(db, actor=actor, source=source, action="update", entity_type="shift_template", entity_id=template.id)

@@ -29,6 +29,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.authz import team_member_shift_group_ids
+from app.services.employment_periods import employment_percentage_on
 from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
 from app.services.planning import is_shift_group_planning_open, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
@@ -207,7 +208,7 @@ def get_planning_matrix(
                 last_name=m.last_name,
                 nickname=m.nickname,
                 email=m.email,
-                employment_percentage=m.employment_percentage,
+                employment_percentage=employment_percentage_on(m, date(period.year, period.month, 1)),
                 planning_preferences=m.planning_preferences,
             )
             for m in team_members
@@ -285,6 +286,16 @@ def upsert_planning_cell(
     )
     db.commit()
     db.refresh(cell)
+    from app.services.time_entries import refresh_derived_window
+
+    refresh_derived_window(
+        db,
+        organization_id=organization_id,
+        member_ids=[cell.team_member_id],
+        start_date=cell.cell_date,
+        end_date=cell.cell_date,
+    )
+    db.refresh(cell)
     return cell
 
 
@@ -324,6 +335,18 @@ def bulk_upsert_planning_cells(
     db.commit()
     for cell in cells:
         db.refresh(cell)
+    if cells:
+        from app.services.time_entries import refresh_derived_window
+
+        refresh_derived_window(
+            db,
+            organization_id=organization_id,
+            member_ids=list({cell.team_member_id for cell in cells}),
+            start_date=min(cell.cell_date for cell in cells),
+            end_date=max(cell.cell_date for cell in cells),
+        )
+        for cell in cells:
+            db.refresh(cell)
     return cells
 
 

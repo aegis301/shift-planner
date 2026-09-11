@@ -17,18 +17,12 @@ from app.schemas import (
     RosterSlotAssignmentRead,
     RosterSlotAssignmentUpsert,
     RosterSlotRead,
+    ValidationWarning,
 )
 from app.services.audit import record_audit
-from app.services.constraints import (
-    evaluate_assignment_constraints,
-    find_blocking_constraint,
-    resolve_slot_constraints,
-)
+from app.services.constraints import find_blocking_constraint
+from app.services.employment_periods import employment_percentage_on
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
-from app.services.member_planning_patterns import (
-    evaluate_member_planning_patterns,
-    list_team_member_planning_patterns,
-)
 from app.services.planning import can_edit_planning_data, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
@@ -38,6 +32,8 @@ from app.services.planning_period_rosters import (
     list_period_roster_team_members,
     team_member_ids_for_period_shift_group,
 )
+from app.services.rules import build_plan_state, evaluate_plan_state
+from app.services.rules.shift_constraints import overlay_candidate_assignment
 from app.services.shift_groups import (
     require_shift_group,
     shift_group_ids_for_template,
@@ -49,12 +45,8 @@ from app.services.shift_templates import (
     generate_slots_for_month,
     list_shift_templates,
 )
-from app.services.team_member_property_values import property_value_dict_for_member
 from app.services.tenancy import require_planning_period_in_org
-from app.services.unavailable_overlap import (
-    evaluate_unavailable_overlap_for_slot,
-    find_blocking_unavailable_overlap,
-)
+from app.services.unavailable_overlap import find_blocking_unavailable_overlap
 
 
 class RosterSyncPublishedError(Exception):
@@ -436,7 +428,7 @@ def get_roster_matrix(
                 last_name=m.last_name,
                 nickname=m.nickname,
                 email=m.email,
-                employment_percentage=m.employment_percentage,
+                employment_percentage=employment_percentage_on(m, date(period.year, period.month, 1)),
                 planning_preferences=m.planning_preferences,
             )
             for m in team_members
@@ -497,6 +489,54 @@ def _team_member_has_template_no_go(
     return False
 
 
+def _warning_targets_slot(warning: ValidationWarning, *, slot_id: int, team_member_id: int) -> bool:
+    if warning.team_member_id != team_member_id:
+        return False
+    details = warning.details or {}
+    if details.get("roster_slot_id") == slot_id:
+        return True
+    if details.get("related_roster_slot_id") == slot_id:
+        return True
+    for key in (
+        "conflicting_roster_slot_ids",
+        "violating_roster_slot_ids",
+        "source_roster_slot_ids",
+        "roster_slot_ids",
+    ):
+        ids = details.get(key)
+        if isinstance(ids, list) and slot_id in ids:
+            return True
+    return False
+
+
+def _preflight_assignment_warnings(
+    db: Session,
+    *,
+    slot: RosterSlot,
+    team_member_id: int,
+    organization_id: int,
+    manual_override: bool,
+) -> list[ValidationWarning]:
+    state = build_plan_state(
+        db,
+        organization_id=organization_id,
+        start_date=slot.slot_date,
+        end_date=slot.slot_date,
+    )
+    state = overlay_candidate_assignment(
+        state,
+        slot=slot,
+        team_member_id=team_member_id,
+        assignment_id=None,
+        manual_override=manual_override,
+    )
+    return [
+        warning
+        for warning in evaluate_plan_state(state, db=db)
+        if _warning_targets_slot(warning, slot_id=slot.id, team_member_id=team_member_id)
+    ]
+
+
 def upsert_roster_slot_assignment(
     db: Session,
     payload: RosterSlotAssignmentUpsert,
@@ -538,61 +578,13 @@ def upsert_roster_slot_assignment(
         shift_template_id=slot.shift_template_id,
     ):
         raise ValueError("Team member marked this shift template as a no-go on that day")
-    resolved_constraints = resolve_slot_constraints(db, slot)
-    period = slot.planning_period
-    if period is None:
-        period = db.get(PlanningPeriod, slot.planning_period_id)
-    org_id = period.organization_id if period is not None else organization_id
-    member_property_values = property_value_dict_for_member(
-        db, team_member_id=payload.team_member_id, organization_id=org_id
-    )
-    member_assignments = [
-        row
-        for row in list_roster_slot_assignments(db, planning_period_id=slot.planning_period_id)
-        if row.team_member_id == payload.team_member_id
-    ]
-    member_cells = [
-        row
-        for row in list_planning_cells(db, planning_period_id=slot.planning_period_id)
-        if row.team_member_id == payload.team_member_id
-    ]
-    preflight_warnings: list = []
-    overlap_warning = evaluate_unavailable_overlap_for_slot(
-        db=db,
+    preflight_warnings = _preflight_assignment_warnings(
+        db,
         slot=slot,
         team_member_id=payload.team_member_id,
-        planning_cells=member_cells,
-        organization_id=org_id,
-    )
-    if overlap_warning is not None:
-        preflight_warnings.append(overlap_warning)
-    if resolved_constraints:
-        preflight_warnings.extend(
-            evaluate_assignment_constraints(
-                db=db,
-                slot=slot,
-                team_member_id=payload.team_member_id,
-                resolved_constraints=resolved_constraints,
-                assigned_slots_for_member=member_assignments,
-                planning_cells_for_member=member_cells,
-                member_property_values=member_property_values,
-            )
-        )
-    member_patterns = list_team_member_planning_patterns(
-        db,
-        team_member_id=payload.team_member_id,
         organization_id=organization_id,
-        active_only=True,
+        manual_override=payload.manual_override,
     )
-    if member_patterns:
-        preflight_warnings.extend(
-            evaluate_member_planning_patterns(
-                db=db,
-                slot=slot,
-                team_member_id=payload.team_member_id,
-                patterns=member_patterns,
-            )
-        )
     blocking = find_blocking_unavailable_overlap(
         next((w for w in preflight_warnings if w.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"), None)
     )
@@ -604,6 +596,7 @@ def upsert_roster_slot_assignment(
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )
+    previous_member_id = assignment.team_member_id if assignment is not None else None
     if assignment is None:
         assignment = RosterSlotAssignment(
             roster_slot_id=payload.roster_slot_id,
@@ -636,6 +629,19 @@ def upsert_roster_slot_assignment(
     )
     db.commit()
     db.refresh(assignment)
+    from app.services.time_entries import refresh_derived_window
+
+    member_ids = [payload.team_member_id]
+    if previous_member_id is not None and previous_member_id not in member_ids:
+        member_ids.append(previous_member_id)
+    refresh_derived_window(
+        db,
+        organization_id=organization_id,
+        member_ids=member_ids,
+        start_date=slot.slot_date,
+        end_date=slot.slot_date,
+    )
+    db.refresh(assignment)
     return assignment
 
 
@@ -656,6 +662,8 @@ def clear_roster_slot_assignment(
     if slot is None:
         return False
     require_planning_period_in_org(db, slot.planning_period_id, organization_id)
+    member_id = assignment.team_member_id
+    slot_date = slot.slot_date
     record_audit(
         db,
         actor=actor,
@@ -667,4 +675,13 @@ def clear_roster_slot_assignment(
     )
     db.delete(assignment)
     db.commit()
+    from app.services.time_entries import refresh_derived_window
+
+    refresh_derived_window(
+        db,
+        organization_id=organization_id,
+        member_ids=[member_id],
+        start_date=slot_date,
+        end_date=slot_date,
+    )
     return True

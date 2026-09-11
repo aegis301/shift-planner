@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
 import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
+import { WorkTimeConsentSection } from "@/components/WorkTimeConsentSection";
+import { DutyActivityPurposeSection } from "@/components/DutyActivityPurposeSection";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -60,7 +62,6 @@ function ProfileContent() {
         last_name: form.get("last_name"),
         nickname: form.get("nickname") || null,
         email: form.get("email"),
-        employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes") || null,
         planning_preferences: form.get("planning_preferences") || null
       })
@@ -104,7 +105,8 @@ function ProfileContent() {
             <input className={inputClass} name="email" type="email" defaultValue={member.email} required />
           </Field>
           <Field label={t(locale, "employment")}>
-            <input className={inputClass} name="employment_percentage" type="number" min={1} max={100} defaultValue={member.employment_percentage} />
+            <input className={inputClass} name="employment_percentage" type="number" min={1} max={100} defaultValue={member.employment_percentage} disabled />
+            <p className="mt-1 text-xs text-slate-500">{t(locale, "employmentReadOnlyHelp")}</p>
           </Field>
           <Field label={t(locale, "planningPreferencesField")}>
             <textarea
@@ -130,6 +132,10 @@ function ProfileContent() {
       <Card>
         <TeamMemberPlanningPatternsEditor teamMemberId={member.id} />
       </Card>
+      <Card>
+        <WorkTimeConsentSection teamMemberId={member.id} readOnly />
+      </Card>
+      <DutyActivityPurposeSection />
     </div>
   );
 }
