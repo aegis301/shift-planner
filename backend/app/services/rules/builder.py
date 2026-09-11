@@ -1,7 +1,7 @@
 import math
 from datetime import date, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
@@ -17,8 +17,9 @@ from app.models import (
     TeamMemberPlanningPattern,
     TeamMemberPropertyDefinition,
     TeamMemberPropertyValue,
+    TimeEntry,
 )
-from app.services.rules.registry import max_lookback, resolve_active_rules
+from app.services.rules.registry import max_lookback, max_roster_lookback, resolve_active_rules
 from app.services.rules.state import (
     PlanState,
     empty_indexed_state,
@@ -30,6 +31,7 @@ from app.services.time_entries import (
     load_employment_periods_for_members,
     load_time_entries_for_window,
 )
+from app.services.work_time_consents import load_work_time_consents_for_members
 
 
 def _lookback_calendar_days(lookback: timedelta) -> int:
@@ -240,6 +242,33 @@ def _load_property_values(
     )
 
 
+def _load_statutory_minute_totals(
+    db: Session,
+    *,
+    organization_id: int,
+    team_member_ids: set[int],
+    start_date: date,
+    end_date: date,
+) -> dict[tuple[int, date], int]:
+    if not team_member_ids or end_date < start_date:
+        return {}
+    rows = db.execute(
+        select(
+            TimeEntry.team_member_id,
+            TimeEntry.entry_date,
+            func.coalesce(func.sum(TimeEntry.statutory_minutes), 0),
+        )
+        .where(
+            TimeEntry.organization_id == organization_id,
+            TimeEntry.team_member_id.in_(team_member_ids),
+            TimeEntry.entry_date >= start_date,
+            TimeEntry.entry_date <= end_date,
+        )
+        .group_by(TimeEntry.team_member_id, TimeEntry.entry_date)
+    ).all()
+    return {(int(member_id), entry_date): int(total) for member_id, entry_date, total in rows}
+
+
 def build_plan_state(
     db: Session,
     *,
@@ -248,19 +277,22 @@ def build_plan_state(
     end_date: date,
     shift_group_id: int | None = None,
 ) -> PlanState:
-    rules = resolve_active_rules(organization_id, start_date, end_date)
-    lookback = max_lookback(rules)
-    load_start, load_end = _load_bounds(start_date, end_date, lookback)
-
     if end_date < start_date:
         return empty_indexed_state(
             organization_id=organization_id,
             start_date=start_date,
             end_date=end_date,
-            load_start=load_start,
-            load_end=load_end,
+            load_start=start_date,
+            load_end=end_date,
             shift_group_id=shift_group_id,
         )
+
+    rules = resolve_active_rules(organization_id, start_date, end_date, db=db)
+    roster_lookback = max_roster_lookback(rules)
+    history_lookback = max_lookback(rules)
+    load_start, load_end = _load_bounds(start_date, end_date, roster_lookback)
+    history_start, _history_end = _load_bounds(start_date, end_date, history_lookback)
+    history_end = end_date
 
     members = _load_members(
         db,
@@ -363,5 +395,25 @@ def build_plan_state(
                 start_date=load_start,
                 end_date=load_end,
             )
+        ),
+        statutory_minutes_by_member_date=frozen_mapping(
+            _load_statutory_minute_totals(
+                db,
+                organization_id=organization_id,
+                team_member_ids=member_ids,
+                start_date=history_start,
+                end_date=history_end,
+            )
+            if history_start < load_start
+            else {}
+        ),
+        work_time_consents_by_member_id=frozen_mapping(
+            load_work_time_consents_for_members(
+                db,
+                organization_id=organization_id,
+                team_member_ids=member_ids,
+            )
+            if any(getattr(rule, "code", None) == "WORKTIME_WEEKLY_AVERAGE_OPT_OUT" for rule in rules)
+            else {}
         ),
     )

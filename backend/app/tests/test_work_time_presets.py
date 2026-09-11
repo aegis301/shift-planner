@@ -56,6 +56,7 @@ def test_adopt_copies_tdl_numbers_and_does_not_mutate_preset(client: TestClient)
     )
     opt_out = next(rule for rule in rule_set["rules"] if rule["type"] == "opt_out_weekly_cap")
     duties = next(rule for rule in rule_set["rules"] if rule["type"] == "max_duties_per_period")
+    bands = next(rule for rule in rule_set["rules"] if rule["type"] == "duty_utilization_bands")
     assert Decimal(str(opt_out["hours_by_tier"]["stufe_i"])) == Decimal("58")
     assert Decimal(str(opt_out["hours_by_tier"]["stufe_ii"])) == Decimal("54")
     assert Decimal(str(opt_out["hours_by_tier"]["regional_agreement"])) == Decimal("66")
@@ -63,6 +64,8 @@ def test_adopt_copies_tdl_numbers_and_does_not_mutate_preset(client: TestClient)
     assert duties["count"] == 4
     assert duties["period"] == "month"
     assert duties["additional_allowance_per_quarter"] == 1
+    assert Decimal(str(bands["stufe_i_max_percent"])) == Decimal("25")
+    assert Decimal(str(bands["on_call_max_percent"])) == Decimal("49")
     groups = {group["name"]: group for group in body["contract_groups"]}
     assert Decimal(str(groups["TV-Ärzte (TdL) Stufe I"]["category_rules"][0]["credit_factor"])) == Decimal("0.60")
     assert Decimal(str(groups["TV-Ärzte (TdL) Stufe II"]["category_rules"][0]["credit_factor"])) == Decimal("0.95")

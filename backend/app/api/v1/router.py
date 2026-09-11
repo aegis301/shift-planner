@@ -4,6 +4,7 @@ from app.api.v1 import (
     auth,
     contract_groups,
     dashboard,
+    duty_activity,
     employment_periods,
     matrix,
     organization_admin,
@@ -17,6 +18,7 @@ from app.api.v1 import (
     team_member_property_matrix,
     team_members,
     time_entries,
+    work_time_consents,
     work_time_rule_sets,
 )
 
@@ -31,6 +33,8 @@ api_router.include_router(planning_day_status_definitions.router)
 api_router.include_router(contract_groups.router)
 api_router.include_router(employment_periods.router)
 api_router.include_router(time_entries.router)
+api_router.include_router(duty_activity.router)
+api_router.include_router(work_time_consents.router)
 api_router.include_router(work_time_rule_sets.router)
 api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)

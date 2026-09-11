@@ -439,6 +439,12 @@ def test_no_existing_module_imports_rules_package():
             continue
         if posix.endswith("/tests/test_constraints_golden.py") or posix.endswith("/tests/test_plan_state.py"):
             continue
+        if posix.endswith("/tests/test_statutory_rules.py"):
+            continue
+        if posix.endswith("/tests/test_work_time_consents.py"):
+            continue
+        if posix.endswith("/tests/test_duty_activity.py"):
+            continue
         if forbidden in path.read_text():
             offenders.append(str(path.relative_to(app_root)))
     assert offenders == []

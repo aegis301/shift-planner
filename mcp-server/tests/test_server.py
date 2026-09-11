@@ -25,6 +25,9 @@ from mcp_app.server import (
     delete_work_time_rule_set_tool,
     adopt_work_time_rule_set_preset_tool,
     update_work_time_rule_set_tool,
+    record_work_time_consent_tool,
+    revoke_work_time_consent_tool,
+    record_duty_activity_tool,
 )
 
 
@@ -59,6 +62,30 @@ def test_work_time_rule_set_writes_require_token():
         delete_work_time_rule_set_tool(token="wrong-token", rule_set_id=1)
     with pytest.raises(PermissionError):
         adopt_work_time_rule_set_preset_tool(token="wrong-token", code="tv_aerzte_tdl")
+
+
+def test_work_time_consent_writes_require_token():
+    with pytest.raises(PermissionError):
+        record_work_time_consent_tool(
+            token="wrong-token",
+            team_member_id=1,
+            tier="stufe_i",
+            valid_from=date(2026, 1, 1),
+        )
+    with pytest.raises(PermissionError):
+        revoke_work_time_consent_tool(token="wrong-token", consent_id=1)
+
+
+def test_record_duty_activity_requires_token():
+    with pytest.raises(PermissionError):
+        record_duty_activity_tool(
+            token="wrong-token",
+            team_member_id=1,
+            roster_slot_id=1,
+            kind="call_out",
+            started_at=date(2026, 3, 1),
+            ended_at=date(2026, 3, 1),
+        )
 
 
 def test_get_hours_ledger_tool_uses_service(monkeypatch):

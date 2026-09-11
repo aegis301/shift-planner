@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
 import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
+import { WorkTimeConsentSection } from "@/components/WorkTimeConsentSection";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -129,6 +130,9 @@ function ProfileContent() {
       </Card>
       <Card>
         <TeamMemberPlanningPatternsEditor teamMemberId={member.id} />
+      </Card>
+      <Card>
+        <WorkTimeConsentSection teamMemberId={member.id} readOnly />
       </Card>
     </div>
   );

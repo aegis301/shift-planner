@@ -15,7 +15,8 @@ type RuleType =
   | "opt_out_weekly_cap"
   | "max_consecutive_work_days"
   | "max_duties_per_period"
-  | "documentation_requirement";
+  | "documentation_requirement"
+  | "duty_utilization_bands";
 
 type WorkTimeRule = {
   type: RuleType;
@@ -39,6 +40,8 @@ type WorkTimeRule = {
   additional_allowance_per_quarter?: number;
   threshold_hours?: number;
   retention_months?: number;
+  stufe_i_max_percent?: number;
+  on_call_max_percent?: number;
 };
 
 type WorkTimeRuleSet = {
@@ -65,7 +68,8 @@ const RULE_TYPES: RuleType[] = [
   "opt_out_weekly_cap",
   "max_consecutive_work_days",
   "max_duties_per_period",
-  "documentation_requirement"
+  "documentation_requirement",
+  "duty_utilization_bands"
 ];
 
 const RULE_TYPE_KEYS: Record<RuleType, TranslationKey> = {
@@ -76,7 +80,8 @@ const RULE_TYPE_KEYS: Record<RuleType, TranslationKey> = {
   opt_out_weekly_cap: "workTimeRuleOptOut",
   max_consecutive_work_days: "workTimeRuleMaxConsecutive",
   max_duties_per_period: "workTimeRuleMaxDuties",
-  documentation_requirement: "workTimeRuleDocumentation"
+  documentation_requirement: "workTimeRuleDocumentation",
+  duty_utilization_bands: "workTimeRuleDutyUtilization"
 };
 
 function hoursByTierText(hoursByTier: Record<string, number> | undefined): string {
@@ -119,6 +124,9 @@ function emptyRule(type: RuleType): WorkTimeRule {
   }
   if (type === "max_duties_per_period") {
     return { ...base, count: 4, period: "month", additional_allowance_per_quarter: 1 };
+  }
+  if (type === "duty_utilization_bands") {
+    return { ...base, severity: "info", stufe_i_max_percent: 25, on_call_max_percent: 49 };
   }
   return { ...base, severity: "info", threshold_hours: 8, retention_months: 24 };
 }
@@ -532,6 +540,32 @@ export function WorkTimeRuleSetsPanel() {
                         min={1}
                         value={rule.retention_months ?? 24}
                         onChange={(event) => update({ retention_months: Number(event.target.value) })}
+                      />
+                    </Field>
+                  </div>
+                ) : null}
+                {rule.type === "duty_utilization_bands" ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Field label={t(locale, "workTimeRuleStufeIMaxPercent")}>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.1"
+                        value={rule.stufe_i_max_percent ?? 25}
+                        onChange={(event) => update({ stufe_i_max_percent: Number(event.target.value) })}
+                      />
+                    </Field>
+                    <Field label={t(locale, "workTimeRuleOnCallMaxPercent")}>
+                      <input
+                        className={inputClass}
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.1"
+                        value={rule.on_call_max_percent ?? 49}
+                        onChange={(event) => update({ on_call_max_percent: Number(event.target.value) })}
                       />
                     </Field>
                   </div>

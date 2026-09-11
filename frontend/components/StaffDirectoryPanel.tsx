@@ -11,6 +11,7 @@ import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { TeamMemberCreateModal, TeamMemberEditorModal, isTeamMemberRecord, type TeamMemberRecord } from "@/components/ResourceForms";
 import { EmploymentContractSection } from "@/components/EmploymentContractSection";
+import { WorkTimeConsentSection } from "@/components/WorkTimeConsentSection";
 
 type StaffDirectoryLinkStatus =
   | "team_member_only"
@@ -677,6 +678,9 @@ export function StaffDirectoryPanel() {
                     />
                     <div className="mt-4">
                       <EmploymentContractSection teamMemberId={detailMemberRecord.id} />
+                    </div>
+                    <div className="mt-4">
+                      <WorkTimeConsentSection teamMemberId={detailMemberRecord.id} />
                     </div>
                   </div>
                 )}

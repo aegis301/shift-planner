@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date, time
+from datetime import date, datetime, time
 import os
 from typing import Any
 
@@ -15,11 +15,14 @@ from app.schemas import (
     ContractGroupUpdate,
     EmploymentPeriodWrite,
     TimeAccountOpeningUpsert,
+    DutyActivityCreate,
     TimeEntryCreate,
     TimeEntryDeriveRequest,
     TimeEntryUpdate,
     WorkTimeRuleSetCreate,
     WorkTimeRuleSetUpdate,
+    WorkTimeConsentCreate,
+    WorkTimeConsentRevoke,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -60,12 +63,20 @@ from app.services.employment_periods import (
     upsert_time_account_opening,
 )
 from app.services.hours_ledger import get_hours_ledger
+from app.services.duty_activity import duty_activity_to_read, record_duty_activity
+from app.services.duty_utilization import period_utilization
 from app.services.time_entries import (
     create_manual_entry,
     derive_entries,
     list_time_entries,
     time_entry_to_read,
     update_time_entry,
+)
+from app.services.work_time_consents import (
+    list_work_time_consents,
+    record_work_time_consent,
+    revoke_work_time_consent,
+    work_time_consent_to_read,
 )
 from app.services.work_time_presets import (
     adopt_work_time_rule_set_preset,
@@ -1282,6 +1293,75 @@ def work_time_rule_sets_resource() -> list[dict[str, Any]]:
         ]
 
 
+@mcp.resource("shift-planner://team-members/{team_member_id}/work-time-consents")
+def work_time_consents_resource(team_member_id: int) -> list[dict[str, Any]]:
+    """List working-time opt-out consents for one team member."""
+    with db_session() as db:
+        return [
+            work_time_consent_to_read(row).model_dump(mode="json")
+            for row in list_work_time_consents(
+                db, team_member_id, organization_id=mcp_organization_id()
+            )
+        ]
+
+
+@mcp.tool
+def record_work_time_consent_tool(
+    token: str,
+    team_member_id: int,
+    tier: str,
+    valid_from: date,
+    signed_document_reference: str | None = None,
+    notice_period_months: int = 6,
+    consent_type: str = "opt_out",
+) -> dict[str, Any]:
+    """Record an immutable working-time opt-out consent. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeConsentCreate(
+        consent_type=consent_type,
+        tier=tier,
+        valid_from=valid_from,
+        signed_document_reference=signed_document_reference,
+        notice_period_months=notice_period_months,
+    )
+    with db_session() as db:
+        row = record_work_time_consent(
+            db,
+            team_member_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            recorded_by_user_id=None,
+            actor="mcp",
+            source="mcp",
+        )
+        return work_time_consent_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def revoke_work_time_consent_tool(
+    token: str,
+    consent_id: int,
+    revoked_at: date | None = None,
+    notice_period_months: int | None = None,
+) -> dict[str, Any]:
+    """Revoke a working-time consent and list affected future published plans. Requires MCP admin token."""
+    require_token(token)
+    payload = WorkTimeConsentRevoke(revoked_at=revoked_at, notice_period_months=notice_period_months)
+    with db_session() as db:
+        row, findings = revoke_work_time_consent(
+            db,
+            consent_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+        )
+        return {
+            "consent": work_time_consent_to_read(row).model_dump(mode="json"),
+            "affected_plans": [item.model_dump(mode="json") for item in findings],
+        }
+
+
 @mcp.resource("shift-planner://work-time-rule-set-presets")
 def work_time_rule_set_presets_resource() -> list[dict[str, Any]]:
     """List seed work-time rule-set presets."""
@@ -1639,6 +1719,54 @@ def upsert_time_entry_tool(
             db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
         )
         return time_entry_to_read(row).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://duty-utilization/{planning_period_id}")
+def duty_utilization_resource(planning_period_id: int) -> dict[str, Any]:
+    """Return duty utilization ratios, tariff bands, and coverage for one planning period."""
+    with db_session() as db:
+        return period_utilization(
+            db,
+            organization_id=mcp_organization_id(),
+            planning_period_id=planning_period_id,
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def record_duty_activity_tool(
+    token: str,
+    team_member_id: int,
+    roster_slot_id: int,
+    kind: str,
+    started_at: datetime,
+    ended_at: datetime,
+    reason_code: str | None = None,
+    reason_note: str | None = None,
+) -> dict[str, Any]:
+    """Record a call-out or in-duty activity episode. Requires MCP admin token."""
+    require_token(token)
+    payload = DutyActivityCreate.model_validate(
+        {
+            "team_member_id": team_member_id,
+            "roster_slot_id": roster_slot_id,
+            "kind": kind,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "reason": None
+            if reason_code is None and reason_note is None
+            else {"code": reason_code, "note": reason_note},
+        }
+    )
+    with db_session() as db:
+        row = record_duty_activity(
+            db,
+            payload,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+            actor="mcp",
+            source="mcp",
+        )
+        return duty_activity_to_read(row).model_dump(mode="json")
 
 
 @mcp.tool

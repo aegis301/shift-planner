@@ -35,6 +35,7 @@ from app.models.entities import (
     TimeEntry,
     User,
     UserShiftGroup,
+    WorkTimeConsent,
     WorkTimeRuleSet,
     WorkTimeRuleSetPreset,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "TimeEntry",
     "User",
     "UserShiftGroup",
+    "WorkTimeConsent",
     "WorkTimeRuleSet",
     "WorkTimeRuleSetPreset",
 ]

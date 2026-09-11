@@ -28,9 +28,16 @@ def _interval_minutes(started_at: datetime | None, ended_at: datetime | None) ->
     return max(0, int(delta.total_seconds() // 60))
 
 
+def _episode_kind(episode: Any) -> str | None:
+    kind = episode.get("kind") if isinstance(episode, dict) else getattr(episode, "kind", None)
+    return str(kind) if kind else None
+
+
 def _episode_minutes(episodes: Sequence[Any] | None) -> int:
     total = 0
     for episode in episodes or ():
+        if _episode_kind(episode) == "in_duty_activity":
+            continue
         mapping = episode if isinstance(episode, dict) else None
         duration = mapping.get("duration_minutes") if mapping is not None else getattr(episode, "duration_minutes", None)
         if duration is not None:

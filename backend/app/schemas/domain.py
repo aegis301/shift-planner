@@ -587,8 +587,57 @@ class TimeAccountOpeningRead(BaseModel):
     sick_days_used_ytd: Decimal
 
 
+WorkTimeConsentType = Literal["opt_out"]
+
+
+class WorkTimeConsentCreate(BaseModel):
+    consent_type: WorkTimeConsentType = "opt_out"
+    tier: str = Field(min_length=1, max_length=64)
+    valid_from: date_type
+    signed_document_reference: str | None = Field(default=None, max_length=255)
+    notice_period_months: int = Field(default=6, ge=1, le=24)
+
+
+class WorkTimeConsentRevoke(BaseModel):
+    revoked_at: date_type | None = None
+    notice_period_months: int | None = Field(default=None, ge=1, le=24)
+
+
+class WorkTimeConsentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    team_member_id: int
+    consent_type: WorkTimeConsentType
+    tier: str
+    valid_from: date_type
+    signed_document_reference: str | None = None
+    recorded_by_user_id: int | None = None
+    revoked_at: date_type | None = None
+    notice_period_months: int
+    effective_until: date_type | None = None
+    created_at: datetime
+
+
+class WorkTimeConsentPlanFinding(BaseModel):
+    planning_plan_version_id: int
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int
+    warning_codes: list[str] = Field(default_factory=list)
+
+
+class WorkTimeConsentRevokeRead(BaseModel):
+    consent: WorkTimeConsentRead
+    affected_plans: list[WorkTimeConsentPlanFinding] = Field(default_factory=list)
+
+
 TimeEntryKind = Literal["work", "absence", "call_out", "in_duty_activity"]
-TimeEntrySource = Literal["roster", "day_status", "manual"]
+TimeEntrySource = Literal["roster", "day_status", "manual", "duty_activity"]
+DutyActivityKind = Literal["call_out", "in_duty_activity"]
+DutyUtilizationBandCode = Literal["stufe_i", "stufe_ii", "full_work"]
 
 
 class TimeEntryRead(BaseModel):
@@ -613,6 +662,7 @@ class TimeEntryRead(BaseModel):
     roster_slot_id: int | None = None
     shift_group_id: int | None = None
     comment: str | None = None
+    reason: dict[str, Any] | None = None
     derived_snapshot: dict[str, Any] | None = None
     corrected_fields: list[str] = Field(default_factory=list)
 
@@ -647,6 +697,64 @@ class TimeEntryUpdate(BaseModel):
     shift_template_category: str | None = None
     planning_day_status_code: str | None = None
     comment: str | None = None
+
+
+class DutyActivityReason(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    code: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class DutyActivityCreate(BaseModel):
+    roster_slot_id: int = Field(ge=1)
+    kind: DutyActivityKind
+    started_at: datetime
+    ended_at: datetime
+    reason: DutyActivityReason | None = None
+    team_member_id: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> Self:
+        if self.ended_at <= self.started_at:
+            raise ValueError("ended_at must be after started_at")
+        return self
+
+
+class DutyUtilizationCoverage(BaseModel):
+    recorded_duty_count: int
+    duty_count: int
+    coverage_ratio: Decimal
+
+
+class DutyUtilizationSlotRead(BaseModel):
+    roster_slot_id: int
+    shift_template_id: int | None = None
+    slot_date: date_type
+    duty_minutes: int
+    worked_minutes: int
+    utilization_ratio: Decimal
+    utilization_percent: Decimal
+    band: DutyUtilizationBandCode | None = None
+    exceeds_on_call_threshold: bool
+    has_activity_record: bool
+
+
+class DutyUtilizationAggregateRead(BaseModel):
+    shift_template_id: int | None = None
+    worked_minutes: int
+    duty_minutes: int
+    utilization_ratio: Decimal
+    utilization_percent: Decimal
+    band: DutyUtilizationBandCode | None = None
+    exceeds_on_call_threshold: bool
+    coverage: DutyUtilizationCoverage
+
+
+class DutyUtilizationPeriodRead(DutyUtilizationAggregateRead):
+    planning_period_id: int
+    templates: list[DutyUtilizationAggregateRead] = Field(default_factory=list)
+    slots: list[DutyUtilizationSlotRead] = Field(default_factory=list)
 
 
 class TimeEntryDeriveRequest(BaseModel):
@@ -821,6 +929,20 @@ class WorkTimeRuleDocumentationRequirement(BaseModel):
     retention_months: int = Field(ge=1, le=120)
 
 
+class WorkTimeRuleDutyUtilizationBands(BaseModel):
+    type: Literal["duty_utilization_bands"] = "duty_utilization_bands"
+    severity: ConstraintSeverity = "info"
+    source_note: str = ""
+    stufe_i_max_percent: Decimal = Field(ge=0, le=100)
+    on_call_max_percent: Decimal = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_band_order(self) -> Self:
+        if self.on_call_max_percent < self.stufe_i_max_percent:
+            raise ValueError("on_call_max_percent must be on or after stufe_i_max_percent")
+        return self
+
+
 WorkTimeRule = Annotated[
     WorkTimeRuleMaxDailyWorkingTime
     | WorkTimeRuleMinRestPeriod
@@ -829,7 +951,8 @@ WorkTimeRule = Annotated[
     | WorkTimeRuleOptOutWeeklyCap
     | WorkTimeRuleMaxConsecutiveWorkDays
     | WorkTimeRuleMaxDutiesPerPeriod
-    | WorkTimeRuleDocumentationRequirement,
+    | WorkTimeRuleDocumentationRequirement
+    | WorkTimeRuleDutyUtilizationBands,
     Field(discriminator="type"),
 ]
 

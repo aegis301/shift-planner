@@ -207,6 +207,9 @@ class TeamMember(Base):
     time_entries: Mapped[list["TimeEntry"]] = relationship(
         back_populates="team_member", cascade="all, delete-orphan"
     )
+    work_time_consents: Mapped[list["WorkTimeConsent"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
 
 
 class ContractGroup(Base):
@@ -257,6 +260,27 @@ class TimeAccountOpening(Base):
     team_member: Mapped["TeamMember"] = relationship(back_populates="time_account_opening")
 
 
+class WorkTimeConsent(Base):
+    __tablename__ = "work_time_consents"
+    __table_args__ = (Index("ix_work_time_consents_member_valid_from", "team_member_id", "valid_from"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    consent_type: Mapped[str] = mapped_column(String(32), default="opt_out")
+    tier: Mapped[str] = mapped_column(String(64))
+    valid_from: Mapped[date] = mapped_column(Date)
+    signed_document_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recorded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revoked_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notice_period_months: Mapped[int] = mapped_column(Integer, default=6)
+    effective_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="work_time_consents")
+    recorded_by: Mapped["User | None"] = relationship()
+
+
 class TimeEntry(Base):
     __tablename__ = "time_entries"
     __table_args__ = (
@@ -287,6 +311,7 @@ class TimeEntry(Base):
         ForeignKey("shift_groups.id", ondelete="SET NULL"), nullable=True
     )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     derived_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     corrected_fields: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

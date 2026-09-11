@@ -45,6 +45,8 @@ class PlanState:
     shift_intents: tuple[PlanningShiftIntent, ...]
     time_entries_by_member_id: Mapping[int, tuple[object, ...]]
     employment_periods_by_member_id: Mapping[int, tuple[object, ...]]
+    statutory_minutes_by_member_date: Mapping[tuple[int, date], int]
+    work_time_consents_by_member_id: Mapping[int, tuple[object, ...]]
 
 
 def empty_indexed_state(
@@ -78,6 +80,8 @@ def empty_indexed_state(
         shift_intents=(),
         time_entries_by_member_id=frozen_mapping({}),
         employment_periods_by_member_id=frozen_mapping({}),
+        statutory_minutes_by_member_date=frozen_mapping({}),
+        work_time_consents_by_member_id=frozen_mapping({}),
     )
 
 

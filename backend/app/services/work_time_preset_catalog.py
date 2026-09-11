@@ -108,6 +108,13 @@ def _tv_aerzte_rules(*, tariff: str, confirmed: bool) -> list[dict]:
                 "period": "month",
                 "additional_allowance_per_quarter": 1,
             },
+            {
+                "type": "duty_utilization_bands",
+                "severity": "info",
+                "source_note": f"§ 7 TV-Ärzte ({tariff}) Bereitschaftsdienst-Stufen{suffix}",
+                "stufe_i_max_percent": "25",
+                "on_call_max_percent": "49",
+            },
         ]
     )
 

@@ -11,6 +11,7 @@ class Rule(Protocol):
     code: str
     severity: Literal["info", "warning", "error"]
     lookback: timedelta
+    roster_lookback: timedelta
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]: ...
 
