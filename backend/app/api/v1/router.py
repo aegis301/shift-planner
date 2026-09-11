@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    compliance_report,
     contract_groups,
     dashboard,
     duty_activity,
@@ -36,6 +37,7 @@ api_router.include_router(time_entries.router)
 api_router.include_router(duty_activity.router)
 api_router.include_router(work_time_consents.router)
 api_router.include_router(work_time_rule_sets.router)
+api_router.include_router(compliance_report.router)
 api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)
 api_router.include_router(planning.router)

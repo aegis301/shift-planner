@@ -65,6 +65,7 @@ from app.services.employment_periods import (
     upsert_time_account_opening,
 )
 from app.services.hours_ledger import get_hours_ledger
+from app.services.compliance_report import build_compliance_report
 from app.services.duty_activity import duty_activity_to_read, record_duty_activity, update_duty_activity
 from app.services.duty_activity_privacy import (
     build_works_council_duty_rows,
@@ -1738,6 +1739,17 @@ def duty_utilization_resource(planning_period_id: int) -> dict[str, Any]:
             db,
             organization_id=mcp_organization_id(),
             planning_period_id=planning_period_id,
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://compliance-report/{planning_period_id}")
+def compliance_report_resource(planning_period_id: int) -> dict[str, Any]:
+    """Return the statutory compliance report for one planning period."""
+    with db_session() as db:
+        return build_compliance_report(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
         ).model_dump(mode="json")
 
 

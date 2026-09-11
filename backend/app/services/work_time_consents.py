@@ -174,21 +174,21 @@ def _consent_on_date(consents: Sequence[WorkTimeConsent], on_date: date) -> Work
     return eligible[0]
 
 
-def applicable_weekly_cap(
+def applicable_weekly_cap_detail(
     member_id: int,
     on_date: date,
     rule_set: WorkTimeRuleSet | WorkTimeRuleOptOutWeeklyCap | Sequence[object],
     consents: Sequence[WorkTimeConsent] | None = None,
     *,
     db: Session | None = None,
-) -> Decimal:
+) -> tuple[Decimal, str, int | None, str | None]:
     rule = _opt_out_rule(rule_set)
     if rule is None:
         if isinstance(rule_set, WorkTimeRuleSet):
             for item in _RULES_ADAPTER.validate_python(rule_set.rules or []):
                 if isinstance(item, WorkTimeRuleWeeklyAverageCap):
-                    return item.hours
-        return Decimal("48")
+                    return item.hours, "base", None, None
+        return Decimal("48"), "base", None, None
     base = _base_cap_hours(rule)
     records = list(consents) if consents is not None else []
     if consents is None and db is not None:
@@ -197,10 +197,24 @@ def applicable_weekly_cap(
         )
     chosen = _consent_on_date(records, on_date)
     if chosen is None:
-        return base
+        return base, "base", None, None
     hours = rule.hours_by_tier.get(chosen.tier)
     if hours is None:
-        return base
+        return base, "base", chosen.id, chosen.tier
+    return hours, "opt_out", chosen.id, chosen.tier
+
+
+def applicable_weekly_cap(
+    member_id: int,
+    on_date: date,
+    rule_set: WorkTimeRuleSet | WorkTimeRuleOptOutWeeklyCap | Sequence[object],
+    consents: Sequence[WorkTimeConsent] | None = None,
+    *,
+    db: Session | None = None,
+) -> Decimal:
+    hours, _source, _consent_id, _tier = applicable_weekly_cap_detail(
+        member_id, on_date, rule_set, consents, db=db
+    )
     return hours
 
 

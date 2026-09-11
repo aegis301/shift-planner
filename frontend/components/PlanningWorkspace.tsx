@@ -38,6 +38,7 @@ import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWork
 import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashboard";
 import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
 import { DutyActivityShiftList } from "@/components/DutyActivityShiftList";
+import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { monthDateBounds } from "@/lib/planningDates";
@@ -714,6 +715,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
       <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
+      {periodId ? <ComplianceReportPanel periodId={periodId} shiftGroupId={shiftGroupId} /> : null}
     </section>
   ) : null;
 

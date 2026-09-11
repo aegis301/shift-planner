@@ -31,6 +31,7 @@ from mcp_app.server import (
     update_duty_activity_tool,
     update_duty_activity_access_policy_tool,
     purge_duty_activity_episodes_tool,
+    compliance_report_resource,
 )
 
 
@@ -230,3 +231,7 @@ def test_destructive_planning_tools_reject_invalid_token_before_db_access():
         delete_shift_variant_tool(token="wrong-token", shift_variant_id=1)
     with pytest.raises(PermissionError):
         delete_team_member_tool(token="wrong-token", team_member_id=1)
+
+
+def test_compliance_report_resource_is_registered():
+    assert compliance_report_resource.__name__ == "compliance_report_resource"

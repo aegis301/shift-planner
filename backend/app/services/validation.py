@@ -163,6 +163,23 @@ def validate_roster(
     _add_matrix_conflicts(db, warnings, cells, organization_id=organization_id)
     warnings.extend(evaluate_plan_state(plan_state, db=db))
     warnings = _merge_coupled_shift_warnings(_merge_max_assignments_per_month_warnings(warnings))
+    return filter_warnings_for_shift_group(
+        db,
+        warnings,
+        planning_period_id=planning_period_id,
+        organization_id=organization_id,
+        shift_group_id=shift_group_id,
+    )
+
+
+def filter_warnings_for_shift_group(
+    db: Session,
+    warnings: list[ValidationWarning],
+    *,
+    planning_period_id: int,
+    organization_id: int,
+    shift_group_id: int | None,
+) -> list[ValidationWarning]:
     if shift_group_id is None:
         return warnings
     require_shift_group(db, shift_group_id, organization_id)

@@ -1903,6 +1903,53 @@ class ValidationWarning(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class ComplianceRestViolation(BaseModel):
+    code: str
+    severity: str
+    date: date_type | None = None
+    message: str
+    rest_minutes: int | None = None
+    compensation_pending: bool = False
+
+
+class ComplianceMemberReport(BaseModel):
+    team_member_id: int
+    display_name: str
+    statutory_minutes: int
+    credited_minutes: int
+    weekly_average_minutes: int
+    weekly_cap_minutes: int
+    weekly_cap_source: Literal["base", "opt_out"]
+    weekly_cap_tier: str | None = None
+    weekly_cap_consent_id: int | None = None
+    consecutive_work_days: int
+    consecutive_work_days_limit: int | None = None
+    duty_count: int
+    duty_count_allowed: int | None = None
+    duty_count_period: str | None = None
+    documentation_days_above_threshold: int
+    documentation_days_recorded: int
+    rest_violations: list[ComplianceRestViolation] = Field(default_factory=list)
+    findings: list[ValidationWarning] = Field(default_factory=list)
+
+
+class ComplianceRuleSetRef(BaseModel):
+    id: int
+    name: str
+    version: int
+
+
+class ComplianceReportRead(BaseModel):
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int | None = None
+    generated_at: datetime
+    rule_set: ComplianceRuleSetRef | None = None
+    members: list[ComplianceMemberReport] = Field(default_factory=list)
+    findings: list[ValidationWarning] = Field(default_factory=list)
+
+
 class AuditLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

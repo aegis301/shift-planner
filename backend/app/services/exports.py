@@ -1,6 +1,7 @@
 import csv
+import zipfile
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO, StringIO
 from typing import Any
 
@@ -867,6 +868,225 @@ def export_works_council_duty_utilization_pdf(
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(table_component)
+    document.build(story)
+    return buffer.getvalue()
+
+
+def _compliance_rule_set_label(report) -> str:
+    if report.rule_set is None:
+        return "Rule set: —"
+    return f"Rule set: {report.rule_set.name} v{report.rule_set.version} (id {report.rule_set.id})"
+
+
+def _compliance_generated_label(generated_at: datetime) -> str:
+    return f"Generated: {generated_at.isoformat()}"
+
+
+def _naive_timestamp(value: datetime) -> datetime:
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
+def _freeze_xlsx_bytes(raw: bytes) -> bytes:
+    source = zipfile.ZipFile(BytesIO(raw))
+    frozen = BytesIO()
+    with zipfile.ZipFile(frozen, "w") as dest:
+        for info in sorted(source.infolist(), key=lambda item: item.filename):
+            frozen_info = zipfile.ZipInfo(filename=info.filename, date_time=(1980, 1, 1, 0, 0, 0))
+            frozen_info.compress_type = zipfile.ZIP_DEFLATED
+            dest.writestr(frozen_info, source.read(info.filename))
+    return frozen.getvalue()
+
+
+def _compliance_table_rows(report) -> list[list[str]]:
+    header = [
+        "Member",
+        "Statutory min",
+        "Tariff credit min",
+        "Weekly avg min",
+        "Weekly cap min",
+        "Cap source",
+        "Cap tier",
+        "Consent id",
+        "Consecutive days",
+        "Consecutive limit",
+        "Duty count",
+        "Duty allowed",
+        "Duty period",
+        "Docs above threshold",
+        "Docs recorded",
+        "Rest findings",
+        "Finding codes",
+    ]
+    rows: list[list[str]] = [header]
+    for member in report.members:
+        rest = "; ".join(
+            f"{item.code}{' pending' if item.compensation_pending else ''}"
+            for item in member.rest_violations
+        )
+        codes = "; ".join(sorted({item.code for item in member.findings}))
+        rows.append(
+            [
+                member.display_name,
+                str(member.statutory_minutes),
+                str(member.credited_minutes),
+                str(member.weekly_average_minutes),
+                str(member.weekly_cap_minutes),
+                member.weekly_cap_source,
+                member.weekly_cap_tier or "",
+                "" if member.weekly_cap_consent_id is None else str(member.weekly_cap_consent_id),
+                str(member.consecutive_work_days),
+                "" if member.consecutive_work_days_limit is None else str(member.consecutive_work_days_limit),
+                str(member.duty_count),
+                "" if member.duty_count_allowed is None else str(member.duty_count_allowed),
+                member.duty_count_period or "",
+                str(member.documentation_days_above_threshold),
+                str(member.documentation_days_recorded),
+                rest,
+                codes,
+            ]
+        )
+    return rows
+
+
+def export_compliance_report_xlsx(
+    db: Session,
+    planning_period_id: int,
+    *,
+    organization_id: int,
+    shift_group_id: int | None = None,
+    generated_at: datetime | None = None,
+) -> bytes:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required for XLSX exports") from exc
+
+    from app.services.compliance_report import build_compliance_report
+
+    report = build_compliance_report(
+        db,
+        planning_period_id,
+        organization_id=organization_id,
+        shift_group_id=shift_group_id,
+        generated_at=generated_at,
+    )
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Compliance"
+    rows = _compliance_table_rows(report)
+    max_col = max(2, len(rows[0]))
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
+    sheet["A1"] = "Shift Planner"
+    sheet["A1"].font = Font(bold=True, size=14, color="16202A")
+    sheet["A1"].fill = PatternFill(fill_type="solid", fgColor="3DD6A5")
+    sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=max_col)
+    sheet["A2"] = f"Compliance report {report.year:04d}-{report.month:02d}"
+    sheet["A2"].font = Font(size=11, color="334155")
+    sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=max_col)
+    sheet["A3"] = _compliance_rule_set_label(report)
+    sheet["A3"].font = Font(size=10, color="334155")
+    sheet.merge_cells(start_row=4, start_column=1, end_row=4, end_column=max_col)
+    sheet["A4"] = _compliance_generated_label(report.generated_at)
+    sheet["A4"].font = Font(size=10, color="334155")
+    thin = Side(border_style="thin", color="CBD5E1")
+    header_row = 6
+    for col_idx, value in enumerate(rows[0], start=1):
+        cell = sheet.cell(row=header_row, column=col_idx, value=value)
+        cell.font = Font(bold=True, color="0F172A")
+        cell.fill = PatternFill(fill_type="solid", fgColor="E2E8F0")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for row_idx, row in enumerate(rows[1:], start=header_row + 1):
+        palette = member_pastel_palette(report.members[row_idx - header_row - 1].team_member_id)
+        for col_idx, value in enumerate(row, start=1):
+            cell = sheet.cell(row=row_idx, column=col_idx, value=value)
+            cell.alignment = Alignment(
+                horizontal="center" if col_idx > 1 else "left", vertical="center", wrap_text=True
+            )
+            cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            if col_idx == 1:
+                cell.fill = PatternFill(fill_type="solid", fgColor=palette.fill_hex[1:])
+                cell.font = Font(color=palette.text_hex[1:], bold=True)
+    sheet.freeze_panes = "A7"
+    sheet.column_dimensions["A"].width = 22
+    for idx in range(2, max_col + 1):
+        sheet.column_dimensions[sheet.cell(row=header_row, column=idx).column_letter].width = 16
+    stamp = _naive_timestamp(report.generated_at)
+    workbook.properties.creator = "Shift Planner"
+    workbook.properties.lastModifiedBy = "Shift Planner"
+    workbook.properties.created = stamp
+    workbook.properties.modified = stamp
+    output = BytesIO()
+    workbook.save(output)
+    return _freeze_xlsx_bytes(output.getvalue())
+
+
+def export_compliance_report_pdf(
+    db: Session,
+    planning_period_id: int,
+    *,
+    organization_id: int,
+    shift_group_id: int | None = None,
+    generated_at: datetime | None = None,
+) -> bytes:
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise RuntimeError("reportlab is required for PDF exports") from exc
+
+    from app.services.compliance_report import build_compliance_report
+
+    report = build_compliance_report(
+        db,
+        planning_period_id,
+        organization_id=organization_id,
+        shift_group_id=shift_group_id,
+        generated_at=generated_at,
+    )
+    data = _compliance_table_rows(report)
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        title=f"Compliance {report.year:04d}-{report.month:02d} {_compliance_rule_set_label(report)} {_compliance_generated_label(report.generated_at)}",
+        leftMargin=24,
+        rightMargin=24,
+        topMargin=28,
+        bottomMargin=24,
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(
+            f"<b>Shift Planner</b> - Compliance report {report.year:04d}-{report.month:02d}",
+            styles["Title"],
+        ),
+        Spacer(1, 6),
+        Paragraph(_compliance_rule_set_label(report), styles["Normal"]),
+        Paragraph(_compliance_generated_label(report.generated_at), styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    table_component = Table(data, repeatRows=1)
+    table_component.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#16202a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
+                ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#f8fafc")),
+                ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
             ]
         )
     )

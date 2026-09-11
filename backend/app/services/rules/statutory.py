@@ -23,9 +23,9 @@ from app.schemas.domain import (
     WorkTimeRuleWeeklyAverageCap,
 )
 from app.services.rules.state import PlanState
-from app.services.work_time_consents import applicable_weekly_cap
+from app.services.work_time_consents import applicable_weekly_cap, applicable_weekly_cap_detail
 from app.services.work_time_rule_sets import get_active_work_time_rule_set
-from app.services.work_time_valuation import statutory_work_minutes
+from app.services.work_time_valuation import statutory_work_minutes, tariff_credit_minutes
 
 _RULES_ADAPTER = TypeAdapter(list[WorkTimeRule])
 
@@ -656,3 +656,170 @@ def statutory_rules_for_org(db: Any, organization_id: int) -> tuple[Any, ...]:
         for config in _RULES_ADAPTER.validate_python(row.rules or [])
         if (rule := _rule_from_config(config)) is not None
     )
+
+
+def _assignment_credited_minutes(state: PlanState, assignment: RosterSlotAssignment) -> int:
+    slot = assignment.roster_slot
+    if slot is None:
+        return 0
+    for entry in state.time_entries_by_member_id.get(assignment.team_member_id, ()):
+        if getattr(entry, "roster_slot_id", None) == slot.id:
+            return int(entry.credited_minutes or 0)
+    employment = _employment_on(state, assignment.team_member_id, slot.slot_date)
+    contract_group = employment.contract_group if employment is not None else None
+    template = slot.shift_template
+    return tariff_credit_minutes(
+        slot=slot,
+        contract_group=contract_group,
+        template=template,
+        day_class=slot.day_class or "any",
+        episodes=(),
+    )
+
+
+def _daily_credited_minutes(state: PlanState, member_id: int, day: date) -> int:
+    from_entries = 0
+    has_entry = False
+    for entry in state.time_entries_by_member_id.get(member_id, ()):
+        if getattr(entry, "entry_date", None) != day:
+            continue
+        has_entry = True
+        from_entries += int(getattr(entry, "credited_minutes", 0) or 0)
+    if has_entry:
+        return from_entries
+    total = 0
+    for assignment in state.assignments_by_member_id.get(member_id, ()):
+        slot = assignment.roster_slot
+        if slot is None or slot.slot_date != day:
+            continue
+        total += _assignment_credited_minutes(state, assignment)
+    return total
+
+
+def period_statutory_minutes(state: PlanState, member_id: int) -> int:
+    total = 0
+    day = state.start_date
+    while day <= state.end_date:
+        total += _daily_statutory_minutes(state, member_id, day)
+        day += timedelta(days=1)
+    return total
+
+
+def period_credited_minutes(state: PlanState, member_id: int) -> int:
+    total = 0
+    day = state.start_date
+    while day <= state.end_date:
+        total += _daily_credited_minutes(state, member_id, day)
+        day += timedelta(days=1)
+    return total
+
+
+def max_consecutive_work_days(state: PlanState, member_id: int) -> int:
+    run = 0
+    longest = 0
+    day = state.start_date
+    while day <= state.end_date:
+        worked = _daily_statutory_minutes(state, member_id, day) > 0
+        run = run + 1 if worked else 0
+        longest = max(longest, run)
+        day += timedelta(days=1)
+    return longest
+
+
+def documentation_coverage(
+    state: PlanState, member_id: int, *, threshold_minutes: int
+) -> tuple[int, int]:
+    above = 0
+    recorded = 0
+    day = state.start_date
+    while day <= state.end_date:
+        statutory = _daily_statutory_minutes(state, member_id, day)
+        if statutory > threshold_minutes:
+            above += 1
+            documented = any(
+                getattr(entry, "entry_date", None) == day
+                for entry in state.time_entries_by_member_id.get(member_id, ())
+            )
+            if documented:
+                recorded += 1
+        day += timedelta(days=1)
+    return above, recorded
+
+
+def member_worktime_metrics(state: PlanState, member_id: int, rules: tuple[Any, ...]) -> dict[str, Any]:
+    weekly = next((rule for rule in rules if isinstance(rule, WeeklyAverageCapRule)), None)
+    opt_out = next((rule for rule in rules if isinstance(rule, OptOutWeeklyCapRule)), None)
+    consecutive = next((rule for rule in rules if isinstance(rule, MaxConsecutiveWorkDaysRule)), None)
+    duties = next((rule for rule in rules if isinstance(rule, MaxDutiesPerPeriodRule)), None)
+    documentation = next((rule for rule in rules if isinstance(rule, DocumentationRequirementRule)), None)
+
+    months = 6
+    if opt_out is not None:
+        months = opt_out.config.reference_period_months
+    elif weekly is not None:
+        months = weekly.config.reference_period_months
+    period_start = _subtract_months(state.end_date, months)
+    _total, _days, average = _weekly_average_minutes(state, member_id, period_start, state.end_date)
+
+    cap_minutes = 0
+    cap_source = "base"
+    cap_tier: str | None = None
+    cap_consent_id: int | None = None
+    consents = state.work_time_consents_by_member_id.get(member_id, ())
+    if opt_out is not None:
+        hours, cap_source, cap_consent_id, cap_tier = applicable_weekly_cap_detail(
+            member_id, state.end_date, opt_out.config, consents
+        )
+        cap_minutes = _hours_to_minutes(hours)
+    elif weekly is not None:
+        cap_minutes = _hours_to_minutes(weekly.config.hours)
+
+    duty_count = 0
+    duty_allowed: int | None = None
+    duty_period: str | None = None
+    if duties is not None:
+        duty_period = duties.config.period
+        duty_allowed = duties.config.count
+        if duties.config.period == "month":
+            duty_allowed += duties.config.additional_allowance_per_quarter
+        bucket = _period_start(state.end_date, duties.config.period)
+        duty_count = len(
+            {
+                assignment.roster_slot_id
+                for assignment in state.assignments_by_member_id.get(member_id, ())
+                if assignment.roster_slot is not None
+                and _period_start(assignment.roster_slot.slot_date, duties.config.period) == bucket
+            }
+        )
+    else:
+        duty_count = len(
+            {
+                assignment.roster_slot_id
+                for assignment in state.assignments_by_member_id.get(member_id, ())
+                if assignment.roster_slot is not None and _in_window(assignment.roster_slot.slot_date, state)
+            }
+        )
+
+    docs_above = 0
+    docs_recorded = 0
+    if documentation is not None:
+        docs_above, docs_recorded = documentation_coverage(
+            state, member_id, threshold_minutes=_hours_to_minutes(documentation.config.threshold_hours)
+        )
+
+    return {
+        "statutory_minutes": period_statutory_minutes(state, member_id),
+        "credited_minutes": period_credited_minutes(state, member_id),
+        "weekly_average_minutes": average,
+        "weekly_cap_minutes": cap_minutes,
+        "weekly_cap_source": cap_source,
+        "weekly_cap_tier": cap_tier,
+        "weekly_cap_consent_id": cap_consent_id,
+        "consecutive_work_days": max_consecutive_work_days(state, member_id),
+        "consecutive_work_days_limit": consecutive.config.days if consecutive is not None else None,
+        "duty_count": duty_count,
+        "duty_count_allowed": duty_allowed,
+        "duty_count_period": duty_period,
+        "documentation_days_above_threshold": docs_above,
+        "documentation_days_recorded": docs_recorded,
+    }
