@@ -4,12 +4,11 @@
 Refine the unified `/planning` workflow with shared month state, wishes, final roster assignment, inline validation, exports, workload stats, and **per-shift-group plan versioning**.
 
 ## Next Steps
-1. R1 (time, rules, duty activity, compliance report) is in place. Next rollout track is R2 fairness.
-2. Run Alembic migrations against Postgres after pulling `202609110003`.
+1. R2 fairness accounts are in place (rolling expected-share targets). Next: surface deviation in the planning Analysis tab and roster picker.
+2. Run Alembic migrations against Postgres after pulling `202609110004`.
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing (day-interval bar shipped; multi-member ranges and clear-range still open).
-6. Improve the workload stats with configurable fairness targets and percentage-aware expectations.
 
 ## Roadmap
 - Team member self-service for wishes/no-gos.

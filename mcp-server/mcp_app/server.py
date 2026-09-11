@@ -18,6 +18,7 @@ from app.schemas import (
     DutyActivityAccessPolicyUpdate,
     DutyActivityCreate,
     DutyActivityUpdate,
+    FairnessPolicyUpdate,
     TimeEntryCreate,
     TimeEntryDeriveRequest,
     TimeEntryUpdate,
@@ -66,6 +67,11 @@ from app.services.employment_periods import (
 )
 from app.services.hours_ledger import get_hours_ledger
 from app.services.compliance_report import build_compliance_report
+from app.services.fairness import (
+    build_fairness_accounts,
+    read_fairness_policy,
+    update_fairness_policy,
+)
 from app.services.duty_activity import duty_activity_to_read, record_duty_activity, update_duty_activity
 from app.services.duty_activity_privacy import (
     build_works_council_duty_rows,
@@ -1753,6 +1759,39 @@ def compliance_report_resource(planning_period_id: int) -> dict[str, Any]:
         ).model_dump(mode="json")
 
 
+@mcp.resource("shift-planner://fairness/{planning_period_id}")
+def fairness_accounts_resource(planning_period_id: int) -> dict[str, Any]:
+    """Return rolling fairness accounts for one planning period."""
+    with db_session() as db:
+        return build_fairness_accounts(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://fairness/{planning_period_id}/shift-group/{shift_group_id}")
+def fairness_accounts_shift_group_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Return rolling fairness accounts for one planning period and shift group."""
+    with db_session() as db:
+        return build_fairness_accounts(
+            db,
+            planning_period_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://fairness-policy")
+def fairness_policy_resource() -> dict[str, Any]:
+    """Return the organization's fairness window and dimension policy."""
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return read_fairness_policy(org).model_dump(mode="json")
+
+
 @mcp.resource("shift-planner://duty-activity-access-policy")
 def duty_activity_access_policy_resource() -> dict[str, Any]:
     """Return the organization's duty-activity visibility, retention, and purpose policy."""
@@ -1804,6 +1843,37 @@ def update_duty_activity_access_policy_tool(
         if org is None:
             raise ValueError("Organization not found")
         return update_duty_activity_access_policy(
+            db,
+            org,
+            payload,
+            actor="mcp",
+            source="mcp",
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def update_fairness_policy_tool(
+    token: str,
+    window_months: int | None = None,
+    dimensions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Update fairness window and dimensions. Requires MCP admin token."""
+    require_token(token)
+    payload = FairnessPolicyUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "window_months": window_months,
+                "dimensions": dimensions,
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return update_fairness_policy(
             db,
             org,
             payload,

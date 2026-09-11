@@ -7,6 +7,7 @@ from app.api.v1 import (
     dashboard,
     duty_activity,
     employment_periods,
+    fairness,
     matrix,
     organization_admin,
     organizations_public,
@@ -38,6 +39,7 @@ api_router.include_router(duty_activity.router)
 api_router.include_router(work_time_consents.router)
 api_router.include_router(work_time_rule_sets.router)
 api_router.include_router(compliance_report.router)
+api_router.include_router(fairness.router)
 api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)
 api_router.include_router(planning.router)

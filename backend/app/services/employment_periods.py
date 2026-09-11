@@ -174,6 +174,9 @@ def upsert_time_account_opening(
     row.overtime_minutes = payload.overtime_minutes
     row.vacation_days_remaining = payload.vacation_days_remaining
     row.sick_days_used_ytd = payload.sick_days_used_ytd
+    row.fairness_balances = {
+        str(key): float(value) for key, value in (payload.fairness_balances or {}).items()
+    }
     record_audit(
         db,
         actor=actor,

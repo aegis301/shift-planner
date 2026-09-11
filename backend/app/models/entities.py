@@ -41,6 +41,42 @@ class Organization(Base):
             "small_group_threshold": 5,
         },
     )
+    fairness_policy: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "window_months": 12,
+            "dimensions": [
+                {
+                    "id": "duties",
+                    "metric": "duty_count",
+                    "day_filter": "any",
+                    "night": False,
+                    "category": None,
+                },
+                {
+                    "id": "weekend_holiday",
+                    "metric": "duty_count",
+                    "day_filter": "weekend_holiday",
+                    "night": False,
+                    "category": None,
+                },
+                {
+                    "id": "night",
+                    "metric": "duty_count",
+                    "day_filter": "any",
+                    "night": True,
+                    "category": None,
+                },
+                {
+                    "id": "statutory_hours",
+                    "metric": "statutory_minutes",
+                    "day_filter": "any",
+                    "night": False,
+                    "category": None,
+                },
+            ],
+        },
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
@@ -268,6 +304,7 @@ class TimeAccountOpening(Base):
     overtime_minutes: Mapped[int] = mapped_column(Integer, default=0)
     vacation_days_remaining: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
     sick_days_used_ytd: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+    fairness_balances: Mapped[dict] = mapped_column(JSON, default=lambda: {})
 
     team_member: Mapped["TeamMember"] = relationship(back_populates="time_account_opening")
 

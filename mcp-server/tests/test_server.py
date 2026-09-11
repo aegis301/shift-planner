@@ -32,6 +32,8 @@ from mcp_app.server import (
     update_duty_activity_access_policy_tool,
     purge_duty_activity_episodes_tool,
     compliance_report_resource,
+    fairness_accounts_resource,
+    update_fairness_policy_tool,
 )
 
 
@@ -235,3 +237,12 @@ def test_destructive_planning_tools_reject_invalid_token_before_db_access():
 
 def test_compliance_report_resource_is_registered():
     assert compliance_report_resource.__name__ == "compliance_report_resource"
+
+
+def test_fairness_accounts_resource_is_registered():
+    assert fairness_accounts_resource.__name__ == "fairness_accounts_resource"
+
+
+def test_update_fairness_policy_requires_token():
+    with pytest.raises(PermissionError):
+        update_fairness_policy_tool(token="wrong-token", window_months=6)

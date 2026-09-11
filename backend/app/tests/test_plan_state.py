@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -14,8 +14,11 @@ from app.models import (
     EmploymentPeriod,
     Organization,
     PlanningPeriod,
+    PlanningPeriodShiftGroupMember,
     RosterSlot,
     RosterSlotAssignment,
+    ShiftGroup,
+    ShiftGroupShiftTemplate,
     ShiftTemplate,
     ShiftVariant,
     TeamMember,
@@ -423,6 +426,80 @@ def test_build_plan_state_loads_time_entries_and_employment_periods(plan_db):
     assert state.time_entries_by_member_id[member.id][0].id == entry.id
 
 
+def test_history_duty_counts_come_from_roster_time_entries_not_slots(plan_db):
+    db, _engine = plan_db
+    template, variant = _add_template(db)
+    jan = _add_period(db, 2026, 1)
+    mar = _add_period(db, 2026, 3)
+    group = ShiftGroup(organization_id=1, code="sg1", name="SG1")
+    db.add(group)
+    db.flush()
+    db.add(ShiftGroupShiftTemplate(shift_group_id=group.id, shift_template_id=template.id))
+    member = _add_member(db, email="duty@example.com")
+    db.add(
+        PlanningPeriodShiftGroupMember(
+            planning_period_id=jan.id,
+            shift_group_id=group.id,
+            team_member_id=member.id,
+        )
+    )
+    db.add(
+        PlanningPeriodShiftGroupMember(
+            planning_period_id=mar.id,
+            shift_group_id=group.id,
+            team_member_id=member.id,
+        )
+    )
+    history_slot = _add_slot(db, period=jan, template=template, variant=variant, slot_date=date(2026, 1, 10))
+    current_slot = _add_slot(db, period=mar, template=template, variant=variant, slot_date=date(2026, 3, 4))
+    db.add(
+        TimeEntry(
+            organization_id=1,
+            team_member_id=member.id,
+            entry_date=date(2026, 1, 10),
+            kind="work",
+            source="roster",
+            shift_template_category="bereitschaftsdienst",
+            started_at=datetime(2026, 1, 10, 22, 0, tzinfo=UTC),
+            ended_at=datetime(2026, 1, 11, 8, 0, tzinfo=UTC),
+            statutory_minutes=600,
+        )
+    )
+    db.add(
+        TimeEntry(
+            organization_id=1,
+            team_member_id=member.id,
+            entry_date=date(2026, 3, 4),
+            kind="work",
+            source="roster",
+            shift_template_category="bereitschaftsdienst",
+            started_at=datetime(2026, 3, 4, 8, 0, tzinfo=UTC),
+            ended_at=datetime(2026, 3, 4, 16, 0, tzinfo=UTC),
+            statutory_minutes=480,
+        )
+    )
+    db.commit()
+    state = build_plan_state(
+        db,
+        organization_id=1,
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 3, 31),
+        shift_group_id=group.id,
+        history_start=date(2026, 1, 1),
+    )
+    assert history_slot.id not in state.slots_by_id
+    assert current_slot.id in state.slots_by_id
+    night = state.duty_counts_by_member_date[(member.id, date(2026, 1, 10))]
+    assert night.total == 1
+    assert night.weekend_holiday == 1
+    assert night.night == 1
+    day = state.duty_counts_by_member_date[(member.id, date(2026, 3, 4))]
+    assert day.total == 1
+    assert day.night == 0
+    assert state.period_roster_member_ids[(2026, 1, group.id)] == frozenset({member.id})
+    assert state.period_roster_member_ids[(2026, 3, group.id)] == frozenset({member.id})
+
+
 def test_no_existing_module_imports_rules_package():
     app_root = Path(__file__).resolve().parents[1]
     forbidden = "app.services.rules"
@@ -446,6 +523,8 @@ def test_no_existing_module_imports_rules_package():
         if posix.endswith("/tests/test_duty_activity.py"):
             continue
         if posix.endswith("/services/compliance_report.py") or posix.endswith("/tests/test_compliance_report.py"):
+            continue
+        if posix.endswith("/services/fairness.py") or posix.endswith("/tests/test_fairness.py"):
             continue
         if forbidden in path.read_text():
             offenders.append(str(path.relative_to(app_root)))

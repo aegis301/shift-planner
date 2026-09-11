@@ -24,6 +24,26 @@ def frozen_mapping(data: dict[K, V]) -> Mapping[K, V]:
 
 
 @dataclass(frozen=True)
+class DutyDayCounts:
+    total: int
+    weekend_holiday: int
+    night: int
+    by_category: Mapping[str, int]
+    weekend_holiday_by_category: Mapping[str, int]
+    night_by_category: Mapping[str, int]
+
+
+EMPTY_DUTY_COUNTS = DutyDayCounts(
+    total=0,
+    weekend_holiday=0,
+    night=0,
+    by_category=frozen_mapping({}),
+    weekend_holiday_by_category=frozen_mapping({}),
+    night_by_category=frozen_mapping({}),
+)
+
+
+@dataclass(frozen=True)
 class PlanState:
     organization_id: int
     start_date: date
@@ -46,6 +66,8 @@ class PlanState:
     time_entries_by_member_id: Mapping[int, tuple[object, ...]]
     employment_periods_by_member_id: Mapping[int, tuple[object, ...]]
     statutory_minutes_by_member_date: Mapping[tuple[int, date], int]
+    duty_counts_by_member_date: Mapping[tuple[int, date], DutyDayCounts]
+    period_roster_member_ids: Mapping[tuple[int, int, int], frozenset[int]]
     work_time_consents_by_member_id: Mapping[int, tuple[object, ...]]
 
 
@@ -81,6 +103,8 @@ def empty_indexed_state(
         time_entries_by_member_id=frozen_mapping({}),
         employment_periods_by_member_id=frozen_mapping({}),
         statutory_minutes_by_member_date=frozen_mapping({}),
+        duty_counts_by_member_date=frozen_mapping({}),
+        period_roster_member_ids=frozen_mapping({}),
         work_time_consents_by_member_id=frozen_mapping({}),
     )
 

@@ -521,12 +521,14 @@ def load_employment_periods_for_members(
         return {}
     rows = list(
         db.scalars(
-            select(EmploymentPeriod).where(
+            select(EmploymentPeriod)
+            .options(joinedload(EmploymentPeriod.contract_group))
+            .where(
                 EmploymentPeriod.team_member_id.in_(team_member_ids),
                 EmploymentPeriod.start_date <= end_date,
                 or_(EmploymentPeriod.end_date.is_(None), EmploymentPeriod.end_date >= start_date),
             )
-        )
+        ).unique()
     )
     grouped: dict[int, list[EmploymentPeriod]] = {}
     for row in rows:

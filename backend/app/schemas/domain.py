@@ -575,6 +575,7 @@ class TimeAccountOpeningUpsert(BaseModel):
     overtime_minutes: int = 0
     vacation_days_remaining: Decimal = Field(default=Decimal("0"))
     sick_days_used_ytd: Decimal = Field(default=Decimal("0"))
+    fairness_balances: dict[str, float] = Field(default_factory=dict)
 
 
 class TimeAccountOpeningRead(BaseModel):
@@ -585,6 +586,7 @@ class TimeAccountOpeningRead(BaseModel):
     overtime_minutes: int
     vacation_days_remaining: Decimal
     sick_days_used_ytd: Decimal
+    fairness_balances: dict[str, float] = Field(default_factory=dict)
 
 
 WorkTimeConsentType = Literal["opt_out"]
@@ -1948,6 +1950,70 @@ class ComplianceReportRead(BaseModel):
     rule_set: ComplianceRuleSetRef | None = None
     members: list[ComplianceMemberReport] = Field(default_factory=list)
     findings: list[ValidationWarning] = Field(default_factory=list)
+
+
+FairnessMetric = Literal["duty_count", "statutory_minutes"]
+FairnessDayFilter = Literal["any", "weekend_holiday"]
+
+
+class FairnessDimension(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    metric: FairnessMetric
+    day_filter: FairnessDayFilter = "any"
+    night: bool = False
+    category: str | None = None
+
+
+class FairnessPolicy(BaseModel):
+    window_months: int = Field(default=12, ge=1, le=36)
+    dimensions: list[FairnessDimension] = Field(default_factory=list)
+
+    @field_validator("dimensions")
+    @classmethod
+    def _unique_dimension_ids(cls, value: list[FairnessDimension]) -> list[FairnessDimension]:
+        seen: set[str] = set()
+        for item in value:
+            if item.id in seen:
+                raise ValueError("dimension ids must be unique")
+            seen.add(item.id)
+        return value
+
+
+class FairnessPolicyUpdate(BaseModel):
+    window_months: int | None = Field(default=None, ge=1, le=36)
+    dimensions: list[FairnessDimension] | None = None
+
+
+class FairnessDimensionValue(BaseModel):
+    dimension_id: str
+    actual: float
+    expected: float
+    deviation_absolute: float
+    deviation_normalized: float
+
+
+class FairnessMemberAccount(BaseModel):
+    team_member_id: int
+    display_name: str
+    dimensions: list[FairnessDimensionValue] = Field(default_factory=list)
+
+
+class FairnessWindow(BaseModel):
+    start_year: int
+    start_month: int
+    end_year: int
+    end_month: int
+    months: int
+
+
+class FairnessAccountsRead(BaseModel):
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int | None = None
+    window: FairnessWindow
+    dimensions: list[FairnessDimension] = Field(default_factory=list)
+    members: list[FairnessMemberAccount] = Field(default_factory=list)
 
 
 class AuditLogRead(BaseModel):
