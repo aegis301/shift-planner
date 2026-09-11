@@ -4,8 +4,8 @@
 Refine the unified `/planning` workflow with shared month state, wishes, final roster assignment, inline validation, exports, workload stats, and **per-shift-group plan versioning**.
 
 ## Next Steps
-1. Duty activity backend is in place; remaining R1 work is the capture UI, privacy/retention controls, and the compliance report.
-2. Run Alembic migrations against Postgres after pulling `202609110002`.
+1. Duty activity backend, privacy/retention, and capture UI are in place; remaining R1 work is the compliance report.
+2. Run Alembic migrations against Postgres after pulling `202609110003`.
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing (day-interval bar shipped; multi-member ranges and clear-range still open).

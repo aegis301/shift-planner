@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_planner, get_current_user
+from app.api.deps import get_current_admin, get_current_planner, get_current_user
 from app.db.session import get_db
 from app.models import RosterSlot, ShiftGroup, ShiftGroupShiftTemplate, User
 from app.schemas import (
@@ -20,7 +20,12 @@ from app.services.authz import (
     can_use_planning_ui,
     get_linked_team_member,
 )
-from app.services.exports import export_roster_matrix_pdf, export_roster_matrix_xlsx
+from app.services.exports import (
+    export_roster_matrix_pdf,
+    export_roster_matrix_xlsx,
+    export_works_council_duty_utilization_pdf,
+    export_works_council_duty_utilization_xlsx,
+)
 from app.services.ics_export import (
     export_member_shifts_ics,
     export_single_roster_slot_ics,
@@ -269,6 +274,52 @@ def get_roster_matrix_xlsx(
         content=body,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="roster-matrix-{planning_period_id}.xlsx"'},
+    )
+
+
+@export_router.get("/exports/duty-activity/works-council/{planning_period_id}.xlsx")
+def get_works_council_duty_xlsx(
+    planning_period_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+):
+    try:
+        body = export_works_council_duty_utilization_xlsx(
+            db, planning_period_id, organization_id=user.organization_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="duty-activity-works-council-{planning_period_id}.xlsx"'
+        },
+    )
+
+
+@export_router.get("/exports/duty-activity/works-council/{planning_period_id}.pdf")
+def get_works_council_duty_pdf(
+    planning_period_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+):
+    try:
+        body = export_works_council_duty_utilization_pdf(
+            db, planning_period_id, organization_id=user.organization_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="duty-activity-works-council-{planning_period_id}.pdf"'
+        },
     )
 
 

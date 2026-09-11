@@ -740,3 +740,136 @@ def export_version_roster_matrix_pdf(
     story.append(table_component)
     document.build(story)
     return buffer.getvalue()
+
+
+_SUPPRESSED = "suppressed"
+
+
+def _works_council_table_data(rows: list) -> list[list[str]]:
+    header = [
+        "period",
+        "duty_type",
+        "status",
+        "coverage_ratio",
+        "utilization_percent",
+        "worked_minutes",
+        "duty_minutes",
+        "band",
+        "exceeds_on_call_threshold",
+    ]
+    data = [header]
+    for row in rows:
+        if row.suppressed:
+            data.append(
+                [
+                    row.period_label,
+                    row.category,
+                    _SUPPRESSED,
+                    _SUPPRESSED,
+                    _SUPPRESSED,
+                    _SUPPRESSED,
+                    _SUPPRESSED,
+                    _SUPPRESSED,
+                    _SUPPRESSED,
+                ]
+            )
+            continue
+        data.append(
+            [
+                row.period_label,
+                row.category,
+                "ok",
+                str(row.coverage_ratio) if row.coverage_ratio is not None else "",
+                str(row.utilization_percent) if row.utilization_percent is not None else "",
+                str(row.worked_minutes) if row.worked_minutes is not None else "",
+                str(row.duty_minutes) if row.duty_minutes is not None else "",
+                row.band or "",
+                "true" if row.exceeds_on_call_threshold else "false",
+            ]
+        )
+    return data
+
+
+def export_works_council_duty_utilization_xlsx(
+    db: Session, planning_period_id: int, *, organization_id: int
+) -> bytes:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError as exc:
+        raise RuntimeError("openpyxl is required for XLSX exports") from exc
+
+    from app.services.duty_activity_privacy import build_works_council_duty_rows
+
+    rows = build_works_council_duty_rows(
+        db, organization_id=organization_id, planning_period_id=planning_period_id
+    )
+    data = _works_council_table_data(rows)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Works council"
+    sheet["A1"] = "Shift Planner"
+    sheet["A1"].font = Font(bold=True, size=14)
+    sheet["A2"] = "Works-council duty utilization (no individual attribution)"
+    for row_idx, values in enumerate(data, start=4):
+        for col_idx, value in enumerate(values, start=1):
+            cell = sheet.cell(row=row_idx, column=col_idx, value=value)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if row_idx == 4:
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(fill_type="solid", fgColor="E2E8F0")
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def export_works_council_duty_utilization_pdf(
+    db: Session, planning_period_id: int, *, organization_id: int
+) -> bytes:
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:
+        raise RuntimeError("reportlab is required for PDF exports") from exc
+
+    from app.services.duty_activity_privacy import build_works_council_duty_rows
+
+    rows = build_works_council_duty_rows(
+        db, organization_id=organization_id, planning_period_id=planning_period_id
+    )
+    data = _works_council_table_data(rows)
+    buffer = BytesIO()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        title="Works-council duty utilization",
+        leftMargin=24,
+        rightMargin=24,
+        topMargin=28,
+        bottomMargin=24,
+    )
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("<b>Shift Planner</b> - Works-council duty utilization", styles["Title"]),
+        Spacer(1, 6),
+        Paragraph("Aggregate utilization per duty type. No individual attribution.", styles["Normal"]),
+        Spacer(1, 12),
+    ]
+    table_component = Table(data, repeatRows=1)
+    table_component.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#16202a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(table_component)
+    document.build(story)
+    return buffer.getvalue()

@@ -613,6 +613,8 @@ def test_member_manages_own_episodes_planners_read_aggregates_only(client):
         },
     )
     login_team_member(test_client)
+    ack = test_client.post("/api/v1/duty-activity/purpose/acknowledge")
+    assert ack.status_code == 200, ack.text
     created = test_client.post(
         "/api/v1/duty-activity",
         json={
@@ -643,3 +645,135 @@ def test_member_manages_own_episodes_planners_read_aggregates_only(client):
     flagged = next(row for row in body["slots"] if row["roster_slot_id"] == slot["id"])
     assert "exceeds_on_call_threshold" in flagged
     assert flagged["has_activity_record"] is True
+
+
+def _assigned_duty_slot(test_client: TestClient) -> tuple[int, dict]:
+    login_team_member(test_client)
+    own_id = test_client.get("/api/v1/auth/me").json()["team_member_id"]
+    login_admin(test_client)
+    set_shift_group_membership(test_client, team_member_id=own_id)
+    _create_category_template(test_client, code="BD", category="bereitschaftsdienst")
+    period_id = test_client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
+    roster = test_client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot = next(item for item in roster["slots"] if item["slot_date"] == "2026-03-02")
+    assigned = test_client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": own_id},
+    )
+    assert assigned.status_code == 200
+    test_client.post(
+        "/api/v1/work-time-rule-sets",
+        json={
+            "name": "bands",
+            "is_active": True,
+            "rules": [
+                {
+                    "type": "duty_utilization_bands",
+                    "severity": "info",
+                    "stufe_i_max_percent": "25",
+                    "on_call_max_percent": "49",
+                }
+            ],
+        },
+    )
+    login_team_member(test_client)
+    assert test_client.post("/api/v1/duty-activity/purpose/acknowledge").status_code == 200
+    return own_id, slot
+
+
+def test_live_start_and_stop_are_two_timestamp_only_requests(client):
+    test_client, _session = client
+    _own_id, slot = _assigned_duty_slot(test_client)
+    started = test_client.post(
+        "/api/v1/duty-activity",
+        json={
+            "roster_slot_id": slot["id"],
+            "kind": "in_duty_activity",
+            "started_at": "2026-03-02T09:00:00+00:00",
+        },
+    )
+    assert started.status_code == 200, started.text
+    assert started.json()["ended_at"] is None
+    assert started.json()["reason"] is None
+    retried = test_client.post(
+        "/api/v1/duty-activity",
+        json={
+            "roster_slot_id": slot["id"],
+            "kind": "in_duty_activity",
+            "started_at": "2026-03-02T09:05:00+00:00",
+        },
+    )
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["id"] == started.json()["id"]
+    stopped = test_client.patch(
+        f"/api/v1/duty-activity/{started.json()['id']}",
+        json={"ended_at": "2026-03-02T11:00:00+00:00"},
+    )
+    assert stopped.status_code == 200, stopped.text
+    assert stopped.json()["ended_at"] is not None
+    assert stopped.json()["duration_minutes"] == 120
+    again = test_client.patch(
+        f"/api/v1/duty-activity/{started.json()['id']}",
+        json={"ended_at": "2026-03-02T12:00:00+00:00"},
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["duration_minutes"] == 120
+
+
+def test_retrospective_entry_surfaces_span_and_overlap_errors(client):
+    test_client, _session = client
+    _own_id, slot = _assigned_duty_slot(test_client)
+    outside = test_client.post(
+        "/api/v1/duty-activity",
+        json={
+            "roster_slot_id": slot["id"],
+            "kind": "in_duty_activity",
+            "started_at": "2026-03-01T08:00:00+00:00",
+            "ended_at": "2026-03-01T10:00:00+00:00",
+        },
+    )
+    assert outside.status_code == 400
+    assert outside.json()["detail"] == "Episode must fall inside the slot span"
+    first = test_client.post(
+        "/api/v1/duty-activity",
+        json={
+            "roster_slot_id": slot["id"],
+            "kind": "in_duty_activity",
+            "started_at": "2026-03-02T08:00:00+00:00",
+            "ended_at": "2026-03-02T10:00:00+00:00",
+        },
+    )
+    assert first.status_code == 200, first.text
+    overlap = test_client.post(
+        "/api/v1/duty-activity",
+        json={
+            "roster_slot_id": slot["id"],
+            "kind": "in_duty_activity",
+            "started_at": "2026-03-02T09:00:00+00:00",
+            "ended_at": "2026-03-02T11:00:00+00:00",
+        },
+    )
+    assert overlap.status_code == 400
+    assert overlap.json()["detail"] == "Overlapping episodes on the same slot are not allowed"
+
+
+def test_member_slot_utilization_returns_api_band(client):
+    test_client, _session = client
+    _own_id, slot = _assigned_duty_slot(test_client)
+    created = test_client.post(
+        "/api/v1/duty-activity",
+        json={
+            "roster_slot_id": slot["id"],
+            "kind": "in_duty_activity",
+            "started_at": "2026-03-02T08:00:00+00:00",
+            "ended_at": "2026-03-02T12:00:00+00:00",
+        },
+    )
+    assert created.status_code == 200, created.text
+    summary = test_client.get(f"/api/v1/duty-activity/slots/{slot['id']}/utilization")
+    assert summary.status_code == 200, summary.text
+    body = summary.json()
+    assert body["worked_minutes"] == 240
+    assert body["band"] == "stufe_i"
+    assert "exceeds_on_call_threshold" in body
+    assert body["has_activity_record"] is True

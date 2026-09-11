@@ -13,7 +13,7 @@ from app.models import (
     TeamMember,
     TimeEntry,
 )
-from app.schemas import DutyActivityCreate, DutyActivityReason, TimeEntryRead
+from app.schemas import DutyActivityCreate, DutyActivityReason, DutyActivityUpdate, TimeEntryRead
 from app.services.audit import record_audit
 from app.services.contract_groups import list_contract_groups
 from app.services.holidays import classify_day
@@ -155,37 +155,54 @@ def list_duty_activity_for_slots(
     return grouped
 
 
-def _assert_episode_fits_slot(slot: RosterSlot, started_at: datetime, ended_at: datetime) -> None:
+def _assert_episode_fits_slot(
+    slot: RosterSlot, started_at: datetime, ended_at: datetime | None
+) -> None:
     start = _as_utc(started_at)
+    if start is None:
+        raise ValueError("started_at is required")
+    span_start, span_end = slot_span(slot)
+    if start < span_start or start > span_end:
+        raise ValueError("Episode must fall inside the slot span")
     end = _as_utc(ended_at)
-    if start is None or end is None:
-        raise ValueError("started_at and ended_at are required")
+    if end is None:
+        return
     if end <= start:
         raise ValueError("ended_at must be after started_at")
-    span_start, span_end = slot_span(slot)
-    if start < span_start or end > span_end:
+    if end > span_end:
         raise ValueError("Episode must fall inside the slot span")
+
+
+def _effective_end(slot: RosterSlot, started_at: datetime, ended_at: datetime | None) -> datetime:
+    end = _as_utc(ended_at)
+    if end is not None:
+        return end
+    _span_start, span_end = slot_span(slot)
+    start = _as_utc(started_at)
+    if start is None:
+        return span_end
+    return max(span_end, start)
 
 
 def _assert_no_overlap(
     db: Session,
     *,
     organization_id: int,
-    roster_slot_id: int,
+    slot: RosterSlot,
     started_at: datetime,
-    ended_at: datetime,
+    ended_at: datetime | None,
     exclude_id: int | None = None,
 ) -> None:
     start = _as_utc(started_at)
-    end = _as_utc(ended_at)
-    if start is None or end is None:
-        raise ValueError("started_at and ended_at are required")
+    if start is None:
+        raise ValueError("started_at is required")
+    end = _effective_end(slot, start, ended_at)
     rows = list(
         db.scalars(
             select(TimeEntry).where(
                 TimeEntry.organization_id == organization_id,
                 TimeEntry.kind.in_(DUTY_ACTIVITY_KINDS),
-                TimeEntry.roster_slot_id == roster_slot_id,
+                TimeEntry.roster_slot_id == slot.id,
             )
         )
     )
@@ -193,12 +210,32 @@ def _assert_no_overlap(
         if exclude_id is not None and row.id == exclude_id:
             continue
         other_start = _as_utc(row.started_at)
-        other_end = _as_utc(row.ended_at)
-        if other_start is None or other_end is None:
+        if other_start is None:
             continue
+        other_end = _effective_end(slot, other_start, _as_utc(row.ended_at))
         if _intervals_overlap(start, end, other_start, other_end):
             raise ValueError("Overlapping episodes on the same slot are not allowed")
 
+
+def find_open_duty_activity(
+    db: Session,
+    *,
+    organization_id: int,
+    team_member_id: int,
+    roster_slot_id: int,
+) -> TimeEntry | None:
+    return db.scalar(
+        select(TimeEntry)
+        .where(
+            TimeEntry.organization_id == organization_id,
+            TimeEntry.team_member_id == team_member_id,
+            TimeEntry.roster_slot_id == roster_slot_id,
+            TimeEntry.kind.in_(DUTY_ACTIVITY_KINDS),
+            TimeEntry.ended_at.is_(None),
+        )
+        .order_by(TimeEntry.id)
+        .limit(1)
+    )
 
 def _episode_minutes_values(
     *,
@@ -257,13 +294,22 @@ def record_duty_activity(
     _require_assignee(db, slot, team_member_id)
     started_at = _as_utc(payload.started_at)
     ended_at = _as_utc(payload.ended_at)
-    if started_at is None or ended_at is None:
-        raise ValueError("started_at and ended_at are required")
+    if started_at is None:
+        raise ValueError("started_at is required")
+    if ended_at is None:
+        existing = find_open_duty_activity(
+            db,
+            organization_id=organization_id,
+            team_member_id=team_member_id,
+            roster_slot_id=slot.id,
+        )
+        if existing is not None:
+            return existing
     _assert_episode_fits_slot(slot, started_at, ended_at)
     _assert_no_overlap(
         db,
         organization_id=organization_id,
-        roster_slot_id=slot.id,
+        slot=slot,
         started_at=started_at,
         ended_at=ended_at,
     )
@@ -305,6 +351,65 @@ def record_duty_activity(
     db.add(row)
     db.flush()
     record_audit(db, actor=actor, source=source, action="create", entity_type="time_entry", entity_id=row.id)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def update_duty_activity(
+    db: Session,
+    entry_id: int,
+    payload: DutyActivityUpdate,
+    *,
+    organization_id: int,
+    team_member_id: int,
+    actor: str,
+    source: str,
+) -> TimeEntry:
+    row = db.get(TimeEntry, entry_id)
+    if row is None or row.organization_id != organization_id:
+        raise LookupError("Duty activity episode not found")
+    if row.kind not in DUTY_ACTIVITY_KINDS or row.team_member_id != team_member_id:
+        raise PermissionError("Can only update your own duty activity episodes")
+    if row.roster_slot_id is None:
+        raise ValueError("Duty activity episode is missing a roster slot")
+    slot = _require_slot(db, row.roster_slot_id, organization_id=organization_id)
+    member = _require_member(db, team_member_id, organization_id=organization_id)
+    started_at = _as_utc(row.started_at)
+    if started_at is None:
+        raise ValueError("started_at is required")
+    ended_at = _as_utc(payload.ended_at) if payload.ended_at is not None else _as_utc(row.ended_at)
+    if payload.ended_at is not None and row.ended_at is not None:
+        ended_at = _as_utc(row.ended_at)
+    _assert_episode_fits_slot(slot, started_at, ended_at)
+    _assert_no_overlap(
+        db,
+        organization_id=organization_id,
+        slot=slot,
+        started_at=started_at,
+        ended_at=ended_at,
+        exclude_id=row.id,
+    )
+    duration = interval_minutes(started_at, ended_at)
+    groups = {group.id: group for group in list_contract_groups(db, organization_id=organization_id)}
+    group = _contract_group_on(member, slot.slot_date, groups)
+    statutory, credited, counts = _episode_minutes_values(
+        slot=slot,
+        group=group,
+        kind=row.kind,
+        started_at=started_at,
+        ended_at=ended_at if ended_at is not None else started_at,
+        duration=duration,
+    )
+    row.ended_at = ended_at
+    row.duration_minutes = duration
+    row.statutory_minutes = statutory
+    row.credited_minutes = credited
+    row.counts_toward_contract = counts
+    if payload.reason is not None:
+        row.reason = _reason_payload(payload.reason)
+        row.comment = payload.reason.note
+    record_audit(db, actor=actor, source=source, action="update", entity_type="time_entry", entity_id=row.id)
     db.commit()
     db.refresh(row)
     return row

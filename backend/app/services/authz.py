@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ShiftGroup, TeamMember, User, UserShiftGroup
+from app.models import Organization, ShiftGroup, TeamMember, User, UserShiftGroup
 
 ROLE_ADMIN = "admin"
 ROLE_PLANNER = "planner"
@@ -201,3 +201,21 @@ def writable_property_definition_ids_for_user(db: Session, user: User, team_memb
 
 def assert_team_member_property_values_write(db: Session, user: User, team_member_id: int) -> set[int] | None:
     return writable_property_definition_ids_for_user(db, user, team_member_id)
+
+
+def assert_duty_activity_individual_read(db: Session, user: User, team_member_id: int) -> None:
+    member = db.get(TeamMember, team_member_id)
+    if member is None or member.organization_id != user.organization_id:
+        raise PermissionError("Team member not found")
+    linked = get_linked_team_member(db, user)
+    if linked is not None and linked.id == team_member_id:
+        return
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise PermissionError("Duty activity episodes are not visible for this role")
+    from app.services.duty_activity_privacy import read_duty_activity_access_policy
+
+    policy = read_duty_activity_access_policy(org)
+    if user.role in policy.individual_read_roles:
+        return
+    raise PermissionError("Duty activity episodes are not visible for this role")

@@ -32,6 +32,15 @@ class Organization(Base):
     billing_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     subscription_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
     member_pattern_policy: Mapped[dict] = mapped_column(JSON, default=lambda: {"hard_types": []})
+    duty_activity_access_policy: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "individual_read_roles": [],
+            "retention_months": 24,
+            "purpose_statement": "",
+            "small_group_threshold": 5,
+        },
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
@@ -185,6 +194,9 @@ class TeamMember(Base):
     planning_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), unique=True, index=True)
+    duty_activity_purpose_acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     organization: Mapped["Organization"] = relationship(back_populates="team_members")

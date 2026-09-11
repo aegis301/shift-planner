@@ -9,6 +9,8 @@ from app.schemas import (
     ApproveJoinCreateTeamMemberInput,
     ApproveJoinLinkTeamMemberBody,
     DeleteOrganizationInput,
+    DutyActivityAccessPolicy,
+    DutyActivityAccessPolicyUpdate,
     JoinRequestRead,
     OrganizationInviteCreate,
     OrganizationMemberPatternPolicy,
@@ -20,6 +22,10 @@ from app.schemas import (
     OrganizationUpdateInput,
     OrganizationUserRead,
     OrganizationUserRolePatch,
+)
+from app.services.duty_activity_privacy import (
+    read_duty_activity_access_policy,
+    update_duty_activity_access_policy,
 )
 from app.services.join_requests import (
     approve_join_request_create_team_member,
@@ -166,6 +172,35 @@ def patch_member_pattern_policy(
         db,
         org,
         policy=OrganizationMemberPatternPolicy.model_validate(payload.model_dump()),
+        actor=user.email,
+        source="rest",
+    )
+
+
+@router.get("/duty-activity-access-policy", response_model=DutyActivityAccessPolicy)
+def get_duty_activity_access_policy(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> DutyActivityAccessPolicy:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return read_duty_activity_access_policy(org)
+
+
+@router.patch("/duty-activity-access-policy", response_model=DutyActivityAccessPolicy)
+def patch_duty_activity_access_policy(
+    payload: DutyActivityAccessPolicyUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> DutyActivityAccessPolicy:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return update_duty_activity_access_policy(
+        db,
+        org,
+        payload,
         actor=user.email,
         source="rest",
     )

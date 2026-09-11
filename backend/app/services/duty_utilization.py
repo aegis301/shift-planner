@@ -197,3 +197,34 @@ def period_utilization(
         templates=templates,
         slots=slot_rows,
     )
+
+
+def slot_utilization_for_assignee(
+    db: Session,
+    *,
+    organization_id: int,
+    roster_slot_id: int,
+    team_member_id: int,
+) -> DutyUtilizationSlotRead:
+    slot = db.scalar(
+        select(RosterSlot)
+        .options(joinedload(RosterSlot.shift_template), joinedload(RosterSlot.planning_period))
+        .where(RosterSlot.id == roster_slot_id)
+    )
+    if slot is None:
+        raise ValueError("Roster slot not found")
+    period = slot.planning_period or db.get(PlanningPeriod, slot.planning_period_id)
+    if period is None or period.organization_id != organization_id:
+        raise ValueError("Roster slot not found")
+    assignment = db.scalar(
+        select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot.id)
+    )
+    if assignment is None or assignment.team_member_id != team_member_id:
+        raise PermissionError("Team member is not assigned to this slot")
+    episodes = list_duty_activity_for_slots(
+        db,
+        organization_id=organization_id,
+        roster_slot_ids={slot.id},
+    )
+    bands = resolve_utilization_bands(db, organization_id=organization_id)
+    return slot_utilization(slot, episodes.get(slot.id, []), bands)

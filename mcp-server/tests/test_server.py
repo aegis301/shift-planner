@@ -28,6 +28,9 @@ from mcp_app.server import (
     record_work_time_consent_tool,
     revoke_work_time_consent_tool,
     record_duty_activity_tool,
+    update_duty_activity_tool,
+    update_duty_activity_access_policy_tool,
+    purge_duty_activity_episodes_tool,
 )
 
 
@@ -86,6 +89,18 @@ def test_record_duty_activity_requires_token():
             started_at=date(2026, 3, 1),
             ended_at=date(2026, 3, 1),
         )
+
+
+def test_duty_activity_privacy_writes_require_token():
+    with pytest.raises(PermissionError):
+        update_duty_activity_access_policy_tool(token="wrong-token", retention_months=12)
+    with pytest.raises(PermissionError):
+        purge_duty_activity_episodes_tool(token="wrong-token")
+
+
+def test_update_duty_activity_requires_token():
+    with pytest.raises(PermissionError):
+        update_duty_activity_tool(token="wrong-token", entry_id=1, team_member_id=1)
 
 
 def test_get_hours_ledger_tool_uses_service(monkeypatch):

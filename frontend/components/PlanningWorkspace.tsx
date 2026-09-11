@@ -36,6 +36,8 @@ import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
 import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashboard";
+import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
+import { DutyActivityShiftList } from "@/components/DutyActivityShiftList";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { monthDateBounds } from "@/lib/planningDates";
@@ -737,6 +739,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             <p className="text-sm text-slate-600">{t(locale, "dashboardPastShiftsHint")}</p>
             <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.past_slots} emptyLabelKey="dashboardPastShiftsEmpty" showIcsExport />
           </div>
+          <div className="grid gap-2">
+            <h3 className="text-base font-semibold text-ink">{t(locale, "dutyActivityRetrospectiveTitle")}</h3>
+            <p className="text-sm text-slate-600">{t(locale, "dutyActivityRetrospectiveHelp")}</p>
+            <DutyActivityShiftList slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
+          </div>
         </div>
       ) : (
         <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
@@ -957,6 +964,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           </details>
         </div>
       </Card>
+
+      {teamMemberPortalUi && memberShifts ? (
+        <DutyActivityLiveBanner slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
+      ) : null}
 
       {isCreateModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="create-period-title">

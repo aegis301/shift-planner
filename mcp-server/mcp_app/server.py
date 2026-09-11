@@ -15,7 +15,9 @@ from app.schemas import (
     ContractGroupUpdate,
     EmploymentPeriodWrite,
     TimeAccountOpeningUpsert,
+    DutyActivityAccessPolicyUpdate,
     DutyActivityCreate,
+    DutyActivityUpdate,
     TimeEntryCreate,
     TimeEntryDeriveRequest,
     TimeEntryUpdate,
@@ -63,7 +65,14 @@ from app.services.employment_periods import (
     upsert_time_account_opening,
 )
 from app.services.hours_ledger import get_hours_ledger
-from app.services.duty_activity import duty_activity_to_read, record_duty_activity
+from app.services.duty_activity import duty_activity_to_read, record_duty_activity, update_duty_activity
+from app.services.duty_activity_privacy import (
+    build_works_council_duty_rows,
+    purge_expired_duty_activity_episodes,
+    read_duty_activity_access_policy,
+    update_duty_activity_access_policy,
+    works_council_row_to_dict,
+)
 from app.services.duty_utilization import period_utilization
 from app.services.time_entries import (
     create_manual_entry,
@@ -1732,6 +1741,83 @@ def duty_utilization_resource(planning_period_id: int) -> dict[str, Any]:
         ).model_dump(mode="json")
 
 
+@mcp.resource("shift-planner://duty-activity-access-policy")
+def duty_activity_access_policy_resource() -> dict[str, Any]:
+    """Return the organization's duty-activity visibility, retention, and purpose policy."""
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return read_duty_activity_access_policy(org).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://duty-activity/works-council/{planning_period_id}")
+def works_council_duty_utilization_resource(planning_period_id: int) -> list[dict[str, Any]]:
+    """Return aggregate works-council duty utilization rows (no individual attribution)."""
+    with db_session() as db:
+        return [
+            works_council_row_to_dict(row)
+            for row in build_works_council_duty_rows(
+                db,
+                organization_id=mcp_organization_id(),
+                planning_period_id=planning_period_id,
+            )
+        ]
+
+
+@mcp.tool
+def update_duty_activity_access_policy_tool(
+    token: str,
+    individual_read_roles: list[str] | None = None,
+    retention_months: int | None = None,
+    purpose_statement: str | None = None,
+    small_group_threshold: int | None = None,
+) -> dict[str, Any]:
+    """Update duty-activity access policy. Requires MCP admin token."""
+    require_token(token)
+    payload = DutyActivityAccessPolicyUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "individual_read_roles": individual_read_roles,
+                "retention_months": retention_months,
+                "purpose_statement": purpose_statement,
+                "small_group_threshold": small_group_threshold,
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return update_duty_activity_access_policy(
+            db,
+            org,
+            payload,
+            actor="mcp",
+            source="mcp",
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def purge_duty_activity_episodes_tool(
+    token: str,
+    as_of: date | None = None,
+) -> dict[str, int]:
+    """Delete duty-activity episodes past the organization's retention. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = purge_expired_duty_activity_episodes(
+            db,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="mcp",
+            as_of=as_of,
+        )
+        return {"deleted": deleted}
+
+
 @mcp.tool
 def record_duty_activity_tool(
     token: str,
@@ -1739,11 +1825,11 @@ def record_duty_activity_tool(
     roster_slot_id: int,
     kind: str,
     started_at: datetime,
-    ended_at: datetime,
+    ended_at: datetime | None = None,
     reason_code: str | None = None,
     reason_note: str | None = None,
 ) -> dict[str, Any]:
-    """Record a call-out or in-duty activity episode. Requires MCP admin token."""
+    """Record a call-out or in-duty activity episode. Omit ended_at to start a running episode. Requires MCP admin token."""
     require_token(token)
     payload = DutyActivityCreate.model_validate(
         {
@@ -1760,6 +1846,42 @@ def record_duty_activity_tool(
     with db_session() as db:
         row = record_duty_activity(
             db,
+            payload,
+            organization_id=mcp_organization_id(),
+            team_member_id=team_member_id,
+            actor="mcp",
+            source="mcp",
+        )
+        return duty_activity_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_duty_activity_tool(
+    token: str,
+    entry_id: int,
+    team_member_id: int,
+    ended_at: datetime | None = None,
+    reason_code: str | None = None,
+    reason_note: str | None = None,
+) -> dict[str, Any]:
+    """Stop or annotate a duty-activity episode. Requires MCP admin token."""
+    require_token(token)
+    payload = DutyActivityUpdate.model_validate(
+        {
+            key: value
+            for key, value in {
+                "ended_at": ended_at,
+                "reason": None
+                if reason_code is None and reason_note is None
+                else {"code": reason_code, "note": reason_note},
+            }.items()
+            if value is not None
+        }
+    )
+    with db_session() as db:
+        row = update_duty_activity(
+            db,
+            entry_id,
             payload,
             organization_id=mcp_organization_id(),
             team_member_id=team_member_id,

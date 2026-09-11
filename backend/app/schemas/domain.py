@@ -706,19 +706,60 @@ class DutyActivityReason(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+DutyActivityViewerRole = Literal["admin", "planner"]
+
+
+class DutyActivityAccessPolicy(BaseModel):
+    individual_read_roles: list[DutyActivityViewerRole] = Field(default_factory=list)
+    retention_months: int = Field(default=24, ge=1, le=120)
+    purpose_statement: str = ""
+    small_group_threshold: int = Field(default=5, ge=2, le=100)
+
+    @field_validator("individual_read_roles", mode="before")
+    @classmethod
+    def _unique_roles(cls, value: object) -> object:
+        if not value:
+            return []
+        if isinstance(value, list):
+            seen: list[str] = []
+            for item in value:
+                if item in {"admin", "planner"} and item not in seen:
+                    seen.append(item)
+            return seen
+        return value
+
+
+class DutyActivityAccessPolicyUpdate(BaseModel):
+    individual_read_roles: list[DutyActivityViewerRole] | None = None
+    retention_months: int | None = Field(default=None, ge=1, le=120)
+    purpose_statement: str | None = None
+    small_group_threshold: int | None = Field(default=None, ge=2, le=100)
+
+
+class DutyActivityPurposeRead(BaseModel):
+    purpose_statement: str
+    acknowledged: bool
+    acknowledged_at: datetime | None = None
+
+
 class DutyActivityCreate(BaseModel):
     roster_slot_id: int = Field(ge=1)
     kind: DutyActivityKind
     started_at: datetime
-    ended_at: datetime
+    ended_at: datetime | None = None
     reason: DutyActivityReason | None = None
     team_member_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_interval(self) -> Self:
-        if self.ended_at <= self.started_at:
+        if self.ended_at is not None and self.ended_at <= self.started_at:
             raise ValueError("ended_at must be after started_at")
         return self
+
+
+class DutyActivityUpdate(BaseModel):
+    ended_at: datetime | None = None
+    reason: DutyActivityReason | None = None
 
 
 class DutyUtilizationCoverage(BaseModel):
