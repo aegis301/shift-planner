@@ -39,6 +39,8 @@ import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashbo
 import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
 import { DutyActivityShiftList } from "@/components/DutyActivityShiftList";
 import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
+import { FairnessAccountsPanel } from "@/components/FairnessAccountsPanel";
+import { type FairnessAccountsRead } from "@/lib/fairness";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { monthDateBounds } from "@/lib/planningDates";
@@ -137,6 +139,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [newYear, setNewYear] = useState(String(currentDate.getFullYear()));
   const [newMonth, setNewMonth] = useState(String(currentDate.getMonth() + 1));
   const [rosterMatrix, setRosterMatrix] = useState<RosterMatrix | null>(null);
+  const [fairnessAccounts, setFairnessAccounts] = useState<FairnessAccountsRead | null>(null);
+  const [fairnessError, setFairnessError] = useState("");
   const [warnings, setWarnings] = useState<ValidationWarning[]>([]);
   const [message, setMessage] = useState("");
   const [rosterReloadToken, setRosterReloadToken] = useState(0);
@@ -390,6 +394,29 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     [teamMemberPortalUi, locale, shiftGroupQuery]
   );
 
+  const loadFairnessAccounts = useCallback(
+    async (nextPeriodId: string) => {
+      if (!nextPeriodId || teamMemberPortalUi || (plannerNeedsShiftGroup && !shiftGroupId)) {
+        setFairnessAccounts(null);
+        setFairnessError("");
+        return;
+      }
+      try {
+        const next = await apiFetch<FairnessAccountsRead>(`/api/v1/fairness/${nextPeriodId}${shiftGroupQuery}`);
+        setFairnessAccounts(next);
+        setFairnessError("");
+      } catch (error) {
+        setFairnessAccounts(null);
+        if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
+          setFairnessError("");
+          return;
+        }
+        setFairnessError(t(locale, "fairnessLoadError"));
+      }
+    },
+    [locale, plannerNeedsShiftGroup, shiftGroupId, shiftGroupQuery, teamMemberPortalUi]
+  );
+
   useEffect(() => {
     void loadGroupPlanningStatus(periodId);
   }, [periodId, shiftGroupId, loadGroupPlanningStatus]);
@@ -466,12 +493,16 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       (teamMemberPortalUi && !shiftGroupId) ||
       (plannerNeedsShiftGroup && !shiftGroupId)
     ) {
+      setFairnessAccounts(null);
+      setFairnessError("");
       return;
     }
     void loadWarnings(periodId);
     void loadRosterMatrix(periodId);
+    void loadFairnessAccounts(periodId);
   }, [
     teamMemberPortalUi,
+    loadFairnessAccounts,
     loadRosterMatrix,
     loadWarnings,
     periodId,
@@ -699,6 +730,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           versionId={viewingVersionId ?? undefined}
           duplicateMemberDayKeys={duplicateMemberDayKeys}
           validationWarnings={warnings}
+          fairnessAccounts={teamMemberPortalUi ? null : fairnessAccounts}
           onMatrixChange={handleRosterChange}
           highlightTeamMemberId={
             teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined
@@ -714,7 +746,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <h2 className="text-xl font-semibold text-ink">{t(locale, "analysisSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
-      <WorkloadStats rows={stats.rows} unassigned={stats.unassigned} />
+      {periodId ? <FairnessAccountsPanel accounts={fairnessAccounts} loadError={fairnessError} /> : null}
+      <WorkloadStats
+        rows={stats.rows}
+        unassigned={stats.unassigned}
+        periodLabel={rosterMatrix ? formatWorkloadPeriodLabel(rosterMatrix.planning_period) : ""}
+      />
       {periodId ? <ComplianceReportPanel periodId={periodId} shiftGroupId={shiftGroupId} /> : null}
     </section>
   ) : null;
@@ -1791,7 +1828,15 @@ function SortableWorkloadTh({
   );
 }
 
-function WorkloadStats({ rows, unassigned }: { rows: TeamMemberWorkloadRow[]; unassigned: number }) {
+function WorkloadStats({
+  rows,
+  unassigned,
+  periodLabel
+}: {
+  rows: TeamMemberWorkloadRow[];
+  unassigned: number;
+  periodLabel: string;
+}) {
   const { locale } = useLocale();
   const [sort, setSort] = useState<{ col: WorkloadSortColumn; dir: "asc" | "desc" }>({ col: "name", dir: "asc" });
 
@@ -1812,8 +1857,12 @@ function WorkloadStats({ rows, unassigned }: { rows: TeamMemberWorkloadRow[]; un
       <div className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-ink">{t(locale, "workloadStats")}</h2>
+            <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{t(locale, "fairnessModalMonthTitle")}</p>
+            <h2 className="text-lg font-semibold text-ink">{t(locale, "workloadMonthTitle")}</h2>
             <p className="mt-1 text-sm text-slate-600">{t(locale, "unassignedSlots")}: {unassigned}</p>
+            {periodLabel ? (
+              <p className="mt-1 text-sm text-slate-500">{t(locale, "workloadMonthHelp", { period: periodLabel })}</p>
+            ) : null}
           </div>
         </div>
         {rows.length ? (
