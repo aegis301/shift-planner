@@ -526,6 +526,8 @@ def test_no_existing_module_imports_rules_package():
             continue
         if posix.endswith("/services/fairness.py") or posix.endswith("/tests/test_fairness.py"):
             continue
+        if posix.endswith("/tests/test_solver_fixture.py"):
+            continue
         if forbidden in path.read_text():
             offenders.append(str(path.relative_to(app_root)))
     assert offenders == []

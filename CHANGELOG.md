@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-12
+- **Solver fixture seed:** `python -m app.scripts.seed_solver_fixture --profile comfortable|tight|infeasible` builds a deterministic org (TdL rule set, 42h contract group, mixed employment, shift groups, wishes/no-gos, published history months, unassigned target month) through existing services. `--rng-seed` makes two runs identical; `--force` is required to write into `DEFAULT_ORGANIZATION_ID` or an org that already has plan versions.
+
 ## 2026-09-11
 - **Fairness in the planning UI:** Analysis tab shows rolling actual / expected / deviation per dimension with the window labeled; month shift counts stay a separate table. The roster picker shows the slot-relevant rolling deviation (teal vs amber) from one period fetch, not per candidate. The member workload modal shows the rolling account above the month stats.
 - **Rolling fairness accounts:** Per-member actual / expected / deviation over a configurable window (default 12 months) for duties, weekend/holiday, night, and statutory hours. Expectation is the sum of per-month shares from `EmploymentPeriod`, contract-group weekly hours, and period roster size. History duty counts are aggregated from roster `TimeEntry` rows in the PlanState builder (not a year of `RosterSlot` rows). Org `fairness_policy` JSON and `TimeAccountOpening.fairness_balances`. REST `/api/v1/fairness/{planning_period_id}` and `/api/v1/organization/fairness-policy`; MCP resource and token-gated policy update. Alembic `202609110004`.

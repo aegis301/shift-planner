@@ -8,9 +8,15 @@ Usage:
 Requires an authenticated `gh` CLI with write access to the repository.
 
 Issue bodies reference each other by file number (`#04`). Those are placeholders: the
-script creates every issue first, then rewrites the references to the real issue numbers
-in a second pass. Nothing is created twice — re-running after a partial failure will
-create duplicates, so check `gh issue list` first if a run aborts halfway.
+script creates the issues first, then rewrites the references to the real issue numbers
+in a second pass.
+
+Already-created issues are tracked in `created-issues.json` and are skipped, so the script
+is safe to re-run after adding new issue files. Use `--only 24,25` to restrict it to
+specific file prefixes. To deliberately recreate one, delete its entry from that file.
+
+If a run aborts between creation and the rewrite pass, the map is not written — check
+`gh issue list` before re-running so you do not create duplicates.
 """
 
 from __future__ import annotations
@@ -40,6 +46,8 @@ LABEL_COLORS = {
     "ux": ("f9d0c4", "User-facing interaction design"),
     "chore": ("ededed", "Maintenance"),
     "blocker": ("e11d21", "Blocks other work"),
+    "testing": ("0e8a16", "Test fixtures and coverage"),
+    "spike": ("fef2c0", "Timeboxed investigation, not shipped"),
 }
 
 FRONT_MATTER = re.compile(r"^---\s*\ntitle:\s*\"(?P<title>.+?)\"\s*\nlabels:\s*(?P<labels>.*?)\s*\n---\s*\n", re.S)
@@ -71,9 +79,23 @@ def ensure_labels(labels: set[str], dry_run: bool) -> None:
         run(cmd)
 
 
+MAP_PATH = ISSUE_DIR.parent / "created-issues.json"
+
+
+def load_map() -> dict[str, int]:
+    if MAP_PATH.exists():
+        return {str(k): int(v) for k, v in json.loads(MAP_PATH.read_text()).items()}
+    return {}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--only",
+        help="Comma-separated file prefixes to create, e.g. --only 24,25. "
+        "Without it, every file not already in created-issues.json is created.",
+    )
     args = ap.parse_args()
 
     files = sorted(ISSUE_DIR.glob("*.md"))
@@ -81,16 +103,32 @@ def main() -> None:
         sys.exit(f"no issue files found in {ISSUE_DIR}")
 
     parsed = [(p, *parse(p)) for p in files]
-    all_labels = {lbl for _, _, labels, _ in parsed for lbl in labels}
+    numbers = load_map()
+    if numbers:
+        print(f"Known issues from {MAP_PATH.name}: {len(numbers)}")
 
-    print(f"{len(parsed)} issues, {len(all_labels)} labels")
+    wanted = {k.strip() for k in args.only.split(",")} if args.only else None
+    todo = []
+    for path, title, labels, body in parsed:
+        key = path.name[:2]
+        if wanted is not None and key not in wanted:
+            continue
+        if key in numbers:
+            print(f"  [{key}] already #{numbers[key]}, skipping")
+            continue
+        todo.append((key, path, title, labels, body))
+
+    if not todo:
+        sys.exit("\nNothing to create. Delete an entry from created-issues.json to recreate one.")
+
+    all_labels = {lbl for _, _, _, labels, _ in todo for lbl in labels}
+    print(f"\n{len(todo)} issues to create, {len(all_labels)} labels")
     print("\nEnsuring labels exist...")
     ensure_labels(all_labels, args.dry_run)
 
     print("\nCreating issues...")
-    numbers: dict[str, int] = {}
-    for path, title, labels, body in parsed:
-        key = path.name[:2]
+    created: list[tuple[str, str]] = []
+    for key, _path, title, labels, body in todo:
         # neutralise cross-references until real numbers are known
         staged = REF.sub(r"ISSUE-\1", body)
         cmd = ["gh", "issue", "create", "--title", title, "--body", staged]
@@ -99,15 +137,16 @@ def main() -> None:
         if args.dry_run:
             print(f"  [{key}] would create: {title}  labels={labels}")
             numbers[key] = 1000 + int(key)
+            created.append((key, body))
             continue
         out = run(cmd).stdout.strip()
         num = int(out.rstrip("/").split("/")[-1])
         numbers[key] = num
+        created.append((key, body))
         print(f"  [{key}] #{num}  {title}")
 
-    print("\nRewriting cross-references...")
-    for path, _title, _labels, body in parsed:
-        key = path.name[:2]
+    print("\nRewriting cross-references in the new issues...")
+    for key, body in created:
         if not REF.search(body):
             continue
 
@@ -124,8 +163,8 @@ def main() -> None:
         print(f"  [{key}] #{numbers[key]} references updated")
 
     if not args.dry_run:
-        (ISSUE_DIR.parent / "created-issues.json").write_text(json.dumps(numbers, indent=2) + "\n")
-        print("\nWrote docs/rollout/created-issues.json")
+        MAP_PATH.write_text(json.dumps(dict(sorted(numbers.items())), indent=2) + "\n")
+        print(f"\nUpdated {MAP_PATH.name}")
 
     print("\nDone.")
 

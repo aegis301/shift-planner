@@ -54,6 +54,9 @@ python -m app.scripts.seed_admin
 python -m app.scripts.seed_team_member_users
 python -m app.scripts.seed_work_time_presets
 python -m app.scripts.seed_planner_user
+python -m app.scripts.seed_solver_fixture --profile comfortable
+python -m app.scripts.seed_solver_fixture --profile tight
+python -m app.scripts.seed_solver_fixture --profile infeasible
 uvicorn app.main:app --reload --port 18180
 ruff check app
 pytest
@@ -208,6 +211,7 @@ Migration `202606080002` adds JSON `constraints` columns on `shift_templates` an
 - Seed team-member logins: set `TEAM_MEMBER_SEED_PASSWORD` in `.env`, then run `python -m app.scripts.seed_team_member_users` (Docker Compose runs it after migrations). It creates a `team_member`-role user per active unlinked `TeamMember` email with the same `organization_id` as that row (or `DEFAULT_ORGANIZATION_ID` if missing) and links `TeamMember.user_id`. Skip when the email is already a user.
 - Work-time presets: `python -m app.scripts.seed_work_time_presets` (Docker Compose runs it after migrations). Idempotent; adopt copies from **Team** → **Arbeitszeitregeln**.
 - Optional planner demo: set `PLANNER_SEED_EMAIL` and `PLANNER_SEED_PASSWORD` in `.env`. Docker Compose passes these into the **backend** container so `seed_planner_user` hashes the same password you use in the browser. Run `docker compose exec backend python -m app.scripts.seed_planner_user` (or add it to the backend command); re-running updates an existing planner’s password and shift-group links. Default email is `planner@example.com` when `PLANNER_SEED_EMAIL` is unset or empty.
+- Solver fixture (R3): `python -m app.scripts.seed_solver_fixture --profile comfortable|tight|infeasible` creates a fresh org (`solver-fixture-<profile>-<rng-seed>`) with TdL rules, dated employment, 6 published history months, and an unassigned target month. `--rng-seed` (default `1`) makes runs reproducible. Refuses `DEFAULT_ORGANIZATION_ID` and orgs that already have plan versions unless `--force` is passed. Not run by Docker Compose.
 
 ## Documentation Rule
 
