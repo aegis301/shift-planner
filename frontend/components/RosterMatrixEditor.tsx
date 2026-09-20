@@ -23,6 +23,17 @@ import {
 } from "@/lib/planningDayStatus";
 import { overlapCalendarDaysForSlot } from "@/lib/shiftOverlap";
 import { Card, Field, inputClass } from "@/components/Card";
+import { FairnessMemberRollingSummary } from "@/components/FairnessAccountsPanel";
+import {
+  fairnessDeviationChipClass,
+  fairnessDimensionLabel,
+  fairnessValueForMember,
+  formatFairnessDeviation,
+  formatFairnessWindowRange,
+  indexFairnessMembers,
+  relevantFairnessDimension,
+  type FairnessAccountsRead
+} from "@/lib/fairness";
 import { useLocale } from "@/components/LocaleProvider";
 
 type ShiftIntentKind = "wish" | "no_go";
@@ -312,6 +323,7 @@ export function RosterMatrixEditor({
   readOnly = false,
   duplicateMemberDayKeys,
   validationWarnings = [],
+  fairnessAccounts = null,
   onMatrixChange,
   highlightTeamMemberId,
 }: {
@@ -323,6 +335,7 @@ export function RosterMatrixEditor({
   readOnly?: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   validationWarnings?: RosterWorkloadWarning[];
+  fairnessAccounts?: FairnessAccountsRead | null;
   onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
   highlightTeamMemberId?: number;
 } = {}) {
@@ -377,6 +390,8 @@ export function RosterMatrixEditor({
     });
     return map;
   }, [matrix]);
+
+  const fairnessByMember = useMemo(() => indexFairnessMembers(fairnessAccounts), [fairnessAccounts]);
 
   const templateColumns = useMemo(() => (matrix ? buildTemplateColumns(matrix, locale) : []), [matrix, locale]);
 
@@ -564,6 +579,8 @@ export function RosterMatrixEditor({
               matrix={matrix}
               workloadMatrix={matrix}
               workloadWarnings={validationWarnings}
+              fairnessAccounts={fairnessAccounts}
+              fairnessByMember={fairnessByMember}
               planningPeriodLabel={formatWorkloadPeriodLabel(matrix.planning_period)}
               slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
@@ -581,6 +598,8 @@ export function RosterMatrixEditor({
               matrix={matrix}
               workloadMatrix={matrix}
               workloadWarnings={validationWarnings}
+              fairnessAccounts={fairnessAccounts}
+              fairnessByMember={fairnessByMember}
               planningPeriodLabel={formatWorkloadPeriodLabel(matrix.planning_period)}
               slotsByDay={slotsByDay}
               assignmentMap={assignmentMap}
@@ -613,6 +632,8 @@ function DesktopRosterMatrix({
   matrix,
   workloadMatrix,
   workloadWarnings,
+  fairnessAccounts,
+  fairnessByMember,
   planningPeriodLabel,
   slotsByDay,
   assignmentMap,
@@ -629,6 +650,8 @@ function DesktopRosterMatrix({
   matrix: RosterMatrix;
   workloadMatrix: RosterWorkloadMatrixSlice;
   workloadWarnings: RosterWorkloadWarning[];
+  fairnessAccounts: FairnessAccountsRead | null;
+  fairnessByMember: ReturnType<typeof indexFairnessMembers>;
   planningPeriodLabel: string;
   slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
@@ -701,6 +724,8 @@ function DesktopRosterMatrix({
                                   duplicateMemberDayKeys={duplicateMemberDayKeys}
                                   workloadMatrix={workloadMatrix}
                                   workloadWarnings={workloadWarnings}
+                                  fairnessAccounts={fairnessAccounts}
+                                  fairnessByMember={fairnessByMember}
                                   planningPeriodLabel={planningPeriodLabel}
                                   dayStatusDefinitions={matrix.day_status_definitions ?? []}
                                   highlightTeamMemberId={highlightTeamMemberId}
@@ -760,6 +785,8 @@ function DesktopRosterMatrix({
                         duplicateMemberDayKeys={duplicateMemberDayKeys}
                         workloadMatrix={workloadMatrix}
                         workloadWarnings={workloadWarnings}
+                        fairnessAccounts={fairnessAccounts}
+                        fairnessByMember={fairnessByMember}
                         planningPeriodLabel={planningPeriodLabel}
                         dayStatusDefinitions={matrix.day_status_definitions ?? []}
                         highlightTeamMemberId={highlightTeamMemberId}
@@ -780,6 +807,8 @@ function MobileRosterMatrix({
   matrix,
   workloadMatrix,
   workloadWarnings,
+  fairnessAccounts,
+  fairnessByMember,
   planningPeriodLabel,
   slotsByDay,
   assignmentMap,
@@ -796,6 +825,8 @@ function MobileRosterMatrix({
   matrix: RosterMatrix;
   workloadMatrix: RosterWorkloadMatrixSlice;
   workloadWarnings: RosterWorkloadWarning[];
+  fairnessAccounts: FairnessAccountsRead | null;
+  fairnessByMember: ReturnType<typeof indexFairnessMembers>;
   planningPeriodLabel: string;
   slotsByDay: Map<string, RosterSlot[]>;
   assignmentMap: Map<number, RosterSlotAssignment>;
@@ -865,6 +896,8 @@ function MobileRosterMatrix({
                                       duplicateMemberDayKeys={duplicateMemberDayKeys}
                                       workloadMatrix={workloadMatrix}
                                       workloadWarnings={workloadWarnings}
+                                      fairnessAccounts={fairnessAccounts}
+                                      fairnessByMember={fairnessByMember}
                                       planningPeriodLabel={planningPeriodLabel}
                                       dayStatusDefinitions={matrix.day_status_definitions ?? []}
                                       highlightTeamMemberId={highlightTeamMemberId}
@@ -911,6 +944,8 @@ function MobileRosterMatrix({
                       duplicateMemberDayKeys={duplicateMemberDayKeys}
                       workloadMatrix={workloadMatrix}
                       workloadWarnings={workloadWarnings}
+                      fairnessAccounts={fairnessAccounts}
+                      fairnessByMember={fairnessByMember}
                       planningPeriodLabel={planningPeriodLabel}
                       dayStatusDefinitions={matrix.day_status_definitions ?? []}
                       highlightTeamMemberId={highlightTeamMemberId}
@@ -951,6 +986,8 @@ function RosterCell({
   duplicateMemberDayKeys,
   workloadMatrix,
   workloadWarnings,
+  fairnessAccounts,
+  fairnessByMember,
   planningPeriodLabel,
   dayStatusDefinitions,
   highlightTeamMemberId,
@@ -966,6 +1003,8 @@ function RosterCell({
   duplicateMemberDayKeys?: ReadonlySet<string>;
   workloadMatrix: RosterWorkloadMatrixSlice;
   workloadWarnings: RosterWorkloadWarning[];
+  fairnessAccounts: FairnessAccountsRead | null;
+  fairnessByMember: ReturnType<typeof indexFairnessMembers>;
   planningPeriodLabel: string;
   dayStatusDefinitions: PlanningDayStatusDefinition[];
   highlightTeamMemberId?: number;
@@ -987,10 +1026,28 @@ function RosterCell({
       ? workloadRowForMember(workloadMatrix, workloadWarnings, workloadModalMemberId)
       : null;
 
-  const filteredMembers = useMemo(
-    () => members.filter((m) => teamMemberMatchesQuery(m, pickerFilter)),
-    [members, pickerFilter]
+  const relevantDimension = useMemo(
+    () => (fairnessAccounts ? relevantFairnessDimension(slot, fairnessAccounts.dimensions) : undefined),
+    [fairnessAccounts, slot]
   );
+
+  const fairnessWindowLabel = fairnessAccounts ? formatFairnessWindowRange(fairnessAccounts.window) : "";
+
+  const filteredMembers = useMemo(() => {
+    const matched = members.filter((m) => teamMemberMatchesQuery(m, pickerFilter));
+    if (!relevantDimension) {
+      return matched;
+    }
+    const dimensionId = relevantDimension.id;
+    return [...matched].sort((a, b) => {
+      const av = fairnessValueForMember(fairnessByMember, a.id, dimensionId)?.deviation_absolute ?? 0;
+      const bv = fairnessValueForMember(fairnessByMember, b.id, dimensionId)?.deviation_absolute ?? 0;
+      if (av !== bv) {
+        return av - bv;
+      }
+      return teamMemberLabel(a).localeCompare(teamMemberLabel(b), undefined, { sensitivity: "base" });
+    });
+  }, [members, pickerFilter, relevantDimension, fairnessByMember]);
 
   const templateAssignmentCountByMemberId = useMemo(() => {
     const slotsById = new Map(workloadMatrix.slots.map((s) => [s.id, s]));
@@ -1203,6 +1260,14 @@ function RosterCell({
                 const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
                 const memberBlocked = memberHasBlockingOverlap(member);
                 const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
+                const fairnessValue =
+                  relevantDimension != null
+                    ? fairnessValueForMember(fairnessByMember, member.id, relevantDimension.id)
+                    : undefined;
+                const fairnessDeviationLabel =
+                  fairnessValue && relevantDimension
+                    ? formatFairnessDeviation(fairnessValue.deviation_absolute, relevantDimension.metric, locale)
+                    : null;
                 return (
                   <li key={member.id} className="flex items-stretch" role="none">
                     <button
@@ -1224,6 +1289,18 @@ function RosterCell({
                     >
                       <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
                       <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{teamMemberLabel(member)}</span>
+                      {fairnessValue && relevantDimension && fairnessDeviationLabel ? (
+                        <span
+                          className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums ring-1 ${fairnessDeviationChipClass(fairnessValue.deviation_absolute)}`}
+                          title={t(locale, "fairnessPickerDeviationTitle", {
+                            dimension: fairnessDimensionLabel(locale, relevantDimension),
+                            window: fairnessWindowLabel,
+                            value: fairnessDeviationLabel
+                          })}
+                        >
+                                {`Δ ${fairnessDeviationLabel}`}
+                        </span>
+                      ) : null}
                       <span
                         className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums text-slate-700 ring-1 ring-slate-200/80"
                         title={t(locale, "rosterPickerMonthAssignmentsTitle", { count: String(assignedThisTemplate) })}
@@ -1304,7 +1381,7 @@ function RosterCell({
                     {t(locale, "rosterMemberWorkloadModalTitle", { name: workloadModalRow.name })}
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-600">
-                    {t(locale, "rosterMemberWorkloadModalSubtitle", { period: planningPeriodLabel })}
+                    {t(locale, "fairnessModalMonthTitle")} · {t(locale, "rosterMemberWorkloadModalSubtitle", { period: planningPeriodLabel })}
                   </p>
                 </div>
                 <button
@@ -1315,7 +1392,11 @@ function RosterCell({
                   {t(locale, "close")}
                 </button>
               </div>
+              <FairnessMemberRollingSummary accounts={fairnessAccounts} teamMemberId={workloadModalRow.memberId} />
               <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
+                <dt className="col-span-2 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">
+                  {t(locale, "fairnessModalMonthTitle")}
+                </dt>
                 <dt className="text-slate-600">{t(locale, "employment")}</dt>
                 <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.employmentPercentage}%</dd>
                 <dt className="text-slate-600">{t(locale, "totalShifts")}</dt>

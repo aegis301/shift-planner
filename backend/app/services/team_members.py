@@ -14,6 +14,11 @@ from app.models import (
 from app.schemas import TeamMemberCreate, TeamMemberRead, TeamMemberSelfUpdate, TeamMemberUpdate
 from app.services.audit import record_audit
 from app.services.authz import roles_allowed_for_team_member_user_link
+from app.services.employment_periods import (
+    apply_current_employment_percentage,
+    create_initial_employment_period,
+    employment_percentage_on,
+)
 from app.services.org_limits import assert_org_allows_team_member_user_link
 from app.services.shift_groups import (
     _membership_read,
@@ -37,7 +42,7 @@ def team_member_planning_display_name(member: TeamMember) -> str:
 def list_team_members(db: Session, *, organization_id: int, active_only: bool = False) -> list[TeamMember]:
     stmt = (
         select(TeamMember)
-        .options(joinedload(TeamMember.shift_group_links))
+        .options(joinedload(TeamMember.shift_group_links), joinedload(TeamMember.employment_periods))
         .where(TeamMember.organization_id == organization_id)
         .order_by(TeamMember.last_name, TeamMember.first_name)
     )
@@ -56,7 +61,7 @@ def list_team_members_for_planner(db: Session, user: User, *, active_only: bool 
         return []
     stmt = (
         select(TeamMember)
-        .options(joinedload(TeamMember.shift_group_links))
+        .options(joinedload(TeamMember.shift_group_links), joinedload(TeamMember.employment_periods))
         .where(TeamMember.organization_id == user.organization_id)
         .join(TeamMemberShiftGroup)
         .where(
@@ -83,7 +88,7 @@ def team_member_to_read(member: TeamMember) -> TeamMemberRead:
         last_name=member.last_name,
         nickname=member.nickname,
         email=member.email,
-        employment_percentage=member.employment_percentage,
+        employment_percentage=employment_percentage_on(member, today),
         notes=member.notes,
         planning_preferences=member.planning_preferences,
         shift_group_ids=link_ids,
@@ -126,10 +131,11 @@ def create_team_member(
     source: str,
     transactional: bool = True,
 ) -> TeamMember:
-    data = payload.model_dump(exclude={"shift_group_ids", "user_id"})
+    data = payload.model_dump(exclude={"shift_group_ids", "user_id", "employment_percentage"})
     member = TeamMember(**data, organization_id=organization_id)
     db.add(member)
     db.flush()
+    create_initial_employment_period(db, member, employment_percentage=payload.employment_percentage)
     try:
         if payload.user_id is not None:
             _apply_team_member_user_id(db, member, payload.user_id)
@@ -146,7 +152,7 @@ def create_team_member(
         replace_team_member_shift_groups(
             db, member.id, payload.shift_group_ids, actor=actor, source=source, transactional=transactional
         )
-    db.refresh(member, attribute_names=["shift_group_links"])
+    db.refresh(member, attribute_names=["shift_group_links", "employment_periods"])
     return member
 
 
@@ -159,8 +165,11 @@ def update_team_member(
     raw = payload.model_dump(exclude_unset=True)
     group_ids = raw.pop("shift_group_ids", None)
     user_id_raw = raw.pop("user_id", _MISSING)
+    employment_percentage = raw.pop("employment_percentage", _MISSING)
     for key, value in raw.items():
         setattr(member, key, value)
+    if employment_percentage is not _MISSING and employment_percentage is not None:
+        apply_current_employment_percentage(db, member, employment_percentage)
     if user_id_raw is not _MISSING:
         try:
             _apply_team_member_user_id(db, member, user_id_raw)

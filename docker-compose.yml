@@ -38,7 +38,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: sh -c "alembic upgrade head && python -m app.scripts.seed_admin && python -m app.scripts.seed_team_member_users && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && python -m app.scripts.seed_admin && python -m app.scripts.seed_team_member_users && python -m app.scripts.seed_work_time_presets && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   mcp:
     build:

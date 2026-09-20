@@ -50,7 +50,6 @@ def test_list_organization_staff_directory_link_statuses():
             first_name="A",
             last_name="Linked",
             email="same@example.com",
-            employment_percentage=100,
             user_id=u_same.id,
         )
         d_only = TeamMember(
@@ -58,7 +57,6 @@ def test_list_organization_staff_directory_link_statuses():
             first_name="B",
             last_name="Only",
             email="only@example.com",
-            employment_percentage=100,
             user_id=None,
         )
         d_unlinked = TeamMember(
@@ -66,7 +64,6 @@ def test_list_organization_staff_directory_link_statuses():
             first_name="C",
             last_name="Unlinked",
             email="unlinked@example.com",
-            employment_percentage=100,
             user_id=None,
         )
         _mk_user(db, "unlinked@example.com")
@@ -75,7 +72,6 @@ def test_list_organization_staff_directory_link_statuses():
             first_name="D",
             last_name="Wrong",
             email="wronglink@example.com",
-            employment_percentage=100,
             user_id=u_other.id,
         )
         d_foreign = TeamMember(
@@ -83,7 +79,6 @@ def test_list_organization_staff_directory_link_statuses():
             first_name="E",
             last_name="Foreign",
             email="foreign-doc@example.com",
-            employment_percentage=100,
             user_id=u_foreign.id,
         )
         db.add_all([d_linked, d_only, d_unlinked, d_wrong, d_foreign])
@@ -161,7 +156,6 @@ def test_organization_staff_directory_forbidden_for_team_member():
                 first_name="S",
                 last_name="D",
                 email="docperson@example.com",
-                employment_percentage=100,
                 user_id=du.id,
             )
         )

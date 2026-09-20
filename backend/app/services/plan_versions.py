@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
     PlanningPeriod,
@@ -37,6 +37,7 @@ from app.schemas import (
     ShiftTemplateRead,
 )
 from app.services.audit import record_audit
+from app.services.employment_periods import employment_percentage_on
 from app.services.planning import (
     PLANNING_PERIOD_STATUS_DRAFT,
     PLANNING_PERIOD_STATUS_PRELIMINARY,
@@ -51,6 +52,7 @@ from app.services.shift_groups import (
 )
 from app.services.shift_templates import list_shift_templates
 from app.services.tenancy import require_planning_period_in_org
+from app.services.work_time_rule_sets import get_active_work_time_rule_set
 
 VERSION_TRIGGER_STATUS_PRELIMINARY = "status_preliminary"
 VERSION_TRIGGER_STATUS_PUBLISHED = "status_published"
@@ -335,6 +337,7 @@ def snapshot_plan_version(
             )
         )
     )
+    active_rule_set = get_active_work_time_rule_set(db, organization_id=organization_id)
 
     version = PlanningPlanVersion(
         organization_id=organization_id,
@@ -346,6 +349,7 @@ def snapshot_plan_version(
         trigger=trigger,
         note=note,
         created_by_user_id=created_by_user_id,
+        work_time_rule_set_version_id=active_rule_set.id if active_rule_set is not None else None,
     )
     db.add(version)
     db.flush()
@@ -439,7 +443,11 @@ def snapshot_plan_version(
     }
     snapshot_member_ids = roster_member_ids | data_member_ids
     member_rows = list(
-        db.scalars(select(TeamMember).where(TeamMember.id.in_(snapshot_member_ids))).all()
+        db.scalars(
+            select(TeamMember)
+            .options(joinedload(TeamMember.employment_periods))
+            .where(TeamMember.id.in_(snapshot_member_ids))
+        ).unique().all()
     ) if snapshot_member_ids else []
     member_by_id = {member.id: member for member in member_rows}
     for team_member_id in sorted(snapshot_member_ids):
@@ -454,7 +462,7 @@ def snapshot_plan_version(
                 last_name=member.last_name,
                 nickname=member.nickname,
                 email=member.email,
-                employment_percentage=member.employment_percentage,
+                employment_percentage=employment_percentage_on(member, date(period.year, period.month, 1)),
                 planning_preferences=member.planning_preferences,
             )
         )

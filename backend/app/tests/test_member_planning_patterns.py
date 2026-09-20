@@ -47,7 +47,7 @@ def pattern_db():
     Base.metadata.create_all(engine)
     db = TestingSessionLocal()
     db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
-    db.add(TeamMember(id=1, organization_id=1, first_name="A", last_name="B", email="a@example.com", employment_percentage=100))
+    db.add(TeamMember(id=1, organization_id=1, first_name="A", last_name="B", email="a@example.com"))
     db.add(ShiftGroup(organization_id=1, code="sg", name="SG", display_order=0))
     db.flush()
     db.add(TeamMemberShiftGroup(team_member_id=1, shift_group_id=1, start_date=date(2000, 1, 1)))
@@ -64,6 +64,71 @@ def test_validate_pattern_severity_rejects_error_without_policy():
     policy = read_organization_member_pattern_policy(Organization(id=1, name="x", slug="x", member_pattern_policy={"hard_types": []}))
     with pytest.raises(ValueError):
         validate_pattern_severity(rule, severity="error", policy=policy)
+
+
+def test_iso_week_cycle_error_rejected_without_policy():
+    rule = IsoWeekCycleMemberPatternRule(
+        cycle_weeks=4,
+        on_weeks=3,
+        anchor_iso_year=2026,
+        anchor_iso_week=1,
+    )
+    policy = read_organization_member_pattern_policy(
+        Organization(id=1, name="x", slug="x", member_pattern_policy={"hard_types": []})
+    )
+    with pytest.raises(ValueError):
+        validate_pattern_severity(rule, severity="error", policy=policy)
+
+
+def test_iso_week_cycle_error_allowed_when_policy_includes_type():
+    rule = IsoWeekCycleMemberPatternRule(
+        cycle_weeks=4,
+        on_weeks=3,
+        anchor_iso_year=2026,
+        anchor_iso_week=1,
+    )
+    policy = read_organization_member_pattern_policy(
+        Organization(
+            id=1,
+            name="x",
+            slug="x",
+            member_pattern_policy={"hard_types": ["iso_week_cycle"]},
+        )
+    )
+    validate_pattern_severity(rule, severity="error", policy=policy)
+
+
+def test_allowed_calendar_week_parity_error_allowed_when_policy_includes_type():
+    rule = AllowedCalendarWeekParityMemberPatternRule(parity="even")
+    policy = read_organization_member_pattern_policy(
+        Organization(
+            id=1,
+            name="x",
+            slug="x",
+            member_pattern_policy={"hard_types": ["allowed_calendar_week_parity"]},
+        )
+    )
+    validate_pattern_severity(rule, severity="error", policy=policy)
+
+
+def test_avoid_time_window_cannot_be_error_even_when_listed():
+    rule = AvoidTimeWindowMemberPatternRule.model_validate(
+        {
+            "type": "avoid_time_window",
+            "weekdays": ["sat"],
+            "window_start": "22:00",
+            "window_end": "06:00",
+        }
+    )
+    policy = read_organization_member_pattern_policy(
+        Organization(
+            id=1,
+            name="x",
+            slug="x",
+            member_pattern_policy={"hard_types": ["iso_week_cycle", "allowed_calendar_week_parity"]},
+        )
+    )
+    validate_pattern_severity(rule, severity="error", policy=policy)
 
 
 def test_avoid_time_window_matches_saturday_night(pattern_db):
@@ -240,6 +305,68 @@ def test_avoid_time_window_stored_severity_does_not_affect_evaluation(pattern_db
     warnings = evaluate_member_planning_patterns(db=db, slot=slot, team_member_id=1, patterns=[pattern])
     assert len(warnings) == 1
     assert warnings[0].severity == "info"
+
+
+def test_iso_week_cycle_evaluates_as_error_when_stored_severity_is_error(pattern_db):
+    db = pattern_db
+    slot = RosterSlot(
+        id=8,
+        planning_period_id=1,
+        shift_template_id=1,
+        shift_variant_id=1,
+        slot_date=date(2026, 1, 19),
+        position=1,
+        starts_at=datetime(2026, 1, 19, 8, 0),
+        ends_at=datetime(2026, 1, 19, 16, 0),
+    )
+    pattern = TeamMemberPlanningPattern(
+        id=8,
+        organization_id=1,
+        team_member_id=1,
+        label="cycle",
+        is_active=True,
+        rule={
+            "type": "iso_week_cycle",
+            "cycle_weeks": 4,
+            "on_weeks": 3,
+            "anchor_iso_year": 2026,
+            "anchor_iso_week": 1,
+            "off_status": "forschung",
+            "wishes_weekdays": ["mon", "tue", "wed", "thu", "fri"],
+        },
+        severity="error",
+        display_order=0,
+    )
+    warnings = evaluate_member_planning_patterns(db=db, slot=slot, team_member_id=1, patterns=[pattern])
+    assert len(warnings) == 1
+    assert warnings[0].code == "MEMBER_PATTERN_ISO_WEEK_CYCLE"
+    assert warnings[0].severity == "error"
+
+
+def test_recurring_weekday_status_is_not_a_roster_rule(pattern_db):
+    db = pattern_db
+    slot = RosterSlot(
+        id=9,
+        planning_period_id=1,
+        shift_template_id=1,
+        shift_variant_id=1,
+        slot_date=date(2026, 1, 7),
+        position=1,
+        starts_at=datetime(2026, 1, 7, 8, 0),
+        ends_at=datetime(2026, 1, 7, 16, 0),
+    )
+    pattern = TeamMemberPlanningPattern(
+        id=9,
+        organization_id=1,
+        team_member_id=1,
+        label="Wednesdays off",
+        is_active=True,
+        rule={"type": "recurring_weekday_status", "weekdays": ["wed"], "status": "frei"},
+        severity="warning",
+        display_order=0,
+    )
+    warnings = evaluate_member_planning_patterns(db=db, slot=slot, team_member_id=1, patterns=[pattern])
+    assert warnings == []
 
 
 def test_week_parity_blocks_odd_week(pattern_db):

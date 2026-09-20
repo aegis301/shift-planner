@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
@@ -6,7 +7,9 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
+    Numeric,
     String,
     Text,
     Time,
@@ -29,6 +32,51 @@ class Organization(Base):
     billing_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     subscription_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
     member_pattern_policy: Mapped[dict] = mapped_column(JSON, default=lambda: {"hard_types": []})
+    duty_activity_access_policy: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "individual_read_roles": [],
+            "retention_months": 24,
+            "purpose_statement": "",
+            "small_group_threshold": 5,
+        },
+    )
+    fairness_policy: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "window_months": 12,
+            "dimensions": [
+                {
+                    "id": "duties",
+                    "metric": "duty_count",
+                    "day_filter": "any",
+                    "night": False,
+                    "category": None,
+                },
+                {
+                    "id": "weekend_holiday",
+                    "metric": "duty_count",
+                    "day_filter": "weekend_holiday",
+                    "night": False,
+                    "category": None,
+                },
+                {
+                    "id": "night",
+                    "metric": "duty_count",
+                    "day_filter": "any",
+                    "night": True,
+                    "category": None,
+                },
+                {
+                    "id": "statutory_hours",
+                    "metric": "statutory_minutes",
+                    "day_filter": "any",
+                    "night": False,
+                    "category": None,
+                },
+            ],
+        },
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
@@ -38,6 +86,7 @@ class Organization(Base):
     planning_periods: Mapped[list["PlanningPeriod"]] = relationship(back_populates="organization")
     join_requests: Mapped[list["OrganizationJoinRequest"]] = relationship(back_populates="organization")
     membership_invites: Mapped[list["OrganizationMembershipInvite"]] = relationship(back_populates="organization")
+    contract_groups: Mapped[list["ContractGroup"]] = relationship(back_populates="organization")
 
 
 class Account(Base):
@@ -177,11 +226,13 @@ class TeamMember(Base):
     last_name: Mapped[str] = mapped_column(String(255))
     nickname: Mapped[str | None] = mapped_column(String(64))
     email: Mapped[str] = mapped_column(String(255), index=True)
-    employment_percentage: Mapped[int] = mapped_column(Integer, default=100)
     notes: Mapped[str | None] = mapped_column(Text)
     planning_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), unique=True, index=True)
+    duty_activity_purpose_acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     organization: Mapped["Organization"] = relationship(back_populates="team_members")
@@ -195,6 +246,129 @@ class TeamMember(Base):
     property_values: Mapped[list["TeamMemberPropertyValue"]] = relationship(
         back_populates="team_member", cascade="all, delete-orphan"
     )
+    employment_periods: Mapped[list["EmploymentPeriod"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+    time_account_opening: Mapped["TimeAccountOpening | None"] = relationship(
+        back_populates="team_member", uselist=False, cascade="all, delete-orphan"
+    )
+    time_entries: Mapped[list["TimeEntry"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+    work_time_consents: Mapped[list["WorkTimeConsent"]] = relationship(
+        back_populates="team_member", cascade="all, delete-orphan"
+    )
+
+
+class ContractGroup(Base):
+    __tablename__ = "contract_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    weekly_hours_at_100: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    vacation_days_at_100: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    regular_week_pattern: Mapped[list] = mapped_column(JSON, default=list)
+    category_rules: Mapped[list] = mapped_column(JSON, default=list)
+    status_mappings: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    organization: Mapped["Organization"] = relationship(back_populates="contract_groups")
+    employment_periods: Mapped[list["EmploymentPeriod"]] = relationship(back_populates="contract_group")
+
+
+class EmploymentPeriod(Base):
+    __tablename__ = "employment_periods"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    contract_group_id: Mapped[int] = mapped_column(ForeignKey("contract_groups.id", ondelete="RESTRICT"), index=True)
+    employment_percentage: Mapped[int] = mapped_column(Integer)
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="employment_periods")
+    contract_group: Mapped["ContractGroup"] = relationship(back_populates="employment_periods")
+
+
+class TimeAccountOpening(Base):
+    __tablename__ = "time_account_openings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    team_member_id: Mapped[int] = mapped_column(
+        ForeignKey("team_members.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    as_of_date: Mapped[date] = mapped_column(Date)
+    overtime_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    vacation_days_remaining: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+    sick_days_used_ytd: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+    fairness_balances: Mapped[dict] = mapped_column(JSON, default=lambda: {})
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="time_account_opening")
+
+
+class WorkTimeConsent(Base):
+    __tablename__ = "work_time_consents"
+    __table_args__ = (Index("ix_work_time_consents_member_valid_from", "team_member_id", "valid_from"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    consent_type: Mapped[str] = mapped_column(String(32), default="opt_out")
+    tier: Mapped[str] = mapped_column(String(64))
+    valid_from: Mapped[date] = mapped_column(Date)
+    signed_document_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recorded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    revoked_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notice_period_months: Mapped[int] = mapped_column(Integer, default=6)
+    effective_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="work_time_consents")
+    recorded_by: Mapped["User | None"] = relationship()
+
+
+class TimeEntry(Base):
+    __tablename__ = "time_entries"
+    __table_args__ = (
+        Index("ix_time_entries_member_date", "team_member_id", "entry_date"),
+        Index("ix_time_entries_roster_slot_id", "roster_slot_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"))
+    entry_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(32))
+    source: Mapped[str] = mapped_column(String(32))
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    statutory_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    credited_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    counts_toward_contract: Mapped[bool] = mapped_column(Boolean, default=True)
+    consumes_vacation: Mapped[bool] = mapped_column(Boolean, default=False)
+    shift_template_category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    planning_day_status_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    roster_slot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("roster_slots.id", ondelete="CASCADE"), nullable=True
+    )
+    shift_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shift_groups.id", ondelete="SET NULL"), nullable=True
+    )
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    derived_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    corrected_fields: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    team_member: Mapped["TeamMember"] = relationship(back_populates="time_entries")
 
 
 class TeamMemberPropertyDefinition(Base):
@@ -288,6 +462,7 @@ class ShiftTemplate(Base):
     name: Mapped[str] = mapped_column(String(255))
     category: Mapped[str] = mapped_column(String(50))
     constraints: Mapped[list] = mapped_column(JSON, default=list)
+    valuation_override: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -381,6 +556,11 @@ class PlanningPlanVersion(Base):
     trigger: Mapped[str] = mapped_column(String(50))
     note: Mapped[str | None] = mapped_column(Text)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    work_time_rule_set_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_time_rule_sets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     planning_period: Mapped[PlanningPeriod] = relationship()
@@ -509,15 +689,37 @@ class PlanVersionTeamMember(Base):
     planning_preferences: Mapped[str | None] = mapped_column(Text)
 
 
-class RuleConfig(Base):
-    __tablename__ = "rule_configs"
+class WorkTimeRuleSetPreset(Base):
+    __tablename__ = "work_time_rule_set_presets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), unique=True)
-    max_consecutive_work_days: Mapped[int] = mapped_column(Integer, default=6)
-    min_rest_hours: Mapped[int] = mapped_column(Integer, default=11)
-    max_monthly_nights_full_time: Mapped[int] = mapped_column(Integer, default=7)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    values_confirmed: Mapped[bool] = mapped_column(Boolean, default=True)
+    rules: Mapped[list] = mapped_column(JSON, default=list)
+    contract_groups: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class WorkTimeRuleSet(Base):
+    __tablename__ = "work_time_rule_sets"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", "version", name="uq_work_time_rule_set_org_name_version"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    rules: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class RosterSlot(Base):

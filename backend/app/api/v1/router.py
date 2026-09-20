@@ -2,7 +2,12 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     auth,
+    compliance_report,
+    contract_groups,
     dashboard,
+    duty_activity,
+    employment_periods,
+    fairness,
     matrix,
     organization_admin,
     organizations_public,
@@ -14,6 +19,9 @@ from app.api.v1 import (
     team_member_property_definitions,
     team_member_property_matrix,
     team_members,
+    time_entries,
+    work_time_consents,
+    work_time_rule_sets,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -24,6 +32,14 @@ api_router.include_router(team_members.router)
 api_router.include_router(team_member_property_definitions.router)
 api_router.include_router(team_member_property_matrix.router)
 api_router.include_router(planning_day_status_definitions.router)
+api_router.include_router(contract_groups.router)
+api_router.include_router(employment_periods.router)
+api_router.include_router(time_entries.router)
+api_router.include_router(duty_activity.router)
+api_router.include_router(work_time_consents.router)
+api_router.include_router(work_time_rule_sets.router)
+api_router.include_router(compliance_report.router)
+api_router.include_router(fairness.router)
 api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)
 api_router.include_router(planning.router)

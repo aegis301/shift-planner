@@ -3,6 +3,7 @@ from datetime import date
 
 from app.schemas import ValidationWarning
 from app.services.holidays import classify_day
+from app.services.rules.state import PlanState
 
 
 @dataclass
@@ -51,6 +52,33 @@ def slot_touches_weekend_or_nrw_holiday(slot_date: date) -> bool:
 def member_display_name(*, first_name: str, last_name: str, nickname: str | None) -> str:
     nick = (nickname or "").strip()
     return nick if nick else last_name.strip()
+
+
+def slices_from_plan_state(state: PlanState) -> tuple[list[WorkloadSlotSlice], list[WorkloadAssignmentSlice]]:
+    slots: list[WorkloadSlotSlice] = []
+    for slot in state.slots_by_id.values():
+        if not (state.start_date <= slot.slot_date <= state.end_date):
+            continue
+        template = slot.shift_template
+        slots.append(
+            WorkloadSlotSlice(
+                id=slot.id,
+                shift_template_id=slot.shift_template_id,
+                category=template.category if template is not None else None,
+                slot_date=slot.slot_date,
+                starts_at=slot.starts_at,
+                ends_at=slot.ends_at,
+            )
+        )
+    slot_ids = {slot.id for slot in slots}
+    assignments: list[WorkloadAssignmentSlice] = []
+    for row in state.assignments_by_id.values():
+        if row.roster_slot_id not in slot_ids:
+            continue
+        assignments.append(
+            WorkloadAssignmentSlice(roster_slot_id=row.roster_slot_id, team_member_id=row.team_member_id)
+        )
+    return slots, assignments
 
 
 def roster_warning_counts_by_member(warnings: list[ValidationWarning]) -> dict[int, int]:

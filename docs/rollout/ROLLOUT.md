@@ -252,11 +252,18 @@ bumps the plan version. Candidate suggestion ranks legal partners by fairness im
 |---|---|---|
 | **R1 — Time and rules** | F0 model, F4 engine, F2 valuation + rule sets, F3 consents, F1 duty activity log, F5 report | 01–16 |
 | **R2 — Fairness** | F6 rolling accounts and targets | 17–18 |
-| **R3 — Solver** | F7 generation | 19–21 |
+| **R3 — Solver** | Realistic fixture seed and a timeboxed spike, then F7 generation | 24, 25, 19–21 |
 | **R4 — Swaps** | F8 exchange | 22–23 |
 
 R1 is the largest and least visible. Sequencing it first is deliberate: it is the change that
 becomes impractical once real rosters exist.
+
+R3 is the only release with genuine technical uncertainty rather than merely scope: with 18 rule
+classes plus statutory limits, wishes, no-gos, property requirements and a fairness objective,
+nobody knows whether the constraint set is solvable on a realistic month until it is tried.
+Issue 24 builds the fixture that makes the question answerable and issue 25 answers it in one
+day, before worker infrastructure and UI are built around an unvalidated model. Both run before
+issue 19.
 
 Two independent tracks run in parallel inside R1 and only meet at issue 09:
 

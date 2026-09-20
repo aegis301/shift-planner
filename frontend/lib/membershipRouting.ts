@@ -43,6 +43,12 @@ export function pathnameCompatibleWithMembership(pathname: string, me: SessionMe
   if (p.startsWith("/planning")) {
     return me.capabilities.planning;
   }
+  if (p.startsWith("/hours")) {
+    return me.capabilities.planning;
+  }
+  if (p.startsWith("/my-hours")) {
+    return me.capabilities.team_member_portal;
+  }
   if (p.startsWith("/my-planning") || p.startsWith("/profile")) {
     return me.capabilities.team_member_portal;
   }

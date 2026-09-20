@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin, get_current_user
+from app.api.deps import get_current_admin, get_current_planning_user, get_current_user
 from app.db.session import get_db
 from app.models import Organization, User
 from app.schemas import (
@@ -9,6 +9,10 @@ from app.schemas import (
     ApproveJoinCreateTeamMemberInput,
     ApproveJoinLinkTeamMemberBody,
     DeleteOrganizationInput,
+    DutyActivityAccessPolicy,
+    DutyActivityAccessPolicyUpdate,
+    FairnessPolicy,
+    FairnessPolicyUpdate,
     JoinRequestRead,
     OrganizationInviteCreate,
     OrganizationMemberPatternPolicy,
@@ -21,6 +25,11 @@ from app.schemas import (
     OrganizationUserRead,
     OrganizationUserRolePatch,
 )
+from app.services.duty_activity_privacy import (
+    read_duty_activity_access_policy,
+    update_duty_activity_access_policy,
+)
+from app.services.fairness import read_fairness_policy, update_fairness_policy
 from app.services.join_requests import (
     approve_join_request_create_team_member,
     approve_join_request_link_team_member,
@@ -169,6 +178,67 @@ def patch_member_pattern_policy(
         actor=user.email,
         source="rest",
     )
+
+
+@router.get("/duty-activity-access-policy", response_model=DutyActivityAccessPolicy)
+def get_duty_activity_access_policy(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> DutyActivityAccessPolicy:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return read_duty_activity_access_policy(org)
+
+
+@router.patch("/duty-activity-access-policy", response_model=DutyActivityAccessPolicy)
+def patch_duty_activity_access_policy(
+    payload: DutyActivityAccessPolicyUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> DutyActivityAccessPolicy:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return update_duty_activity_access_policy(
+        db,
+        org,
+        payload,
+        actor=user.email,
+        source="rest",
+    )
+
+
+@router.get("/fairness-policy", response_model=FairnessPolicy)
+def get_fairness_policy(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planning_user),
+) -> FairnessPolicy:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    return read_fairness_policy(org)
+
+
+@router.patch("/fairness-policy", response_model=FairnessPolicy)
+def patch_fairness_policy(
+    payload: FairnessPolicyUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_admin),
+) -> FairnessPolicy:
+    org = db.get(Organization, user.organization_id)
+    if org is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+    try:
+        return update_fairness_policy(
+            db,
+            org,
+            payload,
+            actor=user.email,
+            source="rest",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/join-requests", response_model=list[JoinRequestRead])

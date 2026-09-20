@@ -63,7 +63,6 @@ def test_admin_dashboard_kpis(dash_db):
             first_name="A",
             last_name="B",
             email="ab@example.com",
-            employment_percentage=100,
             is_active=True,
         )
     )
@@ -165,7 +164,6 @@ def test_member_upcoming_shifts_all_future(dash_db):
         first_name="Pat",
         last_name="Nurse",
         email="pat@example.com",
-        employment_percentage=100,
         is_active=True,
     )
     db.add(member)
