@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-20
+- **Max duties count on-call only:** `WORKTIME_MAX_DUTIES` previously counted every roster assignment. Spätdienst and Rufdienst therefore inflated the total against the TV-Ärzte (TdL) § 7 Abs. 5a Bereitschaftsdienst cap, so validation warnings and the compliance report over-reported. The rule now takes `categories` (default `["bereitschaftsdienst"]`). TdL/VKA presets carry that scope. Alembic `202609200002` backfills existing stored rule sets. Counts on reports generated before this fix were too high.
+
 ## 2026-09-12
 - **Solver fixture seed:** `python -m app.scripts.seed_solver_fixture --profile comfortable|tight|infeasible` builds a deterministic org (TdL rule set, 42h contract group, mixed employment, shift groups, wishes/no-gos, published history months, unassigned target month) through existing services. `--rng-seed` makes two runs identical; `--force` is required to write into `DEFAULT_ORGANIZATION_ID` or an org that already has plan versions.
 

@@ -18,6 +18,7 @@ type RuleType =
   | "documentation_requirement"
   | "duty_utilization_bands";
 
+type ShiftTemplateCategory = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
 type WorkTimeRule = {
   type: RuleType;
   severity: Severity;
@@ -38,6 +39,7 @@ type WorkTimeRule = {
   count?: number;
   period?: "week" | "month" | "quarter" | "year";
   additional_allowance_per_quarter?: number;
+  categories?: ShiftTemplateCategory[];
   threshold_hours?: number;
   retention_months?: number;
   stufe_i_max_percent?: number;
@@ -102,6 +104,13 @@ function parseHoursByTier(value: string): Record<string, number> {
   return parsed;
 }
 
+const DUTY_CATEGORIES: { value: ShiftTemplateCategory; label: TranslationKey }[] = [
+  { value: "bereitschaftsdienst", label: "onCallDutyCategory" },
+  { value: "rufdienst", label: "standbyDutyCategory" },
+  { value: "spaetdienst", label: "lateDutyCategory" },
+  { value: "other", label: "other" }
+];
+
 function emptyRule(type: RuleType): WorkTimeRule {
   const base = { type, severity: "warning" as Severity, source_note: "" };
   if (type === "max_daily_working_time") {
@@ -123,7 +132,7 @@ function emptyRule(type: RuleType): WorkTimeRule {
     return { ...base, days: 6 };
   }
   if (type === "max_duties_per_period") {
-    return { ...base, count: 4, period: "month", additional_allowance_per_quarter: 1 };
+    return { ...base, count: 4, period: "month", additional_allowance_per_quarter: 1, categories: ["bereitschaftsdienst"] };
   }
   if (type === "duty_utilization_bands") {
     return { ...base, severity: "info", stufe_i_max_percent: 25, on_call_max_percent: 49 };
@@ -488,6 +497,7 @@ export function WorkTimeRuleSetsPanel() {
                   </div>
                 ) : null}
                 {rule.type === "max_duties_per_period" ? (
+                  <>
                   <div className="grid gap-2 sm:grid-cols-3">
                     <Field label={t(locale, "workTimeRuleCount")}>
                       <input
@@ -520,6 +530,30 @@ export function WorkTimeRuleSetsPanel() {
                       />
                     </Field>
                   </div>
+                  <Field label={t(locale, "workTimeRuleDutyCategories")}>
+                    <div className="flex flex-wrap gap-3 pt-2">
+                      {DUTY_CATEGORIES.map((option) => {
+                        const selected = (rule.categories ?? ["bereitschaftsdienst"]).includes(option.value);
+                        return (
+                          <label key={option.value} className="flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => {
+                                const current = rule.categories ?? ["bereitschaftsdienst"];
+                                const next = selected
+                                  ? current.filter((item) => item !== option.value)
+                                  : [...current, option.value];
+                                update({ categories: next.length > 0 ? next : ["bereitschaftsdienst"] });
+                              }}
+                            />
+                            {t(locale, option.label)}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </Field>
+                  </>
                 ) : null}
                 {rule.type === "documentation_requirement" ? (
                   <div className="grid gap-2 sm:grid-cols-2">

@@ -23,3 +23,5 @@ backend/.env
 mcp-server/.env
 
 backend/scratch/
+.cursor/
+Claude outputs/

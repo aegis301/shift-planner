@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -517,6 +518,17 @@ def _period_start(day: date, period: str) -> date:
     return date(day.year, 1, 1)
 
 
+def _slot_template_category(slot: RosterSlot | None) -> str | None:
+    if slot is None or slot.shift_template is None:
+        return None
+    return slot.shift_template.category
+
+
+def _counts_toward_max_duties(assignment: RosterSlotAssignment, categories: Sequence[str]) -> bool:
+    category = _slot_template_category(assignment.roster_slot)
+    return category is not None and category in categories
+
+
 class MaxDutiesPerPeriodRule:
     def __init__(self, config: WorkTimeRuleMaxDutiesPerPeriod) -> None:
         self.config = config
@@ -537,11 +549,12 @@ class MaxDutiesPerPeriodRule:
         allowed = self.config.count
         if self.config.period == "month":
             allowed += self.config.additional_allowance_per_quarter
+        categories = self.config.categories
         warnings: list[ValidationWarning] = []
         counted: dict[tuple[int, date], list[int]] = defaultdict(list)
         for assignment in state.assignments_by_id.values():
             slot = assignment.roster_slot
-            if slot is None:
+            if slot is None or not _counts_toward_max_duties(assignment, categories):
                 continue
             period_start = _period_start(slot.slot_date, self.config.period)
             counted[(assignment.team_member_id, period_start)].append(slot.id)
@@ -549,6 +562,8 @@ class MaxDutiesPerPeriodRule:
         for assignment in state.assignments_by_id.values():
             slot = assignment.roster_slot
             if slot is None or not _in_window(slot.slot_date, state):
+                continue
+            if not _counts_toward_max_duties(assignment, categories):
                 continue
             key = (assignment.team_member_id, _period_start(slot.slot_date, self.config.period))
             if key in seen:
@@ -568,6 +583,7 @@ class MaxDutiesPerPeriodRule:
                         "count": len(slot_ids),
                         "allowed": allowed,
                         "period": self.config.period,
+                        "categories": list(categories),
                         "roster_slot_id": slot.id,
                         "roster_slot_ids": slot_ids,
                     },
@@ -788,6 +804,7 @@ def member_worktime_metrics(state: PlanState, member_id: int, rules: tuple[Any, 
                 assignment.roster_slot_id
                 for assignment in state.assignments_by_member_id.get(member_id, ())
                 if assignment.roster_slot is not None
+                and _counts_toward_max_duties(assignment, duties.config.categories)
                 and _period_start(assignment.roster_slot.slot_date, duties.config.period) == bucket
             }
         )
