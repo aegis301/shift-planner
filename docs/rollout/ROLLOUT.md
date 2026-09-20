@@ -183,7 +183,7 @@ not reach users before these controls exist.
 | `weekly_average_cap` | hours, reference period, rolling vs. fixed |
 | `opt_out_weekly_cap` | hours per opt-out tier, reference period |
 | `max_consecutive_work_days` | days |
-| `max_duties_per_period` | count, period, allowance (e.g. +1 per quarter) |
+| `max_duties_per_period` | count, period, allowance (e.g. +1 per quarter), categories (default on-call) |
 | `documentation_requirement` | threshold hours, retention |
 
 Presets ship as seed data: `ArbZG-Grundmodell`, `TV-Ärzte (TdL)`, `TV-Ärzte (VKA)`.
