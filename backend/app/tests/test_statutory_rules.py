@@ -30,6 +30,7 @@ from app.schemas.domain import (
     WorkTimeRuleRestAfterLongDuty,
     WorkTimeRuleWeeklyAverageCap,
 )
+from app.services.compliance_report import build_compliance_report
 from app.services.constraints import find_blocking_constraint
 from app.services.roster_matrix import _preflight_assignment_warnings, upsert_roster_slot_assignment
 from app.services.rules import build_plan_state, evaluate_plan_state
@@ -42,8 +43,11 @@ from app.services.rules.statutory import (
     OptOutWeeklyCapRule,
     RestAfterLongDutyRule,
     WeeklyAverageCapRule,
+    member_worktime_metrics,
+    statutory_rules_for_org,
 )
 from app.services.validation import validate_roster
+from app.services.work_time_rule_sets import backfill_max_duties_categories
 
 BENCHMARK_BUDGET_SECONDS = 3.0
 
@@ -483,6 +487,34 @@ def test_max_consecutive_work_days(plan_db):
     assert "WORKTIME_CONSECUTIVE_DAYS" in _codes(warnings)
 
 
+def _add_dated_assignments(
+    db: Session,
+    *,
+    member: TeamMember,
+    period: PlanningPeriod,
+    code: str,
+    category: str,
+    start: date,
+    count: int,
+    hour: int = 8,
+) -> None:
+    template, variant = _add_template(db, code=code, category=category)
+    for index in range(count):
+        day = start + timedelta(days=index)
+        starts_at = datetime(day.year, day.month, day.day, hour, 0, tzinfo=UTC)
+        slot = _add_slot(
+            db,
+            period=period,
+            template=template,
+            variant=variant,
+            slot_date=day,
+            starts_at=starts_at,
+            ends_at=starts_at + timedelta(hours=8),
+            position=index + 1,
+        )
+        _add_assignment(db, slot=slot, member=member)
+
+
 def test_max_duties_per_period_includes_quarterly_allowance(plan_db):
     db, _engine = plan_db
     member = _add_member(db, email="duties@example.com")
@@ -510,6 +542,143 @@ def test_max_duties_per_period_includes_quarterly_allowance(plan_db):
         WorkTimeRuleMaxDutiesPerPeriod(count=2, period="month", additional_allowance_per_quarter=1)
     ).evaluate(build_plan_state(db, organization_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 31)))
     assert "WORKTIME_MAX_DUTIES" in _codes(over)
+
+
+def test_max_duties_ignores_spaetdienst_and_flags_fifth_on_call(plan_db):
+    db, _engine = plan_db
+    member = _add_member(db, email="mixed-duties@example.com")
+    period = _add_period(db, 2026, 3)
+    _add_dated_assignments(
+        db,
+        member=member,
+        period=period,
+        code="BD",
+        category="bereitschaftsdienst",
+        start=date(2026, 3, 1),
+        count=4,
+    )
+    _add_dated_assignments(
+        db,
+        member=member,
+        period=period,
+        code="SD",
+        category="spaetdienst",
+        start=date(2026, 3, 1),
+        count=6,
+        hour=16,
+    )
+    db.commit()
+    state = build_plan_state(db, organization_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 31))
+    mixed = MaxDutiesPerPeriodRule(
+        WorkTimeRuleMaxDutiesPerPeriod(count=4, period="month", additional_allowance_per_quarter=0)
+    ).evaluate(state)
+    assert [row.code for row in mixed if row.code == "WORKTIME_MAX_DUTIES"] == []
+
+    _add_dated_assignments(
+        db,
+        member=member,
+        period=period,
+        code="BD5",
+        category="bereitschaftsdienst",
+        start=date(2026, 3, 10),
+        count=1,
+    )
+    db.commit()
+    over = MaxDutiesPerPeriodRule(
+        WorkTimeRuleMaxDutiesPerPeriod(count=4, period="month", additional_allowance_per_quarter=0)
+    ).evaluate(build_plan_state(db, organization_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 31)))
+    duties = [row for row in over if row.code == "WORKTIME_MAX_DUTIES"]
+    assert len(duties) == 1
+    assert duties[0].details["count"] == 5
+    assert duties[0].details["allowed"] == 4
+    assert duties[0].details["categories"] == ["bereitschaftsdienst"]
+
+
+def test_max_duties_quarterly_allowance_still_applies_to_on_call(plan_db):
+    db, _engine = plan_db
+    member = _add_member(db, email="quarter-duties@example.com")
+    period = _add_period(db, 2026, 3)
+    _add_dated_assignments(
+        db,
+        member=member,
+        period=period,
+        code="BDQ",
+        category="bereitschaftsdienst",
+        start=date(2026, 3, 1),
+        count=5,
+    )
+    db.commit()
+    state = build_plan_state(db, organization_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 31))
+    allowed = MaxDutiesPerPeriodRule(
+        WorkTimeRuleMaxDutiesPerPeriod(count=4, period="month", additional_allowance_per_quarter=1)
+    ).evaluate(state)
+    assert [row.code for row in allowed if row.code == "WORKTIME_MAX_DUTIES"] == []
+    over = MaxDutiesPerPeriodRule(
+        WorkTimeRuleMaxDutiesPerPeriod(count=4, period="month", additional_allowance_per_quarter=0)
+    ).evaluate(state)
+    assert "WORKTIME_MAX_DUTIES" in _codes(over)
+
+
+def test_max_duties_old_rule_json_migrates_and_stops_overcounting(plan_db):
+    db, _engine = plan_db
+    member = _add_member(db, email="legacy-duties@example.com")
+    period = _add_period(db, 2026, 3)
+    _add_dated_assignments(
+        db,
+        member=member,
+        period=period,
+        code="BDL",
+        category="bereitschaftsdienst",
+        start=date(2026, 3, 1),
+        count=4,
+    )
+    _add_dated_assignments(
+        db,
+        member=member,
+        period=period,
+        code="SDL",
+        category="spaetdienst",
+        start=date(2026, 3, 1),
+        count=6,
+        hour=16,
+    )
+    old_rules = [
+        {
+            "type": "max_duties_per_period",
+            "severity": "warning",
+            "count": 4,
+            "period": "month",
+            "additional_allowance_per_quarter": 1,
+        }
+    ]
+    all_categories = MaxDutiesPerPeriodRule(
+        WorkTimeRuleMaxDutiesPerPeriod(
+            count=4,
+            period="month",
+            additional_allowance_per_quarter=1,
+            categories=["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"],
+        )
+    ).evaluate(build_plan_state(db, organization_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 31)))
+    assert "WORKTIME_MAX_DUTIES" in _codes(all_categories)
+    assert next(row for row in all_categories if row.code == "WORKTIME_MAX_DUTIES").details["count"] == 10
+
+    migrated = backfill_max_duties_categories(old_rules)
+    assert migrated[0]["categories"] == ["bereitschaftsdienst"]
+    parsed = WorkTimeRuleMaxDutiesPerPeriod.model_validate(old_rules[0])
+    assert parsed.categories == ["bereitschaftsdienst"]
+    _activate_rules(db, migrated)
+    db.commit()
+    state = build_plan_state(db, organization_id=1, start_date=date(2026, 3, 1), end_date=date(2026, 3, 31))
+    warnings = evaluate_plan_state(state, db=db)
+    assert "WORKTIME_MAX_DUTIES" not in _codes(warnings)
+    roster_warnings = validate_roster(db, period.id, organization_id=1)
+    assert "WORKTIME_MAX_DUTIES" not in _codes(roster_warnings)
+    metrics = member_worktime_metrics(state, member.id, statutory_rules_for_org(db, 1))
+    assert metrics["duty_count"] == 4
+    report = build_compliance_report(db, period.id, organization_id=1)
+    member_row = next(row for row in report.members if row.team_member_id == member.id)
+    assert member_row.duty_count == 4
+    assert "WORKTIME_MAX_DUTIES" not in {row.code for row in report.findings}
 
 
 def test_documentation_requirement(plan_db):

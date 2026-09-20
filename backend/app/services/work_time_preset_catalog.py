@@ -103,10 +103,11 @@ def _tv_aerzte_rules(*, tariff: str, confirmed: bool) -> list[dict]:
             {
                 "type": "max_duties_per_period",
                 "severity": "warning",
-                "source_note": f"§ 10 TV-Ärzte ({tariff}){suffix}",
+                "source_note": f"§ 7 Abs. 5a TV-Ärzte ({tariff}){suffix}",
                 "count": 4,
                 "period": "month",
                 "additional_allowance_per_quarter": 1,
+                "categories": ["bereitschaftsdienst"],
             },
             {
                 "type": "duty_utilization_bands",

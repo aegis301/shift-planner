@@ -15,6 +15,22 @@ from app.services.audit import record_audit
 
 _RULES_ADAPTER = TypeAdapter(list[WorkTimeRule])
 
+_DEFAULT_MAX_DUTIES_CATEGORIES = ["bereitschaftsdienst"]
+
+
+def backfill_max_duties_categories(rules: list[Any] | None) -> list[Any]:
+    updated: list[Any] = []
+    for rule in rules or []:
+        if (
+            isinstance(rule, dict)
+            and rule.get("type") == "max_duties_per_period"
+            and not rule.get("categories")
+        ):
+            updated.append({**rule, "categories": list(_DEFAULT_MAX_DUTIES_CATEGORIES)})
+        else:
+            updated.append(rule)
+    return updated
+
 
 def _serialize_rules(rules: list) -> list[dict[str, Any]]:
     parsed = _RULES_ADAPTER.validate_python(rules)

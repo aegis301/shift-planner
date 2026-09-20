@@ -962,6 +962,10 @@ class WorkTimeRuleMaxDutiesPerPeriod(BaseModel):
     count: int = Field(ge=1, le=366)
     period: WorkTimeDutyPeriod
     additional_allowance_per_quarter: int = Field(default=0, ge=0, le=31)
+    categories: list[ShiftTemplateCategory] = Field(
+        default_factory=lambda: ["bereitschaftsdienst"],
+        min_length=1,
+    )
 
 
 class WorkTimeRuleDocumentationRequirement(BaseModel):
