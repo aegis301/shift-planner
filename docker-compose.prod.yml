@@ -52,6 +52,23 @@ services:
     networks:
       - internal
 
+  solver-worker:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://shift_planner:shift_planner@postgres:5432/shift_planner}
+      SOLVER_WORKER_POLL_INTERVAL_SECONDS: ${SOLVER_WORKER_POLL_INTERVAL_SECONDS:-1}
+      DEFAULT_ORGANIZATION_ID: ${DEFAULT_ORGANIZATION_ID:-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    command: python -m app.scripts.solver_worker
+    restart: unless-stopped
+    networks:
+      - internal
+
   frontend:
     build:
       context: ./frontend

@@ -42,6 +42,7 @@ from app.schemas import (
     PlanningShiftIntentUpsert,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentUpsert,
+    SolverRunCreate,
     ShiftGroupCreate,
     ShiftGroupMembershipWrite,
     ShiftTemplateCreate,
@@ -150,6 +151,18 @@ from app.services.roster_matrix import (
     sync_roster_slots_for_period,
     RosterSyncPublishedError,
     upsert_roster_slot_assignment,
+)
+from app.services.solver_runs import (
+    SolverRunConflictError,
+    SolverRunNotFoundError,
+    SolverRunPublishedError,
+    apply_solver_run,
+    applied_assignments_to_read,
+    cancel_solver_run,
+    get_solver_run,
+    list_solver_runs,
+    queue_solver_run,
+    solver_run_to_read,
 )
 from app.services.shift_groups import (
     _membership_read,
@@ -1880,6 +1893,113 @@ def update_fairness_policy_tool(
             actor="mcp",
             source="mcp",
         ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://solver-runs/{planning_period_id}/shift-group/{shift_group_id}")
+def solver_runs_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+    """List solver runs for a planning period and shift group."""
+    with db_session() as db:
+        return [
+            solver_run_to_read(run).model_dump(mode="json")
+            for run in list_solver_runs(
+                db,
+                planning_period_id,
+                organization_id=mcp_organization_id(),
+                shift_group_id=shift_group_id,
+            )
+        ]
+
+
+@mcp.resource("shift-planner://solver-runs/{planning_period_id}/run/{run_id}")
+def solver_run_resource(planning_period_id: int, run_id: int) -> dict[str, Any]:
+    """Return one solver run with parameters, objective breakdown, and unfilled slots."""
+    with db_session() as db:
+        try:
+            run = get_solver_run(
+                db,
+                planning_period_id,
+                run_id,
+                organization_id=mcp_organization_id(),
+            )
+        except SolverRunNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+        return solver_run_to_read(run).model_dump(mode="json")
+
+
+@mcp.tool
+def run_roster_solver_tool(
+    token: str,
+    planning_period_id: int,
+    shift_group_id: int,
+    time_budget_seconds: int | None = None,
+    num_search_workers: int | None = None,
+    random_seed: int | None = None,
+    overwrite_existing: bool = False,
+) -> dict[str, Any]:
+    """Queue a roster solver run. Returns immediately with a run id. Requires MCP admin token."""
+    require_token(token)
+    payload = SolverRunCreate(
+        shift_group_id=shift_group_id,
+        time_budget_seconds=time_budget_seconds,
+        num_search_workers=num_search_workers,
+        random_seed=random_seed,
+        overwrite_existing=overwrite_existing,
+    )
+    with db_session() as db:
+        try:
+            run = queue_solver_run(
+                db,
+                planning_period_id,
+                payload,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+                created_by_user_id=None,
+            )
+        except SolverRunPublishedError as exc:
+            raise ValueError(str(exc)) from exc
+        return solver_run_to_read(run).model_dump(mode="json")
+
+
+@mcp.tool
+def apply_solver_run_tool(token: str, planning_period_id: int, run_id: int) -> dict[str, Any]:
+    """Apply a succeeded solver run through the ordinary assignment path. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            run, assignments = apply_solver_run(
+                db,
+                planning_period_id,
+                run_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+            )
+        except (SolverRunPublishedError, SolverRunConflictError, SolverRunNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return {
+            "run": solver_run_to_read(run).model_dump(mode="json"),
+            "assignments": [row.model_dump(mode="json") for row in applied_assignments_to_read(assignments)],
+        }
+
+
+@mcp.tool
+def cancel_solver_run_tool(token: str, planning_period_id: int, run_id: int) -> dict[str, Any]:
+    """Cancel a queued or running solver run. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            run = cancel_solver_run(
+                db,
+                planning_period_id,
+                run_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+            )
+        except (SolverRunConflictError, SolverRunNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return solver_run_to_read(run).model_dump(mode="json")
 
 
 @mcp.tool

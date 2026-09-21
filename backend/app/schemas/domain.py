@@ -2168,3 +2168,45 @@ class TeamMemberDashboardRead(BaseModel):
     my_validation_warnings: int
     upcoming_slots: list[DashboardUpcomingSlot]
     past_slots: list[DashboardUpcomingSlot] = []
+
+
+SolverRunStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
+
+
+class SolverRunCreate(BaseModel):
+    shift_group_id: int
+    time_budget_seconds: int | None = Field(default=None, ge=1)
+    num_search_workers: int | None = Field(default=None, ge=1)
+    random_seed: int | None = None
+    overwrite_existing: bool = False
+
+
+class SolverRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    planning_period_id: int
+    shift_group_id: int
+    status: SolverRunStatus
+    parameters: dict[str, Any]
+    proposed_assignments: list[dict[str, Any]] = Field(default_factory=list)
+    objective_breakdown: dict[str, Any] = Field(default_factory=dict)
+    unfilled_slots: list[dict[str, Any]] = Field(default_factory=list)
+    post_check_findings: list[Any] = Field(default_factory=list)
+    rule_set_version_id: int | None = None
+    failure_reason: str | None = None
+    cancel_requested: bool = False
+    created_by_user_id: int | None = None
+    queued_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    applied_at: datetime | None = None
+    duration_ms: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SolverRunApplyRead(BaseModel):
+    run: SolverRunRead
+    assignments: list[RosterSlotAssignmentRead]
