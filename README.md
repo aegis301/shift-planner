@@ -193,6 +193,8 @@ Migration `202605020001` adds **`organizations.slug`**, **`organization_join_req
 
 Migration `202605050001` renames **`doctors`** → **`team_members`**, related join tables and FK columns (**`team_member_id`**), period notes, join-request resolution column, and sets `users.role` from **`doctor`** to **`team_member`** where applicable.
 
+Migration `202609210001` drops leftover doctors-era unique index **`ix_doctors_email`** (global unique team-member email) that the rename left in place. Run `alembic upgrade head` on any database that existed before the rename; databases created fresh from Alembic never had this index.
+
 Migration `202606080002` adds JSON `constraints` columns on `shift_templates` and `shift_variants`.
 
 ## Users and roles
