@@ -77,6 +77,7 @@ class Organization(Base):
             ],
         },
     )
+    solver_time_budget_ceiling_seconds: Mapped[int] = mapped_column(Integer, default=120)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")
@@ -908,6 +909,43 @@ class OrganizationMembershipInvite(Base):
     invitee_account: Mapped["Account"] = relationship(foreign_keys=[invitee_account_id])
     invited_by: Mapped["User | None"] = relationship(foreign_keys=[invited_by_user_id])
     precreated_team_member: Mapped["TeamMember | None"] = relationship(foreign_keys=[precreated_team_member_id])
+
+
+class SolverRun(Base):
+    __tablename__ = "solver_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"), index=True)
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(50), default="queued", index=True)
+    parameters: Mapped[dict] = mapped_column(JSON, default=dict)
+    proposed_assignments: Mapped[list] = mapped_column(JSON, default=list)
+    objective_breakdown: Mapped[dict] = mapped_column(JSON, default=dict)
+    unfilled_slots: Mapped[list] = mapped_column(JSON, default=list)
+    post_check_findings: Mapped[list] = mapped_column(JSON, default=list)
+    rule_set_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_time_rule_sets.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    planning_period: Mapped["PlanningPeriod"] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
+    created_by: Mapped["User | None"] = relationship()
 
 
 class AuditLog(Base):

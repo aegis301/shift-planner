@@ -2,7 +2,7 @@
 
 ## Stack
 
-[`docker-compose.prod.yml`](../docker-compose.prod.yml) runs Postgres (internal network only), FastAPI, Next.js (production build), and Caddy. Caddy terminates TLS and routes `/api/*` to the backend and everything else to the frontend.
+[`docker-compose.prod.yml`](../docker-compose.prod.yml) runs Postgres (internal network only), FastAPI, a **solver-worker** that polls queued `SolverRun` rows, Next.js (production build), and Caddy. Caddy terminates TLS and routes `/api/*` to the backend and everything else to the frontend.
 
 ## Server preparation
 

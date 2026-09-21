@@ -17,6 +17,7 @@ Services (host ports default to uncommon values to reduce clashes with other loc
 
 - Frontend: <http://localhost:18130> (`FRONTEND_HOST_PORT`) — role-based **Dashboard** at `/` (admin / planner / team member tabs with charts)
 - Backend: <http://localhost:18180> (`BACKEND_HOST_PORT`)
+- Solver worker: polls `queued` `SolverRun` rows (no published port)
 - Backend health: <http://localhost:18180/health>
 - API docs: <http://localhost:18180/docs>
 - MCP service: <http://localhost:18181/mcp> (`MCP_HOST_PORT`) when run through Docker Compose.
@@ -59,6 +60,7 @@ python -m app.scripts.seed_solver_fixture --profile tight
 python -m app.scripts.seed_solver_fixture --profile infeasible
 python -m app.scripts.seed_solver_fixture --profile arbzg
 uvicorn app.main:app --reload --port 18180
+python -m app.scripts.solver_worker
 ruff check app
 pytest
 ```
@@ -137,6 +139,8 @@ When an organization has an active **work-time rule set**, month validation and 
 
 **Fairness accounts** (`GET /api/v1/fairness/{planning_period_id}`) return rolling actual / expected / deviation per member and dimension (total duties, weekend/holiday, night, statutory minutes). Expectation is summed **per month** from employment percentage, `weekly_hours_at_100`, and that month’s period roster — never a window-level average. History uses pre-aggregated `TimeEntry` rows (`source=roster`) plus statutory minute totals; it does not load twelve months of roster slots. Org JSON `fairness_policy` (`GET|PATCH /api/v1/organization/fairness-policy`) holds the window (default 12 months) and dimension list, so adding a dimension needs no migration. Openings: `TimeAccountOpening.fairness_balances` and `overtime_minutes` for statutory hours. Budget: 30 members over 12 months in under 2s with a member-count-independent query set. MCP: `shift-planner://fairness/{planning_period_id}`, `shift-planner://fairness-policy`, token-gated `update_fairness_policy_tool`. Planners must pass `shift_group_id`. The planning Analysis tab shows the rolling table (sortable by deviation) beside month-only shift counts; the roster picker shows the slot-relevant deviation from the same period fetch.
 
+**Solver runs** (`POST /api/v1/planning-periods/{id}/solver-runs`, `GET .../solver-runs`, `GET .../solver-runs/{run_id}`, `POST .../solver-runs/{run_id}/apply`, `POST .../solver-runs/{run_id}/cancel`) queue asynchronous roster generation. The request returns immediately with a run id. A Compose **solver-worker** (`python -m app.scripts.solver_worker`) claims `queued` rows. Parameters always include `num_search_workers` (default `1`) and `random_seed`. The solve function is a stub (no assignments; every in-scope slot is unfilled) until the CP-SAT model lands. Apply writes ordinary roster assignments through the existing upsert path and is never automatic. Published shift groups return **409**. MCP: `shift-planner://solver-runs/{planning_period_id}/shift-group/{shift_group_id}`, `run_roster_solver_tool`, `apply_solver_run_tool`, `cancel_solver_run_tool`. Alembic `202609210002`.
+
 **Working-time consents** (`GET|POST /api/v1/team-members/{id}/work-time-consents`, `POST .../{consent_id}/revoke`) store immutable opt-out records (`tier`, `valid_from`, document reference, recording admin, `revoked_at`, `notice_period_months`, derived `effective_until`). Admin writes; the linked team member may read. Revocation scans future published plan versions and returns findings without changing those plans. Admin UI: staff-directory row detail. Read-only card on `/profile`. MCP: `shift-planner://team-members/{id}/work-time-consents`, `record_work_time_consent_tool`, `revoke_work_time_consent_tool`.
 
 The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a team member to that date/slot, and changes autosave. The team member picker shows a color dot for that person’s day-level wishes status and labels for wish/no-go on the slot’s template. Day-level unavailable statuses, template no-gos (unless Manual override is checked on the cell), and template/variant constraints are highlighted as conflicts.
@@ -195,6 +199,8 @@ Migration `202605020001` adds **`organizations.slug`**, **`organization_join_req
 Migration `202605050001` renames **`doctors`** → **`team_members`**, related join tables and FK columns (**`team_member_id`**), period notes, join-request resolution column, and sets `users.role` from **`doctor`** to **`team_member`** where applicable.
 
 Migration `202609210001` drops leftover doctors-era unique index **`ix_doctors_email`** (global unique team-member email) that the rename left in place. Run `alembic upgrade head` on any database that existed before the rename; databases created fresh from Alembic never had this index.
+
+Migration `202609210002` adds **`solver_runs`** and **`organizations.solver_time_budget_ceiling_seconds`** (default 120).
 
 Migration `202606080002` adds JSON `constraints` columns on `shift_templates` and `shift_variants`.
 

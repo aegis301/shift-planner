@@ -34,6 +34,10 @@ from mcp_app.server import (
     compliance_report_resource,
     fairness_accounts_resource,
     update_fairness_policy_tool,
+    run_roster_solver_tool,
+    apply_solver_run_tool,
+    cancel_solver_run_tool,
+    solver_runs_resource,
 )
 
 
@@ -246,3 +250,16 @@ def test_fairness_accounts_resource_is_registered():
 def test_update_fairness_policy_requires_token():
     with pytest.raises(PermissionError):
         update_fairness_policy_tool(token="wrong-token", window_months=6)
+
+
+def test_solver_runs_resource_is_registered():
+    assert solver_runs_resource.__name__ == "solver_runs_resource"
+
+
+def test_solver_run_tools_require_token():
+    with pytest.raises(PermissionError):
+        run_roster_solver_tool(token="wrong-token", planning_period_id=1, shift_group_id=1)
+    with pytest.raises(PermissionError):
+        apply_solver_run_tool(token="wrong-token", planning_period_id=1, run_id=1)
+    with pytest.raises(PermissionError):
+        cancel_solver_run_tool(token="wrong-token", planning_period_id=1, run_id=1)
