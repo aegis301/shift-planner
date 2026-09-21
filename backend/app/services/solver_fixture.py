@@ -6,7 +6,7 @@ import json
 import random
 from dataclasses import dataclass
 from datetime import date, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -46,8 +46,10 @@ from app.schemas import (
     TeamMemberPropertyRequirementAtom,
     TeamMemberPropertyValuesReplace,
     TeamMemberPropertyValueUpsertItem,
+    TimeEntryCreate,
     WorkTimeConsentCreate,
 )
+from app.services.audit import record_audit
 from app.services.contract_group_defaults import (
     OPEN_ENDED_EMPLOYMENT_START,
     default_regular_week_pattern,
@@ -100,19 +102,26 @@ from app.services.team_member_property_values import (
     replace_team_member_property_values,
 )
 from app.services.team_members import create_team_member, list_team_members
-from app.services.time_entries import derive_entries
+from app.services.time_entries import create_manual_entry, derive_entries
 from app.services.work_time_consents import list_work_time_consents, record_work_time_consent
-from app.services.work_time_preset_catalog import PRESET_CODE_TDL, _tv_aerzte_category_rules
+from app.services.work_time_preset_catalog import (
+    PRESET_CODE_ARBZG,
+    PRESET_CODE_TDL,
+    _tv_aerzte_category_rules,
+)
 from app.services.work_time_presets import adopt_work_time_rule_set_preset, ensure_work_time_presets
 
-SolverProfile = Literal["comfortable", "tight", "infeasible"]
+SolverProfile = Literal["comfortable", "tight", "infeasible", "arbzg"]
 
 ACTOR = "seed_solver_fixture"
 SOURCE = "script"
 DAY_STATUS_DENSITY = 0.08
 WISH_DENSITY = 0.10
 DAY_STATUS_CODES = ("urlaub", "forschung", "lehre")
-PROFILES: tuple[SolverProfile, ...] = ("comfortable", "tight", "infeasible")
+PROFILES: tuple[SolverProfile, ...] = ("comfortable", "tight", "infeasible", "arbzg")
+ARBZG_WEEKLY_CAP_HOURS = 48
+ARBZG_REFERENCE_MONTHS = 6
+ARBZG_JUST_UNDER_SLACK_MINUTES = 60
 
 
 class SolverFixtureError(ValueError):
@@ -150,6 +159,7 @@ _PROFILE_SPECS: dict[SolverProfile, _ProfileSpec] = {
     "comfortable": _ProfileSpec(20, 0.10, 0, None),
     "tight": _ProfileSpec(20, 0.30, 6, None),
     "infeasible": _ProfileSpec(10, 0.50, 0, 3),
+    "arbzg": _ProfileSpec(10, 0.10, 0, None),
 }
 
 
@@ -176,6 +186,175 @@ def _month_days(year: int, month: int) -> list[date]:
         days.append(cursor)
         cursor += timedelta(days=1)
     return days
+
+
+def _subtract_months(value: date, months: int) -> date:
+    year, month = _shift_month(value.year, value.month, -months)
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _minutes_for_weekly_average(days: int, target_average: int) -> int:
+    if days <= 0:
+        raise SolverFixtureError("weekly average window must contain at least one day")
+    center = (target_average * days) // 7
+    for delta in range(0, days * 2 + 1):
+        for total in (center - delta, center + delta):
+            if total < 0:
+                continue
+            average = int(
+                (Decimal(total) * Decimal(7) / Decimal(days)).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+            )
+            if average == target_average:
+                return total
+    raise SolverFixtureError(
+        f"Could not reach weekly average {target_average} over {days} days"
+    )
+
+
+def _sum_statutory_minutes(
+    db: Session,
+    *,
+    organization_id: int,
+    member_id: int,
+    start_date: date,
+    end_date: date,
+) -> int:
+    total = db.scalar(
+        select(func.coalesce(func.sum(TimeEntry.statutory_minutes), 0)).where(
+            TimeEntry.organization_id == organization_id,
+            TimeEntry.team_member_id == member_id,
+            TimeEntry.entry_date >= start_date,
+            TimeEntry.entry_date <= end_date,
+        )
+    )
+    return int(total or 0)
+
+
+@dataclass(frozen=True)
+class _ArbzgRoles:
+    rest_id: int
+    over_id: int
+    under_id: int
+    documentation_id: int
+
+
+@dataclass(frozen=True)
+class _ArbzgDates:
+    boundary_prev: date
+    boundary_next: date
+    within_duty: date
+    within_follow: date
+    documentation: date
+
+
+def _arbzg_roles(members: list[TeamMember]) -> _ArbzgRoles:
+    ordered = sorted(members, key=lambda row: row.id)
+    if len(ordered) < 4:
+        raise SolverFixtureError("arbzg profile requires at least 4 team members")
+    return _ArbzgRoles(
+        rest_id=ordered[0].id,
+        over_id=ordered[1].id,
+        under_id=ordered[2].id,
+        documentation_id=ordered[3].id,
+    )
+
+
+def _arbzg_dates(year: int, month: int) -> _ArbzgDates:
+    start, end = _month_bounds(year, month)
+    prev_year, prev_month = _shift_month(year, month, -1)
+    _, prev_end = _month_bounds(prev_year, prev_month)
+    within_duty = start + timedelta(days=9)
+    if within_duty >= end:
+        within_duty = start + timedelta(days=2)
+    within_follow = within_duty + timedelta(days=1)
+    documentation = end
+    reserved_target = {start, within_duty, within_follow}
+    if documentation in reserved_target:
+        documentation = start + timedelta(days=5)
+    if documentation in reserved_target or documentation > end:
+        raise SolverFixtureError("arbzg profile could not place a documentation day")
+    return _ArbzgDates(
+        boundary_prev=prev_end,
+        boundary_next=start,
+        within_duty=within_duty,
+        within_follow=within_follow,
+        documentation=documentation,
+    )
+
+
+def _arbzg_reserved_keys(roles: _ArbzgRoles, dates: _ArbzgDates) -> set[tuple[int, date]]:
+    return {
+        (roles.rest_id, dates.boundary_next),
+        (roles.rest_id, dates.within_duty),
+        (roles.rest_id, dates.within_follow),
+        (roles.documentation_id, dates.documentation),
+    }
+
+
+def _first_slot_on_date(
+    db: Session,
+    planning_period_id: int,
+    *,
+    template_code: str,
+    slot_date: date,
+) -> RosterSlot:
+    slots = [
+        slot
+        for slot in list_roster_slots(db, planning_period_id=planning_period_id)
+        if slot.shift_template is not None
+        and slot.shift_template.code == template_code
+        and slot.slot_date == slot_date
+    ]
+    slots = sorted(slots, key=lambda slot: (slot.position, slot.id))
+    if not slots:
+        raise SolverFixtureError(f"No {template_code} slot on {slot_date.isoformat()}")
+    return slots[0]
+
+
+def _assign_slot_without_preflight(
+    db: Session,
+    *,
+    slot: RosterSlot,
+    team_member_id: int,
+) -> RosterSlotAssignment:
+    assignment = db.scalar(
+        select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot.id)
+    )
+    previous_member_id = assignment.team_member_id if assignment is not None else None
+    if assignment is None:
+        assignment = RosterSlotAssignment(
+            roster_slot_id=slot.id,
+            team_member_id=team_member_id,
+            comment=None,
+            manual_override=True,
+            source=SOURCE,
+        )
+        db.add(assignment)
+        action = "create"
+    else:
+        assignment.team_member_id = team_member_id
+        assignment.manual_override = True
+        assignment.source = SOURCE
+        action = "update"
+    db.flush()
+    record_audit(
+        db,
+        actor=ACTOR,
+        source=SOURCE,
+        action=action,
+        entity_type="roster_slot_assignment",
+        entity_id=assignment.id,
+        details={
+            "planning_period_id": slot.planning_period_id,
+            "roster_slot_id": slot.id,
+            "team_member_id": team_member_id,
+            "previous_team_member_id": previous_member_id,
+        },
+    )
+    return assignment
 
 
 def _employment_percentages(member_count: int) -> list[int]:
@@ -261,11 +440,11 @@ def _resolve_organization(
     return organization
 
 
-def _create_contract_group(db: Session, organization_id: int):
+def _create_contract_group(db: Session, organization_id: int, *, name: str = "TdL 42h"):
     return create_contract_group(
         db,
         ContractGroupCreate(
-            name="TdL 42h",
+            name=name,
             weekly_hours_at_100=Decimal("42"),
             vacation_days_at_100=Decimal("30"),
             regular_week_pattern=[
@@ -382,6 +561,33 @@ def _create_templates(db: Session, organization_id: int) -> dict[str, ShiftTempl
         source=SOURCE,
     )
     return templates
+
+
+def _add_frueh_template(db: Session, organization_id: int) -> ShiftTemplate:
+    template = create_shift_template(
+        db,
+        ShiftTemplateCreate(code="frueh", name="Fruehdienst", category="other", display_order=3),
+        organization_id=organization_id,
+        actor=ACTOR,
+        source=SOURCE,
+    )
+    create_shift_variant(
+        db,
+        template.id,
+        ShiftVariantCreate(
+            label="daily",
+            start_day_class="any",
+            include_holidays=True,
+            starts_at=time(9, 0),
+            ends_at=time(17, 0),
+            end_day_offset=0,
+            required_count=1,
+        ),
+        organization_id=organization_id,
+        actor=ACTOR,
+        source=SOURCE,
+    )
+    return template
 
 
 def _apply_infeasible_bd24_constraint(
@@ -503,6 +709,8 @@ def greedy_assign_period(
     organization_id: int,
     rng: random.Random | None = None,
     require_full: bool = True,
+    bypass_preflight: bool = False,
+    candidate_member_ids: list[int] | None = None,
 ) -> list[RosterSlotAssignment]:
     slots = list_roster_slots(db, planning_period_id=planning_period_id)
     slots = sorted(
@@ -518,6 +726,9 @@ def greedy_assign_period(
         list_team_members(db, organization_id=organization_id, active_only=True),
         key=lambda row: row.id,
     )
+    if candidate_member_ids is not None:
+        allowed = set(candidate_member_ids)
+        members = [row for row in members if row.id in allowed]
     weights = {member.id: 1.0 for member in members}
     if rng is not None:
         for member in members:
@@ -544,16 +755,21 @@ def greedy_assign_period(
             free.append(member_id)
         for member_id in free + busy:
             try:
-                assignment = upsert_roster_slot_assignment(
-                    db,
-                    RosterSlotAssignmentUpsert(
-                        roster_slot_id=slot.id,
-                        team_member_id=member_id,
-                    ),
-                    organization_id=organization_id,
-                    actor=ACTOR,
-                    source=SOURCE,
-                )
+                if bypass_preflight:
+                    assignment = _assign_slot_without_preflight(
+                        db, slot=slot, team_member_id=member_id
+                    )
+                else:
+                    assignment = upsert_roster_slot_assignment(
+                        db,
+                        RosterSlotAssignmentUpsert(
+                            roster_slot_id=slot.id,
+                            team_member_id=member_id,
+                        ),
+                        organization_id=organization_id,
+                        actor=ACTOR,
+                        source=SOURCE,
+                    )
             except ValueError:
                 continue
             assigned_counts[member_id] += 1
@@ -580,7 +796,10 @@ def greedy_assign_period(
                 if any(row.roster_slot_id == slot.id for row in assignments):
                     continue
                 if member.id not in eligible_member_ids_for_slot(
-                    db, slot, organization_id=organization_id
+                    db,
+                    slot,
+                    organization_id=organization_id,
+                    member_ids=candidate_member_ids,
                 ):
                     continue
                 filled = try_assign(slot, [member.id])
@@ -593,7 +812,12 @@ def greedy_assign_period(
     for slot in remaining:
         if slot.id in assigned_slot_ids:
             continue
-        eligible = eligible_member_ids_for_slot(db, slot, organization_id=organization_id)
+        eligible = eligible_member_ids_for_slot(
+            db,
+            slot,
+            organization_id=organization_id,
+            member_ids=candidate_member_ids,
+        )
         filled = try_assign(slot, eligible)
         if filled is None:
             if require_full:
@@ -615,6 +839,9 @@ def _fill_and_publish_history_month(
     month: int,
     rng: random.Random,
     shift_group_ids: list[int],
+    bypass_preflight: bool = False,
+    candidate_member_ids: list[int] | None = None,
+    boundary_bd24_member_id: int | None = None,
 ) -> int:
     period = create_planning_period(
         db,
@@ -636,7 +863,13 @@ def _fill_and_publish_history_month(
         organization_id=organization_id,
         rng=rng,
         require_full=True,
+        bypass_preflight=bypass_preflight,
+        candidate_member_ids=candidate_member_ids,
     )
+    if boundary_bd24_member_id is not None:
+        last_day = _month_bounds(year, month)[1]
+        slot = _first_slot_on_date(db, period.id, template_code="bd24", slot_date=last_day)
+        _assign_slot_without_preflight(db, slot=slot, team_member_id=boundary_bd24_member_id)
     start, end = _month_bounds(year, month)
     derive_entries(db, organization_id=organization_id, start_date=start, end_date=end)
     for group_id in shift_group_ids:
@@ -675,6 +908,7 @@ def _write_target_month(
     memberships: dict[int, list[int]],
     members: list[TeamMember],
     facharzt_ids: set[int],
+    reserved_keys: set[tuple[int, date]] | None = None,
 ) -> None:
     sync_roster_slots_for_period(
         db,
@@ -688,8 +922,10 @@ def _write_target_month(
         raise SolverFixtureError("Target planning period not found")
     days = _month_days(period.year, period.month)
     member_ids = [row.id for row in sorted(members, key=lambda item: item.id)]
+    reserved = reserved_keys or set()
     member_days = [(member_id, day) for member_id in member_ids for day in days]
-    status_keys = _sample_keys(rng, member_days, DAY_STATUS_DENSITY)
+    status_pool = [key for key in member_days if key not in reserved]
+    status_keys = _sample_keys(rng, status_pool, DAY_STATUS_DENSITY)
     status_by_key: dict[tuple[int, date], str] = {}
     for key in status_keys:
         status_by_key[key] = rng.choice(list(DAY_STATUS_CODES))
@@ -698,7 +934,10 @@ def _write_target_month(
         leave_ids = set(rng.sample(member_ids, spec.leave_count))
         for member_id in sorted(leave_ids):
             for day in days:
-                status_by_key[(member_id, day)] = "urlaub"
+                key = (member_id, day)
+                if key in reserved:
+                    continue
+                status_by_key[key] = "urlaub"
     group_map = _member_group_map(memberships)
     for group_id in sorted({gid for groups in group_map.values() for gid in groups}):
         cells = [
@@ -716,12 +955,15 @@ def _write_target_month(
                 actor=ACTOR,
                 source=SOURCE,
             )
-    remaining = [key for key in member_days if key not in status_by_key]
+    remaining = [key for key in member_days if key not in status_by_key and key not in reserved]
     no_go_keys = _sample_keys(rng, remaining, spec.no_go_density)
     no_go_set = set(no_go_keys)
     wish_pool = [key for key in remaining if key not in no_go_set]
     wish_keys = _sample_keys(rng, wish_pool, WISH_DENSITY)
-    template_ids = [templates[code].id for code in ("bd24", "spaet", "ruf")]
+    template_codes = ["bd24", "spaet", "ruf"]
+    if "frueh" in templates:
+        template_codes.append("frueh")
+    template_ids = [templates[code].id for code in template_codes]
     intents: list[PlanningShiftIntentUpsert] = []
     for member_id, day in no_go_keys:
         template_id = rng.choice(template_ids)
@@ -798,6 +1040,82 @@ def _sample_keys(
 def _intent_group_id(group_map: dict[int, list[int]], member_id: int) -> int | None:
     groups = group_map.get(member_id, [])
     return groups[0] if groups else None
+
+
+def _plant_arbzg_target_assignments(
+    db: Session,
+    *,
+    target_period_id: int,
+    roles: _ArbzgRoles,
+    dates: _ArbzgDates,
+) -> None:
+    follow = _first_slot_on_date(
+        db, target_period_id, template_code="frueh", slot_date=dates.boundary_next
+    )
+    _assign_slot_without_preflight(db, slot=follow, team_member_id=roles.rest_id)
+    within_duty = _first_slot_on_date(
+        db, target_period_id, template_code="bd24", slot_date=dates.within_duty
+    )
+    within_follow = _first_slot_on_date(
+        db, target_period_id, template_code="frueh", slot_date=dates.within_follow
+    )
+    _assign_slot_without_preflight(db, slot=within_duty, team_member_id=roles.rest_id)
+    _assign_slot_without_preflight(db, slot=within_follow, team_member_id=roles.rest_id)
+    documentation = _first_slot_on_date(
+        db, target_period_id, template_code="bd24", slot_date=dates.documentation
+    )
+    _assign_slot_without_preflight(db, slot=documentation, team_member_id=roles.documentation_id)
+    db.commit()
+
+
+def _top_up_arbzg_weekly_averages(
+    db: Session,
+    *,
+    organization_id: int,
+    year: int,
+    month: int,
+    roles: _ArbzgRoles,
+) -> None:
+    end_date = _month_bounds(year, month)[1]
+    period_start = _subtract_months(end_date, ARBZG_REFERENCE_MONTHS)
+    days = (end_date - period_start).days + 1
+    cap_minutes = ARBZG_WEEKLY_CAP_HOURS * 60
+    targets = (
+        (roles.over_id, cap_minutes + 1),
+        (roles.under_id, cap_minutes),
+    )
+    for member_id, target_average in targets:
+        current = _sum_statutory_minutes(
+            db,
+            organization_id=organization_id,
+            member_id=member_id,
+            start_date=period_start,
+            end_date=end_date,
+        )
+        desired = _minutes_for_weekly_average(days, target_average)
+        needed = desired - current
+        if needed < 0:
+            raise SolverFixtureError(
+                f"Team member {member_id} already has {current} statutory minutes; "
+                f"cannot top up to weekly average {target_average}"
+            )
+        if needed == 0:
+            continue
+        create_manual_entry(
+            db,
+            TimeEntryCreate(
+                team_member_id=member_id,
+                entry_date=period_start,
+                kind="work",
+                all_day=True,
+                duration_minutes=needed,
+                statutory_minutes=needed,
+                credited_minutes=needed,
+            ),
+            organization_id=organization_id,
+            actor=ACTOR,
+            source=SOURCE,
+        )
 
 
 def fixture_digest(db: Session, organization_id: int) -> str:
@@ -998,6 +1316,8 @@ def seed_solver_fixture(
         raise SolverFixtureError("history_months must be >= 0")
     if year is None or month is None:
         year, month = default_target_year_month()
+    if profile == "arbzg" and history_months < 1:
+        raise SolverFixtureError("arbzg profile requires history_months >= 1")
     spec = _PROFILE_SPECS[profile]
     rng = random.Random(rng_seed)
     organization = _resolve_organization(
@@ -1008,17 +1328,20 @@ def seed_solver_fixture(
         force=force,
     )
     ensure_work_time_presets(db)
+    preset_code = PRESET_CODE_ARBZG if profile == "arbzg" else PRESET_CODE_TDL
     adopted = adopt_work_time_rule_set_preset(
         db,
-        PRESET_CODE_TDL,
+        preset_code,
         organization_id=organization.id,
         actor=ACTOR,
         source=SOURCE,
         is_active=True,
     )
     if adopted is None:
-        raise SolverFixtureError("TV-Ärzte (TdL) preset is not available")
-    contract = _create_contract_group(db, organization.id)
+        preset_name = "ArbZG-Grundmodell" if profile == "arbzg" else "TV-Ärzte (TdL)"
+        raise SolverFixtureError(f"{preset_name} preset is not available")
+    contract_name = "ArbZG 42h" if profile == "arbzg" else "TdL 42h"
+    contract = _create_contract_group(db, organization.id, name=contract_name)
     anaesthesie = create_shift_group(
         db,
         ShiftGroupCreate(code="anaesthesie", name="Anaesthesie", display_order=0),
@@ -1109,10 +1432,8 @@ def seed_solver_fixture(
         spec.member_count * 0.50
     )
     sono_count = round(spec.member_count * 0.30)
-    consent_count = round(spec.member_count * 0.60)
     facharzt_yes = set(rng.sample(member_ids, facharzt_count))
     sono_yes = set(rng.sample(member_ids, sono_count))
-    consent_ids = rng.sample(member_ids, consent_count)
     history_start_year, history_start_month = _shift_month(year, month, -max(history_months, 1))
     consent_from, _ = _month_bounds(history_start_year, history_start_month)
     for member in members:
@@ -1135,20 +1456,23 @@ def seed_solver_fixture(
             actor=ACTOR,
             source=SOURCE,
         )
-    for index, member_id in enumerate(sorted(consent_ids)):
-        record_work_time_consent(
-            db,
-            member_id,
-            WorkTimeConsentCreate(
-                consent_type="opt_out",
-                tier="stufe_i" if index % 2 == 0 else "stufe_ii",
-                valid_from=consent_from,
-            ),
-            organization_id=organization.id,
-            recorded_by_user_id=None,
-            actor=ACTOR,
-            source=SOURCE,
-        )
+    if profile != "arbzg":
+        consent_count = round(spec.member_count * 0.60)
+        consent_ids = rng.sample(member_ids, consent_count)
+        for index, member_id in enumerate(sorted(consent_ids)):
+            record_work_time_consent(
+                db,
+                member_id,
+                WorkTimeConsentCreate(
+                    consent_type="opt_out",
+                    tier="stufe_i" if index % 2 == 0 else "stufe_ii",
+                    valid_from=consent_from,
+                ),
+                organization_id=organization.id,
+                recorded_by_user_id=None,
+                actor=ACTOR,
+                source=SOURCE,
+            )
     memberships: dict[int, list[int]] = {member.id: [] for member in members}
     ana_memberships: list[ShiftGroupMembershipWrite] = []
     intensiv_memberships: list[ShiftGroupMembershipWrite] = []
@@ -1189,9 +1513,27 @@ def seed_solver_fixture(
         source=SOURCE,
     )
     shift_group_ids = [anaesthesie.id, intensiv.id]
+    arbzg_roles = _arbzg_roles(members) if profile == "arbzg" else None
+    arbzg_dates = _arbzg_dates(year, month) if profile == "arbzg" else None
+    reserved_member_ids: list[int] | None = None
+    if arbzg_roles is not None:
+        reserved_member_ids = [
+            arbzg_roles.rest_id,
+            arbzg_roles.over_id,
+            arbzg_roles.under_id,
+            arbzg_roles.documentation_id,
+        ]
+    history_candidates = (
+        [member_id for member_id in member_ids if member_id not in set(reserved_member_ids)]
+        if reserved_member_ids is not None
+        else None
+    )
     history_period_ids: list[int] = []
     for offset in range(history_months, 0, -1):
         history_year, history_month = _shift_month(year, month, -offset)
+        boundary_member_id = None
+        if arbzg_roles is not None and offset == 1:
+            boundary_member_id = arbzg_roles.rest_id
         history_period_ids.append(
             _fill_and_publish_history_month(
                 db,
@@ -1200,6 +1542,9 @@ def seed_solver_fixture(
                 month=history_month,
                 rng=rng,
                 shift_group_ids=shift_group_ids,
+                bypass_preflight=profile == "arbzg",
+                candidate_member_ids=history_candidates,
+                boundary_bd24_member_id=boundary_member_id,
             )
         )
     if profile == "infeasible":
@@ -1210,12 +1555,29 @@ def seed_solver_fixture(
             facharzt_id=facharzt.id,
         )
         templates["bd24"] = db.get(ShiftTemplate, templates["bd24"].id) or templates["bd24"]
+    if profile == "arbzg":
+        templates["frueh"] = _add_frueh_template(db, organization.id)
+        template_ids = [templates[code].id for code in ("bd24", "spaet", "ruf", "frueh")]
+        for group in (anaesthesie, intensiv):
+            replace_group_shift_templates(
+                db,
+                group.id,
+                template_ids,
+                organization_id=organization.id,
+                actor=ACTOR,
+                source=SOURCE,
+            )
     target = create_planning_period(
         db,
         PlanningPeriodCreate(year=year, month=month),
         organization_id=organization.id,
         actor=ACTOR,
         source=SOURCE,
+    )
+    reserved_keys = (
+        _arbzg_reserved_keys(arbzg_roles, arbzg_dates)
+        if arbzg_roles is not None and arbzg_dates is not None
+        else None
     )
     _write_target_month(
         db,
@@ -1228,7 +1590,22 @@ def seed_solver_fixture(
         memberships=memberships,
         members=members,
         facharzt_ids=facharzt_yes,
+        reserved_keys=reserved_keys,
     )
+    if arbzg_roles is not None and arbzg_dates is not None:
+        _plant_arbzg_target_assignments(
+            db,
+            target_period_id=target.id,
+            roles=arbzg_roles,
+            dates=arbzg_dates,
+        )
+        _top_up_arbzg_weekly_averages(
+            db,
+            organization_id=organization.id,
+            year=year,
+            month=month,
+            roles=arbzg_roles,
+        )
     return SolverFixtureResult(
         organization_id=organization.id,
         organization_slug=organization.slug,

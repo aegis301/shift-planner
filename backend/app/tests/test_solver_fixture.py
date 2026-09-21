@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.models import RosterSlot
 from app.models.base import Base
 from app.schemas import PlanningPeriodCreate, ShiftGroupCreate
 from app.services.fairness import build_fairness_accounts
@@ -16,6 +17,7 @@ from app.services.rules import build_plan_state
 from app.services.rules.statutory import member_worktime_metrics, statutory_rules_for_org
 from app.services.shift_groups import create_shift_group
 from app.services.solver_fixture import (
+    ARBZG_JUST_UNDER_SLACK_MINUTES,
     SolverFixtureSafetyError,
     eligible_member_ids_for_slot,
     fixture_digest,
@@ -23,6 +25,8 @@ from app.services.solver_fixture import (
     seed_solver_fixture,
 )
 from app.services.team_members import list_team_members
+from app.services.validation import validate_roster
+from app.services.work_time_rule_sets import get_active_work_time_rule_set
 
 SEED = dict(rng_seed=1, year=2026, month=11, history_months=2)
 
@@ -198,3 +202,111 @@ def test_refuses_default_organization_without_force(db):
             history_months=0,
             rng_seed=1,
         )
+
+
+def _seed_arbzg(db):
+    return seed_solver_fixture(db, profile="arbzg", **SEED)
+
+
+def _arbzg_warnings(db, result):
+    return validate_roster(db, result.target_period_id, organization_id=result.organization_id)
+
+
+def test_arbzg_uses_grundmodell_preset(db):
+    result = _seed_arbzg(db)
+    active = get_active_work_time_rule_set(db, organization_id=result.organization_id)
+    assert active is not None
+    assert active.name == "ArbZG-Grundmodell"
+    rule_types = {row.get("type") for row in (active.rules or []) if isinstance(row, dict)}
+    assert "min_rest_period" in rule_types
+    assert "rest_after_long_duty" in rule_types
+    assert "weekly_average_cap" in rule_types
+    assert "documentation_requirement" in rule_types
+
+
+def test_arbzg_validation_fires_min_rest(db):
+    result = _seed_arbzg(db)
+    codes = {row.code for row in _arbzg_warnings(db, result)}
+    assert "WORKTIME_MIN_REST" in codes
+
+
+def test_arbzg_validation_fires_rest_after_long_duty(db):
+    result = _seed_arbzg(db)
+    codes = {row.code for row in _arbzg_warnings(db, result)}
+    assert "WORKTIME_REST_AFTER_LONG_DUTY" in codes
+
+
+def test_arbzg_validation_fires_weekly_average(db):
+    result = _seed_arbzg(db)
+    codes = {row.code for row in _arbzg_warnings(db, result)}
+    assert "WORKTIME_WEEKLY_AVERAGE" in codes
+
+
+def test_arbzg_validation_fires_documentation_gap(db):
+    result = _seed_arbzg(db)
+    codes = {row.code for row in _arbzg_warnings(db, result)}
+    assert "WORKTIME_DOCUMENTATION_GAP" in codes
+
+
+def test_arbzg_rest_violation_spans_month_boundary(db):
+    result = _seed_arbzg(db)
+    warnings = [row for row in _arbzg_warnings(db, result) if row.code == "WORKTIME_MIN_REST"]
+    assert warnings
+    crossed = False
+    for warning in warnings:
+        next_id = warning.details.get("roster_slot_id")
+        prev_id = warning.details.get("related_roster_slot_id")
+        if next_id is None or prev_id is None:
+            continue
+        next_slot = db.get(RosterSlot, next_id)
+        prev_slot = db.get(RosterSlot, prev_id)
+        if next_slot is None or prev_slot is None:
+            continue
+        if (prev_slot.slot_date.year, prev_slot.slot_date.month) != (
+            next_slot.slot_date.year,
+            next_slot.slot_date.month,
+        ):
+            crossed = True
+            break
+    assert crossed
+
+
+def test_arbzg_weekly_average_has_over_and_just_under_members(db):
+    result = _seed_arbzg(db)
+    last_day = monthrange(result.year, result.month)[1]
+    state = build_plan_state(
+        db,
+        organization_id=result.organization_id,
+        start_date=date(result.year, result.month, 1),
+        end_date=date(result.year, result.month, last_day),
+    )
+    rules = statutory_rules_for_org(db, result.organization_id)
+    members = list_team_members(db, organization_id=result.organization_id, active_only=True)
+    over: list[int] = []
+    under: list[int] = []
+    for member in members:
+        metrics = member_worktime_metrics(state, member.id, rules)
+        average = metrics["weekly_average_minutes"]
+        cap = metrics["weekly_cap_minutes"]
+        if average > cap:
+            over.append(average)
+        elif cap - ARBZG_JUST_UNDER_SLACK_MINUTES <= average <= cap:
+            under.append(average)
+    assert over
+    assert under
+
+
+def test_arbzg_identical_parameters_produce_identical_digest():
+    first, first_engine = _memory_db()
+    second, second_engine = _memory_db()
+    try:
+        result_a = seed_solver_fixture(first, profile="arbzg", **SEED)
+        result_b = seed_solver_fixture(second, profile="arbzg", **SEED)
+        assert fixture_digest(first, result_a.organization_id) == fixture_digest(
+            second, result_b.organization_id
+        )
+    finally:
+        first.close()
+        first_engine.dispose()
+        second.close()
+        second_engine.dispose()

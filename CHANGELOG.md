@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-21
+- **ArbZG solver fixture profile:** `python -m app.scripts.seed_solver_fixture --profile arbzg` seeds an org on the **ArbZG-Grundmodell** preset and plants rest, weekly-average, and documentation violations so those statutory codes can be tested, including a rest pair that crosses the previous month. `--rng-seed` still makes two runs identical.
 - **Team member email uniqueness:** Databases migrated through the `doctors` table kept leftover unique index `ix_doctors_email`, which silently enforced a **global** unique email and blocked the same address in two organizations (including the three solver fixture profiles). Migration `202609210001` drops that index (`DROP INDEX IF EXISTS`) and `doctors_email_key` if present, so uniqueness is per organization as the model always declared.
 
 ## 2026-09-20
