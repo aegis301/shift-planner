@@ -130,6 +130,22 @@ def test_weekly_average_nonzero_for_every_member(db):
         assert metrics["weekly_average_minutes"] > 0
 
 
+def test_three_profiles_can_coexist_with_shared_member_emails(db):
+    results = [
+        seed_solver_fixture(db, profile=profile, rng_seed=1, year=2026, month=11, history_months=0)
+        for profile in ("comfortable", "tight", "infeasible")
+    ]
+    assert len({row.organization_id for row in results}) == 3
+    email_sets = []
+    for result in results:
+        members = list_team_members(db, organization_id=result.organization_id, active_only=True)
+        org_emails = {member.email for member in members}
+        email_sets.append(org_emails)
+        assert "solver-m01@example.com" in org_emails
+    shared = email_sets[0] & email_sets[1] & email_sets[2]
+    assert "solver-m01@example.com" in shared
+
+
 def test_refuses_existing_plan_versions_without_force(db):
     create_organization_record(db, name="Default", slug="default")
     db.commit()

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-21
+- **Team member email uniqueness:** Databases migrated through the `doctors` table kept leftover unique index `ix_doctors_email`, which silently enforced a **global** unique email and blocked the same address in two organizations (including the three solver fixture profiles). Migration `202609210001` drops that index (`DROP INDEX IF EXISTS`) and `doctors_email_key` if present, so uniqueness is per organization as the model always declared.
+
 ## 2026-09-20
 - **Max duties count on-call only:** `WORKTIME_MAX_DUTIES` previously counted every roster assignment. Spätdienst and Rufdienst therefore inflated the total against the TV-Ärzte (TdL) § 7 Abs. 5a Bereitschaftsdienst cap, so validation warnings and the compliance report over-reported. The rule now takes `categories` (default `["bereitschaftsdienst"]`). TdL/VKA presets carry that scope. Alembic `202609200002` backfills existing stored rule sets. Counts on reports generated before this fix were too high.
 
