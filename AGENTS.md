@@ -22,6 +22,30 @@ This project is an AI-first shift planning tool for **healthcare teams**; people
 
 **Subscription hooks:** `Organization` carries optional `seat_limit`, `billing_customer_id`, and `subscription_status` for future billing; linking a team-member login enforces seat limits when `seat_limit` is set.
 
+## Where things live
+
+Start here before reading the rest of this file.
+
+| Concern | Module |
+|---|---|
+| Rule evaluation, `PlanState` | `app/services/rules/` — `builder`, `protocol`, `registry`, `shift_constraints`, `member_patterns`, `builtin`, `statutory` |
+| Contract terms, employment | `contract_groups.py`, `employment_periods.py` |
+| Time ledger, duty activity | `time_entries.py`, `duty_activity.py`, `duty_utilization.py`, `duty_activity_privacy.py` |
+| Statutory configuration | `work_time_rule_sets.py`, `work_time_presets.py`, `work_time_preset_catalog.py`, `work_time_consents.py` |
+| Duty valuation | `work_time_valuation.py` — statutory minutes and tariff credit are two independent numbers and stay that way |
+| Reporting | `compliance_report.py`, `fairness.py`, `workload.py` |
+| Realistic test data | `app/scripts/seed_solver_fixture.py` — profiles `comfortable`, `tight`, `infeasible` |
+
+Two invariants that are easy to break and expensive to unbreak:
+
+- **`PlanState` is built from a date window, never a `planning_period_id`.** Month-scoped
+  evaluation silently misses rest-period and coupling violations across month boundaries.
+- **Statutory working time and tariff credit are never summed or collapsed into one figure.**
+  A Bereitschaftsdienst counts 100 % toward ArbZG limits and 60 % (Stufe I) toward the time
+  account. One number cannot be both.
+
+---
+
 ## Architecture
 
 - Backend: Python, FastAPI, SQLAlchemy, Alembic, Postgres.
@@ -42,7 +66,33 @@ Every feature must be designed so it can be controlled by a web UI, REST API, an
 
 ## Contract groups and employment
 
-Organizations define **`ContractGroup`** rows (`GET|POST|PATCH|DELETE /api/v1/contract-groups`; planning-user read, admin write). Each group stores `weekly_hours_at_100` and `vacation_days_at_100` as `Numeric`, a regular week pattern, per-template-category credit rules (`credit_mode` duration/factor/none, `credit_factor` only when factor, `holiday_credit_bonus`, **`statutory_factor`**, `call_outs_count_as_work`), and day-status `status_mappings`. **`EmploymentPeriod`** is the source of truth for employment percentage (non-overlapping per member, `400` on overlap). **`TimeAccountOpening`** holds one opening balance per member. Reads of employment percentage go through `employment_percentage_on(member, date)`. Admin UI: **Team** → **Verträge** (`/organization/team/contract-groups`) and staff-directory row detail. MCP: `shift-planner://contract-groups` plus token-gated create/update/delete and employment-period/opening tools. **`TimeEntry`** is the dated ledger (`GET|POST /api/v1/time-entries`, reconciliation, `POST .../derive`, `GET .../ledger`; MCP `shift-planner://time-entries/{team_member_id}`, `get_hours_ledger_tool`, and token-gated upsert/derive). Derivation reconciles roster and mapped day-status sources and never overwrites `manual` rows or `corrected_fields`. Linked members use **`/my-hours`**; planners/admins use **`/hours`** (planners must pass `shift_group_id`). Statutory and credited minutes stay separate; the running account adds opening overtime to credited minutes that count toward the contract, then subtracts the contract-target minutes from the week pattern. **`WorkTimeRuleSet`** is org-scoped, named, and versioned (`GET|POST|PATCH|DELETE /api/v1/work-time-rule-sets`; planning-user read, admin write). Only one set is active; editing a set referenced by **`PlanningPlanVersion.work_time_rule_set_version_id`** creates version N+1. Seed presets (`ArbZG-Grundmodell`, `TV-Ärzte (TdL)`, `TV-Ärzte (VKA)`) are adopted via **`POST /api/v1/work-time-rule-sets/presets/{code}/adopt`** (copies rules; TdL/VKA also seed Stufe contract groups). Admin UI: **Team** → **Arbeitszeitregeln**. MCP: `shift-planner://work-time-rule-sets` plus token-gated tools. The active set’s rules evaluate in `app/services/rules/statutory.py` during validation and assignment preflight. **`WORKTIME_MAX_DUTIES`** counts only configured template **`categories`** (default **`bereitschaftsdienst`**). **`WorkTimeConsent`** stores dated opt-out records (`GET|POST /api/v1/team-members/{id}/work-time-consents`, revoke); `applicable_weekly_cap` resolves the weekly cap per date. Records are immutable; corrections insert a new row. Revocation lists affected future published plan versions and does not rewrite them. MCP: `shift-planner://team-members/{id}/work-time-consents` plus token-gated record/revoke tools. Admin UI: staff-directory row detail; linked members see a read-only card on `/profile`. **Duty activity** episodes are `TimeEntry` rows with kind `call_out` or `in_duty_activity` (`GET|POST /api/v1/duty-activity`, `PATCH /api/v1/duty-activity/{id}` to stop or annotate, revoke via delete). Both require an assigned `roster_slot_id` plus `started_at` inside the slot; `ended_at` may be omitted to start a running episode. Overlaps on the same slot are rejected. `call_out` feeds `statutory_work_minutes` and rest interruption; `in_duty_activity` adds no statutory time. `app/services/duty_utilization.py` reports per-slot and aggregate utilization, tariff band, `exceeds_on_call_threshold`, and coverage from the active set’s `duty_utilization_bands`. Linked members see one-tap start/stop on `/my-planning` and the team-member dashboard, plus retrospective entry on the My shifts tab; `GET /api/v1/duty-activity/slots/{id}/utilization` returns the band for an assigned slot. Planners/admins read aggregates only unless `DutyActivityAccessPolicy.individual_read_roles` grants them; default individual reads are 403. REST purpose acknowledgement is required before a member records via `/api/v1/duty-activity`. Retention purge lives in `duty_activity_privacy.py` and `python -m app.scripts.purge_duty_activity`. Works-council export is aggregate-only with small-group suppression. Admin UI: **Team** → **Diensttätigkeit**; purpose card on `/profile`. MCP: `shift-planner://duty-utilization/{planning_period_id}`, `shift-planner://duty-activity-access-policy`, `shift-planner://duty-activity/works-council/{planning_period_id}`, plus token-gated `record_duty_activity_tool`, `update_duty_activity_tool`, `update_duty_activity_access_policy_tool`, and `purge_duty_activity_episodes_tool`. **Compliance report** (`GET /api/v1/compliance-report/{planning_period_id}`, XLSX/PDF under `/api/v1/exports/compliance-report/{id}.xlsx|.pdf`) is built from `evaluate_plan_state` findings plus rule-layer metrics (statutory vs tariff credit, rolling weekly average and cap source, rest/compensation, consecutive days, duty counts, documentation coverage). The active rule-set version and generation timestamp are printed on every export. Admins may omit `shift_group_id`; planners must pass one of their groups. Planning workspace Analysis tab. MCP: `shift-planner://compliance-report/{planning_period_id}`. **Fairness accounts** (`GET /api/v1/fairness/{planning_period_id}`) compute rolling actual / expected / deviation per member and dimension (duties, weekend/holiday, night, statutory hours) from `PlanState` history aggregates — duty counts come from `TimeEntry` rows with `source=roster`, not a year of `RosterSlot` rows. Expectation is the sum of per-month shares from `EmploymentPeriod.employment_percentage`, contract-group `weekly_hours_at_100`, and that month’s period roster; joiners are measured only for months they were on `planning_period_shift_group_members`. Opening values live in `TimeAccountOpening.fairness_balances` (and `overtime_minutes` for statutory hours). Dimensions and window length are org JSON (`fairness_policy`; `GET|PATCH /api/v1/organization/fairness-policy`); adding a dimension does not need a migration. Computing 30 members over 12 months stays under 2s with a member-count-independent query set and no history-window slot scan. MCP: `shift-planner://fairness/{planning_period_id}` plus token-gated `update_fairness_policy_tool`. Planning workspace Analysis tab shows actual / expected / deviation per dimension over the rolling window; the roster picker shows the slot-relevant deviation from the same payload (one fetch per period, not per candidate).
+### Contract groups, employment periods, opening balances
+
+Organizations define **`ContractGroup`** rows (`GET|POST|PATCH|DELETE /api/v1/contract-groups`; planning-user read, admin write). Each group stores `weekly_hours_at_100` and `vacation_days_at_100` as `Numeric`, a regular week pattern, per-template-category credit rules (`credit_mode` duration/factor/none, `credit_factor` only when factor, `holiday_credit_bonus`, **`statutory_factor`**, `call_outs_count_as_work`), and day-status `status_mappings`. **`EmploymentPeriod`** is the source of truth for employment percentage (non-overlapping per member, `400` on overlap). **`TimeAccountOpening`** holds one opening balance per member. Reads of employment percentage go through `employment_percentage_on(member, date)`. Admin UI: **Team** → **Verträge** (`/organization/team/contract-groups`) and staff-directory row detail. MCP: `shift-planner://contract-groups` plus token-gated create/update/delete and employment-period/opening tools. 
+
+### Time entry ledger
+
+**`TimeEntry`** is the dated ledger (`GET|POST /api/v1/time-entries`, reconciliation, `POST .../derive`, `GET .../ledger`; MCP `shift-planner://time-entries/{team_member_id}`, `get_hours_ledger_tool`, and token-gated upsert/derive). Derivation reconciles roster and mapped day-status sources and never overwrites `manual` rows or `corrected_fields`. Linked members use **`/my-hours`**; planners/admins use **`/hours`** (planners must pass `shift_group_id`). Statutory and credited minutes stay separate; the running account adds opening overtime to credited minutes that count toward the contract, then subtracts the contract-target minutes from the week pattern. 
+
+### Statutory rule sets and presets
+
+**`WorkTimeRuleSet`** is org-scoped, named, and versioned (`GET|POST|PATCH|DELETE /api/v1/work-time-rule-sets`; planning-user read, admin write). Only one set is active; editing a set referenced by **`PlanningPlanVersion.work_time_rule_set_version_id`** creates version N+1. Seed presets (`ArbZG-Grundmodell`, `TV-Ärzte (TdL)`, `TV-Ärzte (VKA)`) are adopted via **`POST /api/v1/work-time-rule-sets/presets/{code}/adopt`** (copies rules; TdL/VKA also seed Stufe contract groups). Admin UI: **Team** → **Arbeitszeitregeln**. MCP: `shift-planner://work-time-rule-sets` plus token-gated tools. The active set’s rules evaluate in `app/services/rules/statutory.py` during validation and assignment preflight. **`WORKTIME_MAX_DUTIES`** counts only configured template **`categories`** (default **`bereitschaftsdienst`**). 
+
+### Opt-out consents
+
+**`WorkTimeConsent`** stores dated opt-out records (`GET|POST /api/v1/team-members/{id}/work-time-consents`, revoke); `applicable_weekly_cap` resolves the weekly cap per date. Records are immutable; corrections insert a new row. Revocation lists affected future published plan versions and does not rewrite them. MCP: `shift-planner://team-members/{id}/work-time-consents` plus token-gated record/revoke tools. Admin UI: staff-directory row detail; linked members see a read-only card on `/profile`. 
+
+### Duty activity log
+
+**Duty activity** episodes are `TimeEntry` rows with kind `call_out` or `in_duty_activity` (`GET|POST /api/v1/duty-activity`, `PATCH /api/v1/duty-activity/{id}` to stop or annotate, revoke via delete). Both require an assigned `roster_slot_id` plus `started_at` inside the slot; `ended_at` may be omitted to start a running episode. Overlaps on the same slot are rejected. `call_out` feeds `statutory_work_minutes` and rest interruption; `in_duty_activity` adds no statutory time. `app/services/duty_utilization.py` reports per-slot and aggregate utilization, tariff band, `exceeds_on_call_threshold`, and coverage from the active set’s `duty_utilization_bands`. Linked members see one-tap start/stop on `/my-planning` and the team-member dashboard, plus retrospective entry on the My shifts tab; `GET /api/v1/duty-activity/slots/{id}/utilization` returns the band for an assigned slot. Planners/admins read aggregates only unless `DutyActivityAccessPolicy.individual_read_roles` grants them; default individual reads are 403. REST purpose acknowledgement is required before a member records via `/api/v1/duty-activity`. Retention purge lives in `duty_activity_privacy.py` and `python -m app.scripts.purge_duty_activity`. Works-council export is aggregate-only with small-group suppression. Admin UI: **Team** → **Diensttätigkeit**; purpose card on `/profile`. MCP: `shift-planner://duty-utilization/{planning_period_id}`, `shift-planner://duty-activity-access-policy`, `shift-planner://duty-activity/works-council/{planning_period_id}`, plus token-gated `record_duty_activity_tool`, `update_duty_activity_tool`, `update_duty_activity_access_policy_tool`, and `purge_duty_activity_episodes_tool`. 
+
+### Compliance report
+
+**Compliance report** (`GET /api/v1/compliance-report/{planning_period_id}`, XLSX/PDF under `/api/v1/exports/compliance-report/{id}.xlsx|.pdf`) is built from `evaluate_plan_state` findings plus rule-layer metrics (statutory vs tariff credit, rolling weekly average and cap source, rest/compensation, consecutive days, duty counts, documentation coverage). The active rule-set version and generation timestamp are printed on every export. Admins may omit `shift_group_id`; planners must pass one of their groups. Planning workspace Analysis tab. MCP: `shift-planner://compliance-report/{planning_period_id}`. 
+
+### Fairness accounts
+
+**Fairness accounts** (`GET /api/v1/fairness/{planning_period_id}`) compute rolling actual / expected / deviation per member and dimension (duties, weekend/holiday, night, statutory hours) from `PlanState` history aggregates — duty counts come from `TimeEntry` rows with `source=roster`, not a year of `RosterSlot` rows. Expectation is the sum of per-month shares from `EmploymentPeriod.employment_percentage`, contract-group `weekly_hours_at_100`, and that month’s period roster; joiners are measured only for months they were on `planning_period_shift_group_members`. Opening values live in `TimeAccountOpening.fairness_balances` (and `overtime_minutes` for statutory hours). Dimensions and window length are org JSON (`fairness_policy`; `GET|PATCH /api/v1/organization/fairness-policy`); adding a dimension does not need a migration. Computing 30 members over 12 months stays under 2s with a member-count-independent query set and no history-window slot scan. MCP: `shift-planner://fairness/{planning_period_id}` plus token-gated `update_fairness_policy_tool`. Planning workspace Analysis tab shows actual / expected / deviation per dimension over the rolling window; the roster picker shows the slot-relevant deviation from the same payload (one fetch per period, not per candidate).
 
 ## Team member properties
 
@@ -87,6 +137,34 @@ Team member month notes belong in the wishes matrix header as per-column modal a
 ## Rule evaluation layer
 
 Shared rule evaluation lives in `backend/app/services/rules/`. `build_plan_state` loads an immutable `PlanState` from a **date window** (`start_date`, `end_date`), never a `planning_period_id`, and widens **roster** loading by `max(rule.roster_lookback)` (falling back to `lookback`) in both directions. Statutory averaging rules declare a long `lookback` (the reference period) but a zero `roster_lookback`; prior months are loaded as per-member, per-day **`statutory_minutes_by_member_date`** totals, not a year of roster slots. Fairness passes an explicit **`history_start`** so the same path also fills **`duty_counts_by_member_date`** from roster `TimeEntry` rows (total / weekend-holiday / night / category) and **`period_roster_member_ids`** from the existing `PlanningPeriodShiftGroupMember` join. Rules implement `evaluate(state) -> list[ValidationWarning]` (optional `to_cpsat` is reserved for the solver). Template and variant constraints live in `app/services/rules/shift_constraints.py`. Member planning patterns that apply to the roster (`avoid_time_window`, `iso_week_cycle`, `allowed_calendar_week_parity`) live in `app/services/rules/member_patterns.py`; `recurring_weekday_status` remains wishes-cell materialization only. Built-in roster checks (`ROSTER_CONSECUTIVE_WEEKENDS` with a 7-day lookback, `ROSTER_MATRIX_DUPLICATE_DAY`, `ROSTER_TEMPLATE_NO_GO_CONFLICT`) live in `app/services/rules/builtin.py`. Statutory ArbZG/TV-Ärzte checks live in `app/services/rules/statutory.py` and resolve from the org’s **active** `WorkTimeRuleSet`. New statutory, template, pattern, and builtin checks go in this package against `PlanState`; do not add them to `constraints.py` (that module re-exports `resolve_slot_constraints` and a thin `evaluate_assignment_constraints` wrapper). `time_entries_by_member_id` and `employment_periods_by_member_id` are loaded for the roster window (employment periods widen to `history_start` when history is longer). Month validation (`validate_roster`), assignment preflight, and dashboard workload assignment counts all build `PlanState` for a date window; MCP `get_validation_warnings` calls `validate_roster`.
+
+## Working an issue
+
+Issue specifications live in `docs/rollout/issues/`; the plan they belong to is
+`docs/rollout/ROLLOUT.md`, and the CP-SAT spike findings are in
+`docs/rollout/solver-spike-findings.md`. An agent implementing one of those issues follows
+these rules without being reminded:
+
+- **One issue, one branch off `main`, one pull request.** Do not start a second issue in the
+  same session, and do not touch files the issue does not need.
+- **The acceptance criteria are the definition of done.** Walk them one by one at the end and
+  name the test that proves each. Never report a criterion as met without showing the evidence.
+- **A green `pytest` does not validate a migration.** The suite runs on in-memory SQLite via
+  `Base.metadata.create_all` and never executes Alembic, so a broken migration passes. Any
+  change that adds one is verified separately: start Postgres, seed the pre-migration shape,
+  run `alembic upgrade head`, assert the data survived, and show that run in the PR.
+- **CI runs only on pull requests and on pushes to `main`** (`.github/workflows/ci.yml`).
+  `container-smoke` is the only job that applies the migration chain to an empty Postgres.
+  Work that is not in a PR has been checked by nothing.
+- **Spike and documentation branches do not touch production code.** If a spike needs a change
+  under `app/` to run at all, that is a finding to report, not a commit to make.
+- **Behaviour-preserving refactors start with a golden-file snapshot** of current output, taken
+  and committed before the first production line changes. Any later diff is either justified in
+  the PR or is a regression.
+- Before finishing: `cd backend && ruff check app && pytest`; for frontend changes also
+  `cd frontend && npm run lint && npm run typecheck`.
+
+---
 
 ## Internationalization
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-21
+- **AGENTS.md restructure:** Split the single 6,000-character "Contract groups and employment" paragraph into seven subsections (contract groups, time entry ledger, statutory rule sets, opt-out consents, duty activity log, compliance report, fairness accounts) without changing a word of the content. Added a **Where things live** orientation table with the two invariants that are cheap to break and expensive to unbreak (date-window `PlanState`, statutory minutes vs tariff credit kept separate), and a **Working an issue** section carrying the standing rules that were previously repeated in every agent prompt: one issue per branch and PR, acceptance criteria as definition of done, migrations verified against Postgres because the SQLite suite bypasses Alembic, CI only running on PRs, spikes not touching production code, and refactors starting from a golden-file snapshot.
+
 ## 2026-09-20
 - **Max duties count on-call only:** `WORKTIME_MAX_DUTIES` previously counted every roster assignment. Spätdienst and Rufdienst therefore inflated the total against the TV-Ärzte (TdL) § 7 Abs. 5a Bereitschaftsdienst cap, so validation warnings and the compliance report over-reported. The rule now takes `categories` (default `["bereitschaftsdienst"]`). TdL/VKA presets carry that scope. Alembic `202609200002` backfills existing stored rule sets. Counts on reports generated before this fix were too high.
 
