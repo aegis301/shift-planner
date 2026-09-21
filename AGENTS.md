@@ -34,7 +34,7 @@ Start here before reading the rest of this file.
 | Statutory configuration | `work_time_rule_sets.py`, `work_time_presets.py`, `work_time_preset_catalog.py`, `work_time_consents.py` |
 | Duty valuation | `work_time_valuation.py` — statutory minutes and tariff credit are two independent numbers and stay that way |
 | Reporting | `compliance_report.py`, `fairness.py`, `workload.py` |
-| Realistic test data | `app/scripts/seed_solver_fixture.py` — profiles `comfortable`, `tight`, `infeasible` |
+| Realistic test data | `app/scripts/seed_solver_fixture.py` — profiles `comfortable`, `tight`, `infeasible`, `arbzg` |
 
 Two invariants that are easy to break and expensive to unbreak:
 
@@ -185,7 +185,7 @@ Any implementation that changes setup, behavior, architecture, API shape, MCP ca
 ## Testing Expectations
 
 - Backend changes should include or update pytest coverage for services and API behavior.
-- Solver and related regression tests use `python -m app.scripts.seed_solver_fixture` (`comfortable` / `tight` / `infeasible`) rather than hand-built months.
+- Solver and related regression tests use `python -m app.scripts.seed_solver_fixture` (`comfortable` / `tight` / `infeasible` / `arbzg`) rather than hand-built months.
 - MCP changes should test resources/tools, authorization for mutations, and parity with backend services.
 - Frontend changes should keep TypeScript, linting, and i18n key coverage passing. German and English dictionaries in `frontend/lib/i18n.ts` must have the same keys (`true satisfies` parity check).
 - Pull request CI merges the latest base branch before tests so combined `main` + PR is what is checked. Enable **Require branches to be up to date before merging** (or a merge queue) on `main` so GitHub cannot merge a PR whose last green run predates newer `main` commits.
