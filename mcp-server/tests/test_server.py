@@ -38,6 +38,15 @@ from mcp_app.server import (
     apply_solver_run_tool,
     cancel_solver_run_tool,
     solver_runs_resource,
+    create_shift_swap_tool,
+    open_shift_swap_tool,
+    claim_shift_swap_tool,
+    accept_shift_swap_tool,
+    withdraw_shift_swap_tool,
+    approve_shift_swap_tool,
+    reject_shift_swap_tool,
+    apply_shift_swap_tool,
+    shift_swaps_resource,
 )
 
 
@@ -340,3 +349,33 @@ def test_apply_solver_run_tool_uses_apply_service(monkeypatch):
     assert calls[0][1] == 9
     assert calls[0][2]["organization_id"] == 23
     assert calls[0][2]["source"] == "mcp"
+
+
+def test_shift_swaps_resource_is_registered():
+    assert shift_swaps_resource.__name__ == "shift_swaps_resource"
+
+
+def test_shift_swap_tools_require_token():
+    with pytest.raises(PermissionError):
+        create_shift_swap_tool(
+            token="wrong-token",
+            planning_period_id=1,
+            shift_group_id=1,
+            kind="giveaway",
+            offered_slot_id=1,
+            offered_by_team_member_id=1,
+        )
+    with pytest.raises(PermissionError):
+        open_shift_swap_tool(token="wrong-token", request_id=1)
+    with pytest.raises(PermissionError):
+        claim_shift_swap_tool(token="wrong-token", request_id=1, claimer_team_member_id=1)
+    with pytest.raises(PermissionError):
+        accept_shift_swap_tool(token="wrong-token", request_id=1, actor_team_member_id=1)
+    with pytest.raises(PermissionError):
+        withdraw_shift_swap_tool(token="wrong-token", request_id=1, actor_team_member_id=1)
+    with pytest.raises(PermissionError):
+        approve_shift_swap_tool(token="wrong-token", request_id=1)
+    with pytest.raises(PermissionError):
+        reject_shift_swap_tool(token="wrong-token", request_id=1)
+    with pytest.raises(PermissionError):
+        apply_shift_swap_tool(token="wrong-token", request_id=1)

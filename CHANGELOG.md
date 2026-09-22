@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-22
+- **Shift swaps:** Linked members can offer a published or preliminary duty as a giveaway or a direct 1:1 proposal. Claiming a giveaway is atomic. Legality overlays the post-swap `PlanState` and runs the shared rule registry: statutory `error` findings refuse the transition by code and message; warnings stay on the request for the approver. Apply writes through the ordinary assignment path and snapshots a new plan version (`swap_apply`) without reopening the month. REST `/api/v1/shift-swaps`; MCP resources and token-gated transition tools. Marketplace UI is #78. Alembic `202609220001`.
 - **Solver controls in `/planning`:** Planners generate a CP-SAT roster from the toolbar (time budget, per-run objective weights, overwrite existing), poll until the run finishes, inspect objective breakdown / unfilled slots with binding rules / post-check findings, and apply behind a confirm that names how many assignments will be written. Published shift groups hide generate. `GET /api/v1/organization/solver-config` seeds the form from org defaults; optional `objective_weights` on create override that run only. MCP `run_roster_solver_tool` accepts the same weights; tools still call the REST services.
 
 ## 2026-09-21

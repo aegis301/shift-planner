@@ -544,6 +544,8 @@ def upsert_roster_slot_assignment(
     organization_id: int,
     actor: str,
     source: str,
+    commit: bool = True,
+    enforce_preflight: bool = True,
 ) -> RosterSlotAssignment:
     slot = db.scalars(
         select(RosterSlot)
@@ -570,29 +572,30 @@ def upsert_roster_slot_assignment(
         )
         if not on_roster:
             raise ValueError("Team member is not on the roster for this planning period and shift group")
-    if not payload.manual_override and _team_member_has_template_no_go(
-        db,
-        planning_period_id=slot.planning_period_id,
-        team_member_id=payload.team_member_id,
-        slot_date=slot.slot_date,
-        shift_template_id=slot.shift_template_id,
-    ):
-        raise ValueError("Team member marked this shift template as a no-go on that day")
-    preflight_warnings = _preflight_assignment_warnings(
-        db,
-        slot=slot,
-        team_member_id=payload.team_member_id,
-        organization_id=organization_id,
-        manual_override=payload.manual_override,
-    )
-    blocking = find_blocking_unavailable_overlap(
-        next((w for w in preflight_warnings if w.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"), None)
-    )
-    if blocking is not None:
-        raise ValueError(blocking.message)
-    blocking = find_blocking_constraint(preflight_warnings)
-    if blocking is not None:
-        raise ValueError(blocking.message)
+    if enforce_preflight:
+        if not payload.manual_override and _team_member_has_template_no_go(
+            db,
+            planning_period_id=slot.planning_period_id,
+            team_member_id=payload.team_member_id,
+            slot_date=slot.slot_date,
+            shift_template_id=slot.shift_template_id,
+        ):
+            raise ValueError("Team member marked this shift template as a no-go on that day")
+        preflight_warnings = _preflight_assignment_warnings(
+            db,
+            slot=slot,
+            team_member_id=payload.team_member_id,
+            organization_id=organization_id,
+            manual_override=payload.manual_override,
+        )
+        blocking = find_blocking_unavailable_overlap(
+            next((w for w in preflight_warnings if w.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"), None)
+        )
+        if blocking is not None:
+            raise ValueError(blocking.message)
+        blocking = find_blocking_constraint(preflight_warnings)
+        if blocking is not None:
+            raise ValueError(blocking.message)
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )
@@ -627,21 +630,22 @@ def upsert_roster_slot_assignment(
             "team_member_id": payload.team_member_id,
         },
     )
-    db.commit()
-    db.refresh(assignment)
-    from app.services.time_entries import refresh_derived_window
-
     member_ids = [payload.team_member_id]
     if previous_member_id is not None and previous_member_id not in member_ids:
         member_ids.append(previous_member_id)
-    refresh_derived_window(
-        db,
-        organization_id=organization_id,
-        member_ids=member_ids,
-        start_date=slot.slot_date,
-        end_date=slot.slot_date,
-    )
-    db.refresh(assignment)
+    if commit:
+        db.commit()
+        db.refresh(assignment)
+        from app.services.time_entries import refresh_derived_window
+
+        refresh_derived_window(
+            db,
+            organization_id=organization_id,
+            member_ids=member_ids,
+            start_date=slot.slot_date,
+            end_date=slot.slot_date,
+        )
+        db.refresh(assignment)
     return assignment
 
 
