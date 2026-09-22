@@ -18,9 +18,15 @@ from app.services.audit import record_audit
 from app.services.planning import can_edit_planning_data, get_shift_group_planning_status
 from app.services.roster_matrix import upsert_roster_slot_assignment
 from app.services.shift_groups import require_shift_group
-from app.services.solver import SolverSolveResult, solve_roster
+from app.services.solver.result import SolverSolveResult
 from app.services.tenancy import require_planning_period_in_org
 from app.services.work_time_rule_sets import get_active_work_time_rule_set
+
+
+def solve_roster(*args, **kwargs):
+    from app.services.solver.solve import solve_roster as _solve_roster
+
+    return _solve_roster(*args, **kwargs)
 
 SOLVER_RUN_STATUS_QUEUED = "queued"
 SOLVER_RUN_STATUS_RUNNING = "running"

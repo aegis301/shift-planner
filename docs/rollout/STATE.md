@@ -43,8 +43,8 @@ Two things carry the whole design:
 
 ## Status
 
-`main` carries R1, R2, the solver fixture, the CP-SAT spike findings and the AGENTS.md
-restructure. There are no open pull requests.
+`main` carries R1, R2, the solver fixture, the CP-SAT spike findings, and SolverRun persistence.
+This change lands **#75** (CP-SAT roster model, tier A).
 
 Shipped:
 
@@ -57,16 +57,17 @@ Shipped:
 - Two production defects found along the way and fixed: `WORKTIME_MAX_DUTIES` counted every
   assignment instead of only Bereitschaftsdienste, and a leftover `ix_doctors_email` made member
   emails globally unique instead of unique per organization
+- SolverRun persistence and the Compose solver-worker
+- CP-SAT roster model, tier A (`#75`)
 
-In flight: **#74** (SolverRun persistence and asynchronous execution) on branch
-`feat/74-solver-run-persistence`.
+In flight: **#76** (solver UI and MCP). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 
 ## Roadmap
 
 | Order | Issue | What | Notes |
 |---|---|---|---|
-| 1 | #74 | SolverRun persistence + async execution | in flight |
-| 2 | #75 | Build the CP-SAT model from the rule layer — **Tier A only** | see below |
+| 1 | #74 | SolverRun persistence + async execution | shipped |
+| 2 | #75 | Build the CP-SAT model from the rule layer — **Tier A only** | this change |
 | 3 | *(to write)* | Tier B encodings: `min_rest_period`, `rest_after_long_duty`, `weekly_average_cap` | write this issue once #75 exists; it needs the ArbZG fixture profile |
 | 4 | #76 | Solver controls in the planning workspace and MCP | |
 | 5 | #77 | Shift swap and giveaway requests with legality checks | |
@@ -90,8 +91,9 @@ Do not reopen these without a reason that is new:
 - **The solver runs fully automatically and the planner post-edits.** It does not propose
   fragments for a human to assemble.
 - **Swaps are a giveaway pool plus direct 1:1 swaps.** Both paths, not one.
-- **Unfilled slots stay a hard constraint and are out of the objective.** The spike ran both
-  ways; the roster a planner wants is the one that refuses to leave holes.
+- **Unfilled slots are a heavily penalized slack variable**, not a hard cover constraint, so a
+  deliberately infeasible month still returns a partial roster. Coverage remains the dominant
+  objective term (default weight 10 000).
 - **Solver reproducibility is `num_search_workers = 1` plus a stored `random_seed`**, both
   persisted on the run. Multi-worker CP-SAT is not reproducible at the roster level even when the
   objective value is, and a planner who re-runs and gets a different plan will not trust the
