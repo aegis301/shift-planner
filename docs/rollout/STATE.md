@@ -15,7 +15,7 @@ Companion documents:
   prompt. `created-issues.json` maps file prefix to GitHub issue number.
 - `docs/rollout/solver-spike-findings.md` — the CP-SAT spike. Issue #75 is built on it.
 
-Last updated: 2026-09-21.
+Last updated: 2026-09-22.
 
 ## What this rollout is
 
@@ -43,8 +43,8 @@ Two things carry the whole design:
 
 ## Status
 
-`main` carries R1, R2, the solver fixture, the CP-SAT spike findings, and SolverRun persistence.
-This change lands **#75** (CP-SAT roster model, tier A).
+`main` carries R1, R2, the solver fixture, the CP-SAT spike findings, SolverRun persistence, and
+the CP-SAT roster model (tier A). This change lands **#76** (solver controls in `/planning` and MCP).
 
 Shipped:
 
@@ -59,17 +59,18 @@ Shipped:
   emails globally unique instead of unique per organization
 - SolverRun persistence and the Compose solver-worker
 - CP-SAT roster model, tier A (`#75`)
+- Solver generate / inspect / apply in `/planning` plus MCP parity (`#76`)
 
-In flight: **#76** (solver UI and MCP). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
+In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 
 ## Roadmap
 
 | Order | Issue | What | Notes |
 |---|---|---|---|
 | 1 | #74 | SolverRun persistence + async execution | shipped |
-| 2 | #75 | Build the CP-SAT model from the rule layer — **Tier A only** | this change |
-| 3 | *(to write)* | Tier B encodings: `min_rest_period`, `rest_after_long_duty`, `weekly_average_cap` | write this issue once #75 exists; it needs the ArbZG fixture profile |
-| 4 | #76 | Solver controls in the planning workspace and MCP | |
+| 2 | #75 | Build the CP-SAT model from the rule layer — **Tier A only** | shipped |
+| 3 | *(to write)* | Tier B encodings: `min_rest_period`, `rest_after_long_duty`, `weekly_average_cap` | write this issue; the ArbZG fixture profile exists |
+| 4 | #76 | Solver controls in the planning workspace and MCP | this change |
 | 5 | #77 | Shift swap and giveaway requests with legality checks | |
 | 6 | #78 | Swap marketplace UI and planner approval queue | |
 

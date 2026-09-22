@@ -11,6 +11,7 @@ from app.models import Organization, RosterSlotAssignment, SolverRun
 from app.schemas import (
     RosterSlotAssignmentRead,
     RosterSlotAssignmentUpsert,
+    SolverConfigRead,
     SolverRunCreate,
     SolverRunRead,
 )
@@ -19,6 +20,7 @@ from app.services.planning import can_edit_planning_data, get_shift_group_planni
 from app.services.roster_matrix import upsert_roster_slot_assignment
 from app.services.shift_groups import require_shift_group
 from app.services.solver.result import SolverSolveResult
+from app.services.solver.weights import read_solver_objective_weights
 from app.services.tenancy import require_planning_period_in_org
 from app.services.work_time_rule_sets import get_active_work_time_rule_set
 
@@ -112,12 +114,26 @@ def _build_parameters(
     if num_search_workers < 1:
         num_search_workers = DEFAULT_NUM_SEARCH_WORKERS
     random_seed = payload.random_seed if payload.random_seed is not None else secrets.randbelow(2**31)
-    return {
+    parameters: dict = {
         "time_budget_seconds": time_budget_seconds,
         "num_search_workers": num_search_workers,
         "random_seed": int(random_seed),
         "overwrite_existing": bool(payload.overwrite_existing),
     }
+    if payload.objective_weights is not None:
+        parameters["objective_weights"] = payload.objective_weights.model_dump()
+    return parameters
+
+
+def read_solver_config(db: Session, organization_id: int) -> SolverConfigRead:
+    org = db.get(Organization, organization_id)
+    if org is None:
+        raise ValueError("Organization not found")
+    return SolverConfigRead(
+        time_budget_ceiling_seconds=_organization_ceiling(db, organization_id),
+        default_time_budget_seconds=DEFAULT_TIME_BUDGET_SECONDS,
+        weights=read_solver_objective_weights(org),
+    )
 
 
 def queue_solver_run(

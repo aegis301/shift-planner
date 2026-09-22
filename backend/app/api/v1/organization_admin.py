@@ -24,6 +24,7 @@ from app.schemas import (
     OrganizationUpdateInput,
     OrganizationUserRead,
     OrganizationUserRolePatch,
+    SolverConfigRead,
 )
 from app.services.duty_activity_privacy import (
     read_duty_activity_access_policy,
@@ -52,6 +53,7 @@ from app.services.organization_invites import (
 )
 from app.services.organization_lifecycle import delete_organization
 from app.services.organizations import update_organization_settings
+from app.services.solver_runs import read_solver_config
 from app.services.users import (
     admin_delete_organization_user,
     admin_reset_account_password,
@@ -218,6 +220,17 @@ def get_fairness_policy(
     if org is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     return read_fairness_policy(org)
+
+
+@router.get("/solver-config", response_model=SolverConfigRead)
+def get_solver_config(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planning_user),
+) -> SolverConfigRead:
+    try:
+        return read_solver_config(db, user.organization_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.patch("/fairness-policy", response_model=FairnessPolicy)

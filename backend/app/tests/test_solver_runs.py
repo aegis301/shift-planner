@@ -394,3 +394,37 @@ def test_two_workers_cannot_claim_the_same_run():
         leftover = db.get(SolverRun, queued_id)
         assert leftover is not None
         assert leftover.status == "running"
+
+
+def test_solver_config_returns_org_defaults(client: TestClient):
+    login(client)
+    response = client.get("/api/v1/organization/solver-config")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["default_time_budget_seconds"] == 30
+    assert body["time_budget_ceiling_seconds"] == 120
+    assert body["weights"]["unfilled"] == 10000
+    assert "nogo" not in body["weights"]
+
+
+def test_queue_stores_objective_weight_overrides(client: TestClient):
+    login(client)
+    period_id, _, _ = _seed_solver_month(client, month=11, code="WGHT")
+    response = client.post(
+        f"/api/v1/planning-periods/{period_id}/solver-runs",
+        json={
+            "shift_group_id": 1,
+            "objective_weights": {"unfilled": 5000, "duty_count": 10},
+        },
+    )
+    assert response.status_code == 200, response.text
+    weights = response.json()["parameters"]["objective_weights"]
+    assert weights["unfilled"] == 5000
+    assert weights["duty_count"] == 10
+    assert weights["fairness"] == 8
+    omitted = client.post(
+        f"/api/v1/planning-periods/{period_id}/solver-runs",
+        json={"shift_group_id": 1},
+    )
+    assert omitted.status_code == 200
+    assert "objective_weights" not in omitted.json()["parameters"]
