@@ -14,6 +14,8 @@ from app.models import (
     TeamMember,
 )
 from app.schemas import (
+    FairnessAccountsRead,
+    FairnessDimension,
     PlanVersionRead,
     RosterSlotAssignmentRead,
     RosterSlotAssignmentUpsert,
@@ -23,6 +25,8 @@ from app.schemas import (
     ValidationWarning,
 )
 from app.services.audit import record_audit
+from app.services.fairness import build_fairness_accounts
+from app.services.holidays import classify_day
 from app.services.plan_versions import snapshot_swap_apply_plan_version
 from app.services.planning import (
     PLANNING_PERIOD_STATUS_PRELIMINARY,
@@ -30,7 +34,7 @@ from app.services.planning import (
     get_shift_group_planning_status,
 )
 from app.services.roster_matrix import upsert_roster_slot_assignment
-from app.services.rules.builder import build_plan_state
+from app.services.rules.builder import NIGHT_AFTER_HOUR, build_plan_state
 from app.services.rules.registry import evaluate_plan_state
 from app.services.rules.shift_constraints import overlay_candidate_assignment
 from app.services.shift_groups import require_shift_group, shift_group_ids_for_template
@@ -301,6 +305,100 @@ def eligible_member_ids_for_slot(
     return set(by_slot.get(slot.id, set()))
 
 
+def _slot_is_night_duty(slot: RosterSlot) -> bool:
+    if slot.ends_at is not None and slot.ends_at.date() > slot.slot_date:
+        return True
+    return slot.starts_at is not None and slot.starts_at.hour >= NIGHT_AFTER_HOUR
+
+
+def _slot_is_weekend_or_holiday(slot: RosterSlot) -> bool:
+    if slot.day_class in {"weekend", "holiday"}:
+        return True
+    return classify_day(slot.slot_date) in {"weekend", "holiday"}
+
+
+def _slot_category(slot: RosterSlot) -> str | None:
+    template = slot.shift_template
+    if template is None:
+        return None
+    return template.category
+
+
+def _dimension_match_score(
+    slot: RosterSlot,
+    dimension: FairnessDimension,
+    *,
+    night: bool,
+    weekend: bool,
+) -> int:
+    category = _slot_category(slot)
+    if dimension.metric == "statutory_minutes":
+        return -1
+    if dimension.night and not night:
+        return -1
+    if dimension.day_filter == "weekend_holiday" and not weekend:
+        return -1
+    if dimension.category and dimension.category != category:
+        return -1
+    score = 0
+    if night and dimension.night:
+        score += 8
+    if weekend and dimension.day_filter == "weekend_holiday":
+        score += 4
+    if dimension.category and dimension.category == category:
+        score += 2
+    if not dimension.night and dimension.day_filter == "any" and not dimension.category:
+        score += 1
+    return score
+
+
+def relevant_fairness_dimension_for_slot(
+    slot: RosterSlot,
+    dimensions: list[FairnessDimension],
+) -> FairnessDimension | None:
+    night = _slot_is_night_duty(slot)
+    weekend = _slot_is_weekend_or_holiday(slot)
+    best: FairnessDimension | None = None
+    best_score = 0
+    for dimension in dimensions:
+        score = _dimension_match_score(slot, dimension, night=night, weekend=weekend)
+        if score > best_score:
+            best_score = score
+            best = dimension
+    if best is not None:
+        return best
+    for dimension in dimensions:
+        if dimension.id == "duties":
+            return dimension
+    for dimension in dimensions:
+        if (
+            dimension.metric == "duty_count"
+            and not dimension.night
+            and dimension.day_filter == "any"
+            and not dimension.category
+        ):
+            return dimension
+    return None
+
+
+def rank_eligible_member_ids(
+    eligible: set[int],
+    accounts: FairnessAccountsRead,
+    slot: RosterSlot,
+) -> list[int]:
+    dimension = relevant_fairness_dimension_for_slot(slot, list(accounts.dimensions))
+    if dimension is None:
+        return sorted(eligible)
+    by_member: dict[int, float] = {}
+    for member in accounts.members:
+        value = next(
+            (row for row in member.dimensions if row.dimension_id == dimension.id),
+            None,
+        )
+        by_member[member.team_member_id] = value.deviation_absolute if value is not None else 0.0
+    return sorted(eligible, key=lambda member_id: (by_member.get(member_id, 0.0), member_id))
+
+
 def list_eligible_claimants(
     db: Session,
     *,
@@ -320,7 +418,16 @@ def list_eligible_claimants(
     )
     if exclude_team_member_id is not None:
         eligible.discard(exclude_team_member_id)
-    return sorted(eligible)
+    try:
+        accounts = build_fairness_accounts(
+            db,
+            slot.planning_period_id,
+            organization_id=organization_id,
+            shift_group_id=shift_group_id,
+        )
+        return rank_eligible_member_ids(eligible, accounts, slot)
+    except Exception:
+        return sorted(eligible)
 
 
 def _assert_member_eligible(
