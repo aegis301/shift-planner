@@ -1935,6 +1935,7 @@ def run_roster_solver_tool(
     num_search_workers: int | None = None,
     random_seed: int | None = None,
     overwrite_existing: bool = False,
+    objective_weights: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """Queue a roster solver run. Returns immediately with a run id. Requires MCP admin token."""
     require_token(token)
@@ -1944,6 +1945,7 @@ def run_roster_solver_tool(
         num_search_workers=num_search_workers,
         random_seed=random_seed,
         overwrite_existing=overwrite_existing,
+        objective_weights=objective_weights,
     )
     with db_session() as db:
         try:

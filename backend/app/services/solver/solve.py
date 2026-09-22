@@ -15,7 +15,7 @@ from app.services.shift_groups import shift_template_ids_in_shift_group
 from app.services.solver.model import build_solver_context, planning_window
 from app.services.solver.objective import apply_objective
 from app.services.solver.result import SolverSolveResult
-from app.services.solver.weights import read_solver_objective_weights
+from app.services.solver.weights import resolve_solver_objective_weights
 
 
 def list_solver_target_slots(
@@ -104,8 +104,8 @@ def solve_roster(
         end_date=end_date,
     )
     organization = db.get(Organization, run.organization_id)
-    weights = read_solver_objective_weights(organization)
     parameters = run.parameters or {}
+    weights = resolve_solver_objective_weights(organization, parameters)
     overwrite_existing = bool(parameters.get("overwrite_existing", False))
     ctx = build_solver_context(
         db,

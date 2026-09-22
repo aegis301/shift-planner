@@ -263,3 +263,80 @@ def test_solver_run_tools_require_token():
         apply_solver_run_tool(token="wrong-token", planning_period_id=1, run_id=1)
     with pytest.raises(PermissionError):
         cancel_solver_run_tool(token="wrong-token", planning_period_id=1, run_id=1)
+
+
+def test_run_roster_solver_tool_uses_queue_service(monkeypatch):
+    class DbContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    calls = []
+
+    def fake_queue(db, planning_period_id, payload, **kwargs):
+        calls.append((planning_period_id, payload, kwargs))
+        return object()
+
+    class Read:
+        def model_dump(self, *, mode: str):
+            assert mode == "json"
+            return {"id": 9, "status": "queued"}
+
+    monkeypatch.setattr(server, "db_session", lambda: DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 23)
+    monkeypatch.setattr(server, "queue_solver_run", fake_queue)
+    monkeypatch.setattr(server, "solver_run_to_read", lambda run: Read())
+
+    result = run_roster_solver_tool(
+        token="change-me-mcp-token",
+        planning_period_id=4,
+        shift_group_id=2,
+        time_budget_seconds=45,
+        overwrite_existing=True,
+        objective_weights={"unfilled": 42},
+    )
+    assert result["id"] == 9
+    assert calls[0][0] == 4
+    payload = calls[0][1]
+    assert payload.shift_group_id == 2
+    assert payload.time_budget_seconds == 45
+    assert payload.overwrite_existing is True
+    assert payload.objective_weights.unfilled == 42
+    assert calls[0][2]["organization_id"] == 23
+    assert calls[0][2]["source"] == "mcp"
+
+
+def test_apply_solver_run_tool_uses_apply_service(monkeypatch):
+    class DbContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    calls = []
+
+    def fake_apply(db, planning_period_id, run_id, **kwargs):
+        calls.append((planning_period_id, run_id, kwargs))
+        return object(), []
+
+    class Read:
+        def model_dump(self, *, mode: str):
+            assert mode == "json"
+            return {"id": 9, "status": "succeeded", "applied_at": "2026-09-22T00:00:00Z"}
+
+    monkeypatch.setattr(server, "db_session", lambda: DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 23)
+    monkeypatch.setattr(server, "apply_solver_run", fake_apply)
+    monkeypatch.setattr(server, "solver_run_to_read", lambda run: Read())
+    monkeypatch.setattr(server, "applied_assignments_to_read", lambda assignments: [])
+
+    result = apply_solver_run_tool(token="change-me-mcp-token", planning_period_id=4, run_id=9)
+    assert result["run"]["id"] == 9
+    assert result["assignments"] == []
+    assert calls[0][0] == 4
+    assert calls[0][1] == 9
+    assert calls[0][2]["organization_id"] == 23
+    assert calls[0][2]["source"] == "mcp"

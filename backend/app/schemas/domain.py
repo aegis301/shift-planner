@@ -2180,6 +2180,12 @@ class SolverObjectiveWeights(BaseModel):
     pair_warning: int = Field(default=70, ge=0)
 
 
+class SolverConfigRead(BaseModel):
+    time_budget_ceiling_seconds: int
+    default_time_budget_seconds: int
+    weights: SolverObjectiveWeights
+
+
 SolverRunStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 
@@ -2189,6 +2195,7 @@ class SolverRunCreate(BaseModel):
     num_search_workers: int | None = Field(default=None, ge=1)
     random_seed: int | None = None
     overwrite_existing: bool = False
+    objective_weights: SolverObjectiveWeights | None = None
 
 
 class SolverRunRead(BaseModel):

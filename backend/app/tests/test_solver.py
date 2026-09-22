@@ -33,7 +33,10 @@ from app.services.rules.statutory import (
 )
 from app.services.solver.model import build_solver_context, cpsat_supported_codes, planning_window
 from app.services.solver.solve import list_solver_target_slots, solve_roster
-from app.services.solver.weights import read_solver_objective_weights
+from app.services.solver.weights import (
+    read_solver_objective_weights,
+    resolve_solver_objective_weights,
+)
 from app.services.solver_fixture import eligible_member_ids_for_slot, seed_solver_fixture
 
 SPIKE_SEED = dict(rng_seed=1, year=2026, month=10, history_months=2)
@@ -256,6 +259,19 @@ def test_objective_components_reported_without_nogo(db):
     assert "nogo" not in solved.objective_breakdown
     assert "no_go" not in solved.objective_breakdown
     assert "ROSTER_TEMPLATE_NO_GO_CONFLICT" not in solved.objective_breakdown
+
+
+def test_resolve_solver_objective_weights_prefers_run_parameters():
+    org = SimpleNamespace(solver_objective_weights={"unfilled": 10000, "duty_count": 250})
+    overridden = resolve_solver_objective_weights(
+        org,
+        {"objective_weights": {"unfilled": 42}},
+    )
+    assert overridden.unfilled == 42
+    assert overridden.duty_count == 250
+    defaulted = resolve_solver_objective_weights(org, {"overwrite_existing": False})
+    assert defaulted.unfilled == 10000
+    assert defaulted.duty_count == 250
 
 
 def test_tier_b_rules_absent_from_model_present_in_post_check(db):

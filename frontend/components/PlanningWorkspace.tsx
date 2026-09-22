@@ -19,6 +19,7 @@ import {
   RefreshCw,
   ChevronDown,
   Save,
+  Sparkles,
   Trash2,
   X
 } from "lucide-react";
@@ -40,7 +41,10 @@ import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
 import { DutyActivityShiftList } from "@/components/DutyActivityShiftList";
 import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
 import { FairnessAccountsPanel } from "@/components/FairnessAccountsPanel";
+import { SolverGenerateDialog } from "@/components/SolverGenerateDialog";
+import { SolverRunPanel } from "@/components/SolverRunPanel";
 import { type FairnessAccountsRead } from "@/lib/fairness";
+import { type SolverRunRead } from "@/lib/solver";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { monthDateBounds } from "@/lib/planningDates";
@@ -151,6 +155,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
   const [syncRosterConfirmOpen, setSyncRosterConfirmOpen] = useState(false);
+  const [solverDialogOpen, setSolverDialogOpen] = useState(false);
+  const [solverReloadToken, setSolverReloadToken] = useState(0);
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
   const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
@@ -337,6 +343,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
   const wishesEditable = teamMemberPortalUi ? teamMemberWishesEditable : plannerPlanningEditable;
   const regenerateRosterDisabled = !periodId || groupPlanningStatus?.status === "published";
+  const generateRosterDisabled =
+    !periodId ||
+    !shiftGroupId ||
+    groupPlanningStatus?.status === "published";
 
   const loadGroupPlanningStatus = useCallback(
     async (nextPeriodId: string) => {
@@ -668,6 +678,26 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     await handleWishesChanged();
   }, [handleWishesChanged]);
 
+  const handleSolverApplied = useCallback(
+    async (applied: SolverRunRead) => {
+      if (!periodId) {
+        return;
+      }
+      setSolverDialogOpen(false);
+      setSolverReloadToken((value) => value + 1);
+      setRosterReloadToken((value) => value + 1);
+      await loadRosterMatrix(periodId);
+      await loadWarnings(periodId);
+      await loadFairnessAccounts(periodId);
+      setMessage(t(locale, "solverApplied", { count: String(applied.proposed_assignments.length) }));
+    },
+    [loadFairnessAccounts, loadRosterMatrix, loadWarnings, locale, periodId]
+  );
+
+  const handleSolverRunChange = useCallback((_next: SolverRunRead) => {
+    setSolverReloadToken((value) => value + 1);
+  }, []);
+
   const wishesSection = periodId ? (
     <section className="grid min-w-0 gap-3">
       <div>
@@ -747,6 +777,14 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
       {periodId ? <FairnessAccountsPanel accounts={fairnessAccounts} loadError={fairnessError} /> : null}
+      {periodId ? (
+        <SolverRunPanel
+          periodId={periodId}
+          shiftGroupId={shiftGroupId}
+          reloadToken={solverReloadToken}
+          onApplied={handleSolverApplied}
+        />
+      ) : null}
       <WorkloadStats
         rows={stats.rows}
         unassigned={stats.unassigned}
@@ -894,6 +932,20 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                     type="button"
                   >
                     <RotateCw size={18} />
+                  </button>
+                  <button
+                    aria-label={t(locale, "solverGenerate")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-mint/40 bg-mint/10 text-ink shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={generateRosterDisabled}
+                    onClick={() => setSolverDialogOpen(true)}
+                    title={
+                      groupPlanningStatus?.status === "published"
+                        ? t(locale, "solverGeneratePublishedBlocked")
+                        : t(locale, "solverGenerate")
+                    }
+                    type="button"
+                  >
+                    <Sparkles size={18} />
                   </button>
                   {adminUi ? (
                     <button
@@ -1186,6 +1238,20 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             </div>
           </div>
         </div>
+      ) : null}
+
+      {planningUi && periodId ? (
+        <SolverGenerateDialog
+          locale={locale}
+          open={solverDialogOpen}
+          periodId={periodId}
+          shiftGroupId={shiftGroupId}
+          onClose={() => setSolverDialogOpen(false)}
+          onApplied={(run) => {
+            void handleSolverApplied(run);
+          }}
+          onRunChange={handleSolverRunChange}
+        />
       ) : null}
 
       {destructiveAction ? (
