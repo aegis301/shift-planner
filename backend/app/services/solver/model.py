@@ -284,6 +284,29 @@ def build_solver_context(
     return ctx
 
 
+def eligible_members_for_slots(
+    db: Session,
+    *,
+    state: PlanState,
+    target_slots: Sequence[RosterSlot],
+) -> dict[int, set[int]]:
+    eligible, service_codes = service_eligible_by_slot(db, state=state, target_slots=target_slots)
+    ctx = SolverCpSatContext(
+        state=state,
+        target_slots=target_slots,
+        weights=SolverObjectiveWeights(),
+        fixed_assignments={},
+        constant_assignments={},
+        eligible_by_slot=eligible,
+        fairness_duty_cost={},
+    )
+    ctx.exclusion_codes.update(service_codes)
+    rules = resolve_active_rules(state.organization_id, state.start_date, state.end_date, db=db)
+    ctx.phase = "mask"
+    _call_to_cpsat(rules, ctx)
+    return {slot_id: set(member_ids) for slot_id, member_ids in ctx.eligible_by_slot.items()}
+
+
 def planning_window(period: PlanningPeriod) -> tuple[date, date]:
     from calendar import monthrange
 

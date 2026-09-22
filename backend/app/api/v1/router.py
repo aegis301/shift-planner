@@ -15,6 +15,7 @@ from app.api.v1 import (
     planning_day_status_definitions,
     roster_matrix,
     shift_groups,
+    shift_swaps,
     shift_templates,
     solver_runs,
     team_member_property_definitions,
@@ -45,6 +46,7 @@ api_router.include_router(shift_groups.router)
 api_router.include_router(shift_templates.router)
 api_router.include_router(planning.router)
 api_router.include_router(solver_runs.router)
+api_router.include_router(shift_swaps.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(matrix.router)
 api_router.include_router(roster_matrix.router)

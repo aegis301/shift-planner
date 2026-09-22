@@ -43,6 +43,7 @@ from app.schemas import (
     RosterSlotAssignmentClear,
     RosterSlotAssignmentUpsert,
     SolverRunCreate,
+    ShiftSwapRequestCreate,
     ShiftGroupCreate,
     ShiftGroupMembershipWrite,
     ShiftTemplateCreate,
@@ -163,6 +164,23 @@ from app.services.solver_runs import (
     list_solver_runs,
     queue_solver_run,
     solver_run_to_read,
+)
+from app.services.shift_swaps import (
+    ShiftSwapConflictError,
+    ShiftSwapNotFoundError,
+    accept_shift_swap,
+    applied_swap_to_read,
+    apply_shift_swap,
+    approve_shift_swap,
+    claim_shift_swap,
+    create_shift_swap,
+    eligible_member_ids_for_request,
+    get_shift_swap,
+    list_shift_swaps,
+    open_shift_swap,
+    reject_shift_swap,
+    shift_swap_to_read,
+    withdraw_shift_swap,
 )
 from app.services.shift_groups import (
     _membership_read,
@@ -2114,6 +2132,217 @@ def derive_time_entries_tool(
             member_ids=payload.member_ids,
         )
         return {"ok": True}
+
+
+@mcp.resource("shift-planner://shift-swaps/{planning_period_id}/shift-group/{shift_group_id}")
+def shift_swaps_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+    """List shift swap requests for a planning period and shift group."""
+    with db_session() as db:
+        return [
+            shift_swap_to_read(
+                row,
+                eligible_member_ids=eligible_member_ids_for_request(db, row),
+            ).model_dump(mode="json")
+            for row in list_shift_swaps(
+                db,
+                organization_id=mcp_organization_id(),
+                planning_period_id=planning_period_id,
+                shift_group_id=shift_group_id,
+            )
+        ]
+
+
+@mcp.resource("shift-planner://shift-swaps/request/{request_id}")
+def shift_swap_resource(request_id: int) -> dict[str, Any]:
+    """Return one shift swap request."""
+    with db_session() as db:
+        try:
+            row = get_shift_swap(db, request_id, organization_id=mcp_organization_id())
+        except ShiftSwapNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(
+            row,
+            eligible_member_ids=eligible_member_ids_for_request(db, row),
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def create_shift_swap_tool(
+    token: str,
+    planning_period_id: int,
+    shift_group_id: int,
+    kind: str,
+    offered_slot_id: int,
+    offered_by_team_member_id: int,
+    target_team_member_id: int | None = None,
+    counterparty_slot_id: int | None = None,
+    open_immediately: bool = False,
+) -> dict[str, Any]:
+    """Create a giveaway or direct shift swap request. Requires MCP admin token."""
+    require_token(token)
+    payload = ShiftSwapRequestCreate(
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        kind=kind,
+        offered_slot_id=offered_slot_id,
+        target_team_member_id=target_team_member_id,
+        counterparty_slot_id=counterparty_slot_id,
+        open_immediately=open_immediately,
+    )
+    with db_session() as db:
+        try:
+            row = create_shift_swap(
+                db,
+                payload,
+                organization_id=mcp_organization_id(),
+                offered_by_team_member_id=offered_by_team_member_id,
+                actor="mcp",
+                source="mcp",
+                created_by_user_id=None,
+            )
+        except ShiftSwapConflictError as exc:
+            raise ValueError(exc.message) from exc
+        return shift_swap_to_read(
+            row,
+            eligible_member_ids=eligible_member_ids_for_request(db, row),
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def open_shift_swap_tool(token: str, request_id: int) -> dict[str, Any]:
+    """Open a draft swap (giveaway) or target it (direct). Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row = open_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+                actor_team_member_id=None,
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(
+            row,
+            eligible_member_ids=eligible_member_ids_for_request(db, row),
+        ).model_dump(mode="json")
+
+
+@mcp.tool
+def claim_shift_swap_tool(token: str, request_id: int, claimer_team_member_id: int) -> dict[str, Any]:
+    """Claim an open giveaway. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row = claim_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                claimer_team_member_id=claimer_team_member_id,
+                actor="mcp",
+                source="mcp",
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def accept_shift_swap_tool(token: str, request_id: int, actor_team_member_id: int) -> dict[str, Any]:
+    """Accept a targeted direct swap. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row = accept_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                actor_team_member_id=actor_team_member_id,
+                actor="mcp",
+                source="mcp",
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError, PermissionError) as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def withdraw_shift_swap_tool(token: str, request_id: int, actor_team_member_id: int) -> dict[str, Any]:
+    """Withdraw a swap request. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row = withdraw_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                actor_team_member_id=actor_team_member_id,
+                actor="mcp",
+                source="mcp",
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError, PermissionError) as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def approve_shift_swap_tool(token: str, request_id: int) -> dict[str, Any]:
+    """Approve a claimed or accepted swap. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row = approve_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+                resolved_by_user_id=None,
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def reject_shift_swap_tool(token: str, request_id: int) -> dict[str, Any]:
+    """Reject a swap request. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row = reject_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+                resolved_by_user_id=None,
+                allow_planner=True,
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return shift_swap_to_read(row).model_dump(mode="json")
+
+
+@mcp.tool
+def apply_shift_swap_tool(token: str, request_id: int) -> dict[str, Any]:
+    """Apply an approved swap through the ordinary assignment path and bump the plan version. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            row, assignments, version = apply_shift_swap(
+                db,
+                request_id,
+                organization_id=mcp_organization_id(),
+                actor="mcp",
+                source="mcp",
+                applied_by_user_id=None,
+            )
+        except (ShiftSwapConflictError, ShiftSwapNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+        return applied_swap_to_read(row, assignments, version).model_dump(mode="json")
 
 
 if __name__ == "__main__":

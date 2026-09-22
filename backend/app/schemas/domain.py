@@ -1664,7 +1664,7 @@ class ShiftGroupPlanningStatusRead(BaseModel):
 
 
 PlanVersionLifecyclePhase = Literal["preliminary", "published"]
-PlanVersionTrigger = Literal["status_preliminary", "status_published", "manual_save"]
+PlanVersionTrigger = Literal["status_preliminary", "status_published", "manual_save", "swap_apply"]
 
 
 class PlanVersionRead(BaseModel):
@@ -2227,3 +2227,56 @@ class SolverRunRead(BaseModel):
 class SolverRunApplyRead(BaseModel):
     run: SolverRunRead
     assignments: list[RosterSlotAssignmentRead]
+
+
+ShiftSwapKind = Literal["giveaway", "direct"]
+ShiftSwapStatus = Literal[
+    "draft",
+    "open",
+    "claimed",
+    "targeted",
+    "accepted",
+    "approved",
+    "applied",
+    "withdrawn",
+    "rejected",
+    "expired",
+]
+
+
+class ShiftSwapRequestCreate(BaseModel):
+    planning_period_id: int
+    shift_group_id: int
+    kind: ShiftSwapKind
+    offered_slot_id: int
+    target_team_member_id: int | None = None
+    counterparty_slot_id: int | None = None
+    open_immediately: bool = False
+
+
+class ShiftSwapRequestRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    planning_period_id: int
+    shift_group_id: int
+    kind: ShiftSwapKind
+    status: ShiftSwapStatus
+    offered_by_team_member_id: int
+    offered_slot_id: int
+    target_team_member_id: int | None = None
+    counterparty_slot_id: int | None = None
+    warning_findings: list[Any] = Field(default_factory=list)
+    eligible_member_ids: list[int] = Field(default_factory=list)
+    created_by_user_id: int | None = None
+    resolved_by_user_id: int | None = None
+    applied_plan_version_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ShiftSwapApplyRead(BaseModel):
+    request: ShiftSwapRequestRead
+    assignments: list[RosterSlotAssignmentRead]
+    plan_version: PlanVersionRead | None = None

@@ -57,6 +57,7 @@ from app.services.work_time_rule_sets import get_active_work_time_rule_set
 VERSION_TRIGGER_STATUS_PRELIMINARY = "status_preliminary"
 VERSION_TRIGGER_STATUS_PUBLISHED = "status_published"
 VERSION_TRIGGER_MANUAL_SAVE = "manual_save"
+VERSION_TRIGGER_SWAP_APPLY = "swap_apply"
 
 
 class PlanVersionValidationError(ValueError):
@@ -209,6 +210,15 @@ def suggest_next_version(
             if latest.major_version == 0:
                 return _version_tuple(0, latest.minor_version + 1)
             return _version_tuple(latest.major_version, latest.minor_version + 1)
+        if working is not None:
+            return _version_tuple(working.major, working.minor + 1)
+        if latest is not None:
+            return _version_tuple(latest.major_version, latest.minor_version + 1)
+        return _version_tuple(1, 1)
+
+    if trigger == VERSION_TRIGGER_SWAP_APPLY:
+        if row.status not in (PLANNING_PERIOD_STATUS_PRELIMINARY, PLANNING_PERIOD_STATUS_PUBLISHED):
+            raise PlanVersionValidationError("Swap apply requires preliminary or published status")
         if working is not None:
             return _version_tuple(working.major, working.minor + 1)
         if latest is not None:
@@ -588,6 +598,53 @@ def manual_save_plan_version(
     _set_working_version(status_row, version_numbers)
     db.commit()
     db.refresh(version)
+    return version
+
+
+def snapshot_swap_apply_plan_version(
+    db: Session,
+    *,
+    planning_period_id: int,
+    shift_group_id: int,
+    organization_id: int,
+    created_by_user_id: int | None,
+    actor: str,
+    source: str,
+    note: str | None = None,
+) -> PlanningPlanVersion:
+    status_row = _require_status_row(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=organization_id,
+    )
+    if status_row.status not in (PLANNING_PERIOD_STATUS_PRELIMINARY, PLANNING_PERIOD_STATUS_PUBLISHED):
+        raise PlanVersionValidationError("Swap apply requires preliminary or published status")
+    version_numbers = _resolve_version_numbers(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=organization_id,
+        trigger=VERSION_TRIGGER_SWAP_APPLY,
+        major_version=None,
+        minor_version=None,
+    )
+    version = snapshot_plan_version(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        organization_id=organization_id,
+        major_version=version_numbers.major,
+        minor_version=version_numbers.minor,
+        lifecycle_phase=status_row.status,
+        trigger=VERSION_TRIGGER_SWAP_APPLY,
+        created_by_user_id=created_by_user_id,
+        note=note,
+        actor=actor,
+        source=source,
+    )
+    _set_working_version(status_row, version_numbers)
+    db.flush()
     return version
 
 

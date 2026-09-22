@@ -15,6 +15,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -958,6 +959,63 @@ class SolverRun(Base):
     planning_period: Mapped["PlanningPeriod"] = relationship()
     shift_group: Mapped["ShiftGroup"] = relationship()
     created_by: Mapped["User | None"] = relationship()
+
+
+class ShiftSwapRequest(Base):
+    __tablename__ = "shift_swap_requests"
+    __table_args__ = (
+        Index(
+            "uq_shift_swap_requests_active_offered_slot",
+            "offered_slot_id",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('draft', 'open', 'claimed', 'targeted', 'accepted', 'approved')"
+            ),
+            postgresql_where=text(
+                "status IN ('draft', 'open', 'claimed', 'targeted', 'accepted', 'approved')"
+            ),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"), index=True)
+    shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(50), default="draft", index=True)
+    offered_by_team_member_id: Mapped[int] = mapped_column(ForeignKey("team_members.id", ondelete="CASCADE"), index=True)
+    offered_slot_id: Mapped[int] = mapped_column(ForeignKey("roster_slots.id", ondelete="CASCADE"), index=True)
+    target_team_member_id: Mapped[int | None] = mapped_column(
+        ForeignKey("team_members.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    counterparty_slot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("roster_slots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    warning_findings: Mapped[list] = mapped_column(JSON, default=list)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    applied_plan_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("planning_plan_versions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    planning_period: Mapped["PlanningPeriod"] = relationship()
+    shift_group: Mapped["ShiftGroup"] = relationship()
+    offered_by: Mapped["TeamMember"] = relationship(foreign_keys=[offered_by_team_member_id])
+    offered_slot: Mapped["RosterSlot"] = relationship(foreign_keys=[offered_slot_id])
+    target_member: Mapped["TeamMember | None"] = relationship(foreign_keys=[target_team_member_id])
+    counterparty_slot: Mapped["RosterSlot | None"] = relationship(foreign_keys=[counterparty_slot_id])
+    created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_user_id])
+    resolved_by: Mapped["User | None"] = relationship(foreign_keys=[resolved_by_user_id])
+    applied_plan_version: Mapped["PlanningPlanVersion | None"] = relationship()
 
 
 class AuditLog(Base):
