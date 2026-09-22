@@ -20,7 +20,11 @@ from app.models import (
     User,
 )
 from app.models.base import Base
-from app.services.shift_swaps import ShiftSwapConflictError, claim_shift_swap
+from app.services.shift_swaps import (
+    ShiftSwapConflictError,
+    claim_shift_swap,
+    list_eligible_claimants,
+)
 
 
 def _seed_membership(db, email: str, password: str, org_id: int, role: str) -> User:
@@ -405,6 +409,57 @@ def test_member_cannot_approve_and_outsider_cannot_list(swap_client: TestClient)
     assert listed_out.status_code == 200
     assert listed_out.json() == []
     assert swap_client.get(f"/api/v1/shift-swaps/{request_id}").status_code == 403
+
+
+def test_eligible_members_rank_underserved_first(swap_client: TestClient):
+    ids = _ids(swap_client)
+    _period_id, offered, _other, _template_id = _seed_published_month(swap_client, month=9, ids=ids)
+    login_admin(swap_client)
+    over = swap_client.put(
+        f"/api/v1/team-members/{ids['bob']}/time-account-opening",
+        json={"as_of_date": "2020-01-01", "fairness_balances": {"duties": 50}},
+    )
+    under = swap_client.put(
+        f"/api/v1/team-members/{ids['dana']}/time-account-opening",
+        json={"as_of_date": "2020-01-01", "fairness_balances": {"duties": 0}},
+    )
+    assert over.status_code == 200, over.text
+    assert under.status_code == 200, under.text
+    login_as(swap_client, "alice@example.com", "alicesecret")
+    ranked = swap_client.get(
+        f"/api/v1/shift-swaps/eligible-members?roster_slot_id={offered['id']}&shift_group_id=1"
+    )
+    assert ranked.status_code == 200, ranked.text
+    body = ranked.json()
+    assert ids["dana"] in body
+    assert ids["bob"] in body
+    assert body.index(ids["dana"]) < body.index(ids["bob"])
+
+
+def test_eligible_members_unranked_when_fairness_fails(swap_client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    ids = _ids(swap_client)
+    _period_id, offered, _other, _template_id = _seed_published_month(swap_client, month=2, ids=ids)
+
+    def _boom(*_args, **_kwargs):
+        raise ValueError("fairness unavailable")
+
+    monkeypatch.setattr("app.services.shift_swaps.build_fairness_accounts", _boom)
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        ranked = list_eligible_claimants(
+            db,
+            roster_slot_id=offered["id"],
+            organization_id=1,
+            shift_group_id=1,
+            exclude_team_member_id=ids["alice"],
+        )
+    finally:
+        db.close()
+    assert ranked == sorted(ranked)
+    assert ids["bob"] in ranked
+    assert ids["dana"] in ranked
+    assert ids["alice"] not in ranked
 
 
 def _activate_max_duties(client: TestClient, *, severity: str) -> None:

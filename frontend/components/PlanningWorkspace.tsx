@@ -43,8 +43,12 @@ import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
 import { FairnessAccountsPanel } from "@/components/FairnessAccountsPanel";
 import { SolverGenerateDialog } from "@/components/SolverGenerateDialog";
 import { SolverRunPanel } from "@/components/SolverRunPanel";
+import { ShiftSwapApprovalQueue } from "@/components/ShiftSwapApprovalQueue";
+import { ShiftSwapMarketplace } from "@/components/ShiftSwapMarketplace";
+import { ShiftSwapOfferDialog } from "@/components/ShiftSwapOfferDialog";
 import { type FairnessAccountsRead } from "@/lib/fairness";
 import { type SolverRunRead } from "@/lib/solver";
+import { canOfferSwapSlot } from "@/lib/shiftSwaps";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { monthDateBounds } from "@/lib/planningDates";
@@ -157,6 +161,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [syncRosterConfirmOpen, setSyncRosterConfirmOpen] = useState(false);
   const [solverDialogOpen, setSolverDialogOpen] = useState(false);
   const [solverReloadToken, setSolverReloadToken] = useState(0);
+  const [swapReloadToken, setSwapReloadToken] = useState(0);
+  const [offerSlotId, setOfferSlotId] = useState<number | null>(null);
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
   const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
@@ -698,6 +704,17 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     setSolverReloadToken((value) => value + 1);
   }, []);
 
+  const handleSwapApplied = useCallback(async () => {
+    if (!periodId) {
+      return;
+    }
+    setSwapReloadToken((value) => value + 1);
+    setRosterReloadToken((value) => value + 1);
+    await loadRosterMatrix(periodId);
+    await loadWarnings(periodId);
+    await loadFairnessAccounts(periodId);
+  }, [loadFairnessAccounts, loadRosterMatrix, loadWarnings, periodId]);
+
   const wishesSection = periodId ? (
     <section className="grid min-w-0 gap-3">
       <div>
@@ -765,6 +782,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           highlightTeamMemberId={
             teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined
           }
+          onOfferSwap={
+            teamMemberPortalUi && teamMemberRosterVisible
+              ? (slotId) => setOfferSlotId(slotId)
+              : undefined
+          }
         />
       )}
     </section>
@@ -777,6 +799,15 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
       {periodId ? <FairnessAccountsPanel accounts={fairnessAccounts} loadError={fairnessError} /> : null}
+      {periodId && shiftGroupId ? (
+        <ShiftSwapApprovalQueue
+          periodId={periodId}
+          shiftGroupId={shiftGroupId}
+          roster={rosterMatrix}
+          reloadToken={swapReloadToken}
+          onApplied={() => void handleSwapApplied()}
+        />
+      ) : null}
       {periodId ? (
         <SolverRunPanel
           periodId={periodId}
@@ -809,7 +840,16 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           <div className="grid gap-2">
             <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardUpcomingShifts")}</h3>
             <p className="text-sm text-slate-600">{t(locale, "dashboardUpcomingShiftsHint")}</p>
-            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.upcoming_slots} showIcsExport />
+            <DashboardUpcomingShiftsTable
+              locale={locale}
+              slots={memberShifts.upcoming_slots}
+              showIcsExport
+              onOfferSwap={(slot) => setOfferSlotId(slot.roster_slot_id)}
+              canOfferSwap={(slot) =>
+                Boolean(rosterMatrix?.slots.some((row) => row.id === slot.roster_slot_id)) &&
+                canOfferSwapSlot(slot.slot_date, groupPlanningStatus?.status)
+              }
+            />
           </div>
           <div className="grid gap-2">
             <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardPastShifts")}</h3>
@@ -821,6 +861,16 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             <p className="text-sm text-slate-600">{t(locale, "dutyActivityRetrospectiveHelp")}</p>
             <DutyActivityShiftList slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
           </div>
+          {userMe?.team_member_id != null && shiftGroupId ? (
+            <ShiftSwapMarketplace
+              periodId={periodId}
+              roster={rosterMatrix}
+              shiftGroupId={shiftGroupId}
+              teamMemberId={userMe.team_member_id}
+              reloadToken={swapReloadToken}
+              onChanged={() => setSwapReloadToken((value) => value + 1)}
+            />
+          ) : null}
         </div>
       ) : (
         <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
@@ -1251,6 +1301,21 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             void handleSolverApplied(run);
           }}
           onRunChange={handleSolverRunChange}
+        />
+      ) : null}
+
+      {teamMemberPortalUi && periodId && shiftGroupId && offerSlotId != null ? (
+        <ShiftSwapOfferDialog
+          offeredSlotId={offerSlotId}
+          onClose={() => setOfferSlotId(null)}
+          onSubmitted={() => {
+            setSwapReloadToken((value) => value + 1);
+            setMessage(t(locale, "shiftSwapOffered"));
+          }}
+          open
+          periodId={periodId}
+          roster={rosterMatrix}
+          shiftGroupId={shiftGroupId}
         />
       ) : null}
 

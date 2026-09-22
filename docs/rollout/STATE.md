@@ -44,8 +44,9 @@ Two things carry the whole design:
 ## Status
 
 `main` carries R1, R2, the solver fixture, the CP-SAT spike findings, SolverRun persistence,
-the CP-SAT roster model (tier A), and solver controls in `/planning`. This change lands **#77**
-(shift swap and giveaway requests with legality checks).
+the CP-SAT roster model (tier A), solver controls in `/planning`, shift swap requests, and the
+swap marketplace UI. This change lands **#78** (marketplace on `/my-planning` and planner
+approval queue on `/planning`).
 
 Shipped:
 
@@ -62,6 +63,7 @@ Shipped:
 - CP-SAT roster model, tier A (`#75`)
 - Solver generate / inspect / apply in `/planning` plus MCP parity (`#76`)
 - Shift swap and giveaway requests with legality checks (`#77`)
+- Swap marketplace UI and planner approval queue (`#78`)
 
 In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 
@@ -73,8 +75,8 @@ In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long
 | 2 | #75 | Build the CP-SAT model from the rule layer — **Tier A only** | shipped |
 | 3 | *(to write)* | Tier B encodings: `min_rest_period`, `rest_after_long_duty`, `weekly_average_cap` | write this issue; the ArbZG fixture profile exists |
 | 4 | #76 | Solver controls in the planning workspace and MCP | shipped |
-| 5 | #77 | Shift swap and giveaway requests with legality checks | this change |
-| 6 | #78 | Swap marketplace UI and planner approval queue | |
+| 5 | #77 | Shift swap and giveaway requests with legality checks | shipped |
+| 6 | #78 | Swap marketplace UI and planner approval queue | this change |
 
 Backlog, not part of the rollout: #34, #44, #51, #52, #53, #54.
 

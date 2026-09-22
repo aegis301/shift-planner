@@ -31,11 +31,15 @@ export function DashboardUpcomingShiftsTable({
   slots,
   emptyLabelKey = "dashboardUpcomingShiftsEmpty",
   showIcsExport = false,
+  onOfferSwap,
+  canOfferSwap,
 }: {
   locale: Locale;
   slots: UpcomingSlot[];
   emptyLabelKey?: TranslationKey;
   showIcsExport?: boolean;
+  onOfferSwap?: (slot: UpcomingSlot) => void;
+  canOfferSwap?: (slot: UpcomingSlot) => boolean;
 }) {
   if (slots.length === 0) {
     return <p className="text-sm text-slate-500">{t(locale, emptyLabelKey)}</p>;
@@ -58,7 +62,7 @@ export function DashboardUpcomingShiftsTable({
             <th scope="col" className="hidden px-3 py-2 text-left font-semibold text-slate-700 md:table-cell">
               {t(locale, "dashboardUpcomingShiftsColCategory")}
             </th>
-            {showIcsExport ? (
+            {showIcsExport || onOfferSwap ? (
               <th scope="col" className="px-3 py-2 text-right font-semibold text-slate-700">
                 <span className="sr-only">{t(locale, "dashboardUpcomingShiftsColExport")}</span>
               </th>
@@ -88,16 +92,29 @@ export function DashboardUpcomingShiftsTable({
                 <td className="hidden px-3 py-2.5 text-slate-600 md:table-cell">
                   {slot.category ? categoryLabel(locale, slot.category) : "—"}
                 </td>
-                {showIcsExport ? (
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                    <a
-                      aria-label={t(locale, "shiftIcsExport")}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
-                      href={`${API_BASE_URL}/api/v1/exports/roster-slots/${slot.roster_slot_id}.ics`}
-                      title={t(locale, "shiftIcsExport")}
-                    >
-                      <Calendar size={16} />
-                    </a>
+                {showIcsExport || onOfferSwap ? (
+                  <td className="px-3 py-2.5 text-right">
+                    <div className="flex flex-col items-stretch justify-end gap-2 sm:flex-row sm:items-center">
+                      {onOfferSwap && (!canOfferSwap || canOfferSwap(slot)) ? (
+                        <button
+                          className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-3 text-sm font-semibold text-white sm:w-auto"
+                          onClick={() => onOfferSwap(slot)}
+                          type="button"
+                        >
+                          {t(locale, "shiftSwapOffer")}
+                        </button>
+                      ) : null}
+                      {showIcsExport ? (
+                        <a
+                          aria-label={t(locale, "shiftIcsExport")}
+                          className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 sm:h-9 sm:w-9"
+                          href={`${API_BASE_URL}/api/v1/exports/roster-slots/${slot.roster_slot_id}.ics`}
+                          title={t(locale, "shiftIcsExport")}
+                        >
+                          <Calendar size={16} />
+                        </a>
+                      ) : null}
+                    </div>
                   </td>
                 ) : null}
               </tr>

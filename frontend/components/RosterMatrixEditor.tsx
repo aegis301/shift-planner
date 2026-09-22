@@ -35,6 +35,7 @@ import {
   type FairnessAccountsRead
 } from "@/lib/fairness";
 import { useLocale } from "@/components/LocaleProvider";
+import { utcTodayIso } from "@/lib/shiftSwaps";
 
 type ShiftIntentKind = "wish" | "no_go";
 
@@ -326,6 +327,7 @@ export function RosterMatrixEditor({
   fairnessAccounts = null,
   onMatrixChange,
   highlightTeamMemberId,
+  onOfferSwap,
 }: {
   periodId?: string;
   compact?: boolean;
@@ -338,6 +340,7 @@ export function RosterMatrixEditor({
   fairnessAccounts?: FairnessAccountsRead | null;
   onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
   highlightTeamMemberId?: number;
+  onOfferSwap?: (slotId: number) => void;
 } = {}) {
   const { locale } = useLocale();
   const currentDate = new Date();
@@ -593,6 +596,7 @@ export function RosterMatrixEditor({
               readOnly={readOnly}
               duplicateMemberDayKeys={duplicateMemberDayKeys}
               highlightTeamMemberId={highlightTeamMemberId}
+              onOfferSwap={onOfferSwap}
             />
             <MobileRosterMatrix
               matrix={matrix}
@@ -612,6 +616,7 @@ export function RosterMatrixEditor({
               readOnly={readOnly}
               duplicateMemberDayKeys={duplicateMemberDayKeys}
               highlightTeamMemberId={highlightTeamMemberId}
+              onOfferSwap={onOfferSwap}
             />
           </>
         ) : (
@@ -646,6 +651,7 @@ function DesktopRosterMatrix({
   readOnly,
   duplicateMemberDayKeys,
   highlightTeamMemberId,
+  onOfferSwap,
 }: {
   matrix: RosterMatrix;
   workloadMatrix: RosterWorkloadMatrixSlice;
@@ -664,6 +670,7 @@ function DesktopRosterMatrix({
   readOnly: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   highlightTeamMemberId?: number;
+  onOfferSwap?: (slotId: number) => void;
 }) {
   if (dense) {
     return (
@@ -729,6 +736,7 @@ function DesktopRosterMatrix({
                                   planningPeriodLabel={planningPeriodLabel}
                                   dayStatusDefinitions={matrix.day_status_definitions ?? []}
                                   highlightTeamMemberId={highlightTeamMemberId}
+                                  onOfferSwap={onOfferSwap}
                                 />
                               </div>
                             );
@@ -790,6 +798,7 @@ function DesktopRosterMatrix({
                         planningPeriodLabel={planningPeriodLabel}
                         dayStatusDefinitions={matrix.day_status_definitions ?? []}
                         highlightTeamMemberId={highlightTeamMemberId}
+                        onOfferSwap={onOfferSwap}
                       />
                     </div>
                   ))}
@@ -821,6 +830,7 @@ function MobileRosterMatrix({
   readOnly,
   duplicateMemberDayKeys,
   highlightTeamMemberId,
+  onOfferSwap,
 }: {
   matrix: RosterMatrix;
   workloadMatrix: RosterWorkloadMatrixSlice;
@@ -839,6 +849,7 @@ function MobileRosterMatrix({
   readOnly: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   highlightTeamMemberId?: number;
+  onOfferSwap?: (slotId: number) => void;
 }) {
   if (dense) {
     return (
@@ -901,6 +912,7 @@ function MobileRosterMatrix({
                                       planningPeriodLabel={planningPeriodLabel}
                                       dayStatusDefinitions={matrix.day_status_definitions ?? []}
                                       highlightTeamMemberId={highlightTeamMemberId}
+                                      onOfferSwap={onOfferSwap}
                                     />
                                   </div>
                                 );
@@ -949,6 +961,7 @@ function MobileRosterMatrix({
                       planningPeriodLabel={planningPeriodLabel}
                       dayStatusDefinitions={matrix.day_status_definitions ?? []}
                       highlightTeamMemberId={highlightTeamMemberId}
+                      onOfferSwap={onOfferSwap}
                     />
                 </div>
             ))}
@@ -991,6 +1004,7 @@ function RosterCell({
   planningPeriodLabel,
   dayStatusDefinitions,
   highlightTeamMemberId,
+  onOfferSwap,
 }: {
   slot: RosterSlot;
   members: RosterMatrixTeamMember[];
@@ -1008,6 +1022,7 @@ function RosterCell({
   planningPeriodLabel: string;
   dayStatusDefinitions: PlanningDayStatusDefinition[];
   highlightTeamMemberId?: number;
+  onOfferSwap?: (slotId: number) => void;
 }) {
   const [memberId, setMemberId] = useState<number | "">(assignment?.team_member_id ?? "");
   const [open, setOpen] = useState(false);
@@ -1475,6 +1490,15 @@ function RosterCell({
       </button>
       {menuPortal}
       {statsModalPortal}
+      {readOnly && isMyAssignment && onOfferSwap && slot.slot_date >= utcTodayIso() ? (
+        <button
+          className="inline-flex min-h-9 w-full items-center justify-center rounded-lg bg-ink px-2 text-[0.7rem] font-semibold text-white"
+          onClick={() => onOfferSwap(slot.id)}
+          type="button"
+        >
+          {t(locale, "shiftSwapOffer")}
+        </button>
+      ) : null}
       {meta || duplicateSameDay || hasDayComment ? (
         <div className="flex flex-wrap items-center gap-1">
           {hasUnavailableDay ? <span className="text-xs font-semibold text-rose-700">{t(locale, "conflict")}</span> : null}
