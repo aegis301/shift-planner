@@ -78,6 +78,18 @@ class Organization(Base):
         },
     )
     solver_time_budget_ceiling_seconds: Mapped[int] = mapped_column(Integer, default=120)
+    solver_objective_weights: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "unfilled": 10000,
+            "duty_count": 250,
+            "fairness": 8,
+            "wish": 25,
+            "avoid_time_window": 15,
+            "warning": 40,
+            "pair_warning": 70,
+        },
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")

@@ -353,28 +353,109 @@ def evaluate_shift_constraints_for_slot(
     )
 
 
+def _cpsat_pair(model: object, left, right, *, severity: str, code: str) -> None:
+    if left is None or right is None:
+        return
+    if type(left) is int and type(right) is int:
+        return
+    if severity == "error":
+        model.cp_model.Add(left + right <= 1)
+        return
+    if severity != "warning":
+        return
+    violation = model.new_bool(code)
+    model.cp_model.Add(violation >= left + right - 1)
+    model.add_penalty(code, violation, model.weights.pair_warning)
+
+
 class NoAdditionalSameDayRule:
     code = "ROSTER_CONSTRAINT_SAME_DAY"
     severity = "warning"
     lookback = timedelta(0)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         return _evaluate_type_on_state(state, "no_additional_same_day")
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        for slot in model.target_slots:
+            resolved = [
+                row
+                for row in resolve_slot_constraints_from_loaded(slot)
+                if row.rule.type == "no_additional_same_day"
+            ]
+            if not resolved:
+                continue
+            severity = resolved[0].rule.severity
+            others = [
+                other
+                for other in state.slots_by_id.values()
+                if other.id != slot.id and other.slot_date == slot.slot_date
+            ]
+            for member_id in model.iter_candidates(slot.id):
+                left = model.assigned_expr(slot.id, member_id)
+                for other in others:
+                    _cpsat_pair(
+                        model,
+                        left,
+                        model.assigned_expr(other.id, member_id),
+                        severity=severity,
+                        code=self.code,
+                    )
 
 
 class MinRestHoursRule:
     code = "ROSTER_CONSTRAINT_MIN_REST_HOURS"
     severity = "warning"
     lookback = timedelta(hours=48)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         return _evaluate_type_on_state(state, "min_rest_hours")
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        for slot in model.target_slots:
+            resolved = [
+                row
+                for row in resolve_slot_constraints_from_loaded(slot)
+                if row.rule.type == "min_rest_hours"
+            ]
+            if not resolved or slot.starts_at is None or slot.ends_at is None:
+                continue
+            required = float(resolved[0].rule.min_rest_hours or 0)
+            severity = resolved[0].rule.severity
+            for other in state.slots_by_id.values():
+                if other.id == slot.id or other.starts_at is None or other.ends_at is None:
+                    continue
+                if other.ends_at <= slot.starts_at:
+                    gap = (slot.starts_at - other.ends_at).total_seconds() / 3600
+                elif slot.ends_at <= other.starts_at:
+                    gap = (other.starts_at - slot.ends_at).total_seconds() / 3600
+                else:
+                    gap = -1.0
+                if gap >= required:
+                    continue
+                for member_id in model.iter_candidates(slot.id):
+                    _cpsat_pair(
+                        model,
+                        model.assigned_expr(slot.id, member_id),
+                        model.assigned_expr(other.id, member_id),
+                        severity=severity,
+                        code=self.code,
+                    )
 
 
 class UnavailableOverlapPolicyRule:
     code = "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"
     severity = "error"
     lookback = timedelta(days=1)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         warnings: list[ValidationWarning] = []
@@ -420,32 +501,182 @@ class UnavailableOverlapPolicyRule:
             )
         return warnings
 
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        for slot in model.target_slots:
+            policy = _resolve_unavailable_overlap_policy(resolve_slot_constraints_from_loaded(slot))
+            if policy_mode_allow(policy):
+                continue
+            severity = "error" if policy == "block" else "warning"
+            overlap = set(_overlap_days(slot))
+            members = list(model.iter_candidates(slot.id))
+            for member_id in members:
+                blocking = _blocking_cells_for_member(state, member_id)
+                if not overlap.intersection(blocking):
+                    continue
+                if model.phase == "mask" and severity == "error":
+                    model.exclude(slot.id, member_id, self.code)
+                    continue
+                if model.phase == "constrain" and severity == "warning":
+                    var = model.var(slot.id, member_id)
+                    if var is not None:
+                        model.add_penalty(self.code, var, model.weights.warning)
+
 
 class MaxAssignmentsPerMonthRule:
     code = "ROSTER_CONSTRAINT_MAX_ASSIGNMENTS_PER_MONTH"
     severity = "warning"
     lookback = timedelta(days=31)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         return _evaluate_type_on_state(state, "max_assignments_per_month")
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        for slot in model.target_slots:
+            resolved = [
+                row
+                for row in resolve_slot_constraints_from_loaded(slot)
+                if row.rule.type == "max_assignments_per_month"
+            ]
+            if not resolved or resolved[0].rule.max_assignments_per_month is None:
+                continue
+            limit = int(resolved[0].rule.max_assignments_per_month)
+            severity = resolved[0].rule.severity
+            month = (slot.slot_date.year, slot.slot_date.month)
+            template_id = slot.shift_template_id
+            for member_id in model.iter_candidates(slot.id):
+                terms = []
+                constant = 0
+                for other in state.slots_by_id.values():
+                    if other.shift_template_id != template_id:
+                        continue
+                    if (other.slot_date.year, other.slot_date.month) != month:
+                        continue
+                    expr = model.assigned_expr(other.id, member_id)
+                    if expr is None:
+                        continue
+                    if type(expr) is int:
+                        constant += 1
+                        continue
+                    terms.append(expr)
+                if not terms:
+                    continue
+                total = model.new_int("max_assign", 0, len(terms) + constant)
+                model.cp_model.Add(total == sum(terms) + constant)
+                if severity == "error":
+                    model.cp_model.Add(total <= limit)
+                    continue
+                if severity == "warning":
+                    overflow = model.new_int("max_assign_ov", 0, len(terms) + constant)
+                    model.cp_model.Add(overflow >= total - limit)
+                    model.add_penalty(self.code, overflow, model.weights.warning)
 
 
 class RequiresCoupledShiftRule:
     code = "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED"
     severity = "warning"
     lookback = timedelta(days=7)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         return _evaluate_type_on_state(state, "requires_coupled_shift")
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        for slot in model.target_slots:
+            resolved = [
+                row
+                for row in resolve_slot_constraints_from_loaded(slot)
+                if row.rule.type == "requires_coupled_shift"
+            ]
+            for row in resolved:
+                if row.rule.paired_shift_variant_id is None:
+                    continue
+                paired_variant = _variant_in_state(state, row.rule.paired_shift_variant_id)
+                if paired_variant is None:
+                    continue
+                partner_date = slot.slot_date + timedelta(days=row.rule.partner_day_offset)
+                source_variant = slot.shift_variant
+                source_rc = source_variant.required_count if source_variant is not None else 1
+                strict_position = not (source_rc == 1 and paired_variant.required_count == 1)
+                partners = [
+                    other
+                    for other in state.slots_by_id.values()
+                    if other.shift_variant_id == row.rule.paired_shift_variant_id
+                    and other.slot_date == partner_date
+                    and (not strict_position or other.position == slot.position)
+                ]
+                severity = row.rule.severity
+                for member_id in model.iter_candidates(slot.id):
+                    premise = model.assigned_expr(slot.id, member_id)
+                    partner_terms = []
+                    for other in partners:
+                        term = model.assigned_expr(other.id, member_id)
+                        if term is not None:
+                            partner_terms.append(term)
+                    if not partner_terms:
+                        if severity == "error":
+                            model.add_implication(premise, None)
+                        elif severity == "warning" and premise is not None and type(premise) is not int:
+                            model.add_penalty(self.code, premise, model.weights.warning)
+                        continue
+                    if any(type(term) is int for term in partner_terms):
+                        continue
+                    if severity == "error":
+                        if len(partner_terms) == 1:
+                            model.add_implication(premise, partner_terms[0])
+                        elif premise is not None and type(premise) is not int:
+                            model.cp_model.AddBoolOr(partner_terms).OnlyEnforceIf(premise)
+                        continue
+                    if severity == "warning" and premise is not None and type(premise) is not int:
+                        missing = model.new_bool("coupled_missing")
+                        if len(partner_terms) == 1:
+                            model.cp_model.Add(missing >= premise - partner_terms[0])
+                        else:
+                            has_partner = model.new_bool("coupled_has")
+                            model.cp_model.AddMaxEquality(has_partner, partner_terms)
+                            model.cp_model.Add(missing >= premise - has_partner)
+                        model.add_penalty(self.code, missing, model.weights.warning)
 
 
 class TeamMemberPropertyRequirementRule:
     code = "ROSTER_CONSTRAINT_TEAM_MEMBER_PROPERTIES"
     severity = "warning"
     lookback = timedelta(0)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         return _evaluate_type_on_state(state, "team_member_property_requirement")
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        defs_map = dict(state.property_definitions_by_id)
+        for slot in model.target_slots:
+            resolved = [
+                row
+                for row in resolve_slot_constraints_from_loaded(slot)
+                if row.rule.type == "team_member_property_requirement"
+            ]
+            for row in resolved:
+                if row.rule.property_requirement is None:
+                    continue
+                severity = row.rule.severity
+                for member_id in list(model.iter_candidates(slot.id)):
+                    values = dict(state.property_values_by_member_id.get(member_id, {}))
+                    if evaluate_property_requirement_expr(row.rule.property_requirement, values, defs_map):
+                        continue
+                    if model.phase == "mask" and severity == "error":
+                        model.exclude(slot.id, member_id, self.code)
+                    elif model.phase == "constrain" and severity == "warning":
+                        var = model.var(slot.id, member_id)
+                        if var is not None:
+                            model.add_penalty(self.code, var, model.weights.warning)
 
 
 def _overlap_days(slot: RosterSlot) -> list[date]:

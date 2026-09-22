@@ -42,6 +42,7 @@ class TemplateNoGoConflictRule:
     code = "ROSTER_TEMPLATE_NO_GO_CONFLICT"
     severity = "error"
     lookback = timedelta(0)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         no_gos = [intent for intent in state.shift_intents if intent.kind == "no_go"]
@@ -81,11 +82,28 @@ class TemplateNoGoConflictRule:
                 break
         return warnings
 
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "mask":
+            return
+        no_gos = {
+            (intent.team_member_id, intent.cell_date, intent.shift_template_id)
+            for intent in state.shift_intents
+            if intent.kind == "no_go"
+        }
+        for slot in model.target_slots:
+            if slot.shift_template_id is None:
+                continue
+            for member_id in list(model.iter_candidates(slot.id)):
+                if (member_id, slot.slot_date, slot.shift_template_id) in no_gos:
+                    model.exclude(slot.id, member_id, self.code)
+
 
 class DuplicateDayRule:
     code = "ROSTER_MATRIX_DUPLICATE_DAY"
     severity = "warning"
     lookback = timedelta(0)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         grouped: dict[tuple[int, date], list[RosterSlotAssignment]] = {}
@@ -120,11 +138,35 @@ class DuplicateDayRule:
             )
         return warnings
 
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        days = {slot.slot_date for slot in model.target_slots}
+        member_ids = set()
+        for slot in model.target_slots:
+            member_ids.update(model.iter_candidates(slot.id))
+        for member_id in member_ids:
+            for day in days:
+                terms = []
+                for slot in state.slots_by_id.values():
+                    if slot.slot_date != day:
+                        continue
+                    expr = model.assigned_expr(slot.id, member_id)
+                    if expr is not None:
+                        terms.append(expr)
+                if len(terms) < 2:
+                    continue
+                overflow = model.new_int("dup_day", 0, len(terms))
+                model.cp_model.Add(overflow >= sum(terms) - 1)
+                model.add_penalty(self.code, overflow, model.weights.pair_warning)
+
 
 class ConsecutiveWeekendsRule:
     code = "ROSTER_CONSECUTIVE_WEEKENDS"
     severity = "warning"
     lookback = timedelta(days=7)
+    cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         anchors_by_member: dict[int, set[date]] = defaultdict(set)
@@ -179,6 +221,58 @@ class ConsecutiveWeekendsRule:
                 )
             )
         return warnings
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        saturdays: set[date] = set()
+        cursor = state.start_date - timedelta(days=7)
+        while cursor <= state.end_date + timedelta(days=1):
+            if cursor.weekday() == 5:
+                saturdays.add(cursor)
+            cursor += timedelta(days=1)
+        ordered = sorted(saturdays)
+        member_ids = set()
+        for slot in model.target_slots:
+            member_ids.update(model.iter_candidates(slot.id))
+        for member_id in member_ids:
+            worked: dict[date, object] = {}
+            for saturday in ordered:
+                sunday = saturday + timedelta(days=1)
+                terms = []
+                for slot in state.slots_by_id.values():
+                    if slot.slot_date not in (saturday, sunday):
+                        continue
+                    expr = model.assigned_expr(slot.id, member_id)
+                    if expr is not None:
+                        terms.append(expr)
+                if not terms:
+                    worked[saturday] = None
+                    continue
+                if any(type(term) is int for term in terms):
+                    worked[saturday] = 1
+                    continue
+                flag = model.new_bool("weekend")
+                model.cp_model.AddMaxEquality(flag, terms)
+                worked[saturday] = flag
+            for index in range(len(ordered) - 1):
+                first = ordered[index]
+                second = ordered[index + 1]
+                if second - first != timedelta(days=7):
+                    continue
+                if not (
+                    _saturday_touches_window(first, state.start_date, state.end_date)
+                    or _saturday_touches_window(second, state.start_date, state.end_date)
+                ):
+                    continue
+                left = worked[first]
+                right = worked[second]
+                if left is None or right is None:
+                    continue
+                violation = model.new_bool("consec_weekend")
+                model.cp_model.Add(violation >= left + right - 1)
+                model.add_penalty(self.code, violation, model.weights.pair_warning)
 
 
 def builtin_roster_rules() -> tuple[TemplateNoGoConflictRule, DuplicateDayRule, ConsecutiveWeekendsRule]:

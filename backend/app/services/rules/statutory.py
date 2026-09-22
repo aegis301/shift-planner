@@ -142,6 +142,32 @@ def _duty_minutes_on_day(state: PlanState, member_id: int, day: date) -> int:
     return total
 
 
+def _slot_statutory_minutes_for_member(state: PlanState, slot: RosterSlot, member_id: int) -> int:
+    employment = _employment_on(state, member_id, slot.slot_date)
+    contract_group = employment.contract_group if employment is not None else None
+    return statutory_work_minutes(
+        slot=slot,
+        contract_group=contract_group,
+        template=slot.shift_template,
+        day_class=slot.day_class or "any",
+        episodes=(),
+    )
+
+
+def _slot_duty_minutes_on_day(slot: RosterSlot, day: date) -> int:
+    interval = _slot_interval(slot)
+    if interval is None:
+        return 24 * 60 if slot.slot_date == day else 0
+    start, end = interval
+    cursor = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    next_day = cursor + timedelta(days=1)
+    overlap_start = max(start, cursor)
+    overlap_end = min(end, next_day)
+    if overlap_end > overlap_start:
+        return int((overlap_end - overlap_start).total_seconds() // 60)
+    return 0
+
+
 def _warning(
     *,
     code: str,
@@ -161,6 +187,21 @@ def _warning(
     )
 
 
+def _cpsat_daily_pair(model: object, left, right, *, severity: str, code: str) -> None:
+    if left is None or right is None:
+        return
+    if type(left) is int and type(right) is int:
+        return
+    if severity == "error":
+        model.cp_model.Add(left + right <= 1)
+        return
+    if severity != "warning":
+        return
+    violation = model.new_bool(code)
+    model.cp_model.Add(violation >= left + right - 1)
+    model.add_penalty(code, violation, model.weights.pair_warning)
+
+
 class MaxDailyWorkingTimeRule:
     def __init__(self, config: WorkTimeRuleMaxDailyWorkingTime) -> None:
         self.config = config
@@ -168,6 +209,7 @@ class MaxDailyWorkingTimeRule:
         self.severity = config.severity
         self.lookback = timedelta(days=1)
         self.roster_lookback = timedelta(days=1)
+        self.cpsat_supported = True
 
     def evaluate(self, state: PlanState) -> list[ValidationWarning]:
         base = _hours_to_minutes(self.config.base_hours)
@@ -204,6 +246,52 @@ class MaxDailyWorkingTimeRule:
                     )
                 day += timedelta(days=1)
         return warnings
+
+    def to_cpsat(self, model: object, variables: object, state: PlanState) -> None:
+        del variables
+        if model.phase != "constrain":
+            return
+        base = _hours_to_minutes(self.config.base_hours)
+        extended = _hours_to_minutes(self.config.extended_hours)
+        duty_needed = _hours_to_minutes(self.config.extension_requires_duty_hours)
+        member_ids: set[int] = set()
+        for slot in model.target_slots:
+            member_ids.update(model.iter_candidates(slot.id))
+        days: list[date] = []
+        day = state.start_date
+        while day <= state.end_date:
+            days.append(day)
+            day += timedelta(days=1)
+        for member_id in member_ids:
+            for on_date in days:
+                items: list[tuple[object, int, int]] = []
+                for slot in state.slots_by_id.values():
+                    if slot.slot_date != on_date:
+                        continue
+                    expr = model.assigned_expr(slot.id, member_id)
+                    if expr is None:
+                        continue
+                    items.append(
+                        (
+                            expr,
+                            _slot_statutory_minutes_for_member(state, slot, member_id),
+                            _slot_duty_minutes_on_day(slot, on_date),
+                        )
+                    )
+                for index, (left, left_stat, left_duty) in enumerate(items):
+                    for right, right_stat, right_duty in items[index + 1 :]:
+                        total_stat = left_stat + right_stat
+                        total_duty = left_duty + right_duty
+                        limit = extended if total_duty >= duty_needed else base
+                        if total_stat <= limit:
+                            continue
+                        _cpsat_daily_pair(
+                            model,
+                            left,
+                            right,
+                            severity=self.severity,
+                            code=self.code,
+                        )
 
 
 def _occupancy_intervals(state: PlanState, member_id: int, *, call_out_handling: str) -> list[tuple[datetime, datetime, int | None]]:

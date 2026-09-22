@@ -2170,6 +2170,16 @@ class TeamMemberDashboardRead(BaseModel):
     past_slots: list[DashboardUpcomingSlot] = []
 
 
+class SolverObjectiveWeights(BaseModel):
+    unfilled: int = Field(default=10000, ge=0)
+    duty_count: int = Field(default=250, ge=0)
+    fairness: int = Field(default=8, ge=0)
+    wish: int = Field(default=25, ge=0)
+    avoid_time_window: int = Field(default=15, ge=0)
+    warning: int = Field(default=40, ge=0)
+    pair_warning: int = Field(default=70, ge=0)
+
+
 SolverRunStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 
