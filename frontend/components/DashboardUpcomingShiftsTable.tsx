@@ -7,6 +7,7 @@ import { API_BASE_URL } from "@/lib/api";
 import { formatPlanningDate, formatShiftTimeRange } from "@/lib/shiftDisplay";
 import type { Locale, TranslationKey } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
+import { swapAvailability, swapAvailabilityMessageKey, swapOfferControl, type SwapOfferContext } from "@/lib/shiftSwaps";
 
 type UpcomingSlot = TeamMemberDashboard["upcoming_slots"][number];
 
@@ -31,15 +32,13 @@ export function DashboardUpcomingShiftsTable({
   slots,
   emptyLabelKey = "dashboardUpcomingShiftsEmpty",
   showIcsExport = false,
-  onOfferSwap,
-  canOfferSwap,
+  swapOffer,
 }: {
   locale: Locale;
   slots: UpcomingSlot[];
   emptyLabelKey?: TranslationKey;
   showIcsExport?: boolean;
-  onOfferSwap?: (slot: UpcomingSlot) => void;
-  canOfferSwap?: (slot: UpcomingSlot) => boolean;
+  swapOffer?: SwapOfferContext;
 }) {
   if (slots.length === 0) {
     return <p className="text-sm text-slate-500">{t(locale, emptyLabelKey)}</p>;
@@ -62,7 +61,7 @@ export function DashboardUpcomingShiftsTable({
             <th scope="col" className="hidden px-3 py-2 text-left font-semibold text-slate-700 md:table-cell">
               {t(locale, "dashboardUpcomingShiftsColCategory")}
             </th>
-            {showIcsExport || onOfferSwap ? (
+            {showIcsExport || swapOffer ? (
               <th scope="col" className="px-3 py-2 text-right font-semibold text-slate-700">
                 <span className="sr-only">{t(locale, "dashboardUpcomingShiftsColExport")}</span>
               </th>
@@ -92,18 +91,10 @@ export function DashboardUpcomingShiftsTable({
                 <td className="hidden px-3 py-2.5 text-slate-600 md:table-cell">
                   {slot.category ? categoryLabel(locale, slot.category) : "—"}
                 </td>
-                {showIcsExport || onOfferSwap ? (
+                {showIcsExport || swapOffer ? (
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex flex-col items-stretch justify-end gap-2 sm:flex-row sm:items-center">
-                      {onOfferSwap && (!canOfferSwap || canOfferSwap(slot)) ? (
-                        <button
-                          className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-3 text-sm font-semibold text-white sm:w-auto"
-                          onClick={() => onOfferSwap(slot)}
-                          type="button"
-                        >
-                          {t(locale, "shiftSwapOffer")}
-                        </button>
-                      ) : null}
+                      <SwapOfferButton locale={locale} slot={slot} swapOffer={swapOffer} />
                       {showIcsExport ? (
                         <a
                           aria-label={t(locale, "shiftIcsExport")}
@@ -123,5 +114,52 @@ export function DashboardUpcomingShiftsTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SwapOfferButton({
+  locale,
+  slot,
+  swapOffer
+}: {
+  locale: Locale;
+  slot: UpcomingSlot;
+  swapOffer?: SwapOfferContext;
+}) {
+  if (!swapOffer) {
+    return null;
+  }
+  const availability = swapAvailability({
+    variant: swapOffer.variant,
+    capabilities: swapOffer.capabilities,
+    teamMemberId: swapOffer.teamMemberId,
+    shiftGroupId: swapOffer.shiftGroupId,
+    periodId: swapOffer.periodId,
+    groupStatus: swapOffer.groupStatus,
+    slotDate: slot.slot_date,
+    slotOnRoster: swapOffer.rosterSlotIds ? swapOffer.rosterSlotIds.has(slot.roster_slot_id) : true
+  });
+  const control = swapOfferControl(availability);
+  if (control === "hidden") {
+    return null;
+  }
+  const disabled = control === "disabled";
+  const reasonKey =
+    !availability.available && disabled ? swapAvailabilityMessageKey("offer", availability.reason) : null;
+  const title = reasonKey ? t(locale, reasonKey) : undefined;
+  return (
+    <button
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) {
+          swapOffer.onOffer(slot.roster_slot_id);
+        }
+      }}
+      title={title}
+      type="button"
+    >
+      {t(locale, "shiftSwapOffer")}
+    </button>
   );
 }

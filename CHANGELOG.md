@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-23
+- **Swap UI states:** The marketplace, offer buttons, and approval queue say why they are blocked instead of disappearing. A missing shift group, an account that is not linked to a team member, and a plan still in draft each get one sentence that names the fix. Draft duties keep a disabled offer button; past duties stay hidden. An empty approval queue is distinct from “select a month and shift group.” Planners who are also team members get a link from the Analysis queue to My planning.
+
 ## 2026-09-22
 - **Swap marketplace:** Linked members offer a duty from **My shifts** or an own roster cell as a giveaway or a named direct proposal (optional return duty). The My shifts tab lists open giveaways with claim and the member's own requests with accept / decline / withdraw. Planners get an Analysis-tab approval queue with before/after roster change, attached warnings, and approve-and-apply or reject. Eligible partners are ranked by slot-relevant fairness deviation (under-served first) and stay sorted by id when fairness cannot be built. Refusals show the API's named violation in DE and EN.
 - **Shift swaps:** Linked members can offer a published or preliminary duty as a giveaway or a direct 1:1 proposal. Claiming a giveaway is atomic. Legality overlays the post-swap `PlanState` and runs the shared rule registry: statutory `error` findings refuse the transition by code and message; warnings stay on the request for the approver. Apply writes through the ordinary assignment path and snapshots a new plan version (`swap_apply`) without reopening the month. REST `/api/v1/shift-swaps`; MCP resources and token-gated transition tools. Alembic `202609220001`.

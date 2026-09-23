@@ -144,11 +144,110 @@ export function utcTodayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function canOfferSwapSlot(slotDate: string, groupStatus: string | null | undefined): boolean {
-  if (groupStatus !== "preliminary" && groupStatus !== "published") {
-    return false;
+export type SwapPortalVariant = "planner" | "team_member";
+
+export type SwapAvailabilityReason =
+  | "no_shift_group"
+  | "no_team_member_link"
+  | "plan_not_open"
+  | "slot_in_past"
+  | "slot_not_on_roster";
+
+export type SwapAvailabilityInput = {
+  variant: SwapPortalVariant;
+  capabilities: { team_member_portal: boolean };
+  teamMemberId: number | null;
+  shiftGroupId: string | null;
+  periodId: string | null;
+  groupStatus: string | null | undefined;
+  slotDate?: string | null;
+  slotOnRoster?: boolean;
+};
+
+export type SwapAvailability = {
+  showMemberPortalLink: boolean;
+} & ({ available: true } | { available: false; reason: SwapAvailabilityReason });
+
+export type SwapOfferContext = {
+  variant: SwapPortalVariant;
+  capabilities: { team_member_portal: boolean };
+  teamMemberId: number | null;
+  shiftGroupId: string | null;
+  periodId: string | null;
+  groupStatus: string | null | undefined;
+  rosterSlotIds?: ReadonlySet<number>;
+  onOffer: (slotId: number) => void;
+};
+
+export type SwapOfferControl = "enabled" | "disabled" | "hidden";
+
+export type SwapAvailabilitySurface = "marketplace" | "queue" | "offer";
+
+const SWAP_AVAILABILITY_MESSAGE_KEYS: Record<
+  SwapAvailabilitySurface,
+  Partial<Record<SwapAvailabilityReason, TranslationKey>>
+> = {
+  marketplace: {
+    no_shift_group: "shiftSwapMarketplaceNeedsGroup",
+    no_team_member_link: "shiftSwapNeedsTeamMemberLink",
+    plan_not_open: "shiftSwapPlanDraft"
+  },
+  queue: {
+    no_shift_group: "shiftSwapQueueNeedsSelection",
+    no_team_member_link: "shiftSwapNeedsTeamMemberLink"
+  },
+  offer: {
+    plan_not_open: "shiftSwapPlanDraft"
   }
-  return slotDate >= utcTodayIso();
+};
+
+export function swapAvailability(input: SwapAvailabilityInput): SwapAvailability {
+  const showMemberPortalLink = input.variant === "planner" && input.capabilities.team_member_portal;
+  if (!input.periodId || !input.shiftGroupId) {
+    return { available: false, reason: "no_shift_group", showMemberPortalLink };
+  }
+  if (input.teamMemberId == null) {
+    return { available: false, reason: "no_team_member_link", showMemberPortalLink };
+  }
+  if (input.groupStatus !== "preliminary" && input.groupStatus !== "published") {
+    return { available: false, reason: "plan_not_open", showMemberPortalLink };
+  }
+  if (input.slotDate != null && input.slotDate !== "" && input.slotDate < utcTodayIso()) {
+    return { available: false, reason: "slot_in_past", showMemberPortalLink };
+  }
+  if (input.slotOnRoster === false) {
+    return { available: false, reason: "slot_not_on_roster", showMemberPortalLink };
+  }
+  return { available: true, showMemberPortalLink };
+}
+
+export function swapAvailabilityMessageKey(
+  surface: SwapAvailabilitySurface,
+  reason: SwapAvailabilityReason
+): TranslationKey | null {
+  return SWAP_AVAILABILITY_MESSAGE_KEYS[surface][reason] ?? null;
+}
+
+export function swapOfferControl(result: SwapAvailability): SwapOfferControl {
+  if (result.available) {
+    return "enabled";
+  }
+  if (result.reason === "plan_not_open") {
+    return "disabled";
+  }
+  return "hidden";
+}
+
+export function memberPlanningHref(periodId: string | null, shiftGroupId: string | null): string {
+  const params = new URLSearchParams();
+  if (periodId) {
+    params.set("period", periodId);
+  }
+  if (shiftGroupId) {
+    params.set("shiftGroup", shiftGroupId);
+  }
+  const query = params.toString();
+  return query ? `/my-planning?${query}` : "/my-planning";
 }
 
 export function swapMemberName(roster: SwapRosterSlice | null | undefined, memberId: number | null): string {
