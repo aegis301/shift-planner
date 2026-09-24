@@ -13,11 +13,14 @@ import {
   shiftSwapFindingText,
   shiftSwapKindLabel,
   shiftSwapStatusLabel,
+  swapAvailability,
+  swapAvailabilityMessageKey,
   swapMemberName,
   swapSlotById,
   swapSlotSummary,
   withdrawShiftSwap,
   type ShiftSwapRequestRead,
+  type SwapPortalVariant,
   type SwapRosterSlice
 } from "@/lib/shiftSwaps";
 
@@ -26,13 +29,19 @@ export function ShiftSwapMarketplace({
   shiftGroupId,
   roster,
   teamMemberId,
+  groupStatus,
+  variant,
+  capabilities,
   reloadToken,
   onChanged
 }: {
   periodId: string;
   shiftGroupId: string;
   roster: SwapRosterSlice | null;
-  teamMemberId: number;
+  teamMemberId: number | null;
+  groupStatus: string | null | undefined;
+  variant: SwapPortalVariant;
+  capabilities: { team_member_portal: boolean };
   reloadToken: number;
   onChanged?: () => void;
 }) {
@@ -41,10 +50,20 @@ export function ShiftSwapMarketplace({
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const availability = swapAvailability({
+    variant,
+    capabilities,
+    teamMemberId,
+    shiftGroupId: shiftGroupId || null,
+    periodId: periodId || null,
+    groupStatus
+  });
+  const unavailableKey = availability.available ? null : swapAvailabilityMessageKey("marketplace", availability.reason);
 
   const reload = useCallback(async () => {
-    if (!periodId || !shiftGroupId) {
+    if (!availability.available) {
       setRows([]);
+      setLoadError("");
       return;
     }
     try {
@@ -55,7 +74,7 @@ export function ShiftSwapMarketplace({
       setRows([]);
       setLoadError(t(locale, "shiftSwapLoadError"));
     }
-  }, [locale, periodId, shiftGroupId]);
+  }, [availability.available, locale, periodId, shiftGroupId]);
 
   useEffect(() => {
     void reload();
@@ -91,84 +110,90 @@ export function ShiftSwapMarketplace({
         <h3 className="text-base font-semibold text-ink">{t(locale, "shiftSwapMarketplaceTitle")}</h3>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "shiftSwapMarketplaceHelp")}</p>
       </div>
+      {unavailableKey ? <p className="text-sm text-amber-800">{t(locale, unavailableKey)}</p> : null}
       {loadError ? <p className="text-sm text-rose-800">{loadError}</p> : null}
       {actionError ? (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200">{actionError}</p>
       ) : null}
-      <div className="grid gap-2">
-        <h4 className="text-sm font-semibold text-ink">{t(locale, "shiftSwapOpenGiveawaysTitle")}</h4>
-        {giveaways.length === 0 ? (
-          <p className="text-sm text-slate-500">{t(locale, "shiftSwapOpenGiveawaysEmpty")}</p>
-        ) : (
-          <div className="grid gap-3">
-            {giveaways.map((row) => (
-              <Card key={row.id}>
-                <SwapRequestSummary roster={roster} row={row} />
-                <button
-                  className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
-                  disabled={busyId === row.id}
-                  onClick={() => void runAction(row.id, () => claimShiftSwap(row.id))}
-                  type="button"
-                >
-                  {t(locale, "shiftSwapClaim")}
-                </button>
-              </Card>
-            ))}
+      {availability.available ? (
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <h4 className="text-sm font-semibold text-ink">{t(locale, "shiftSwapOpenGiveawaysTitle")}</h4>
+            {giveaways.length === 0 ? (
+              <p className="text-sm text-slate-500">{t(locale, "shiftSwapOpenGiveawaysEmpty")}</p>
+            ) : (
+              <div className="grid gap-3">
+                {giveaways.map((row) => (
+                  <Card key={row.id}>
+                    <SwapRequestSummary roster={roster} row={row} />
+                    <button
+                      className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                      disabled={busyId === row.id}
+                      onClick={() => void runAction(row.id, () => claimShiftSwap(row.id))}
+                      type="button"
+                    >
+                      {t(locale, "shiftSwapClaim")}
+                    </button>
+                  </Card>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div className="grid gap-2">
-        <h4 className="text-sm font-semibold text-ink">{t(locale, "shiftSwapOwnRequestsTitle")}</h4>
-        {own.length === 0 ? (
-          <p className="text-sm text-slate-500">{t(locale, "shiftSwapOwnRequestsEmpty")}</p>
-        ) : (
-          <div className="grid gap-3">
-            {own.map((row) => {
-              const isOfferer = row.offered_by_team_member_id === teamMemberId;
-              const isTarget = row.target_team_member_id === teamMemberId;
-              const canWithdraw = isOfferer && !["applied", "withdrawn", "rejected", "expired"].includes(row.status);
-              const canAccept = isTarget && row.status === "targeted";
-              return (
-                <Card key={row.id}>
-                  <SwapRequestSummary roster={roster} row={row} />
-                  <div className="mt-3 grid gap-2">
-                    {canAccept ? (
-                      <button
-                        className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
-                        disabled={busyId === row.id}
-                        onClick={() => void runAction(row.id, () => acceptShiftSwap(row.id))}
-                        type="button"
-                      >
-                        {t(locale, "shiftSwapAccept")}
-                      </button>
-                    ) : null}
-                    {canAccept ? (
-                      <button
-                        className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
-                        disabled={busyId === row.id}
-                        onClick={() => void runAction(row.id, () => declineShiftSwap(row.id))}
-                        type="button"
-                      >
-                        {t(locale, "shiftSwapDecline")}
-                      </button>
-                    ) : null}
-                    {canWithdraw ? (
-                      <button
-                        className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
-                        disabled={busyId === row.id}
-                        onClick={() => void runAction(row.id, () => withdrawShiftSwap(row.id))}
-                        type="button"
-                      >
-                        {t(locale, "shiftSwapWithdraw")}
-                      </button>
-                    ) : null}
-                  </div>
-                </Card>
-              );
-            })}
+          <div className="grid gap-2">
+            <h4 className="text-sm font-semibold text-ink">{t(locale, "shiftSwapOwnRequestsTitle")}</h4>
+            {own.length === 0 ? (
+              <p className="text-sm text-slate-500">{t(locale, "shiftSwapOwnRequestsEmpty")}</p>
+            ) : (
+              <div className="grid gap-3">
+                {own.map((row) => {
+                  const isOfferer = row.offered_by_team_member_id === teamMemberId;
+                  const isTarget = row.target_team_member_id === teamMemberId;
+                  const canWithdraw =
+                    isOfferer && !["applied", "withdrawn", "rejected", "expired"].includes(row.status);
+                  const canAccept = isTarget && row.status === "targeted";
+                  return (
+                    <Card key={row.id}>
+                      <SwapRequestSummary roster={roster} row={row} />
+                      <div className="mt-3 grid gap-2">
+                        {canAccept ? (
+                          <button
+                            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                            disabled={busyId === row.id}
+                            onClick={() => void runAction(row.id, () => acceptShiftSwap(row.id))}
+                            type="button"
+                          >
+                            {t(locale, "shiftSwapAccept")}
+                          </button>
+                        ) : null}
+                        {canAccept ? (
+                          <button
+                            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                            disabled={busyId === row.id}
+                            onClick={() => void runAction(row.id, () => declineShiftSwap(row.id))}
+                            type="button"
+                          >
+                            {t(locale, "shiftSwapDecline")}
+                          </button>
+                        ) : null}
+                        {canWithdraw ? (
+                          <button
+                            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
+                            disabled={busyId === row.id}
+                            onClick={() => void runAction(row.id, () => withdrawShiftSwap(row.id))}
+                            type="button"
+                          >
+                            {t(locale, "shiftSwapWithdraw")}
+                          </button>
+                        ) : null}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

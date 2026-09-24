@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { t } from "@/lib/i18n";
@@ -9,15 +10,19 @@ import {
   approveShiftSwap,
   assigneeForSlot,
   listShiftSwaps,
+  memberPlanningHref,
   rejectShiftSwap,
   shiftSwapErrorText,
   shiftSwapFindingText,
   shiftSwapKindLabel,
   shiftSwapStatusLabel,
+  swapAvailability,
+  swapAvailabilityMessageKey,
   swapMemberName,
   swapSlotById,
   swapSlotSummary,
   type ShiftSwapRequestRead,
+  type SwapPortalVariant,
   type SwapRosterSlice
 } from "@/lib/shiftSwaps";
 
@@ -28,23 +33,42 @@ export function ShiftSwapApprovalQueue({
   shiftGroupId,
   roster,
   reloadToken,
-  onApplied
+  onApplied,
+  variant,
+  capabilities,
+  teamMemberId,
+  groupStatus
 }: {
   periodId: string;
   shiftGroupId: string;
   roster: SwapRosterSlice | null;
   reloadToken: number;
   onApplied: () => void;
+  variant: SwapPortalVariant;
+  capabilities: { team_member_portal: boolean };
+  teamMemberId: number | null;
+  groupStatus: string | null | undefined;
 }) {
   const { locale } = useLocale();
   const [rows, setRows] = useState<ShiftSwapRequestRead[]>([]);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
+  const availability = swapAvailability({
+    variant,
+    capabilities,
+    teamMemberId,
+    shiftGroupId: shiftGroupId || null,
+    periodId: periodId || null,
+    groupStatus
+  });
+  const selectionMissing = !availability.available && availability.reason === "no_shift_group";
+  const linkKey = availability.available ? null : swapAvailabilityMessageKey("queue", availability.reason);
 
   const reload = useCallback(async () => {
-    if (!periodId || !shiftGroupId) {
+    if (selectionMissing) {
       setRows([]);
+      setLoadError("");
       return;
     }
     try {
@@ -55,7 +79,7 @@ export function ShiftSwapApprovalQueue({
       setRows([]);
       setLoadError(t(locale, "shiftSwapLoadError"));
     }
-  }, [locale, periodId, shiftGroupId]);
+  }, [locale, periodId, selectionMissing, shiftGroupId]);
 
   useEffect(() => {
     void reload();
@@ -101,12 +125,18 @@ export function ShiftSwapApprovalQueue({
       <div>
         <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftSwapQueueTitle")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "shiftSwapQueueHelp")}</p>
+        {availability.showMemberPortalLink ? (
+          <Link className="mt-2 inline-flex text-sm font-semibold text-teal-800 underline" href={memberPlanningHref(periodId || null, shiftGroupId || null)}>
+            {t(locale, "shiftSwapMemberPortalLink")}
+          </Link>
+        ) : null}
       </div>
+      {linkKey ? <p className="text-sm text-amber-800">{t(locale, linkKey)}</p> : null}
       {loadError ? <p className="text-sm text-rose-800">{loadError}</p> : null}
       {actionError ? (
         <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200">{actionError}</p>
       ) : null}
-      {rows.length === 0 && !loadError ? (
+      {selectionMissing ? null : rows.length === 0 && !loadError ? (
         <p className="text-sm text-slate-500">{t(locale, "shiftSwapQueueEmpty")}</p>
       ) : (
         <div className="grid gap-3">

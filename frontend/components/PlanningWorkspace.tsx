@@ -48,7 +48,7 @@ import { ShiftSwapMarketplace } from "@/components/ShiftSwapMarketplace";
 import { ShiftSwapOfferDialog } from "@/components/ShiftSwapOfferDialog";
 import { type FairnessAccountsRead } from "@/lib/fairness";
 import { type SolverRunRead } from "@/lib/solver";
-import { canOfferSwapSlot } from "@/lib/shiftSwaps";
+import { type SwapOfferContext } from "@/lib/shiftSwaps";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
 import { monthDateBounds } from "@/lib/planningDates";
@@ -339,6 +339,20 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const teamMemberRosterVisible = teamMemberPortalUi
     ? groupPlanningStatus?.status === "preliminary" || groupPlanningStatus?.status === "published"
     : true;
+  const swapCapabilities = { team_member_portal: Boolean(userMe?.capabilities.team_member_portal) };
+  const rosterSlotIds = useMemo(() => new Set(rosterMatrix?.slots.map((slot) => slot.id) ?? []), [rosterMatrix]);
+  const memberSwapOffer: SwapOfferContext | undefined = teamMemberPortalUi
+    ? {
+        variant: "team_member",
+        capabilities: swapCapabilities,
+        teamMemberId: userMe?.team_member_id ?? null,
+        shiftGroupId: shiftGroupId || null,
+        periodId: periodId || null,
+        groupStatus: groupPlanningStatus?.status,
+        rosterSlotIds,
+        onOffer: (slotId) => setOfferSlotId(slotId)
+      }
+    : undefined;
   const refreshRosterDisabled =
     !periodId ||
     (plannerNeedsShiftGroup && !shiftGroupId) ||
@@ -782,11 +796,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           highlightTeamMemberId={
             teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined
           }
-          onOfferSwap={
-            teamMemberPortalUi && teamMemberRosterVisible
-              ? (slotId) => setOfferSlotId(slotId)
-              : undefined
-          }
+          swapOffer={teamMemberPortalUi ? memberSwapOffer : undefined}
         />
       )}
     </section>
@@ -799,15 +809,17 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <p className="mt-1 text-sm text-slate-600">{t(locale, "analysisHelp")}</p>
       </div>
       {periodId ? <FairnessAccountsPanel accounts={fairnessAccounts} loadError={fairnessError} /> : null}
-      {periodId && shiftGroupId ? (
-        <ShiftSwapApprovalQueue
-          periodId={periodId}
-          shiftGroupId={shiftGroupId}
-          roster={rosterMatrix}
-          reloadToken={swapReloadToken}
-          onApplied={() => void handleSwapApplied()}
-        />
-      ) : null}
+      <ShiftSwapApprovalQueue
+        capabilities={swapCapabilities}
+        groupStatus={groupPlanningStatus?.status}
+        onApplied={() => void handleSwapApplied()}
+        periodId={periodId}
+        reloadToken={swapReloadToken}
+        roster={rosterMatrix}
+        shiftGroupId={shiftGroupId}
+        teamMemberId={userMe?.team_member_id ?? null}
+        variant="planner"
+      />
       {periodId ? (
         <SolverRunPanel
           periodId={periodId}
@@ -844,11 +856,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               locale={locale}
               slots={memberShifts.upcoming_slots}
               showIcsExport
-              onOfferSwap={(slot) => setOfferSlotId(slot.roster_slot_id)}
-              canOfferSwap={(slot) =>
-                Boolean(rosterMatrix?.slots.some((row) => row.id === slot.roster_slot_id)) &&
-                canOfferSwapSlot(slot.slot_date, groupPlanningStatus?.status)
-              }
+              swapOffer={memberSwapOffer}
             />
           </div>
           <div className="grid gap-2">
@@ -861,20 +869,21 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
             <p className="text-sm text-slate-600">{t(locale, "dutyActivityRetrospectiveHelp")}</p>
             <DutyActivityShiftList slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
           </div>
-          {userMe?.team_member_id != null && shiftGroupId ? (
-            <ShiftSwapMarketplace
-              periodId={periodId}
-              roster={rosterMatrix}
-              shiftGroupId={shiftGroupId}
-              teamMemberId={userMe.team_member_id}
-              reloadToken={swapReloadToken}
-              onChanged={() => setSwapReloadToken((value) => value + 1)}
-            />
-          ) : null}
         </div>
       ) : (
         <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
       )}
+      <ShiftSwapMarketplace
+        capabilities={swapCapabilities}
+        groupStatus={groupPlanningStatus?.status}
+        onChanged={() => setSwapReloadToken((value) => value + 1)}
+        periodId={periodId}
+        reloadToken={swapReloadToken}
+        roster={rosterMatrix}
+        shiftGroupId={shiftGroupId}
+        teamMemberId={userMe?.team_member_id ?? null}
+        variant="team_member"
+      />
     </section>
   ) : null;
 
