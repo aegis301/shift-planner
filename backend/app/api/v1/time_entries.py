@@ -20,6 +20,11 @@ from app.services.authz import (
     get_linked_team_member,
     is_admin,
 )
+from app.services.duty_activity_privacy import (
+    can_read_individual_duty_activity,
+    filter_duty_activity_entries,
+    filter_duty_activity_reconciliation,
+)
 from app.services.hours_ledger import get_hours_ledger, member_in_shift_group
 from app.services.team_members import list_team_members_for_planner
 from app.services.time_entries import (
@@ -113,7 +118,8 @@ def get_time_entries(
         start_date=start_date,
         end_date=end_date,
     )
-    return [time_entry_to_read(row) for row in rows]
+    reveal = can_read_individual_duty_activity(db, user, team_member_id)
+    return [time_entry_to_read(row) for row in filter_duty_activity_entries(rows, reveal=reveal)]
 
 
 @router.get("/reconciliation", response_model=list[TimeEntryReconciliationItem])
@@ -128,13 +134,15 @@ def get_reconciliation(
         _assert_read(db, user, team_member_id, team_member_portal=False)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
-    return list_reconciliation(
+    items = list_reconciliation(
         db,
         organization_id=user.organization_id,
         team_member_id=team_member_id,
         start_date=start_date,
         end_date=end_date,
     )
+    reveal = can_read_individual_duty_activity(db, user, team_member_id)
+    return filter_duty_activity_reconciliation(items, reveal=reveal)
 
 
 @router.get("/ledger", response_model=HoursLedgerRead)
@@ -162,6 +170,7 @@ def get_ledger(
             team_member_id=team_member_id,
             start_date=start_date,
             end_date=end_date,
+            reveal_duty_activity=can_read_individual_duty_activity(db, user, team_member_id),
             include_reconciliation=include_reconciliation and not team_member_portal,
         )
     except PermissionError as exc:

@@ -465,3 +465,105 @@ def test_purge_removes_only_expired_duty_activity_and_logs_run():
     assert again == 0
     db.close()
     engine.dispose()
+
+
+_MARCH = "team_member_id={member_id}&start_date=2026-03-01&end_date=2026-03-31"
+_DUTY_KINDS = {"call_out", "in_duty_activity"}
+
+
+def _record_own_episodes(client: TestClient) -> int:
+    login_team_member(client)
+    own_id = client.get("/api/v1/auth/me").json()["team_member_id"]
+    login_admin(client)
+    set_shift_group_membership(client, team_member_id=own_id)
+    _create_category_template(client, code="BD", category="bereitschaftsdienst")
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 3}).json()["id"]
+    slot = _slot_for_day(client, period_id, "2026-03-02")
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot["id"], "team_member_id": own_id},
+    )
+    assert assigned.status_code == 200
+    login_team_member(client)
+    assert client.post("/api/v1/duty-activity/purpose/acknowledge").status_code == 200
+    for kind, start, end in (
+        ("in_duty_activity", "2026-03-02T08:00:00+00:00", "2026-03-02T10:00:00+00:00"),
+        ("call_out", "2026-03-02T20:00:00+00:00", "2026-03-02T22:00:00+00:00"),
+    ):
+        created = client.post(
+            "/api/v1/duty-activity",
+            json={"roster_slot_id": slot["id"], "kind": kind, "started_at": start, "ended_at": end},
+        )
+        assert created.status_code == 200, created.text
+    return own_id
+
+
+def _time_entry_views(client: TestClient, member_id: int) -> dict[str, list[str]]:
+    query = _MARCH.format(member_id=member_id)
+    listed = client.get(f"/api/v1/time-entries?{query}")
+    assert listed.status_code == 200, listed.text
+    ledger = client.get(f"/api/v1/time-entries/ledger?{query}&shift_group_id=1&include_reconciliation=true")
+    assert ledger.status_code == 200, ledger.text
+    reconciliation = client.get(f"/api/v1/time-entries/reconciliation?{query}")
+    assert reconciliation.status_code == 200, reconciliation.text
+    return {
+        "list": [row["kind"] for row in listed.json()],
+        "ledger": [row["kind"] for row in ledger.json()["entries"]],
+        "ledger_reconciliation": [row["effective"]["kind"] for row in ledger.json()["reconciliation"]],
+        "reconciliation": [row["effective"]["kind"] for row in reconciliation.json()],
+        "statutory_minutes": ledger.json()["totals"]["statutory_minutes"],
+    }
+
+
+def _kinds(views: dict) -> set[str]:
+    return {
+        kind
+        for key in ("list", "ledger", "ledger_reconciliation", "reconciliation")
+        for kind in views[key]
+    }
+
+
+def test_time_entry_reads_hide_episodes_from_planner_and_admin_by_default():
+    for test_client, _session in _client_session():
+        own_id = _record_own_episodes(test_client)
+        member_ledger = test_client.get(
+            f"/api/v1/time-entries/ledger?{_MARCH.format(member_id=own_id)}&team_member_portal=true"
+        )
+        assert member_ledger.status_code == 200, member_ledger.text
+        member_statutory = member_ledger.json()["totals"]["statutory_minutes"]
+        assert member_statutory > 0
+        for login in (login_planner, login_admin):
+            login(test_client)
+            views = _time_entry_views(test_client, own_id)
+            assert not (_kinds(views) & _DUTY_KINDS), views
+            # Aggregates still count the call-out minutes.
+            assert views["statutory_minutes"] == member_statutory
+
+
+def test_time_entry_reads_show_episodes_once_role_is_granted():
+    for test_client, _session in _client_session():
+        own_id = _record_own_episodes(test_client)
+        login_admin(test_client)
+        patched = test_client.patch(
+            "/api/v1/organization/duty-activity-access-policy",
+            json={"individual_read_roles": ["planner", "admin"]},
+        )
+        assert patched.status_code == 200, patched.text
+        for login in (login_planner, login_admin):
+            login(test_client)
+            views = _time_entry_views(test_client, own_id)
+            for key in ("list", "ledger", "ledger_reconciliation", "reconciliation"):
+                assert set(views[key]) >= _DUTY_KINDS, (key, views)
+
+
+def test_member_self_read_keeps_own_episodes():
+    for test_client, _session in _client_session():
+        own_id = _record_own_episodes(test_client)
+        login_team_member(test_client)
+        query = _MARCH.format(member_id=own_id)
+        ledger = test_client.get(f"/api/v1/time-entries/ledger?{query}&team_member_portal=true")
+        assert ledger.status_code == 200, ledger.text
+        assert {row["kind"] for row in ledger.json()["entries"]} >= _DUTY_KINDS
+        listed = test_client.get(f"/api/v1/time-entries?{query}&team_member_portal=true")
+        assert listed.status_code == 200, listed.text
+        assert {row["kind"] for row in listed.json()} >= _DUTY_KINDS
