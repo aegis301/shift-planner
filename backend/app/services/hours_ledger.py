@@ -12,6 +12,10 @@ from app.schemas import (
     TimeAccountOpeningRead,
 )
 from app.services.contract_groups import list_contract_groups
+from app.services.duty_activity_privacy import (
+    filter_duty_activity_entries,
+    filter_duty_activity_reconciliation,
+)
 from app.services.employment_periods import (
     employment_percentage_on,
     get_time_account_opening,
@@ -96,8 +100,11 @@ def get_hours_ledger(
     team_member_id: int,
     start_date: date,
     end_date: date,
+    reveal_duty_activity: bool,
     include_reconciliation: bool = False,
 ) -> HoursLedgerRead:
+    """Totals always include duty activity minutes; ``entries`` and ``reconciliation`` list
+    individual ``call_out`` / ``in_duty_activity`` episodes only when ``reveal_duty_activity``."""
     if end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
     member = db.scalar(
@@ -144,12 +151,15 @@ def get_hours_ledger(
     )
     reconciliation = []
     if include_reconciliation:
-        reconciliation = list_reconciliation(
-            db,
-            organization_id=organization_id,
-            team_member_id=team_member_id,
-            start_date=start_date,
-            end_date=end_date,
+        reconciliation = filter_duty_activity_reconciliation(
+            list_reconciliation(
+                db,
+                organization_id=organization_id,
+                team_member_id=team_member_id,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+            reveal=reveal_duty_activity,
         )
     return HoursLedgerRead(
         team_member_id=team_member_id,
@@ -157,6 +167,9 @@ def get_hours_ledger(
         end_date=end_date,
         opening=opening,
         totals=totals,
-        entries=[time_entry_to_read(row) for row in entries],
+        entries=[
+            time_entry_to_read(row)
+            for row in filter_duty_activity_entries(entries, reveal=reveal_duty_activity)
+        ],
         reconciliation=reconciliation,
     )

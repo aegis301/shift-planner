@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     planner_seed_password: str = "change-me-planner"
     mcp_admin_token: str = "change-me-mcp-token"
     mcp_organization_id: int | None = None
+    mcp_duty_activity_individual_read: bool = False
     default_organization_id: int = 1
     solver_worker_poll_interval_seconds: float = 1.0
     backend_cors_origins: str = "http://localhost:18130"
