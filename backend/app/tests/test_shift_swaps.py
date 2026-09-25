@@ -14,6 +14,8 @@ from app.models import (
     Account,
     AuditLog,
     Organization,
+    PlanningCell,
+    PlanningDayStatusDefinition,
     ShiftGroup,
     TeamMember,
     TeamMemberShiftGroup,
@@ -535,9 +537,17 @@ def _seed_published_month(
     return period_id, offered, other, template["id"]
 
 
-def _seed_cross_group_month(client: TestClient, *, ids: dict[str, int]) -> tuple[int, dict, dict]:
-    """Bob is in shift groups 1 and 2. Group 2 holds a 24 h duty from 08:00 on the 1st to
-    08:00 on the 2nd; group 1 holds a 14:00 duty on the 2nd that Alice gives away."""
+def _seed_cross_group_month(
+    client: TestClient,
+    *,
+    ids: dict[str, int],
+    late_constraints: list[dict] | None = None,
+    long_hours: tuple[str, str] = ("08:00:00", "08:00:00"),
+    long_date: str = "2027-12-01",
+    min_rest: bool = True,
+) -> tuple[int, dict, dict]:
+    """Bob is in shift groups 1 and 2. By default group 2 holds a 24 h duty from 08:00 on the
+    1st to 08:00 on the 2nd; group 1 holds a 14:00 duty on the 2nd that Alice gives away."""
     login_admin(client)
     gen = app.dependency_overrides[get_db]()
     db = next(gen)
@@ -556,10 +566,16 @@ def _seed_cross_group_month(client: TestClient, *, ids: dict[str, int]) -> tuple
         group_b_id = group_b.id
     finally:
         db.close()
-    _activate_min_rest(client)
+    if min_rest:
+        _activate_min_rest(client)
     late = client.post(
         "/api/v1/shift-templates",
-        json={"code": "XGA", "name": "Late A", "category": "bereitschaftsdienst"},
+        json={
+            "code": "XGA",
+            "name": "Late A",
+            "category": "bereitschaftsdienst",
+            "constraints": late_constraints or [],
+        },
     ).json()
     assert (
         client.post(
@@ -582,10 +598,10 @@ def _seed_cross_group_month(client: TestClient, *, ids: dict[str, int]) -> tuple
         client.post(
             f"/api/v1/shift-templates/{long_duty['id']}/variants",
             json={
-                "label": "24h",
+                "label": "B",
                 "start_day_class": "any",
-                "starts_at": "08:00:00",
-                "ends_at": "08:00:00",
+                "starts_at": long_hours[0],
+                "ends_at": long_hours[1],
                 "required_count": 1,
             },
         ).status_code
@@ -601,7 +617,7 @@ def _seed_cross_group_month(client: TestClient, *, ids: dict[str, int]) -> tuple
     slots_a = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()["slots"]
     slots_b = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={group_b_id}").json()["slots"]
     offered = next(slot for slot in slots_a if slot["slot_date"] == "2027-12-02")
-    long_slot = next(slot for slot in slots_b if slot["slot_date"] == "2027-12-01")
+    long_slot = next(slot for slot in slots_b if slot["slot_date"] == long_date)
     assigned = client.put(
         "/api/v1/roster-matrix/assignments?shift_group_id=1",
         json={"roster_slot_id": offered["id"], "team_member_id": ids["alice"]},
@@ -697,3 +713,48 @@ def test_duty_in_other_group_blocks_apply(swap_client: TestClient):
     matrix = swap_client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()
     holder = next(row for row in matrix["assignments"] if row["roster_slot_id"] == offered["id"])
     assert holder["team_member_id"] == ids["alice"]
+
+
+def test_group_status_does_not_judge_duty_in_other_group(swap_client: TestClient):
+    """Bob's group-2 duty on the swap day meets a blocking status he set in group 1. That
+    pairing is not the swap's business: the offered group-1 template allows the overlap, and
+    roster rules only look at duties of the swap's group."""
+    ids = _ids(swap_client)
+    period_id, offered, long_slot = _seed_cross_group_month(
+        swap_client,
+        ids=ids,
+        late_constraints=[{"type": "unavailable_overlap_policy", "unavailable_overlap_mode": "allow"}],
+        long_hours=("06:00:00", "07:00:00"),
+        long_date="2027-12-02",
+        min_rest=False,
+    )
+    _assign_long_duty(swap_client, long_slot, ids["bob"])
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        db.add(
+            PlanningDayStatusDefinition(
+                organization_id=1,
+                code="xg_block",
+                label="Blocked",
+                color_preset="sky",
+                blocks_roster_assignment=True,
+            )
+        )
+        db.add(
+            PlanningCell(
+                planning_period_id=period_id,
+                shift_group_id=1,
+                team_member_id=ids["bob"],
+                cell_date=date(2027, 12, 2),
+                status="xg_block",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+    created = _open_giveaway(swap_client, period_id, offered)
+    assert ids["bob"] in created["eligible_member_ids"]
+    login_as(swap_client, "bob@example.com", "bobsecret")
+    claimed = swap_client.post(f"/api/v1/shift-swaps/{created['id']}/claim")
+    assert claimed.status_code == 200, claimed.text

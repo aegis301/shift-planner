@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import NamedTuple
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
@@ -223,24 +224,33 @@ def _incoming_member_id(row: ShiftSwapRequest) -> int | None:
     return row.target_team_member_id
 
 
+class _SwapStates(NamedTuple):
+    """Two views of one window. ``group`` scopes assignments to the swap's shift group;
+    ``person`` adds every duty the in-scope members hold in other groups."""
+
+    group: PlanState
+    person: PlanState
+
+
 def _swap_findings(
     db: Session,
-    state: PlanState,
+    states: _SwapStates,
     *,
     moves: list[tuple[RosterSlot, int]],
     member_ids: set[int],
 ) -> tuple[list[ValidationWarning], list[ValidationWarning]]:
+    group_state, person_state = states.group, states.person
     for slot, member_id in moves:
-        state = overlay_candidate_assignment(
-            state,
-            slot=slot,
-            team_member_id=member_id,
-            assignment_id=None,
+        group_state = overlay_candidate_assignment(
+            group_state, slot=slot, team_member_id=member_id, assignment_id=None
+        )
+        person_state = overlay_candidate_assignment(
+            person_state, slot=slot, team_member_id=member_id, assignment_id=None
         )
     slot_ids = {slot.id for slot, _member_id in moves}
     findings = [
         warning
-        for warning in evaluate_plan_state(state, db=db)
+        for warning in evaluate_plan_state(group_state, db=db, statutory_state=person_state)
         if _finding_involves_swap(warning, member_ids=member_ids, slot_ids=slot_ids)
     ]
     errors = [row for row in findings if row.severity == "error"]
@@ -248,23 +258,26 @@ def _swap_findings(
     return errors, warnings
 
 
-def _swap_plan_state(
+def _swap_plan_states(
     db: Session,
     *,
     organization_id: int,
     start_date: date,
     end_date: date,
     shift_group_id: int | None,
-) -> PlanState:
-    # The group narrows members and target slots only. A member's duties in other groups
-    # still count for rest and daily limits, as they do in assignment preflight.
-    return build_plan_state(
-        db,
-        organization_id=organization_id,
-        start_date=start_date,
-        end_date=end_date,
-        shift_group_id=shift_group_id,
-        member_duties_org_wide=True,
+) -> _SwapStates:
+    # Statutory rules are about the person, so they see duties in every group, as assignment
+    # preflight does. Roster rules keep the group scope because the cells and intents they
+    # match against are loaded for the swap's group only.
+    window = {
+        "organization_id": organization_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "shift_group_id": shift_group_id,
+    }
+    return _SwapStates(
+        group=build_plan_state(db, **window),
+        person=build_plan_state(db, **window, member_duties_org_wide=True),
     )
 
 
@@ -281,7 +294,7 @@ def evaluate_swap_legality(
     dates = [offered_slot.slot_date]
     if counterparty_slot is not None:
         dates.append(counterparty_slot.slot_date)
-    state = _swap_plan_state(
+    states = _swap_plan_states(
         db,
         organization_id=row.organization_id,
         start_date=min(dates),
@@ -293,7 +306,7 @@ def evaluate_swap_legality(
         moves.append((counterparty_slot, row.offered_by_team_member_id))
     return _swap_findings(
         db,
-        state,
+        states,
         moves=moves,
         member_ids={row.offered_by_team_member_id, incoming_member_id},
     )
@@ -322,7 +335,7 @@ def eligible_member_ids_for_slot(
     organization_id: int,
     shift_group_id: int | None = None,
 ) -> set[int]:
-    state = _swap_plan_state(
+    state = build_plan_state(
         db,
         organization_id=organization_id,
         start_date=slot.slot_date,
@@ -351,7 +364,7 @@ def legal_member_ids_for_slot(
     """
     if not candidate_ids:
         return set()
-    state = _swap_plan_state(
+    states = _swap_plan_states(
         db,
         organization_id=organization_id,
         start_date=slot.slot_date,
@@ -365,7 +378,7 @@ def legal_member_ids_for_slot(
             member_ids.add(offered_by_team_member_id)
         errors, _warnings = _swap_findings(
             db,
-            state,
+            states,
             moves=[(slot, member_id)],
             member_ids=member_ids,
         )
