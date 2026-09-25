@@ -680,7 +680,7 @@ def list_unresolved_shift_swaps(
             row,
             slot,
             today=today,
-            eligible_member_ids=eligible_member_ids_for_request(db, row),
+            eligible_member_ids=[],
         )
         for row, slot in db.execute(stmt).all()
     ]

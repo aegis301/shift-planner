@@ -435,6 +435,56 @@ def test_shift_swaps_resource_is_registered():
     assert unresolved_shift_swaps_resource.__name__ == "unresolved_shift_swaps_resource"
 
 
+def test_unresolved_shift_swaps_resource_uses_unresolved_service(monkeypatch):
+    class DbContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    calls = []
+
+    class Row:
+        def model_dump(self, *, mode: str):
+            assert mode == "json"
+            return {
+                "id": 7,
+                "status": "open",
+                "duty_date": "2026-12-03",
+                "days_until_duty": 2,
+                "request_age_days": 1,
+            }
+
+    def fake_list(db, *, organization_id, planning_period_id, shift_group_id):
+        calls.append(
+            {
+                "organization_id": organization_id,
+                "planning_period_id": planning_period_id,
+                "shift_group_id": shift_group_id,
+            }
+        )
+        return [Row()]
+
+    monkeypatch.setattr(server, "db_session", lambda: DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 23)
+    monkeypatch.setattr(server, "list_unresolved_shift_swaps", fake_list)
+
+    result = unresolved_shift_swaps_resource(planning_period_id=4, shift_group_id=2)
+    assert result == [
+        {
+            "id": 7,
+            "status": "open",
+            "duty_date": "2026-12-03",
+            "days_until_duty": 2,
+            "request_age_days": 1,
+        }
+    ]
+    assert calls == [
+        {"organization_id": 23, "planning_period_id": 4, "shift_group_id": 2}
+    ]
+
+
 def test_shift_swap_tools_require_token():
     with pytest.raises(PermissionError):
         create_shift_swap_tool(
