@@ -86,6 +86,35 @@ In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long
 
 Backlog, not part of the rollout: #34, #44, #51, #52, #53, #54.
 
+### Desktop-first workbench and member app (ADR 0001)
+
+Decided 2026-09-25 in `docs/decisions/0001-desktop-first-workbench.md` (concept issue #107): the
+planner workbench becomes desktop-first, the member area stays mobile-first on the web, and a
+native member app is built with Expo. Specs are in `docs/workbench/issues/`, and the order and
+dependencies are in the ADR's **Work plan** table.
+
+| Issue | What | State |
+|---|---|---|
+| #109 | Slot times as real instants in the org time zone (defect) | open |
+| #110 | Frontend test harness and golden screenshots | open |
+| #111 | Generated API types from OpenAPI | open |
+| #112 | UI foundation: Radix primitives, tokens | open |
+| #113 | TanStack Query for server state | open |
+| #114 | Route split: workbench and member area | open |
+| #115 | Context bar, inspector, command palette | open |
+| #116 | Roster change sets (bulk writes, revert) | open |
+| #117 | Grid primitive and roster matrix | open |
+| #118 | Wishes matrix on the grid | open |
+| #119 | Bearer tokens and device sessions | open |
+| #120 | Member API `/api/v1/me` | open |
+| #121 | npm workspace and shared packages | open |
+| #122 | Expo member app scaffold | open |
+| #123 | Offline duty activity capture | open |
+| #124 | Member app: wishes, swaps, hours, calendar | open |
+| #125 | Push delivery (needs #101 implemented) | open |
+
+#109, #110, #111, #116 and #119 have no dependencies and can start in parallel.
+
 **Why #75 is split.** The spike showed that encoding all 18 rules at once is the way to get a
 model nobody can debug. Tier A is the set the TdL fixture actually exercises and that the spike
 proved solvable in under a second. Tier B is the ArbZG rest and averaging family, which needs
@@ -95,6 +124,9 @@ one issue means a PR whose failures cannot be attributed.
 ## Decisions already made
 
 Do not reopen these without a reason that is new:
+
+- **The planner workbench is desktop-first; the member companion is mobile-first and becomes an
+  Expo app.** See `docs/decisions/0001-desktop-first-workbench.md`.
 
 - **Fairness is rolling over 12 months**, not per-period or per-year.
 - **Rule sets are configurable per organization.** There is no single hardcoded German rule set;

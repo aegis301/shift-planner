@@ -8,10 +8,12 @@ Refine the unified `/planning` workflow with shared month state, wishes, final r
 2. Run Alembic migrations against Postgres after pulling `202609220001` (`shift_swap_requests`). `202609210003` adds `organizations.solver_objective_weights`. `202609210002` adds `solver_runs` plus the org solver time-budget ceiling.
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
-5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing (day-interval bar shipped; multi-member ranges and clear-range still open).
+5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing. Now planned as the workbench grid (#117 roster, #118 wishes) on top of roster change sets (#116).
+6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #109 to #125). Start with the independent ones: #109 (slot times as instants), #110 (frontend test harness), #111 (generated API types), #116 (roster change sets), #119 (token auth).
 
 ## Roadmap
 - Team member self-service for wishes/no-gos.
+- Native member app (Expo): duties, wishes, swaps, offline duty activity capture, push notifications (#122 to #125).
 - Nurse scheduling and role-specific rule sets.
 - OR-Tools CP-SAT roster suggestions (tier A and `/planning` generate/apply shipped; ArbZG rest/weekly-average encodings still open).
 - LLM email parser that proposes matrix cells from pasted colleague emails.
