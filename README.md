@@ -94,7 +94,7 @@ PYTHONPATH=../backend python -m mcp_app.server
 pytest
 ```
 
-Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and share backend service behavior. Local CLI runs use FastMCP stdio by default; Docker Compose sets `MCP_TRANSPORT=http`. MCP reads and mutations use **`MCP_ORGANIZATION_ID`** when set, otherwise **`DEFAULT_ORGANIZATION_ID`** (default `1`), so tools target a single configured org (not the signed-in web user’s org).
+Mutating MCP tools require `MCP_ADMIN_TOKEN`. Read resources are local-first and share backend service behavior. Local CLI runs use FastMCP stdio by default; Docker Compose sets `MCP_TRANSPORT=http`. MCP reads and mutations use **`MCP_ORGANIZATION_ID`** when set, otherwise **`DEFAULT_ORGANIZATION_ID`** (default `1`), so tools target a single configured org (not the signed-in web user’s org). MCP has no signed-in user, so `shift-planner://time-entries/{team_member_id}` and `get_hours_ledger_tool` omit individual `call_out` / `in_duty_activity` episodes (totals still count them) unless **`MCP_DUTY_ACTIVITY_INDIVIDUAL_READ=true`**.
 
 ## Planning Workflow
 

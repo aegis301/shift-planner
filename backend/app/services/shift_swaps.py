@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
+from typing import NamedTuple
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
@@ -39,6 +40,7 @@ from app.services.roster_matrix import upsert_roster_slot_assignment
 from app.services.rules.builder import NIGHT_AFTER_HOUR, build_plan_state
 from app.services.rules.registry import evaluate_plan_state
 from app.services.rules.shift_constraints import overlay_candidate_assignment
+from app.services.rules.state import PlanState
 from app.services.shift_groups import require_shift_group, shift_group_ids_for_template
 from app.services.tenancy import require_planning_period_in_org
 from app.services.time_entries import refresh_derived_window
@@ -233,6 +235,63 @@ def _incoming_member_id(row: ShiftSwapRequest) -> int | None:
     return row.target_team_member_id
 
 
+class _SwapStates(NamedTuple):
+    """Two views of one window. ``group`` scopes assignments to the swap's shift group;
+    ``person`` adds every duty the in-scope members hold in other groups."""
+
+    group: PlanState
+    person: PlanState
+
+
+def _swap_findings(
+    db: Session,
+    states: _SwapStates,
+    *,
+    moves: list[tuple[RosterSlot, int]],
+    member_ids: set[int],
+) -> tuple[list[ValidationWarning], list[ValidationWarning]]:
+    group_state, person_state = states.group, states.person
+    for slot, member_id in moves:
+        group_state = overlay_candidate_assignment(
+            group_state, slot=slot, team_member_id=member_id, assignment_id=None
+        )
+        person_state = overlay_candidate_assignment(
+            person_state, slot=slot, team_member_id=member_id, assignment_id=None
+        )
+    slot_ids = {slot.id for slot, _member_id in moves}
+    findings = [
+        warning
+        for warning in evaluate_plan_state(group_state, db=db, statutory_state=person_state)
+        if _finding_involves_swap(warning, member_ids=member_ids, slot_ids=slot_ids)
+    ]
+    errors = [row for row in findings if row.severity == "error"]
+    warnings = [row for row in findings if row.severity != "error"]
+    return errors, warnings
+
+
+def _swap_plan_states(
+    db: Session,
+    *,
+    organization_id: int,
+    start_date: date,
+    end_date: date,
+    shift_group_id: int | None,
+) -> _SwapStates:
+    # Statutory rules are about the person, so they see duties in every group, as assignment
+    # preflight does. Roster rules keep the group scope because the cells and intents they
+    # match against are loaded for the swap's group only.
+    window = {
+        "organization_id": organization_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "shift_group_id": shift_group_id,
+    }
+    return _SwapStates(
+        group=build_plan_state(db, **window),
+        person=build_plan_state(db, **window, member_duties_org_wide=True),
+    )
+
+
 def evaluate_swap_legality(
     db: Session,
     row: ShiftSwapRequest,
@@ -246,38 +305,22 @@ def evaluate_swap_legality(
     dates = [offered_slot.slot_date]
     if counterparty_slot is not None:
         dates.append(counterparty_slot.slot_date)
-    state = build_plan_state(
+    states = _swap_plan_states(
         db,
         organization_id=row.organization_id,
         start_date=min(dates),
         end_date=max(dates),
         shift_group_id=row.shift_group_id,
     )
-    state = overlay_candidate_assignment(
-        state,
-        slot=offered_slot,
-        team_member_id=incoming_member_id,
-        assignment_id=None,
+    moves = [(offered_slot, incoming_member_id)]
+    if counterparty_slot is not None:
+        moves.append((counterparty_slot, row.offered_by_team_member_id))
+    return _swap_findings(
+        db,
+        states,
+        moves=moves,
+        member_ids={row.offered_by_team_member_id, incoming_member_id},
     )
-    if counterparty_slot is not None:
-        state = overlay_candidate_assignment(
-            state,
-            slot=counterparty_slot,
-            team_member_id=row.offered_by_team_member_id,
-            assignment_id=None,
-        )
-    member_ids = {row.offered_by_team_member_id, incoming_member_id}
-    slot_ids = {offered_slot.id}
-    if counterparty_slot is not None:
-        slot_ids.add(counterparty_slot.id)
-    findings = [
-        warning
-        for warning in evaluate_plan_state(state, db=db)
-        if _finding_involves_swap(warning, member_ids=member_ids, slot_ids=slot_ids)
-    ]
-    errors = [row for row in findings if row.severity == "error"]
-    warnings = [row for row in findings if row.severity != "error"]
-    return errors, warnings
 
 
 def _require_legal(
@@ -314,6 +357,45 @@ def eligible_member_ids_for_slot(
 
     by_slot = eligible_members_for_slots(db, state=state, target_slots=[slot])
     return set(by_slot.get(slot.id, set()))
+
+
+def legal_member_ids_for_slot(
+    db: Session,
+    slot: RosterSlot,
+    candidate_ids: set[int],
+    *,
+    organization_id: int,
+    shift_group_id: int | None = None,
+    offered_by_team_member_id: int | None = None,
+) -> set[int]:
+    """Candidates whose taking ``slot`` produces no error finding, as claim would check it.
+
+    The CP-SAT mask does not encode every statutory rule yet (``min_rest_period`` and
+    ``rest_after_long_duty`` are tier B), so a masked-in member can still be refused at claim.
+    """
+    if not candidate_ids:
+        return set()
+    states = _swap_plan_states(
+        db,
+        organization_id=organization_id,
+        start_date=slot.slot_date,
+        end_date=slot.slot_date,
+        shift_group_id=shift_group_id,
+    )
+    legal: set[int] = set()
+    for member_id in candidate_ids:
+        member_ids = {member_id}
+        if offered_by_team_member_id is not None:
+            member_ids.add(offered_by_team_member_id)
+        errors, _warnings = _swap_findings(
+            db,
+            states,
+            moves=[(slot, member_id)],
+            member_ids=member_ids,
+        )
+        if not errors:
+            legal.add(member_id)
+    return legal
 
 
 def _slot_is_night_duty(slot: RosterSlot) -> bool:
@@ -429,6 +511,14 @@ def list_eligible_claimants(
     )
     if exclude_team_member_id is not None:
         eligible.discard(exclude_team_member_id)
+    eligible = legal_member_ids_for_slot(
+        db,
+        slot,
+        eligible,
+        organization_id=organization_id,
+        shift_group_id=shift_group_id,
+        offered_by_team_member_id=exclude_team_member_id,
+    )
     try:
         accounts = build_fairness_accounts(
             db,

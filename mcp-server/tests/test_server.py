@@ -48,6 +48,7 @@ from mcp_app.server import (
     apply_shift_swap_tool,
     shift_swaps_resource,
     unresolved_shift_swaps_resource,
+    time_entries_resource,
 )
 
 
@@ -152,6 +153,83 @@ def test_get_hours_ledger_tool_uses_service(monkeypatch):
     assert result["totals"]["credited_minutes"] == 20
     assert calls[0][1]["organization_id"] == 23
     assert calls[0][1]["include_reconciliation"] is True
+    assert calls[0][1]["reveal_duty_activity"] is False
+
+
+def _seed_duty_activity_session(monkeypatch):
+    from contextlib import contextmanager
+    from datetime import UTC, datetime
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models import Organization, TeamMember, TimeEntry
+    from app.models.base import Base
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    testing_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with testing_session() as db:
+        db.add(Organization(id=1, name="Default", slug="default", plan_tier="team"))
+        member = TeamMember(organization_id=1, first_name="A", last_name="B", email="a.b@example.com")
+        db.add(member)
+        db.flush()
+        for kind, source, statutory in (
+            ("work", "manual", 480),
+            ("call_out", "duty_activity", 120),
+            ("in_duty_activity", "duty_activity", 0),
+        ):
+            db.add(
+                TimeEntry(
+                    organization_id=1,
+                    team_member_id=member.id,
+                    entry_date=date(2026, 3, 2),
+                    kind=kind,
+                    source=source,
+                    started_at=datetime(2026, 3, 2, 8, tzinfo=UTC),
+                    ended_at=datetime(2026, 3, 2, 10, tzinfo=UTC),
+                    statutory_minutes=statutory,
+                    corrected_fields=[],
+                )
+            )
+        db.commit()
+        member_id = member.id
+
+    @contextmanager
+    def fake_db_session():
+        with testing_session() as db:
+            yield db
+
+    monkeypatch.setattr(server, "db_session", fake_db_session)
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 1)
+    return member_id
+
+
+def test_time_entry_reads_hide_duty_activity_episodes(monkeypatch):
+    member_id = _seed_duty_activity_session(monkeypatch)
+    duty_kinds = {"call_out", "in_duty_activity"}
+
+    resource = time_entries_resource(team_member_id=member_id)
+    assert [row["kind"] for row in resource] == ["work"]
+
+    ledger = get_hours_ledger_tool(
+        team_member_id=member_id,
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 3, 31),
+    )
+    assert not {row["kind"] for row in ledger["entries"]} & duty_kinds
+    assert not {row["effective"]["kind"] for row in ledger["reconciliation"]} & duty_kinds
+    # Aggregate totals still count the call-out minutes.
+    assert ledger["totals"]["statutory_minutes"] == 600
+
+
+def test_time_entry_reads_show_episodes_when_configured(monkeypatch):
+    member_id = _seed_duty_activity_session(monkeypatch)
+    monkeypatch.setattr(server.settings, "mcp_duty_activity_individual_read", True)
+
+    resource = time_entries_resource(team_member_id=member_id)
+    assert {row["kind"] for row in resource} == {"work", "call_out", "in_duty_activity"}
 
 
 def test_filter_team_member_property_matrix_tool_uses_service(monkeypatch):

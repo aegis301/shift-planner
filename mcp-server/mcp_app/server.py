@@ -77,6 +77,7 @@ from app.services.fairness import (
 from app.services.duty_activity import duty_activity_to_read, record_duty_activity, update_duty_activity
 from app.services.duty_activity_privacy import (
     build_works_council_duty_rows,
+    filter_duty_activity_entries,
     purge_expired_duty_activity_episodes,
     read_duty_activity_access_policy,
     update_duty_activity_access_policy,
@@ -223,6 +224,11 @@ def db_session():
 def require_token(token: str) -> None:
     if token != settings.mcp_admin_token:
         raise PermissionError("Invalid MCP admin token")
+
+
+def mcp_reveals_duty_activity() -> bool:
+    """MCP has no user, so individual duty activity episodes stay hidden unless configured."""
+    return settings.mcp_duty_activity_individual_read
 
 
 def mcp_organization_id() -> int:
@@ -1685,6 +1691,7 @@ def time_entries_resource(team_member_id: int) -> list[dict[str, Any]]:
             organization_id=mcp_organization_id(),
             team_member_id=team_member_id,
         )
+        rows = filter_duty_activity_entries(rows, reveal=mcp_reveals_duty_activity())
         return [time_entry_to_read(row).model_dump(mode="json") for row in rows]
 
 
@@ -1703,6 +1710,7 @@ def get_hours_ledger_tool(
             team_member_id=team_member_id,
             start_date=start_date,
             end_date=end_date,
+            reveal_duty_activity=mcp_reveals_duty_activity(),
             include_reconciliation=include_reconciliation,
         ).model_dump(mode="json")
 
