@@ -178,6 +178,7 @@ from app.services.shift_swaps import (
     eligible_member_ids_for_request,
     get_shift_swap,
     list_shift_swaps,
+    list_unresolved_shift_swaps,
     open_shift_swap,
     reject_shift_swap,
     shift_swap_to_read,
@@ -2160,6 +2161,21 @@ def shift_swaps_resource(planning_period_id: int, shift_group_id: int) -> list[d
         ]
 
 
+@mcp.resource("shift-planner://shift-swaps/{planning_period_id}/shift-group/{shift_group_id}/unresolved")
+def unresolved_shift_swaps_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+    """List open and targeted swap requests for a planning period and shift group."""
+    with db_session() as db:
+        return [
+            row.model_dump(mode="json")
+            for row in list_unresolved_shift_swaps(
+                db,
+                organization_id=mcp_organization_id(),
+                planning_period_id=planning_period_id,
+                shift_group_id=shift_group_id,
+            )
+        ]
+
+
 @mcp.resource("shift-planner://shift-swaps/request/{request_id}")
 def shift_swap_resource(request_id: int) -> dict[str, Any]:
     """Return one shift swap request."""
@@ -2277,7 +2293,12 @@ def accept_shift_swap_tool(token: str, request_id: int, actor_team_member_id: in
 
 
 @mcp.tool
-def withdraw_shift_swap_tool(token: str, request_id: int, actor_team_member_id: int) -> dict[str, Any]:
+def withdraw_shift_swap_tool(
+    token: str,
+    request_id: int,
+    actor_team_member_id: int | None = None,
+    allow_planner: bool = False,
+) -> dict[str, Any]:
     """Withdraw a swap request. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
@@ -2289,6 +2310,7 @@ def withdraw_shift_swap_tool(token: str, request_id: int, actor_team_member_id: 
                 actor_team_member_id=actor_team_member_id,
                 actor="mcp",
                 source="mcp",
+                allow_planner=allow_planner,
             )
         except (ShiftSwapConflictError, ShiftSwapNotFoundError, PermissionError) as exc:
             raise ValueError(str(exc)) from exc

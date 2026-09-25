@@ -4,7 +4,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_planner, get_current_user
 from app.db.session import get_db
 from app.models import User
-from app.schemas import ShiftSwapApplyRead, ShiftSwapRequestCreate, ShiftSwapRequestRead
+from app.schemas import (
+    ShiftSwapApplyRead,
+    ShiftSwapRequestCreate,
+    ShiftSwapRequestRead,
+    ShiftSwapUnresolvedRead,
+)
 from app.services.authz import (
     assert_planning_shift_group_scope,
     can_use_planning_ui,
@@ -25,6 +30,7 @@ from app.services.shift_swaps import (
     get_shift_swap,
     list_eligible_claimants,
     list_shift_swaps,
+    list_unresolved_shift_swaps,
     open_shift_swap,
     reject_shift_swap,
     shift_swap_to_read,
@@ -111,6 +117,7 @@ def get_shift_swaps(
     planning_period_id: int = Query(...),
     shift_group_id: int | None = Query(default=None),
     status: str | None = Query(default=None),
+    statuses: list[str] | None = Query(default=None),
     kind: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -136,6 +143,7 @@ def get_shift_swaps(
             planning_period_id=planning_period_id,
             shift_group_id=shift_group_id,
             status=status,
+            statuses=statuses,
             kind=kind,
             viewer_team_member_id=viewer_team_member_id,
             planner_shift_group_ids=planner_ids,
@@ -143,6 +151,26 @@ def get_shift_swaps(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return [_to_read(db, row) for row in rows]
+
+
+@router.get("/unresolved", response_model=list[ShiftSwapUnresolvedRead])
+def get_unresolved_shift_swaps(
+    planning_period_id: int = Query(...),
+    shift_group_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+) -> list[ShiftSwapUnresolvedRead]:
+    _assert_planner_scope(db, user, shift_group_id)
+    try:
+        return list_unresolved_shift_swaps(
+            db,
+            organization_id=user.organization_id,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            planner_shift_group_ids=None if is_admin(user) else planner_shift_group_ids(db, user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("", response_model=ShiftSwapRequestRead)
@@ -295,16 +323,29 @@ def post_withdraw_shift_swap(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ShiftSwapRequestRead:
-    member = _linked_member(db, user)
     try:
-        row = withdraw_shift_swap(
-            db,
-            request_id,
-            organization_id=user.organization_id,
-            actor_team_member_id=member.id,
-            actor=user.email,
-            source="rest",
-        )
+        existing = get_shift_swap(db, request_id, organization_id=user.organization_id)
+        if can_use_planning_ui(user):
+            _assert_planner_scope(db, user, existing.shift_group_id)
+            row = withdraw_shift_swap(
+                db,
+                request_id,
+                organization_id=user.organization_id,
+                actor_team_member_id=None,
+                actor=user.email,
+                source="rest",
+                allow_planner=True,
+            )
+        else:
+            member = _linked_member(db, user)
+            row = withdraw_shift_swap(
+                db,
+                request_id,
+                organization_id=user.organization_id,
+                actor_team_member_id=member.id,
+                actor=user.email,
+                source="rest",
+            )
     except ShiftSwapNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ShiftSwapConflictError as exc:

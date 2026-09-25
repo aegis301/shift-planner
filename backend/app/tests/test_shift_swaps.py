@@ -16,6 +16,7 @@ from app.models import (
     Organization,
     PlanningCell,
     PlanningDayStatusDefinition,
+    RosterSlot,
     ShiftGroup,
     TeamMember,
     TeamMemberShiftGroup,
@@ -23,9 +24,12 @@ from app.models import (
 )
 from app.models.base import Base
 from app.services.shift_swaps import (
+    APPROVAL_QUEUE_STATUSES,
     ShiftSwapConflictError,
     claim_shift_swap,
     list_eligible_claimants,
+    list_shift_swaps,
+    list_unresolved_shift_swaps,
 )
 
 
@@ -462,6 +466,169 @@ def test_eligible_members_unranked_when_fairness_fails(swap_client: TestClient, 
     assert ids["bob"] in ranked
     assert ids["dana"] in ranked
     assert ids["alice"] not in ranked
+
+
+def test_unresolved_pool_filters_sorts_and_keeps_past_duties(swap_client: TestClient):
+    ids = _ids(swap_client)
+    period_id, earlier, later, _ = _seed_published_month(swap_client, month=12, ids=ids)
+    assert earlier["slot_date"] < later["slot_date"]
+
+    login_as(swap_client, "alice@example.com", "alicesecret")
+    draft = swap_client.post(
+        "/api/v1/shift-swaps",
+        json={
+            "planning_period_id": period_id,
+            "shift_group_id": 1,
+            "kind": "giveaway",
+            "offered_slot_id": earlier["id"],
+        },
+    )
+    assert draft.status_code == 200, draft.text
+    login_as(swap_client, "bob@example.com", "bobsecret")
+    later_open = swap_client.post(
+        "/api/v1/shift-swaps",
+        json={
+            "planning_period_id": period_id,
+            "shift_group_id": 1,
+            "kind": "giveaway",
+            "offered_slot_id": later["id"],
+            "open_immediately": True,
+        },
+    )
+    assert later_open.status_code == 200, later_open.text
+    later_id = later_open.json()["id"]
+
+    login_admin(swap_client)
+    unresolved = swap_client.get(
+        f"/api/v1/shift-swaps/unresolved?planning_period_id={period_id}&shift_group_id=1"
+    )
+    assert unresolved.status_code == 200, unresolved.text
+    assert [row["id"] for row in unresolved.json()] == [later_id]
+    assert unresolved.json()[0]["status"] == "open"
+    assert unresolved.json()[0]["duty_date"] == later["slot_date"]
+    assert unresolved.json()[0]["offered_by_team_member_id"] == ids["bob"]
+
+    login_as(swap_client, "alice@example.com", "alicesecret")
+    withdrawn_draft = swap_client.post(f"/api/v1/shift-swaps/{draft.json()['id']}/withdraw")
+    assert withdrawn_draft.status_code == 200, withdrawn_draft.text
+    earlier_open = swap_client.post(
+        "/api/v1/shift-swaps",
+        json={
+            "planning_period_id": period_id,
+            "shift_group_id": 1,
+            "kind": "direct",
+            "offered_slot_id": earlier["id"],
+            "target_team_member_id": ids["dana"],
+            "open_immediately": True,
+        },
+    )
+    assert earlier_open.status_code == 200, earlier_open.text
+    earlier_id = earlier_open.json()["id"]
+    assert earlier_open.json()["status"] == "targeted"
+
+    login_admin(swap_client)
+    ordered = swap_client.get(
+        f"/api/v1/shift-swaps/unresolved?planning_period_id={period_id}&shift_group_id=1"
+    )
+    assert ordered.status_code == 200, ordered.text
+    assert [row["id"] for row in ordered.json()] == [earlier_id, later_id]
+    assert ordered.json()[0]["target_team_member_id"] == ids["dana"]
+    assert ordered.json()[0]["request_age_days"] >= 0
+    assert ordered.json()[1]["request_age_days"] >= ordered.json()[0]["request_age_days"]
+
+    login_as(swap_client, "dana@example.com", "danasecret")
+    claimed = swap_client.post(f"/api/v1/shift-swaps/{later_id}/claim")
+    assert claimed.status_code == 200, claimed.text
+    login_admin(swap_client)
+    after_claim = swap_client.get(
+        f"/api/v1/shift-swaps/unresolved?planning_period_id={period_id}&shift_group_id=1"
+    )
+    assert [row["id"] for row in after_claim.json()] == [earlier_id]
+    queue_params = "&".join(f"statuses={status}" for status in sorted(APPROVAL_QUEUE_STATUSES))
+    queued = swap_client.get(
+        f"/api/v1/shift-swaps?planning_period_id={period_id}&shift_group_id=1&{queue_params}"
+    )
+    assert queued.status_code == 200, queued.text
+    assert [row["id"] for row in queued.json()] == [later_id]
+    assert queued.json()[0]["status"] == "claimed"
+
+    _set_slot_date(swap_client, earlier["id"], date(2020, 1, 2))
+    past = swap_client.get(
+        f"/api/v1/shift-swaps/unresolved?planning_period_id={period_id}&shift_group_id=1"
+    )
+    assert past.status_code == 200, past.text
+    assert past.json()[0]["id"] == earlier_id
+    assert past.json()[0]["status"] == "targeted"
+    assert past.json()[0]["days_until_duty"] < 0
+    assert past.json()[0]["duty_date"] == "2020-01-02"
+
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        service_rows = list_unresolved_shift_swaps(
+            db,
+            organization_id=1,
+            planning_period_id=period_id,
+            shift_group_id=1,
+        )
+        queued_rows = list_shift_swaps(
+            db,
+            organization_id=1,
+            planning_period_id=period_id,
+            shift_group_id=1,
+            statuses=list(APPROVAL_QUEUE_STATUSES),
+        )
+    finally:
+        db.close()
+    assert [row.id for row in service_rows] == [earlier_id]
+    assert service_rows[0].days_until_duty < 0
+    assert [row.id for row in queued_rows] == [later_id]
+
+
+def test_planner_can_withdraw_open_request_and_member_cannot(swap_client: TestClient):
+    ids = _ids(swap_client)
+    period_id, offered, _other, _ = _seed_published_month(swap_client, month=1, ids=ids)
+    login_as(swap_client, "alice@example.com", "alicesecret")
+    created = swap_client.post(
+        "/api/v1/shift-swaps",
+        json={
+            "planning_period_id": period_id,
+            "shift_group_id": 1,
+            "kind": "giveaway",
+            "offered_slot_id": offered["id"],
+            "open_immediately": True,
+        },
+    )
+    assert created.status_code == 200, created.text
+    request_id = created.json()["id"]
+    login_as(swap_client, "bob@example.com", "bobsecret")
+    forbidden = swap_client.post(f"/api/v1/shift-swaps/{request_id}/withdraw")
+    assert forbidden.status_code == 403
+    unresolved_as_member = swap_client.get(
+        f"/api/v1/shift-swaps/unresolved?planning_period_id={period_id}&shift_group_id=1"
+    )
+    assert unresolved_as_member.status_code == 403
+    login_admin(swap_client)
+    withdrawn = swap_client.post(f"/api/v1/shift-swaps/{request_id}/withdraw")
+    assert withdrawn.status_code == 200, withdrawn.text
+    assert withdrawn.json()["status"] == "withdrawn"
+    empty = swap_client.get(
+        f"/api/v1/shift-swaps/unresolved?planning_period_id={period_id}&shift_group_id=1"
+    )
+    assert empty.status_code == 200, empty.text
+    assert empty.json() == []
+
+
+def _set_slot_date(client: TestClient, slot_id: int, slot_date: date) -> None:
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        slot = db.get(RosterSlot, slot_id)
+        assert slot is not None
+        slot.slot_date = slot_date
+        db.commit()
+    finally:
+        db.close()
 
 
 def _activate_max_duties(client: TestClient, *, severity: str) -> None:
