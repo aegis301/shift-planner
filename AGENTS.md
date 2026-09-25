@@ -37,6 +37,7 @@ Start here before reading the rest of this file.
 | Roster solver runs | `solver_runs.py`, `solver/` (`model.py`, `objective.py`, `solve.py`), `scripts/solver_worker.py` |
 | Shift swaps | `shift_swaps.py` — `ShiftSwapRequest` state machine, legality via `evaluate_plan_state`, claim eligibility via `eligible_members_for_slots` |
 | Realistic test data | `app/scripts/seed_solver_fixture.py` — profiles `comfortable`, `tight`, `infeasible`, `arbzg` |
+| Decisions, frontend direction | `docs/decisions/` (ADR 0001: desktop-first workbench, mobile-first member companion) and `docs/workbench/issues/` |
 
 Two invariants that are easy to break and expensive to unbreak:
 
@@ -51,7 +52,7 @@ Two invariants that are easy to break and expensive to unbreak:
 ## Architecture
 
 - Backend: Python, FastAPI, SQLAlchemy, Alembic, Postgres.
-- Frontend: Next.js App Router, TypeScript, Tailwind CSS, PWA-ready, mobile first.
+- Frontend: Next.js App Router, TypeScript, Tailwind CSS. The planner workbench is desktop-first and the member companion is mobile-first (PWA-ready); see **Style** and [ADR 0001](docs/decisions/0001-desktop-first-workbench.md). A native member app (Expo) is planned as a second client of the same REST API.
 - MCP: FastMCP from the start. MCP tools and resources must reuse the same backend service layer as REST endpoints. MCP targeting uses **`MCP_ORGANIZATION_ID`** when set, otherwise the default organization id (see `README.md`); it is not tied to a browser user’s active membership.
 - Runtime: Docker Compose for local development with Postgres, backend, **solver-worker**, frontend, and MCP services. Production-oriented stack and Cloudflare/GitHub Actions notes live in [deploy/README.md](deploy/README.md) and [docker-compose.prod.yml](docker-compose.prod.yml).
 
@@ -150,10 +151,16 @@ Shared rule evaluation lives in `backend/app/services/rules/`. `build_plan_state
 
 ## Working an issue
 
-Issue specifications live in `docs/rollout/issues/`; the plan they belong to is
-`docs/rollout/ROLLOUT.md`, and the CP-SAT spike findings are in
-`docs/rollout/solver-spike-findings.md`. An agent implementing one of those issues follows
-these rules without being reminded:
+Issue specifications live in two places:
+
+- `docs/rollout/issues/`: the compliance, fairness, solver and swaps rollout. The plan they
+  belong to is `docs/rollout/ROLLOUT.md`, and the CP-SAT spike findings are in
+  `docs/rollout/solver-spike-findings.md`.
+- `docs/workbench/issues/`: the desktop-first workbench and the member app. The decision they
+  carry out is `docs/decisions/0001-desktop-first-workbench.md`.
+
+Cross-cutting decisions are recorded in `docs/decisions/`. An agent implementing any of those
+issues follows these rules without being reminded:
 
 - **One issue, one branch off `main`, one pull request.** Do not start a second issue in the
   same session, and do not touch files the issue does not need.
@@ -172,7 +179,8 @@ these rules without being reminded:
   and committed before the first production line changes. Any later diff is either justified in
   the PR or is a regression.
 - Before finishing: `cd backend && ruff check app && pytest`; for frontend changes also
-  `cd frontend && npm run lint && npm run typecheck`.
+  `cd frontend && npm run lint && npm run typecheck`, plus the frontend test commands once
+  they exist (`npm run test`, `npm run test:e2e`; see **Testing Expectations**).
 
 ---
 
@@ -197,6 +205,7 @@ Any implementation that changes setup, behavior, architecture, API shape, MCP ca
 - Backend changes should include or update pytest coverage for services and API behavior.
 - Solver and related regression tests use `python -m app.scripts.seed_solver_fixture` (`comfortable` / `tight` / `infeasible` / `arbzg`) rather than hand-built months.
 - MCP changes should test resources/tools, authorization for mutations, and parity with backend services.
+- Frontend logic (formatting, grid selection, keyboard handling, query hooks) gets Vitest unit tests, and user-visible workbench flows get Playwright tests once the harness from `docs/workbench/issues/02-frontend-test-harness.md` exists. A frontend refactor that claims to preserve behaviour starts from the Playwright golden screenshots.
 - Frontend changes should keep TypeScript, linting, and i18n key coverage passing. German and English dictionaries in `frontend/lib/i18n.ts` must have the same keys (`true satisfies` parity check).
 - Pull request CI merges the latest base branch before tests so combined `main` + PR is what is checked. Enable **Require branches to be up to date before merging** (or a merge queue) on `main` so GitHub cannot merge a PR whose last green run predates newer `main` commits.
 - Docker startup should remain the baseline development path.
@@ -205,4 +214,51 @@ Any implementation that changes setup, behavior, architecture, API shape, MCP ca
 
 - Prefer small, explicit modules over broad abstractions.
 - Keep domain services deterministic and easy for MCP tools to call.
-- Use bright, fresh, accessible UI styling with mobile-first layouts and practical desktop density.
+- Use bright, fresh, accessible UI styling.
+
+### Frontend surfaces (ADR 0001)
+
+The frontend serves two audiences and is designed per audience, not per breakpoint. The full
+reasoning is in [ADR 0001](docs/decisions/0001-desktop-first-workbench.md). Rules marked
+*(target, #NNN)* describe the state the `docs/workbench/issues/` work is moving towards. Once the
+named issue has landed the rule is binding. Before that, do not add new code that the issue would
+have to undo (another hand-rolled matrix, dialog or `variant` switch, another hand-written API
+type), and design new planner features desktop-first already.
+
+**Planner workbench: desktop-first.** `/planning`, `/hours`, `/organization/*`, `/shift-groups`,
+`/shift-types` and the admin and planner dashboard tabs.
+
+- Design at 1440 px wide first and support down to 1024 px. Below 1024 px show a read-only view
+  or a notice that links to the member area. Do not build phone layouts for planner features.
+- Prefer density: compact tables, tabular numbers, several panes on screen at once.
+- Detail belongs in a persistent inspector panel on the right, not in a modal. Keep modals for
+  destructive confirmations and short forms. *(target, #115)*
+- Period, shift group and plan status live in a context bar and in the URL (`?period=`,
+  `?shiftGroup=`). Every workbench view is linkable. *(target, #115)*
+- Every primary action is reachable from the keyboard and from the command palette.
+  *(target, #115)*
+- Matrices use the shared grid primitive: arrow-key navigation, range selection, copy and paste,
+  undo and redo, virtualization. Do not add another hand-built matrix table. *(target, #117)*
+
+**Member companion: mobile-first.** `/my-planning`, `/my-hours`, `/profile` and the member
+dashboard tab.
+
+- Design at 375 px first. Touch targets at least 44 px. One primary action per screen.
+- Anything a member needs must also work in the planned native app, so member business logic
+  stays in the backend and member screens consume the member API (`/api/v1/me/...`, #120)
+  once it exists.
+- Member and planner pages may share presentational components but never a page component or a
+  `variant` switch. *(target, #114; `PlanningWorkspace` still has `variant` until then)*
+
+**Shared pages** (`/login`, `/register`, `/onboarding`, `/pending-onboarding`, `/settings`) work
+at every width.
+
+**Frontend foundations** for all new code:
+
+- UI primitives come from `frontend/components/ui/` (Radix-based). Do not hand-roll dialogs,
+  menus, popovers, comboboxes or tooltips. Colors, spacing, radii and density come from the design
+  tokens, not from ad-hoc Tailwind values. *(target, #112)*
+- Server state goes through TanStack Query with the query keys in `frontend/lib/queryKeys.ts`. Do
+  not add `useEffect` fetches or `*ReloadToken` counters. *(target, #113)*
+- API payload types are generated from the backend OpenAPI schema. Do not hand-write a type that
+  mirrors a backend schema. *(target, #111)*
