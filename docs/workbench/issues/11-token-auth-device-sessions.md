@@ -32,12 +32,13 @@ What exists on `main`:
 
 - **Device sessions** are stored server-side: table `auth_device_sessions` with `id`,
   `account_id`, `user_id` (active membership, nullable for account-only sessions), `name`
-  (for example "Pixel 8"), `platform` (`ios`, `android`, `web`, `other`), `refresh_token_hash`
-  (SHA-256 of the current refresh token), `created_at`, `last_used_at`, `expires_at`,
-  `revoked_at`, `revoked_reason`.
+  (for example "Pixel 8"), `platform` (`ios`, `android`, `web`, `other`), `created_at`,
+  `last_used_at`, `expires_at`, `revoked_at`, `revoked_reason`.
 - **Refresh token history**: table `auth_refresh_tokens` with `id`, `device_session_id` (FK),
-  `token_hash` (unique), `issued_at`, `rotated_at` (null for the current token). Rotated rows are
-  kept until the device session expires, as tombstones for reuse detection.
+  `token_hash` (SHA-256, unique), `issued_at`, `rotated_at` (null for the current token). This is
+  the only place refresh token hashes live. Exactly one unrotated row per active session (partial
+  unique index on `device_session_id WHERE rotated_at IS NULL`). Rotated rows are kept until the
+  device session expires, as tombstones for reuse detection.
 - **Access tokens** are short-lived `itsdangerous` signed payloads with `typ` `access`,
   `sid` (device session id), `sub` and `kind` (`user` or `account`), `iat`, lifetime 15 minutes
   (`ACCESS_TOKEN_TTL_SECONDS`). Signed with a separate salt from the cookie so a cookie value can
