@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-25
+- **Duty activity privacy on time entry reads:** `call_out` and `in_duty_activity` episodes are `TimeEntry` rows, and `GET /api/v1/time-entries`, `/time-entries/ledger` and `/time-entries/reconciliation` returned them with start and end times to planners and admins even though `/api/v1/duty-activity` refused the same read. These paths now drop duty activity kinds unless the caller is the member or holds a role in `DutyActivityAccessPolicy.individual_read_roles`. Ledger totals still count the minutes. MCP `shift-planner://time-entries/{team_member_id}` and `get_hours_ledger_tool` hide episodes unless `MCP_DUTY_ACTIVITY_INDIVIDUAL_READ=true`. Member self-read on `/my-hours` is unchanged.
+
 ## 2026-09-23
 - **Swap UI states:** The marketplace, offer buttons, and approval queue say why they are blocked instead of disappearing. A missing shift group, an account that is not linked to a team member, and a plan still in draft each get one sentence that names the fix. Draft duties keep a disabled offer button; past duties stay hidden. An empty approval queue is distinct from “select a month and shift group.” Planners who are also team members get a link from the Analysis queue to My planning.
 

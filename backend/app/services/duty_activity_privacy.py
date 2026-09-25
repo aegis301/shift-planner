@@ -14,11 +14,13 @@ from app.models import (
     RosterSlotAssignment,
     TeamMember,
     TimeEntry,
+    User,
 )
 from app.schemas import (
     DutyActivityAccessPolicy,
     DutyActivityAccessPolicyUpdate,
     DutyActivityPurposeRead,
+    TimeEntryReconciliationItem,
 )
 from app.services.audit import record_audit
 from app.services.duty_activity import DUTY_ACTIVITY_KINDS, list_duty_activity_for_slots
@@ -32,6 +34,37 @@ def default_duty_activity_access_policy() -> DutyActivityAccessPolicy:
 def read_duty_activity_access_policy(organization: Organization) -> DutyActivityAccessPolicy:
     raw = organization.duty_activity_access_policy or {}
     return DutyActivityAccessPolicy.model_validate(raw)
+
+
+def can_read_individual_duty_activity(db: Session, viewer: User | None, team_member_id: int) -> bool:
+    """Whether ``viewer`` may see ``team_member_id``'s individual duty activity episodes.
+
+    ``None`` stands for a caller without a user (MCP) and never gets individual access.
+    """
+    if viewer is None:
+        return False
+    from app.services.authz import assert_duty_activity_individual_read
+
+    try:
+        assert_duty_activity_individual_read(db, viewer, team_member_id)
+    except PermissionError:
+        return False
+    return True
+
+
+def filter_duty_activity_entries(rows: list[TimeEntry], *, reveal: bool) -> list[TimeEntry]:
+    """Drop ``call_out`` / ``in_duty_activity`` rows unless the reader may see episodes."""
+    if reveal:
+        return list(rows)
+    return [row for row in rows if row.kind not in DUTY_ACTIVITY_KINDS]
+
+
+def filter_duty_activity_reconciliation(
+    items: list[TimeEntryReconciliationItem], *, reveal: bool
+) -> list[TimeEntryReconciliationItem]:
+    if reveal:
+        return list(items)
+    return [item for item in items if item.effective.kind not in DUTY_ACTIVITY_KINDS]
 
 
 def update_duty_activity_access_policy(
