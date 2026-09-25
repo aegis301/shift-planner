@@ -43,8 +43,11 @@ Build the wishes screen so the day editor is one component that can grow.
     confirmation that shows the duty.
   - Offer from Duty detail: giveaway or direct swap (pick a colleague and their duty from the
     eligible list the API returns).
+  - Which actions a request offers comes from `allowed_actions` in `/me/swaps` (#120); the offer
+    button on Duty detail follows `can_offer` from `/me/duties`. The app holds no transition table.
   - Illegal actions show the finding messages from the API. The app never predicts legality.
-  - The disabled-state reasons from #99 are reproduced with the same dictionary keys.
+  - The disabled-state reasons come from `disabled_reasons` and use the same dictionary keys as the
+    web (#99).
 - **Hours**: period totals and entries from `/me/hours`, statutory minutes and credited minutes
   **shown as two separate numbers** (the dual valuation invariant in `AGENTS.md`), never summed.
 - **Calendar**: create or rotate the calendar token, show the subscription URL, "Add to calendar"
@@ -73,15 +76,17 @@ Build the wishes screen so the day editor is one component that can grow.
 - [ ] A member can do every wishes, swap, hours and calendar task from the app that they can do on
       the web member area (checklist in the PR, one line per web capability).
 - [ ] Wishes: range apply is one request; read-only states show the correct reason (tests).
-- [ ] Swaps: each state shows exactly the actions the state machine allows (table-driven test over
-      all statuses); an illegal claim shows the API's findings.
+- [ ] Swaps: each item shows exactly the actions in its `allowed_actions` from `/me/swaps`, and
+      disabled ones show their `disabled_reasons` (table-driven test over all statuses with mocked
+      payloads); the app contains no transition table of its own; an illegal claim shows the API's
+      findings.
 - [ ] Hours shows statutory and credited minutes separately (test).
 - [ ] Calendar subscription URL works in the iOS or Android calendar app (screenshot).
 - [ ] Mobile typecheck, lint, test green; i18n parity green.
 
 ## Dependencies
 
-Needs #122. Uses #123 for retrospective entry if available. Related to #103 and #99.
+Needs #122 and, through it, #120, whose `/me/swaps` returns `allowed_actions` and `disabled_reasons` and whose `/me/duties` returns `can_offer`. If those fields are missing, stop and add them to the backend first (a #120 follow-up), never derive them on the device. Uses #123 for retrospective entry if available. Related to #103 and #99.
 
 ## Implementation prompt
 

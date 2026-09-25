@@ -45,10 +45,10 @@ services**. It adds no new rule logic.
 | Route | Returns | Built from |
 |---|---|---|
 | `GET /me/home` | next 5 duties, open swap actions needing me (claims to answer, targeted requests), the next period in `draft` with its wishes deadline if the org has one, and the unread notification count from #101's notification service (omit the field if #101 has not landed) | dashboard service, `shift_swaps` |
-| `GET /me/duties?from=&to=` | my assigned slots in the window: slot facts (template, variant, times as instants with offset, `slot_date`, category), shift group, plan status of that group and period, open swap request on it, whether duty activity can be recorded and whether an episode is running | roster assignments, `shift_swaps`, `duty_activity` |
+| `GET /me/duties?from=&to=` | my assigned slots in the window: slot facts (template, variant, times as instants with offset, `slot_date`, category), shift group, plan status of that group and period, open swap request on it, `can_offer` with a reason code when false (draft plan, past slot, unlinked group; the #99 reasons), whether duty activity can be recorded and whether an episode is running | roster assignments, `shift_swaps`, `duty_activity` |
 | `GET /me/wishes/{planning_period_id}?shift_group_id=` | my day cells, my intents, my month note, day status definitions, templates of the group, and `editable` with a reason | `matrix` services |
 | `PUT /me/wishes/{planning_period_id}/cells` (bulk) and `PUT /me/wishes/{planning_period_id}/intents` (bulk) and `PUT /me/wishes/{planning_period_id}/note` | same writes as the planner matrix, restricted to me | `matrix` services |
-| `GET /me/swaps?status=` | requests I offered, claimed, was targeted by, and open giveaways I am eligible for, across my groups | `shift_swaps` |
+| `GET /me/swaps?status=` | requests I offered, claimed, was targeted by, and open giveaways I am eligible for, across my groups. Each item carries `allowed_actions` for the caller (subset of `withdraw`, `claim`, `accept`, `decline`) and, for actions that exist for this status but are not allowed, a `disabled_reasons` map with the same reason codes the web uses (#99). Computed in `shift_swaps.py` from `ALLOWED_TRANSITIONS` and the caller's role on the request, never on the client | `shift_swaps` |
 | `GET /me/hours?from=&to=` | my ledger totals and entries (my own duty activity is visible to me) | `hours_ledger` |
 | `GET /me/calendar.ics?token=` | my duties as ICS for calendar subscription, authenticated by a per-member calendar token (see below) | `ics_export` |
 
@@ -75,7 +75,9 @@ reason.
 2. Calendar token column, migration and routes.
 3. pytest for every route: happy path, no linked member, member cannot see another member's data
    (try every route with ids from another member where an id appears in a path), published and
-   draft editability for wishes, swaps list completeness against the existing swaps service.
+   draft editability for wishes, swaps list completeness against the existing swaps service,
+   and a table-driven test that `allowed_actions` / `disabled_reasons` match what the transition
+   endpoints accept or refuse for every status and caller role.
 4. Regenerate the OpenAPI types from #111.
 5. Move the web member area to the `/me` endpoints and the query hooks from #113.
 6. Docs: `AGENTS.md` (new **Member API** section, the MCP exception, the flag deprecation),

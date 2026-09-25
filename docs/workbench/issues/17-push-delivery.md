@@ -56,8 +56,14 @@ Other prerequisites:
 - **Reuse `NotificationDelivery` with `channel = "push"`.** Do not add a separate delivery table.
   Because one notification can fan out to several devices, add a nullable `push_token_id` column to
   `notification_deliveries` (one push delivery row per active token) plus `ticket_id` and
-  `receipt_status` for Expo's two-step ticket and receipt protocol. The unique delivery key becomes
-  `(notification_id, channel, push_token_id)`.
+  `receipt_status` for Expo's two-step ticket and receipt protocol. Uniqueness uses two **partial
+  unique indexes**, because Postgres treats `NULL`s as distinct and a plain unique key on
+  `(notification_id, channel, push_token_id)` would allow duplicate email rows (whose
+  `push_token_id` is `NULL`):
+  `UNIQUE (notification_id, channel) WHERE push_token_id IS NULL` and
+  `UNIQUE (notification_id, push_token_id) WHERE push_token_id IS NOT NULL`.
+  Keep #101's existing uniqueness for email untouched if it already guarantees one row per
+  notification and channel.
 - **Tokens**: table `push_tokens` with `id`, `device_session_id` (FK to `auth_device_sessions`,
   cascade), `expo_push_token` (unique), `platform`, `created_at`, `last_seen_at`, `disabled_at`,
   `disabled_reason`. A token belongs to a device session, so revoking a device (or sign-out)
@@ -105,7 +111,9 @@ Other prerequisites:
 5. pytest with the Expo API mocked: fan-out to two devices; revoked device receives nothing;
    `push_enabled = false` produces `suppressed`; unconfigured push produces `not_configured`;
    `DeviceNotRegistered` disables the token; retry then fail; a rejected swap transition creates
-   no push row; the exact JSON sent contains no names, dates or times.
+   no push row; the exact JSON sent contains no names, dates or times; inserting a second email
+   delivery for the same notification fails on the partial index (run against Postgres, since
+   SQLite's partial-index support differs).
 6. Docs: `AGENTS.md` (push channel, content rule), `deploy/README.md` (egress to `exp.host`,
    `EXPO_ACCESS_TOKEN`), `mobile/README.md` (testing push on a device), and the works-council
    section #101 added.

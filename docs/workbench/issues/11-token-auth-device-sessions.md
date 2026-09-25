@@ -33,16 +33,29 @@ What exists on `main`:
 - **Device sessions** are stored server-side: table `auth_device_sessions` with `id`,
   `account_id`, `user_id` (active membership, nullable for account-only sessions), `name`
   (for example "Pixel 8"), `platform` (`ios`, `android`, `web`, `other`), `refresh_token_hash`
-  (SHA-256 of the current refresh token), `refresh_token_family` (UUID), `created_at`,
-  `last_used_at`, `expires_at`, `revoked_at`, `revoked_reason`.
+  (SHA-256 of the current refresh token), `created_at`, `last_used_at`, `expires_at`,
+  `revoked_at`, `revoked_reason`.
+- **Refresh token history**: table `auth_refresh_tokens` with `id`, `device_session_id` (FK),
+  `token_hash` (unique), `issued_at`, `rotated_at` (null for the current token). Rotated rows are
+  kept until the device session expires, as tombstones for reuse detection.
 - **Access tokens** are short-lived `itsdangerous` signed payloads with `typ` `access`,
   `sid` (device session id), `sub` and `kind` (`user` or `account`), `iat`, lifetime 15 minutes
   (`ACCESS_TOKEN_TTL_SECONDS`). Signed with a separate salt from the cookie so a cookie value can
   never be used as a bearer token and the other way round.
-- **Refresh tokens** are 32 random bytes, URL-safe base64, returned once, stored only as a hash.
-  Lifetime 60 days sliding (`REFRESH_TOKEN_TTL_DAYS`). Every refresh **rotates** the token. If a
-  refresh token that was already rotated is presented again, the whole device session is revoked
-  (`revoked_reason = "refresh_reuse"`), because that means it was stolen.
+- **Refresh tokens** have the form `<device_session_id>.<secret>`, where the secret is 32 random
+  bytes, URL-safe base64. They are returned once and only the hash is stored. Lifetime 60 days
+  sliding (`REFRESH_TOKEN_TTL_DAYS`). Every refresh **rotates** the token: the presented row gets
+  `rotated_at`, a new row is issued.
+- **Reuse detection** works even when an attacker refreshes first. The embedded session id finds the
+  device session, and the hash lookup in `auth_refresh_tokens` decides:
+  - hash is the session's current, unrotated token: rotate normally;
+  - hash is a **rotated** token of that session: this is reuse, so revoke the whole device session
+    (`revoked_reason = "refresh_reuse"`). This also catches the legitimate client presenting its
+    old token after an attacker rotated it, which kills the attacker's new token too;
+  - hash is unknown: `401`, and do **not** revoke, so a guessed or malformed token cannot sign
+    someone else out.
+  A single-hash design cannot do this: after the attacker rotates, the legitimate client's token
+  just looks unknown and the attacker keeps a valid session.
 - **Every request with a bearer token** checks that its device session is not revoked. That is
   one indexed lookup next to the existing `User` lookup and gives immediate revocation.
 - `get_current_session_holder` accepts `Authorization: Bearer <access token>` **or** the cookie.
@@ -76,7 +89,9 @@ Business logic lives in `backend/app/services/device_sessions.py`. Route handler
 - Model, Alembic migration, service, endpoints, dependency change, revocation hooks, settings card
   (both dictionaries), config values with defaults in `backend/app/core/config.py` and
   `.env.example`.
-- pytest: token issue and use; refresh rotation; reuse detection revokes the family; expiry;
+- pytest: token issue and use; refresh rotation; reuse detection revokes the session, including
+  the case where the attacker refreshes first and the legitimate client then presents its old
+  token; an unknown token with a valid session id returns 401 without revoking; expiry;
   revoked session rejected immediately; password change, admin reset, account deletion and
   membership removal revoke; bearer wins over cookie; cookie value rejected as bearer and the other
   way round; org switch with bearer; onboarding with account bearer; every existing auth test

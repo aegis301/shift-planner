@@ -40,10 +40,15 @@ What exists on `main`:
   All multi-cell writes use `PUT .../cells/bulk` or `.../cells/clear` in one request.
   Intents are edited in the inspector, not in the cell, and saved with
   `PUT .../shift-intents/bulk`.
-- Undo and redo: a client-side stack of inverse operations built from the pre-edit values in the
-  query cache. Each entry is one bulk request. Conflicts (the cell changed on the server since) are
-  detected by comparing the current cached value before undoing; changed cells are skipped and
-  listed in a toast.
+- Undo and redo: a client-side stack of inverse operations built from the pre-edit values. Each
+  entry is one bulk request. **Conflicts are decided by the server, not the cache**: a cached
+  comparison cannot see another planner's write, and a refetch before undo still races with it.
+  Add an optional precondition per item to `PUT .../cells/bulk` and `.../cells/clear`:
+  `expected_updated_at` (the `PlanningCell.updated_at` the client last saw, or `null` for "cell did
+  not exist"). The service applies an item only when the stored value still matches and reports the
+  others as `conflict` in the response, in the same transaction. Undo and redo always send the
+  precondition; changed cells are skipped and listed in a toast. Requests without preconditions
+  behave exactly as today.
 - Member notes and the monthly comment move into the inspector's member panel. The two modals
   are deleted.
 - `PlanningDayIntervalBar` becomes unnecessary for planners (range selection plus typing a
@@ -65,7 +70,9 @@ What exists on `main`:
 ## Out of scope
 
 - #103 (priorities, finer wishes, planner-visible comments beyond showing what exists).
-- Backend changes.
+- Backend changes other than the optional `expected_updated_at` precondition on the two bulk
+  cell endpoints (service, schema, pytest for match, mismatch and absent precondition, MCP bulk tool
+  accepting the same field).
 - Member-facing wishes UI (that is #114 on web and #124 in the app).
 
 ## Acceptance criteria
@@ -74,7 +81,8 @@ What exists on `main`:
       `/planning`.
 - [ ] Range edits send one bulk request (Playwright request count).
 - [ ] Undo and redo, with conflict skip, work (Vitest for `lib/wishesUndo.ts`, Playwright for the
-      flow).
+      flow). Conflicts are detected by the server precondition: pytest shows a bulk write with a
+      stale `expected_updated_at` leaves the newer value and reports `conflict`.
 - [ ] Member notes are edited in the inspector; the two modals are gone.
 - [ ] Published groups are read-only with a visible reason.
 - [ ] Golden screenshots of the wishes tab regenerated and reviewed in the PR.
@@ -116,7 +124,7 @@ clipboard, client-side undo and inspector panels for cells and notes.
 5. Remove the modals and `MatrixEditor.tsx` from the planner path.
 6. Write the Playwright tests.
 
-Do not change: backend code, the grid primitive's public API (extend it only if the roster grid
+Do not change: backend code beyond the bulk-cell precondition, the grid primitive's public API (extend it only if the roster grid
 keeps working unchanged), anything #103 asks for.
 
 Stop and report instead of guessing if: a cell edit needs a backend endpoint that does not exist,

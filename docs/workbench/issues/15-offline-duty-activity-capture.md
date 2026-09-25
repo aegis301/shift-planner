@@ -38,13 +38,16 @@ What exists on `main`:
 **Backend: idempotent creation and stop.**
 
 - `TimeEntry.client_request_id` (UUID string, nullable) with a unique constraint on
-  `(organization_id, team_member_id, client_request_id)`.
+  `(organization_id, client_request_id)`. Not per member: the key must be unique across the
+  organization so that a second member reusing an id is caught by the database, not only by a
+  racy read. On an insert conflict, load the existing row and decide by its owner (below).
 - `TimeEntry.captured_at` (`DateTime(timezone=True)`, nullable): when the device recorded the
   action. `created_at` stays the server receipt time. Both are kept so late sync is visible, not
   hidden.
 - `POST /api/v1/duty-activity` accepts `client_request_id`. If a row with that id already exists
   for the member, return it with `200` and do not validate again. If it exists for another member,
-  `409`.
+  `409` without revealing that row. Handle the concurrent case through the unique constraint
+  (insert, catch the violation, re-read), not a check-then-insert.
 - `PATCH /api/v1/duty-activity/{id}` setting `ended_at` to the value already stored returns the
   row with `200` (idempotent stop). A different `ended_at` on an already stopped episode keeps
   today's behaviour.
