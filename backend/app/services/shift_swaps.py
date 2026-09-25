@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 
 from sqlalchemy import or_, select, update
@@ -22,6 +23,7 @@ from app.schemas import (
     ShiftSwapApplyRead,
     ShiftSwapRequestCreate,
     ShiftSwapRequestRead,
+    ShiftSwapUnresolvedRead,
     ValidationWarning,
 )
 from app.services.audit import record_audit
@@ -66,6 +68,9 @@ ACTIVE_STATUSES = frozenset(
     }
 )
 
+UNRESOLVED_STATUSES = frozenset({SWAP_STATUS_OPEN, SWAP_STATUS_TARGETED})
+APPROVAL_QUEUE_STATUSES = frozenset({SWAP_STATUS_CLAIMED, SWAP_STATUS_ACCEPTED, SWAP_STATUS_APPROVED})
+
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     SWAP_STATUS_DRAFT: frozenset({SWAP_STATUS_OPEN, SWAP_STATUS_TARGETED, SWAP_STATUS_WITHDRAWN}),
     SWAP_STATUS_OPEN: frozenset(
@@ -104,6 +109,12 @@ class ShiftSwapConflictError(Exception):
 
 def _utc_today() -> date:
     return datetime.now(UTC).date()
+
+
+def _as_utc_date(value: datetime) -> date:
+    if value.tzinfo is None:
+        return value.date()
+    return value.astimezone(UTC).date()
 
 
 def _dump_findings(findings: list[ValidationWarning]) -> list[dict]:
@@ -485,6 +496,7 @@ def list_shift_swaps(
     planning_period_id: int,
     shift_group_id: int | None = None,
     status: str | None = None,
+    statuses: Sequence[str] | None = None,
     kind: str | None = None,
     viewer_team_member_id: int | None = None,
     planner_shift_group_ids: set[int] | None = None,
@@ -496,7 +508,9 @@ def list_shift_swaps(
     )
     if shift_group_id is not None:
         stmt = stmt.where(ShiftSwapRequest.shift_group_id == shift_group_id)
-    if status is not None:
+    if statuses:
+        stmt = stmt.where(ShiftSwapRequest.status.in_(list(statuses)))
+    elif status is not None:
         stmt = stmt.where(ShiftSwapRequest.status == status)
     if kind is not None:
         stmt = stmt.where(ShiftSwapRequest.kind == kind)
@@ -526,6 +540,60 @@ def list_shift_swaps(
         )
     stmt = stmt.order_by(ShiftSwapRequest.id.desc())
     return list(db.scalars(stmt).all())
+
+
+def unresolved_shift_swap_to_read(
+    row: ShiftSwapRequest,
+    offered_slot: RosterSlot,
+    *,
+    today: date | None = None,
+    eligible_member_ids: list[int] | None = None,
+) -> ShiftSwapUnresolvedRead:
+    as_of = today if today is not None else _utc_today()
+    payload = shift_swap_to_read(row, eligible_member_ids=eligible_member_ids)
+    return ShiftSwapUnresolvedRead(
+        **payload.model_dump(),
+        duty_date=offered_slot.slot_date,
+        days_until_duty=(offered_slot.slot_date - as_of).days,
+        request_age_days=(as_of - _as_utc_date(row.created_at)).days,
+    )
+
+
+def list_unresolved_shift_swaps(
+    db: Session,
+    *,
+    organization_id: int,
+    planning_period_id: int,
+    shift_group_id: int,
+    planner_shift_group_ids: set[int] | None = None,
+) -> list[ShiftSwapUnresolvedRead]:
+    require_planning_period_in_org(db, planning_period_id, organization_id)
+    require_shift_group(db, shift_group_id, organization_id)
+    if planner_shift_group_ids is not None and (
+        not planner_shift_group_ids or shift_group_id not in planner_shift_group_ids
+    ):
+        return []
+    stmt = (
+        select(ShiftSwapRequest, RosterSlot)
+        .join(RosterSlot, RosterSlot.id == ShiftSwapRequest.offered_slot_id)
+        .where(
+            ShiftSwapRequest.organization_id == organization_id,
+            ShiftSwapRequest.planning_period_id == planning_period_id,
+            ShiftSwapRequest.shift_group_id == shift_group_id,
+            ShiftSwapRequest.status.in_(UNRESOLVED_STATUSES),
+        )
+        .order_by(RosterSlot.slot_date.asc(), ShiftSwapRequest.id.asc())
+    )
+    today = _utc_today()
+    return [
+        unresolved_shift_swap_to_read(
+            row,
+            slot,
+            today=today,
+            eligible_member_ids=eligible_member_ids_for_request(db, row),
+        )
+        for row, slot in db.execute(stmt).all()
+    ]
 
 
 def create_shift_swap(

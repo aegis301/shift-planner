@@ -61,6 +61,16 @@ export type ShiftSwapApplyRead = {
   plan_version: { id: number; trigger: string } | null;
 };
 
+export type ShiftSwapUnresolvedRead = ShiftSwapRequestRead & {
+  duty_date: string;
+  days_until_duty: number;
+  request_age_days: number;
+};
+
+export const SWAP_APPROVAL_QUEUE_STATUSES = ["claimed", "accepted", "approved"] as const;
+
+export type SwapDutyUrgency = "overdue" | "soon" | "week" | "later";
+
 export type SwapRosterMember = {
   id: number;
   first_name: string;
@@ -250,6 +260,45 @@ export function memberPlanningHref(periodId: string | null, shiftGroupId: string
   return query ? `/my-planning?${query}` : "/my-planning";
 }
 
+export function swapDutyUrgency(daysUntilDuty: number): SwapDutyUrgency {
+  if (daysUntilDuty <= 0) {
+    return "overdue";
+  }
+  if (daysUntilDuty <= 2) {
+    return "soon";
+  }
+  if (daysUntilDuty <= 7) {
+    return "week";
+  }
+  return "later";
+}
+
+export function swapDutyUrgencyClassName(urgency: SwapDutyUrgency): string {
+  if (urgency === "overdue") {
+    return "ring-2 ring-rose-400 bg-rose-50";
+  }
+  if (urgency === "soon") {
+    return "ring-2 ring-amber-300 bg-amber-50";
+  }
+  if (urgency === "week") {
+    return "ring-1 ring-amber-200 bg-white";
+  }
+  return "ring-1 ring-slate-200 bg-white";
+}
+
+export function swapDutyUrgencyLabelKey(urgency: SwapDutyUrgency): TranslationKey {
+  if (urgency === "overdue") {
+    return "shiftSwapUrgencyOverdue";
+  }
+  if (urgency === "soon") {
+    return "shiftSwapUrgencySoon";
+  }
+  if (urgency === "week") {
+    return "shiftSwapUrgencyWeek";
+  }
+  return "shiftSwapUrgencyLater";
+}
+
 export function swapMemberName(roster: SwapRosterSlice | null | undefined, memberId: number | null): string {
   if (memberId == null) {
     return "—";
@@ -335,17 +384,23 @@ export function shiftSwapErrorText(locale: Locale, error: unknown): string {
   return error.message;
 }
 
-function swapQuery(planningPeriodId: string, shiftGroupId: string, extra?: Record<string, string | undefined>): string {
+function swapQuery(
+  planningPeriodId: string,
+  shiftGroupId: string,
+  extra?: { status?: string; statuses?: readonly string[]; kind?: string }
+): string {
   const params = new URLSearchParams({
     planning_period_id: planningPeriodId,
     shift_group_id: shiftGroupId
   });
-  if (extra) {
-    for (const [key, value] of Object.entries(extra)) {
-      if (value) {
-        params.set(key, value);
-      }
-    }
+  if (extra?.status) {
+    params.set("status", extra.status);
+  }
+  if (extra?.kind) {
+    params.set("kind", extra.kind);
+  }
+  for (const status of extra?.statuses ?? []) {
+    params.append("statuses", status);
   }
   return params.toString();
 }
@@ -353,10 +408,19 @@ function swapQuery(planningPeriodId: string, shiftGroupId: string, extra?: Recor
 export function listShiftSwaps(
   planningPeriodId: string,
   shiftGroupId: string,
-  extra?: { status?: string; kind?: string }
+  extra?: { status?: string; statuses?: readonly string[]; kind?: string }
 ): Promise<ShiftSwapRequestRead[]> {
   return apiFetch<ShiftSwapRequestRead[]>(
     `/api/v1/shift-swaps?${swapQuery(planningPeriodId, shiftGroupId, extra)}`
+  );
+}
+
+export function listUnresolvedShiftSwaps(
+  planningPeriodId: string,
+  shiftGroupId: string
+): Promise<ShiftSwapUnresolvedRead[]> {
+  return apiFetch<ShiftSwapUnresolvedRead[]>(
+    `/api/v1/shift-swaps/unresolved?${swapQuery(planningPeriodId, shiftGroupId)}`
   );
 }
 

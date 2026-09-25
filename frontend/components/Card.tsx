@@ -1,5 +1,9 @@
-export function Card({ children }: { children: React.ReactNode }) {
-  return <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft">{children}</section>;
+export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <section className={`min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-soft ${className ?? ""}`}>
+      {children}
+    </section>
+  );
 }
 
 export function Field({

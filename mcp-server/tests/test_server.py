@@ -47,6 +47,7 @@ from mcp_app.server import (
     reject_shift_swap_tool,
     apply_shift_swap_tool,
     shift_swaps_resource,
+    unresolved_shift_swaps_resource,
 )
 
 
@@ -353,6 +354,7 @@ def test_apply_solver_run_tool_uses_apply_service(monkeypatch):
 
 def test_shift_swaps_resource_is_registered():
     assert shift_swaps_resource.__name__ == "shift_swaps_resource"
+    assert unresolved_shift_swaps_resource.__name__ == "unresolved_shift_swaps_resource"
 
 
 def test_shift_swap_tools_require_token():

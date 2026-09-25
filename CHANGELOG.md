@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-25
+- **Planner unresolved swap pool:** Planners see `open` giveaways and unanswered `targeted` proposals for the selected month and shift group on the Analysis tab, sorted by duty date with days-until-duty, request age, and urgency from how soon the duty falls. Withdraw reuses the existing transition (`allow_planner` on REST). `GET /api/v1/shift-swaps/unresolved` and MCP `shift-planner://shift-swaps/{period}/shift-group/{group}/unresolved` return the same set; the approval queue lists `claimed` / `accepted` / `approved` through a service `statuses` filter.
+
 ## 2026-09-23
 - **Swap UI states:** The marketplace, offer buttons, and approval queue say why they are blocked instead of disappearing. A missing shift group, an account that is not linked to a team member, and a plan still in draft each get one sentence that names the fix. Draft duties keep a disabled offer button; past duties stay hidden. An empty approval queue is distinct from “select a month and shift group.” Planners who are also team members get a link from the Analysis queue to My planning.
 
