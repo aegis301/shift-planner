@@ -2276,6 +2276,12 @@ class ShiftSwapRequestRead(BaseModel):
     updated_at: datetime
 
 
+class ShiftSwapUnresolvedRead(ShiftSwapRequestRead):
+    duty_date: date_type
+    days_until_duty: int
+    request_age_days: int
+
+
 class ShiftSwapApplyRead(BaseModel):
     request: ShiftSwapRequestRead
     assignments: list[RosterSlotAssignmentRead]
