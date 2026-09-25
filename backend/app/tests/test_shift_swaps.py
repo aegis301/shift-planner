@@ -533,3 +533,167 @@ def _seed_published_month(
     if publish:
         assert client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id=1").status_code == 200
     return period_id, offered, other, template["id"]
+
+
+def _seed_cross_group_month(client: TestClient, *, ids: dict[str, int]) -> tuple[int, dict, dict]:
+    """Bob is in shift groups 1 and 2. Group 2 holds a 24 h duty from 08:00 on the 1st to
+    08:00 on the 2nd; group 1 holds a 14:00 duty on the 2nd that Alice gives away."""
+    login_admin(client)
+    gen = app.dependency_overrides[get_db]()
+    db = next(gen)
+    try:
+        group_b = ShiftGroup(organization_id=1, code="sg2", name="SG B", display_order=1)
+        db.add(group_b)
+        db.flush()
+        db.add(
+            TeamMemberShiftGroup(
+                team_member_id=ids["bob"],
+                shift_group_id=group_b.id,
+                start_date=date(2000, 1, 1),
+            )
+        )
+        db.commit()
+        group_b_id = group_b.id
+    finally:
+        db.close()
+    _activate_min_rest(client)
+    late = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "XGA", "name": "Late A", "category": "bereitschaftsdienst"},
+    ).json()
+    assert (
+        client.post(
+            f"/api/v1/shift-templates/{late['id']}/variants",
+            json={
+                "label": "Spät",
+                "start_day_class": "any",
+                "starts_at": "14:00:00",
+                "ends_at": "22:00:00",
+                "required_count": 1,
+            },
+        ).status_code
+        == 200
+    )
+    long_duty = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "XGB", "name": "24h B", "category": "bereitschaftsdienst"},
+    ).json()
+    assert (
+        client.post(
+            f"/api/v1/shift-templates/{long_duty['id']}/variants",
+            json={
+                "label": "24h",
+                "start_day_class": "any",
+                "starts_at": "08:00:00",
+                "ends_at": "08:00:00",
+                "required_count": 1,
+            },
+        ).status_code
+        == 200
+    )
+    for group_id, template_id in ((1, late["id"]), (group_b_id, long_duty["id"])):
+        linked = client.put(
+            f"/api/v1/shift-groups/{group_id}/shift-templates",
+            json={"shift_template_ids": [template_id]},
+        )
+        assert linked.status_code == 200, linked.text
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2027, "month": 12}).json()["id"]
+    slots_a = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()["slots"]
+    slots_b = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={group_b_id}").json()["slots"]
+    offered = next(slot for slot in slots_a if slot["slot_date"] == "2027-12-02")
+    long_slot = next(slot for slot in slots_b if slot["slot_date"] == "2027-12-01")
+    assigned = client.put(
+        "/api/v1/roster-matrix/assignments?shift_group_id=1",
+        json={"roster_slot_id": offered["id"], "team_member_id": ids["alice"]},
+    )
+    assert assigned.status_code == 200, assigned.text
+    published = client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id=1")
+    assert published.status_code == 200, published.text
+    return period_id, offered, {**long_slot, "shift_group_id": group_b_id}
+
+
+def _activate_min_rest(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/work-time-rule-sets",
+        json={
+            "name": "swap-min-rest",
+            "is_active": True,
+            "rules": [
+                {
+                    "type": "min_rest_period",
+                    "severity": "error",
+                    "hours": "11",
+                    "reducible_to_hours": "10",
+                    "compensation_window_days": 31,
+                    "call_out_handling": "interrupt",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 201, response.text
+
+
+def _assign_long_duty(client: TestClient, long_slot: dict, member_id: int) -> None:
+    login_admin(client)
+    response = client.put(
+        f"/api/v1/roster-matrix/assignments?shift_group_id={long_slot['shift_group_id']}",
+        json={"roster_slot_id": long_slot["id"], "team_member_id": member_id},
+    )
+    assert response.status_code == 200, response.text
+
+
+def _open_giveaway(client: TestClient, period_id: int, offered: dict) -> dict:
+    login_as(client, "alice@example.com", "alicesecret")
+    created = client.post(
+        "/api/v1/shift-swaps",
+        json={
+            "planning_period_id": period_id,
+            "shift_group_id": 1,
+            "kind": "giveaway",
+            "offered_slot_id": offered["id"],
+            "open_immediately": True,
+        },
+    )
+    assert created.status_code == 200, created.text
+    return created.json()
+
+
+def _assert_min_rest_refusal(response) -> None:
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "SHIFT_SWAP_ILLEGAL"
+    assert any(item["code"] == "WORKTIME_MIN_REST" for item in detail["findings"])
+
+
+def test_duty_in_other_group_blocks_claim_and_eligibility(swap_client: TestClient):
+    ids = _ids(swap_client)
+    period_id, offered, long_slot = _seed_cross_group_month(swap_client, ids=ids)
+    _assign_long_duty(swap_client, long_slot, ids["bob"])
+    created = _open_giveaway(swap_client, period_id, offered)
+    assert ids["bob"] not in created["eligible_member_ids"]
+    assert ids["dana"] in created["eligible_member_ids"]
+    listed = swap_client.get(
+        f"/api/v1/shift-swaps/eligible-members?roster_slot_id={offered['id']}&shift_group_id=1"
+    )
+    assert listed.status_code == 200, listed.text
+    assert ids["bob"] not in listed.json()
+    login_as(swap_client, "bob@example.com", "bobsecret")
+    _assert_min_rest_refusal(swap_client.post(f"/api/v1/shift-swaps/{created['id']}/claim"))
+
+
+def test_duty_in_other_group_blocks_apply(swap_client: TestClient):
+    ids = _ids(swap_client)
+    period_id, offered, long_slot = _seed_cross_group_month(swap_client, ids=ids)
+    created = _open_giveaway(swap_client, period_id, offered)
+    assert ids["bob"] in created["eligible_member_ids"]
+    login_as(swap_client, "bob@example.com", "bobsecret")
+    claimed = swap_client.post(f"/api/v1/shift-swaps/{created['id']}/claim")
+    assert claimed.status_code == 200, claimed.text
+    login_admin(swap_client)
+    approved = swap_client.post(f"/api/v1/shift-swaps/{created['id']}/approve")
+    assert approved.status_code == 200, approved.text
+    _assign_long_duty(swap_client, long_slot, ids["bob"])
+    _assert_min_rest_refusal(swap_client.post(f"/api/v1/shift-swaps/{created['id']}/apply"))
+    matrix = swap_client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()
+    holder = next(row for row in matrix["assignments"] if row["roster_slot_id"] == offered["id"])
+    assert holder["team_member_id"] == ids["alice"]

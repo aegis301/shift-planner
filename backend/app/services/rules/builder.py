@@ -181,6 +181,7 @@ def _load_slots(
     load_start: date,
     load_end: date,
     template_ids: set[int] | None,
+    extra_slot_ids: set[int] | None = None,
 ) -> list[RosterSlot]:
     stmt = (
         select(RosterSlot)
@@ -194,7 +195,10 @@ def _load_slots(
         .order_by(RosterSlot.slot_date, RosterSlot.position, RosterSlot.id)
     )
     if template_ids is not None:
-        stmt = stmt.where(RosterSlot.shift_template_id.in_(template_ids))
+        in_scope = RosterSlot.shift_template_id.in_(template_ids)
+        if extra_slot_ids:
+            in_scope = or_(in_scope, RosterSlot.id.in_(extra_slot_ids))
+        stmt = stmt.where(in_scope)
     return list(db.scalars(stmt).unique())
 
 
@@ -205,6 +209,7 @@ def _load_assignments(
     load_start: date,
     load_end: date,
     template_ids: set[int] | None,
+    team_member_ids: set[int] | None = None,
 ) -> list[RosterSlotAssignment]:
     stmt = (
         select(RosterSlotAssignment)
@@ -223,7 +228,10 @@ def _load_assignments(
         .order_by(RosterSlotAssignment.id)
     )
     if template_ids is not None:
-        stmt = stmt.where(RosterSlot.shift_template_id.in_(template_ids))
+        in_scope = RosterSlot.shift_template_id.in_(template_ids)
+        if team_member_ids:
+            in_scope = or_(in_scope, RosterSlotAssignment.team_member_id.in_(team_member_ids))
+        stmt = stmt.where(in_scope)
     return list(db.scalars(stmt).unique())
 
 
@@ -420,7 +428,15 @@ def build_plan_state(
     end_date: date,
     shift_group_id: int | None = None,
     history_start: date | None = None,
+    member_duties_org_wide: bool = False,
 ) -> PlanState:
+    """Load the rule inputs for a date window.
+
+    ``shift_group_id`` narrows members, slots and assignments to one group. With
+    ``member_duties_org_wide`` the group still narrows members and the group's own slots, but
+    every assignment of an in-scope member is loaded whatever its group, so rest and daily
+    limits see duties the member holds in other groups (a member can belong to several groups).
+    """
     if end_date < start_date:
         return empty_indexed_state(
             organization_id=organization_id,
@@ -457,19 +473,24 @@ def build_plan_state(
         load_history_roster=requested_history_start is not None,
     )
     template_ids = _template_ids_for_group(db, shift_group_id)
-    slots = _load_slots(
-        db,
-        organization_id=organization_id,
-        load_start=load_start,
-        load_end=load_end,
-        template_ids=template_ids,
-    )
+    member_ids = {member.id for member in members}
     assignments = _load_assignments(
         db,
         organization_id=organization_id,
         load_start=load_start,
         load_end=load_end,
         template_ids=template_ids,
+        team_member_ids=member_ids if member_duties_org_wide else None,
+    )
+    slots = _load_slots(
+        db,
+        organization_id=organization_id,
+        load_start=load_start,
+        load_end=load_end,
+        template_ids=template_ids,
+        extra_slot_ids=(
+            {row.roster_slot_id for row in assignments} if member_duties_org_wide else None
+        ),
     )
     cells = _load_cells(
         db,
@@ -486,7 +507,6 @@ def build_plan_state(
         shift_group_id=shift_group_id,
     )
     day_statuses = _load_day_statuses(db, organization_id=organization_id)
-    member_ids = {member.id for member in members}
     patterns = _load_patterns(db, organization_id=organization_id, team_member_ids=member_ids)
     property_values = _load_property_values(
         db, organization_id=organization_id, team_member_ids=member_ids

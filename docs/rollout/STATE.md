@@ -15,7 +15,7 @@ Companion documents:
   prompt. `created-issues.json` maps file prefix to GitHub issue number.
 - `docs/rollout/solver-spike-findings.md` — the CP-SAT spike. Issue #75 is built on it.
 
-Last updated: 2026-09-23.
+Last updated: 2026-09-25.
 
 ## What this rollout is
 
@@ -45,8 +45,8 @@ Two things carry the whole design:
 
 `main` carries R1, R2, the solver fixture, the CP-SAT spike findings, SolverRun persistence,
 the CP-SAT roster model (tier A), solver controls in `/planning`, shift swap requests, the
-swap marketplace UI, and swap UI states that name why an offer or the approval queue is
-unavailable. This change lands **#99**.
+swap marketplace UI, swap UI states that name why an offer or the approval queue is
+unavailable, and swap legality that sees a member's duties in other shift groups.
 
 Shipped:
 
@@ -65,6 +65,7 @@ Shipped:
 - Shift swap and giveaway requests with legality checks (`#77`)
 - Swap marketplace UI and planner approval queue (`#78`)
 - Swap UI states that explain a missing group, an unlinked account, a draft plan, and an empty approval queue (`#99`)
+- Swap legality and claimant eligibility load in-scope members' duties from every shift group, so rest and daily limits are not bypassed across groups
 
 In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 
@@ -78,7 +79,8 @@ In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long
 | 4 | #76 | Solver controls in the planning workspace and MCP | shipped |
 | 5 | #77 | Shift swap and giveaway requests with legality checks | shipped |
 | 6 | #78 | Swap marketplace UI and planner approval queue | shipped |
-| 7 | #99 | Swap UI states that explain why the exchange is unavailable | this change |
+| 7 | #99 | Swap UI states that explain why the exchange is unavailable | shipped |
+| 8 | *(fix)* | Swap legality sees duties in other shift groups | this change |
 
 Backlog, not part of the rollout: #34, #44, #51, #52, #53, #54.
 

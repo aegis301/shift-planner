@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-25
+- **Swaps see duties in other shift groups:** Swap legality and claim eligibility built a `PlanState` scoped to the swap's shift group, which also dropped the incoming member's assignments in their other groups. A 24 h duty in group B ending 08:00 therefore did not stop a claim of a 14:00 giveaway in group A the same day, and apply (which skips assignment preflight) wrote it. `build_plan_state` takes `member_duties_org_wide`; swaps use it so rest, daily and consecutive-day rules see every duty of an in-scope member, as assignment preflight already did. The claimant list now also leaves out members whose claim would be refused with an `error` finding. Fairness, compliance report, dashboard, validation and solver keep group-scoped assignments.
+
 ## 2026-09-23
 - **Swap UI states:** The marketplace, offer buttons, and approval queue say why they are blocked instead of disappearing. A missing shift group, an account that is not linked to a team member, and a plan still in draft each get one sentence that names the fix. Draft duties keep a disabled offer button; past duties stay hidden. An empty approval queue is distinct from “select a month and shift group.” Planners who are also team members get a link from the Analysis queue to My planning.
 
