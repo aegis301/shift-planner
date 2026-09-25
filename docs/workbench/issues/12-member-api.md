@@ -44,7 +44,7 @@ services**. It adds no new rule logic.
 
 | Route | Returns | Built from |
 |---|---|---|
-| `GET /me/home` | next 5 duties, open swap actions needing me (claims to answer, targeted requests), the next period in `draft` with its wishes deadline if the org has one, unread counts placeholder for #101 | dashboard service, `shift_swaps` |
+| `GET /me/home` | next 5 duties, open swap actions needing me (claims to answer, targeted requests), the next period in `draft` with its wishes deadline if the org has one, and the unread notification count from #101's notification service (omit the field if #101 has not landed) | dashboard service, `shift_swaps` |
 | `GET /me/duties?from=&to=` | my assigned slots in the window: slot facts (template, variant, times as instants with offset, `slot_date`, category), shift group, plan status of that group and period, open swap request on it, whether duty activity can be recorded and whether an episode is running | roster assignments, `shift_swaps`, `duty_activity` |
 | `GET /me/wishes/{planning_period_id}?shift_group_id=` | my day cells, my intents, my month note, day status definitions, templates of the group, and `editable` with a reason | `matrix` services |
 | `PUT /me/wishes/{planning_period_id}/cells` (bulk) and `PUT /me/wishes/{planning_period_id}/intents` (bulk) and `PUT /me/wishes/{planning_period_id}/note` | same writes as the planner matrix, restricted to me | `matrix` services |
@@ -83,7 +83,10 @@ reason.
 
 ## Out of scope
 
-- Notifications (#101, #125).
+- Notifications (#101, #125). #101 (design in `docs/rollout/swap-notifications-design.md`,
+  PR #127) owns the notification REST surface: list own notifications, unread count, mark read,
+  dismiss, own preferences. Do not duplicate those routes under `/me`. If they live elsewhere,
+  the app calls them directly; `/me/home` only reads the unread count through #101's service.
 - Idempotent duty activity creation (#123).
 - Removing `team_member_portal=true` from the planner routes.
 

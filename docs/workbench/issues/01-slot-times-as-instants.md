@@ -141,6 +141,12 @@ Effects today:
 
 None. Blocks #123. Should land before #117 so the grid never renders fake-UTC times.
 
+Also unblocks #101: the swap notification design (`docs/rollout/swap-notifications-design.md`,
+PR #127) needs an organization time zone for its expiry-warning window, digest time and expiry
+sweep, and notes that the repository has none. `Organization.timezone` from this issue is that
+setting. If #101 is implemented first with a hard-coded `Europe/Berlin`, switch it to
+`Organization.timezone` here and list the call sites in the PR.
+
 ## Implementation prompt
 
 ```text

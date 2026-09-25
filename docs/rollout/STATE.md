@@ -111,7 +111,7 @@ dependencies are in the ADR's **Work plan** table.
 | #122 | Expo member app scaffold | open |
 | #123 | Offline duty activity capture | open |
 | #124 | Member app: wishes, swaps, hours, calendar | open |
-| #125 | Push delivery (needs #101 implemented) | open |
+| #125 | Push as a channel of #101's notifications (design: PR #127; needs #101 implemented) | open |
 
 #109, #110, #111, #116 and #119 have no dependencies and can start in parallel.
 

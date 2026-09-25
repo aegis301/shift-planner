@@ -87,7 +87,11 @@ Business logic lives in `backend/app/services/device_sessions.py`. Route handler
 
 ## Out of scope
 
-- Per-user MCP authentication (follow-up; name it in the PR).
+- Per-user MCP authentication (follow-up; name it in the PR). The swap notification design
+  (#101, `docs/rollout/swap-notifications-design.md`) lists "MCP has no membership identity" as the
+  blocker for recipient-scoped notification reads over MCP. Device sessions from this issue are the
+  intended basis for that follow-up, so keep `services/device_sessions.py` free of cookie or HTTP
+  assumptions that would stop an MCP personal access token from reusing it.
 - OAuth or SSO providers.
 - Push token registration (#125).
 - Any change to how the web frontend authenticates.

@@ -87,7 +87,8 @@ At the same time, the member side has needs a web page serves poorly: push notif
      built on the existing services.
    - Roster change sets: bulk assignment writes that are evaluated once, reported per row, and
      revertible. They back paste and undo in the grid.
-   - Push delivery for notifications, on top of the notification design from #101.
+   - Push delivery for notifications as one more channel of #101's notification system
+     (design brief in `docs/rollout/swap-notifications-design.md`, PR #127), not a parallel design.
    - Idempotent duty activity creation so an offline queue can retry safely.
 
 6. **Time is stored as real instants.** Roster slot start and end times are stored as absolute
@@ -153,6 +154,6 @@ Issue specs live in `docs/workbench/issues/`. GitHub numbers are recorded in
 | #122 | `14-expo-member-app-scaffold.md` | Expo app: sign-in, my duties, i18n, CI | #119, #120, #121 |
 | #123 | `15-offline-duty-activity-capture.md` | Idempotent duty activity API, offline queue in the app | #109, #122 |
 | #124 | `16-member-app-wishes-swaps.md` | Wishes, swaps, hours and calendar in the app | #122 |
-| #125 | `17-push-delivery.md` | Push tokens and delivery for notifications | #101, #119, #122 |
+| #125 | `17-push-delivery.md` | Push as a delivery channel of #101's notification system, app inbox | #101, #109, #119, #122 |
 
 #116, #119 and #120 are backend-first and #109 is mostly backend. All four can run in parallel with the frontend track (#110 to #115).

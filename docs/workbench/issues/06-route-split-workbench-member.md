@@ -84,6 +84,11 @@ frontend/app/
    switch, narrow notice at 1000 px wide, redirect of member-only users from `/` to `/my`.
 8. Update `AGENTS.md` sections that name `/my-planning` tabs, the dashboard, and the `variant`
    note in **Style → Frontend surfaces** (remove the "until then" caveat).
+9. Notifications (#101, design in `docs/rollout/swap-notifications-design.md`, PR #127): the
+   design puts the unread marker and inbox into `AppShell`. If #101 has landed, move the marker
+   into **both** new shells (workbench top bar, member top bar or tab bar) and keep the inbox
+   reachable from each. If #101 has not landed, leave a clearly named slot in both shells so #101
+   does not have to target the retired `AppShell`.
 
 ## Out of scope
 
@@ -102,6 +107,7 @@ frontend/app/
 - [ ] Member-only user lands on `/my` after login and is redirected there from `/`.
 - [ ] Dual-role user can switch between workbench and member area from the user menu in both
       shells.
+- [ ] The notification unread marker (or its slot, if #101 has not landed) exists in both shells.
 - [ ] Workbench below 1024 px shows the narrow notice. Member area at 390 px has the bottom tab bar
       and no horizontal scroll (Playwright asserts `document.documentElement.scrollWidth <= 390`).
 - [ ] Golden screenshots: workbench baselines change only in the shell chrome; member baselines
