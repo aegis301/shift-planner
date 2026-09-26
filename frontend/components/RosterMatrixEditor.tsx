@@ -13,6 +13,9 @@ import {
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { sessionTimeZone } from "@/lib/orgTime";
+import { formatShiftTimeRange } from "@/lib/shiftDisplay";
+import { useSession } from "@/components/LocaleProvider";
 import {
   planningDayStatusBadgeClass,
   planningDayStatusByCode,
@@ -165,32 +168,8 @@ function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): 
   );
 }
 
-function formatTimeRange(slot: RosterSlot) {
-  if (!slot.starts_at || !slot.ends_at) {
-    return "";
-  }
-  const parseDateAndTime = (value: string): { date: string; time: string } | null => {
-    const match = value.match(/(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
-    if (!match) {
-      return null;
-    }
-    return { date: match[1], time: match[2] };
-  };
-
-  const startParts = parseDateAndTime(slot.starts_at);
-  const endParts = parseDateAndTime(slot.ends_at);
-
-  if (startParts && endParts) {
-    const nextDay = startParts.date !== endParts.date ? " +1" : "";
-    return `${startParts.time}-${endParts.time}${nextDay}`;
-  }
-
-  const start = new Date(slot.starts_at);
-  const end = new Date(slot.ends_at);
-  const startText = start.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  const endText = end.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-  const nextDay = start.toDateString() !== end.toDateString() ? " +1" : "";
-  return `${startText}-${endText}${nextDay}`;
+function formatTimeRange(slot: RosterSlot, timeZone: string) {
+  return formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone);
 }
 
 function dayClassPillClass(dayClass: string | null): string {
@@ -978,12 +957,14 @@ function MobileRosterMatrix({
 }
 
 function SlotHeader({ slot, locale }: { slot: RosterSlot; locale: Locale }) {
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const label = slot.template_name;
   return (
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <p className="text-sm font-semibold text-slate-800">{label || slot.label || t(locale, "generatedSlots")}</p>
-        <p className="text-xs text-slate-500">{formatTimeRange(slot)}{slot.variant_label ? ` · ${slot.variant_label}` : ""}</p>
+        <p className="text-xs text-slate-500">{formatTimeRange(slot, timeZone)}{slot.variant_label ? ` · ${slot.variant_label}` : ""}</p>
       </div>
       {slot.day_class ? (
         <DayClassPill dayClass={slot.day_class} locale={locale} />
@@ -1040,6 +1021,8 @@ function RosterCell({
   const menuRef = useRef<HTMLDivElement>(null);
   const workloadDialogTitleId = useId();
   const templateId = slot.shift_template_id;
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
 
   const workloadModalRow =
     workloadModalMemberId != null
@@ -1047,8 +1030,8 @@ function RosterCell({
       : null;
 
   const relevantDimension = useMemo(
-    () => (fairnessAccounts ? relevantFairnessDimension(slot, fairnessAccounts.dimensions) : undefined),
-    [fairnessAccounts, slot]
+    () => (fairnessAccounts ? relevantFairnessDimension(slot, fairnessAccounts.dimensions, timeZone) : undefined),
+    [fairnessAccounts, slot, timeZone]
   );
 
   const fairnessWindowLabel = fairnessAccounts ? formatFairnessWindowRange(fairnessAccounts.window) : "";
@@ -1090,7 +1073,7 @@ function RosterCell({
     return map;
   }, [workloadMatrix.assignments, workloadMatrix.slots, slot.shift_template_id, slot.category]);
 
-  const overlapDays = useMemo(() => overlapCalendarDaysForSlot(slot), [slot]);
+  const overlapDays = useMemo(() => overlapCalendarDaysForSlot(slot, timeZone), [slot, timeZone]);
   const memberHasBlockingOverlap = useCallback(
     (member: RosterMatrixTeamMember) => {
       for (const day of overlapDays) {

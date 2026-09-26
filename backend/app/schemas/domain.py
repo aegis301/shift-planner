@@ -77,6 +77,7 @@ class UserRead(BaseModel):
     organization_shift_groups: list[UserShiftGroupBrief] = Field(default_factory=list)
     capabilities: UserCapabilities
     memberships: list[MembershipSummary] = Field(default_factory=list)
+    organization_timezone: str = "Europe/Berlin"
 
 
 class AccountSessionRead(BaseModel):
@@ -210,6 +211,7 @@ class RegisterJoinOrganizationInput(BaseModel):
 class OrganizationUpdateInput(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     organization_slug: str | None = Field(default=None, min_length=3, max_length=64)
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class OrganizationReadForAdmin(BaseModel):
@@ -219,6 +221,7 @@ class OrganizationReadForAdmin(BaseModel):
     name: str
     slug: str
     plan_tier: str
+    timezone: str = "Europe/Berlin"
 
 
 class OrganizationUserRead(BaseModel):

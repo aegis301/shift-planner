@@ -21,6 +21,8 @@ from app.models.base import Base
 from app.schemas import DutyActivityCreate
 from app.services.duty_activity import record_duty_activity
 from app.services.ics_export import _resolve_event_times
+from app.services.org_time import validate_timezone
+from app.services.organizations import update_organization_settings
 from app.services.rules.builder import _is_night_duty
 from app.services.shift_swaps import _slot_is_night_duty
 from app.services.shift_templates import generate_slots_for_month
@@ -87,7 +89,6 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_summer_slot_stores_berlin_instant(org_db):
     db = org_db
     _overnight_template(db, starts=time(8, 0), ends=time(8, 0), end_day_offset=1)
@@ -97,7 +98,6 @@ def test_summer_slot_stores_berlin_instant(org_db):
     assert _as_utc(slot.ends_at) == datetime(2026, 7, 2, 6, 0, tzinfo=UTC)
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_october_dst_fallback_duty_has_25_statutory_hours(org_db):
     db = org_db
     _overnight_template(db, starts=time(8, 0), ends=time(8, 0), end_day_offset=1)
@@ -113,7 +113,6 @@ def test_october_dst_fallback_duty_has_25_statutory_hours(org_db):
     assert minutes == 25 * 60
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_march_dst_spring_forward_duty_has_23_statutory_hours(org_db):
     db = org_db
     _overnight_template(db, starts=time(8, 0), ends=time(8, 0), end_day_offset=1)
@@ -151,7 +150,6 @@ class SimpleTemplate:
         self.valuation_override = None
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_duty_activity_at_local_0830_fits_0800_slot(org_db):
     db = org_db
     _overnight_template(db, starts=time(8, 0), ends=time(16, 0), end_day_offset=0)
@@ -242,7 +240,6 @@ def test_night_duty_21_to_07_summer_and_winter():
     assert _is_night_duty(winter.slot_date, winter.starts_at, winter.ends_at) is True
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_evening_21_local_is_night_when_stored_as_utc_instant():
     summer = RosterSlot(
         slot_date=date(2026, 7, 1),
@@ -260,7 +257,6 @@ def test_evening_21_local_is_night_when_stored_as_utc_instant():
     assert _is_night_duty(winter.slot_date, winter.starts_at, winter.ends_at) is True
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_early_morning_local_is_not_night():
     winter = RosterSlot(
         slot_date=date(2026, 1, 15),
@@ -271,7 +267,6 @@ def test_early_morning_local_is_not_night():
     assert _is_night_duty(winter.slot_date, winter.starts_at, winter.ends_at) is False
 
 
-@pytest.mark.xfail(reason="slot times are wall-clock values labelled as UTC", strict=True)
 def test_ics_resolve_uses_real_instant_for_generated_slot(org_db):
     db = org_db
     _overnight_template(db, starts=time(8, 0), ends=time(8, 0), end_day_offset=1)
@@ -288,3 +283,20 @@ def test_ics_resolve_uses_real_instant_for_generated_slot(org_db):
     assert start is not None and end is not None
     assert _as_utc(start) == datetime(2026, 7, 1, 6, 0, tzinfo=UTC)
     assert _as_utc(end) == datetime(2026, 7, 2, 6, 0, tzinfo=UTC)
+
+
+def test_timezone_defaults_and_rejects_unknown_zones(org_db):
+    org = org_db.get(Organization, 1)
+    assert org.timezone == "Europe/Berlin"
+    with pytest.raises(ValueError, match="Unknown time zone"):
+        validate_timezone("Mars/Phobos")
+    updated = update_organization_settings(
+        org_db,
+        org,
+        name=None,
+        organization_slug=None,
+        timezone="America/New_York",
+        actor="test",
+        source="test",
+    )
+    assert updated.timezone == "America/New_York"

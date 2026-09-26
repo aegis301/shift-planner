@@ -524,6 +524,8 @@ def test_no_existing_module_imports_rules_package():
             continue
         if posix.endswith("/tests/test_duty_activity.py"):
             continue
+        if posix.endswith("/tests/test_org_time.py"):
+            continue
         if posix.endswith("/services/compliance_report.py") or posix.endswith("/tests/test_compliance_report.py"):
             continue
         if posix.endswith("/services/fairness.py") or posix.endswith("/tests/test_fairness.py"):

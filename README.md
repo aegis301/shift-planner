@@ -147,6 +147,8 @@ When an organization has an active **work-time rule set**, month validation and 
 
 **Working-time consents** (`GET|POST /api/v1/team-members/{id}/work-time-consents`, `POST .../{consent_id}/revoke`) store immutable opt-out records (`tier`, `valid_from`, document reference, recording admin, `revoked_at`, `notice_period_months`, derived `effective_until`). Admin writes; the linked team member may read. Revocation scans future published plan versions and returns findings without changing those plans. Admin UI: staff-directory row detail. Read-only card on `/profile`. MCP: `shift-planner://team-members/{id}/work-time-consents`, `record_work_time_consent_tool`, `revoke_work_time_consent_tool`.
 
+Roster slot `starts_at` / `ends_at` are UTC instants of the variant's wall-clock times on `slot_date` in `organizations.timezone` (IANA, default `Europe/Berlin`). Admins set the zone on **Team** → organization settings (`GET|PATCH /api/v1/organization`); `GET /api/v1/auth/me` returns `organization_timezone` for user sessions; MCP reads `shift-planner://organization` and updates it with `update_organization_settings_tool`. The UI formats those instants in the organization zone, so a Berlin shift reads the same in a Berlin browser and a New York browser. A 24 h wall-clock duty that contains the autumn clock change counts as 25 statutory hours, and one that contains the spring change counts as 23. Alembic `202609260001` adds the column and reinterprets existing roster, plan-version, and `source=roster` time-entry bounds; duty-activity and manual rows stay as stored.
+
 The final roster matrix has one row per day and shows only the concrete shift slots generated for that date. Each roster cell assigns a team member to that date/slot, and changes autosave. The team member picker shows a color dot for that person’s day-level wishes status and labels for wish/no-go on the slot’s template. Day-level unavailable statuses, template no-gos (unless Manual override is checked on the cell), and template/variant constraints are highlighted as conflicts.
 
 The frontend no longer has standalone `/requests`, `/roster`, `/validation`, or `/exports/print` pages. Validation remains available through `GET /api/v1/validation/{planning_period_id}` and the MCP tool `get_validation_warnings` (both call `validate_roster`), and `/planning` uses it for inline conflict summaries.
@@ -207,6 +209,8 @@ Migration `202609210001` drops leftover doctors-era unique index **`ix_doctors_e
 Migration `202609210002` adds **`solver_runs`** and **`organizations.solver_time_budget_ceiling_seconds`** (default 120).
 
 Migration `202609210003` adds **`organizations.solver_objective_weights`**.
+
+Migration `202609260001` adds **`organizations.timezone`** (default `Europe/Berlin`) and, on Postgres, reinterprets `roster_slots`, `plan_version_roster_slots`, and `time_entries` with `source=roster` from wall-clock-labelled-UTC into real instants in that zone. `duty_activity` and `manual` entries are left unchanged.
 
 Migration `202606080002` adds JSON `constraints` columns on `shift_templates` and `shift_variants`.
 

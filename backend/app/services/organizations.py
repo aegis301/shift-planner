@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models import Organization
 from app.services.audit import record_audit
 from app.services.contract_groups import ensure_default_contract_group
+from app.services.org_time import DEFAULT_TIMEZONE, validate_timezone
 from app.services.planning_day_status_definitions import ensure_default_planning_day_statuses
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -60,6 +61,7 @@ def update_organization_settings(
     organization_slug: str | None,
     actor: str,
     source: str,
+    timezone: str | None = None,
 ) -> Organization:
     details: dict[str, Any] = {}
     if name is not None and name.strip() != organization.name:
@@ -71,6 +73,12 @@ def update_organization_settings(
             assert_organization_slug_available(db, new_slug)
             details["slug"] = {"from": organization.slug, "to": new_slug}
             organization.slug = new_slug
+    if timezone is not None:
+        zone = validate_timezone(timezone)
+        current = organization.timezone or DEFAULT_TIMEZONE
+        if zone != current:
+            details["timezone"] = {"from": current, "to": zone}
+            organization.timezone = zone
     if details:
         record_audit(
             db,

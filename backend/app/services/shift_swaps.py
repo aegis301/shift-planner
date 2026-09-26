@@ -30,6 +30,12 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.fairness import build_fairness_accounts
 from app.services.holidays import classify_day
+from app.services.org_time import (
+    DEFAULT_TIMEZONE,
+    instant_to_local,
+    local_date_of,
+    organization_timezone,
+)
 from app.services.plan_versions import snapshot_swap_apply_plan_version
 from app.services.planning import (
     PLANNING_PERIOD_STATUS_PRELIMINARY,
@@ -398,10 +404,12 @@ def legal_member_ids_for_slot(
     return legal
 
 
-def _slot_is_night_duty(slot: RosterSlot) -> bool:
-    if slot.ends_at is not None and slot.ends_at.date() > slot.slot_date:
+def _slot_is_night_duty(slot: RosterSlot, tz: str = DEFAULT_TIMEZONE) -> bool:
+    if slot.ends_at is not None and local_date_of(slot.ends_at, tz) > slot.slot_date:
         return True
-    return slot.starts_at is not None and slot.starts_at.hour >= NIGHT_AFTER_HOUR
+    if slot.starts_at is None:
+        return False
+    return instant_to_local(slot.starts_at, tz).hour >= NIGHT_AFTER_HOUR
 
 
 def _slot_is_weekend_or_holiday(slot: RosterSlot) -> bool:
@@ -448,8 +456,9 @@ def _dimension_match_score(
 def relevant_fairness_dimension_for_slot(
     slot: RosterSlot,
     dimensions: list[FairnessDimension],
+    tz: str = DEFAULT_TIMEZONE,
 ) -> FairnessDimension | None:
-    night = _slot_is_night_duty(slot)
+    night = _slot_is_night_duty(slot, tz)
     weekend = _slot_is_weekend_or_holiday(slot)
     best: FairnessDimension | None = None
     best_score = 0
@@ -478,8 +487,9 @@ def rank_eligible_member_ids(
     eligible: set[int],
     accounts: FairnessAccountsRead,
     slot: RosterSlot,
+    tz: str = DEFAULT_TIMEZONE,
 ) -> list[int]:
-    dimension = relevant_fairness_dimension_for_slot(slot, list(accounts.dimensions))
+    dimension = relevant_fairness_dimension_for_slot(slot, list(accounts.dimensions), tz)
     if dimension is None:
         return sorted(eligible)
     by_member: dict[int, float] = {}
@@ -526,7 +536,12 @@ def list_eligible_claimants(
             organization_id=organization_id,
             shift_group_id=shift_group_id,
         )
-        return rank_eligible_member_ids(eligible, accounts, slot)
+        return rank_eligible_member_ids(
+            eligible,
+            accounts,
+            slot,
+            organization_timezone(db, organization_id),
+        )
     except Exception:
         return sorted(eligible)
 

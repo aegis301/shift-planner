@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, time, timedelta
 
 from icalendar import Calendar, Event
 from sqlalchemy import select
@@ -18,11 +17,11 @@ from app.models import (
 )
 from app.services.authz import team_member_shift_group_ids
 from app.services.dashboard import _scope_template_and_member_ids
+from app.services.org_time import DEFAULT_TIMEZONE, as_utc, organization_timezone, slot_bounds
 from app.services.planning import get_shift_group_planning_status, is_team_member_roster_visible
 from app.services.shift_groups import require_shift_group
 
 ICS_UID_DOMAIN = "shift-planner.local"
-DEFAULT_TZ = ZoneInfo("Europe/Berlin")
 
 
 @dataclass(frozen=True)
@@ -71,26 +70,24 @@ def _description_lines(
     return "\\n".join(parts)
 
 
-def _combine_date_time(slot_date: date, clock: time, day_offset: int = 0) -> datetime:
-    base = datetime.combine(slot_date, clock, tzinfo=DEFAULT_TZ)
-    if day_offset:
-        base += timedelta(days=day_offset)
-    return base
+def _combine_date_time(slot_date: date, clock: time, day_offset: int = 0, tz: str = DEFAULT_TIMEZONE) -> datetime:
+    return slot_bounds(slot_date, clock, clock, day_offset, tz)[0]
 
 
-def _resolve_event_times(slot: RosterSlot) -> tuple[datetime | None, datetime | None, bool]:
+def _resolve_event_times(
+    slot: RosterSlot, tz: str = DEFAULT_TIMEZONE
+) -> tuple[datetime | None, datetime | None, bool]:
     if slot.starts_at is not None and slot.ends_at is not None:
-        start = slot.starts_at
-        end = slot.ends_at
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=UTC)
-        return start, end, False
+        return as_utc(slot.starts_at), as_utc(slot.ends_at), False
     variant = slot.shift_variant
     if variant is not None:
-        start = _combine_date_time(slot.slot_date, variant.starts_at)
-        end = _combine_date_time(slot.slot_date, variant.ends_at, variant.end_day_offset)
+        start, end = slot_bounds(
+            slot.slot_date,
+            variant.starts_at,
+            variant.ends_at,
+            variant.end_day_offset,
+            tz,
+        )
         return start, end, False
     return None, None, True
 
@@ -101,8 +98,9 @@ def slot_to_calendar_event(
     organization_id: int,
     organization_name: str | None = None,
     shift_group_name: str | None = None,
+    tz: str = DEFAULT_TIMEZONE,
 ) -> ShiftCalendarEvent:
-    starts_at, ends_at, all_day = _resolve_event_times(slot)
+    starts_at, ends_at, all_day = _resolve_event_times(slot, tz)
     template = slot.shift_template
     return ShiftCalendarEvent(
         roster_slot_id=slot.id,
@@ -265,6 +263,7 @@ def list_member_calendar_events(
                 organization_id=organization_id,
                 organization_name=org_name,
                 shift_group_name=group_name,
+                tz=organization_timezone(db, organization_id),
             )
         )
     return events
@@ -339,6 +338,7 @@ def export_single_roster_slot_ics(
         organization_id=organization_id,
         organization_name=org_name,
         shift_group_name=group_name,
+        tz=organization_timezone(db, organization_id),
     )
     return build_ics_calendar([event], calendar_name=calendar_name)
 

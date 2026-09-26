@@ -1,3 +1,5 @@
+import { DEFAULT_ORG_TIMEZONE, localDateKey } from "@/lib/orgTime";
+
 export type PatternWeekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
 type SlotTimeSource = {
@@ -38,13 +40,18 @@ function addDays(isoDate: string, days: number): string {
   return base.toISOString().slice(0, 10);
 }
 
-export function overlapCalendarDaysForSlot(slot: SlotTimeSource): string[] {
+export function overlapCalendarDaysForSlot(
+  slot: SlotTimeSource,
+  timeZone: string = DEFAULT_ORG_TIMEZONE
+): string[] {
   const startDay = slot.slot_date;
   if (!startDay) {
     return [];
   }
   let endDay = startDay;
-  if (slot.starts_at && slot.ends_at) {
+  if (slot.starts_at && slot.ends_at && slot.starts_at.includes("T") && slot.ends_at.includes("T")) {
+    endDay = localDateKey(slot.ends_at, timeZone);
+  } else if (slot.starts_at && slot.ends_at) {
     const offset =
       slot.end_day_offset != null && slot.end_day_offset >= 0
         ? slot.end_day_offset

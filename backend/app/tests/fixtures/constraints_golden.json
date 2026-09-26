@@ -463,8 +463,8 @@
         "weekday": "mon",
         "window_start": "20:00",
         "window_end": "06:00",
-        "slot_starts_at": "2026-06-15T20:00:00",
-        "slot_ends_at": "2026-06-16T06:00:00",
+        "slot_starts_at": "2026-06-15T20:00:00+00:00",
+        "slot_ends_at": "2026-06-16T06:00:00+00:00",
         "anchor": "any_overlap_day",
         "window_band_index": 0
       }

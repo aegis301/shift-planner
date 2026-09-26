@@ -1,5 +1,5 @@
 """Tests for member planning patterns."""
-from datetime import UTC, date, datetime
+from datetime import date, datetime, time
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -33,6 +33,7 @@ from app.services.member_planning_patterns import (
     replace_team_member_planning_patterns,
     validate_pattern_severity,
 )
+from app.services.org_time import local_to_instant
 from app.services.shift_intervals import is_iso_week_cycle_on_week
 
 
@@ -140,8 +141,8 @@ def test_avoid_time_window_matches_saturday_night(pattern_db):
         shift_variant_id=1,
         slot_date=date(2026, 6, 6),
         position=1,
-        starts_at=datetime(2026, 6, 6, 23, 0),
-        ends_at=datetime(2026, 6, 7, 7, 0),
+        starts_at=local_to_instant(date(2026, 6, 6), time(23, 0), "Europe/Berlin"),
+        ends_at=local_to_instant(date(2026, 6, 7), time(7, 0), "Europe/Berlin"),
     )
     pattern = TeamMemberPlanningPattern(
         id=1,
@@ -175,8 +176,8 @@ def test_avoid_time_window_matches_timezone_aware_slot_interval(pattern_db):
         shift_variant_id=1,
         slot_date=date(2026, 6, 6),
         position=1,
-        starts_at=datetime(2026, 6, 6, 23, 0, tzinfo=UTC),
-        ends_at=datetime(2026, 6, 7, 7, 0, tzinfo=UTC),
+        starts_at=local_to_instant(date(2026, 6, 6), time(23, 0), "Europe/Berlin"),
+        ends_at=local_to_instant(date(2026, 6, 7), time(7, 0), "Europe/Berlin"),
     )
     pattern = TeamMemberPlanningPattern(
         id=1,
@@ -252,8 +253,8 @@ def test_avoid_time_window_multiple_bands_match_respective_weekdays(pattern_db):
         shift_variant_id=1,
         slot_date=date(2026, 6, 10),
         position=1,
-        starts_at=datetime(2026, 6, 10, 19, 0),
-        ends_at=datetime(2026, 6, 10, 19, 30),
+        starts_at=local_to_instant(date(2026, 6, 10), time(19, 0), "Europe/Berlin"),
+        ends_at=local_to_instant(date(2026, 6, 10), time(19, 30), "Europe/Berlin"),
     )
     w1 = evaluate_member_planning_patterns(db=db, slot=wed_slot, team_member_id=1, patterns=[pattern])
     assert len(w1) == 1
@@ -265,8 +266,8 @@ def test_avoid_time_window_multiple_bands_match_respective_weekdays(pattern_db):
         shift_variant_id=1,
         slot_date=date(2026, 6, 12),
         position=1,
-        starts_at=datetime(2026, 6, 12, 15, 0),
-        ends_at=datetime(2026, 6, 12, 16, 0),
+        starts_at=local_to_instant(date(2026, 6, 12), time(15, 0), "Europe/Berlin"),
+        ends_at=local_to_instant(date(2026, 6, 12), time(16, 0), "Europe/Berlin"),
     )
     w2 = evaluate_member_planning_patterns(db=db, slot=fri_slot, team_member_id=1, patterns=[pattern])
     assert len(w2) == 1
@@ -282,8 +283,8 @@ def test_avoid_time_window_stored_severity_does_not_affect_evaluation(pattern_db
         shift_variant_id=1,
         slot_date=date(2026, 6, 6),
         position=1,
-        starts_at=datetime(2026, 6, 6, 23, 0),
-        ends_at=datetime(2026, 6, 7, 7, 0),
+        starts_at=local_to_instant(date(2026, 6, 6), time(23, 0), "Europe/Berlin"),
+        ends_at=local_to_instant(date(2026, 6, 7), time(7, 0), "Europe/Berlin"),
     )
     pattern = TeamMemberPlanningPattern(
         id=3,

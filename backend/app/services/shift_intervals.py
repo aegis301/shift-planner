@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
 from app.models import RosterSlot, ShiftVariant
+from app.services.org_time import as_utc, local_dates_spanned, slot_bounds, timezone_for_slot
 
 ISO_WEEK_EPOCH_YEAR = 2000
 ISO_WEEK_EPOCH_WEEK = 1
@@ -12,18 +13,19 @@ ISO_WEEK_EPOCH_WEEK = 1
 
 def resolve_slot_interval(db: Session, slot: RosterSlot) -> tuple[datetime, datetime] | None:
     if slot.starts_at is not None and slot.ends_at is not None:
-        return slot.starts_at, slot.ends_at
+        return as_utc(slot.starts_at), as_utc(slot.ends_at)
     variant: ShiftVariant | None = slot.shift_variant
     if variant is None and slot.shift_variant_id is not None:
         variant = db.get(ShiftVariant, slot.shift_variant_id)
     if variant is None:
         return None
-    start = datetime.combine(slot.slot_date, variant.starts_at)
-    end_date = slot.slot_date + timedelta(days=variant.end_day_offset)
-    end = datetime.combine(end_date, variant.ends_at)
-    if end <= start:
-        end = end + timedelta(days=1)
-    return start, end
+    return slot_bounds(
+        slot.slot_date,
+        variant.starts_at,
+        variant.ends_at,
+        variant.end_day_offset,
+        timezone_for_slot(db, slot),
+    )
 
 
 def overlap_calendar_days(db: Session, slot: RosterSlot) -> list[date]:
@@ -31,13 +33,7 @@ def overlap_calendar_days(db: Session, slot: RosterSlot) -> list[date]:
     if interval is None:
         return [slot.slot_date]
     shift_start, shift_end = interval
-    out: list[date] = []
-    day = shift_start.date()
-    last = shift_end.date()
-    while day <= last:
-        out.append(day)
-        day += timedelta(days=1)
-    return out
+    return local_dates_spanned(shift_start, shift_end, timezone_for_slot(db, slot))
 
 
 def iso_week_ordinal(iso_year: int, iso_week: int) -> int:

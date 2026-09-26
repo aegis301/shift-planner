@@ -69,6 +69,7 @@ class PlanState:
     duty_counts_by_member_date: Mapping[tuple[int, date], DutyDayCounts]
     period_roster_member_ids: Mapping[tuple[int, int, int], frozenset[int]]
     work_time_consents_by_member_id: Mapping[int, tuple[object, ...]]
+    timezone: str = "Europe/Berlin"
 
 
 def empty_indexed_state(
@@ -79,6 +80,7 @@ def empty_indexed_state(
     load_start: date,
     load_end: date,
     shift_group_id: int | None,
+    timezone: str = "Europe/Berlin",
 ) -> PlanState:
     empty: Mapping[int, TeamMember] = frozen_mapping({})
     return PlanState(
@@ -106,6 +108,7 @@ def empty_indexed_state(
         duty_counts_by_member_date=frozen_mapping({}),
         period_roster_member_ids=frozen_mapping({}),
         work_time_consents_by_member_id=frozen_mapping({}),
+        timezone=timezone,
     )
 
 

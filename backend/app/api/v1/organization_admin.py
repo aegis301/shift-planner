@@ -146,6 +146,7 @@ def patch_organization_settings(
             org,
             name=payload.name,
             organization_slug=payload.organization_slug,
+            timezone=payload.timezone,
             actor=user.email,
             source="rest",
         )

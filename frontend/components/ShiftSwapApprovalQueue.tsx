@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Card } from "@/components/Card";
-import { useLocale } from "@/components/LocaleProvider";
+import { useLocale, useSession } from "@/components/LocaleProvider";
+import { sessionTimeZone } from "@/lib/orgTime";
 import { t, type Locale } from "@/lib/i18n";
 import {
   SWAP_APPROVAL_QUEUE_STATUSES,
@@ -55,6 +56,8 @@ export function ShiftSwapApprovalQueue({
   groupStatus: string | null | undefined;
 }) {
   const { locale } = useLocale();
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const [unresolved, setUnresolved] = useState<ShiftSwapUnresolvedRead[]>([]);
   const [rows, setRows] = useState<ShiftSwapRequestRead[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -176,7 +179,7 @@ export function ShiftSwapApprovalQueue({
                             {t(locale, swapDutyUrgencyLabelKey(urgency))}
                           </span>
                         </div>
-                        <p className="text-sm font-medium text-ink">{swapSlotSummary(locale, offered)}</p>
+                        <p className="text-sm font-medium text-ink">{swapSlotSummary(locale, offered, timeZone)}</p>
                         <p className="text-sm text-slate-700">{dutyProximityLabel(locale, row.days_until_duty)}</p>
                         <p className="text-sm text-slate-600">
                           {t(locale, "shiftSwapRequestAge", { count: String(row.request_age_days) })}
@@ -235,7 +238,7 @@ export function ShiftSwapApprovalQueue({
                           beforeId={offeredBefore}
                           label={t(locale, "shiftSwapChangeOffered")}
                           roster={roster}
-                          slotLabel={swapSlotSummary(locale, offered)}
+                          slotLabel={swapSlotSummary(locale, offered, timeZone)}
                         />
                         {row.counterparty_slot_id != null ? (
                           <RosterChangeBlock
@@ -243,7 +246,7 @@ export function ShiftSwapApprovalQueue({
                             beforeId={counterpartBefore}
                             label={t(locale, "shiftSwapChangeCounterparty")}
                             roster={roster}
-                            slotLabel={swapSlotSummary(locale, counterpart)}
+                            slotLabel={swapSlotSummary(locale, counterpart, timeZone)}
                           />
                         ) : null}
                         <div className="grid gap-1">

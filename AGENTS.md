@@ -22,6 +22,8 @@ This project is an AI-first shift planning tool for **healthcare teams**; people
 
 **Subscription hooks:** `Organization` carries optional `seat_limit`, `billing_customer_id`, and `subscription_status` for future billing; linking a team-member login enforces seat limits when `seat_limit` is set.
 
+**Organization time zone:** `organizations.timezone` is an IANA name (default `Europe/Berlin`), validated with `zoneinfo.available_timezones()`. Admins read and write it on `GET|PATCH /api/v1/organization`; MCP exposes `shift-planner://organization` and token-gated `update_organization_settings_tool`. User sessions from `GET /api/v1/auth/me` include `organization_timezone`. `RosterSlot.starts_at` / `ends_at`, roster-derived `TimeEntry` bounds (`source=roster`), and plan-version slot snapshots store the UTC instant of the variant wall clock on the local `slot_date`. `end_day_offset` shifts that local date before conversion. `slot_date` stays the planning date. Night flags, overlap days, avoid-windows, ICS events, and export labels convert through the org zone (`app/services/org_time.py`). Statutory minutes are the real elapsed interval: a 24 h wall-clock duty that contains the autumn clock change is 25 h, and one that contains the spring change is 23 h. Duty-activity and manual time entries are instants already and are not reinterpreted.
+
 ## Where things live
 
 Start here before reading the rest of this file.

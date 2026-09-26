@@ -33,6 +33,7 @@ export type MeUser = {
   organization_shift_groups?: { id: number; code: string; name: string; is_active?: boolean }[];
   capabilities: { admin: boolean; planning: boolean; team_member_portal: boolean };
   memberships: MembershipSummary[];
+  organization_timezone: string;
 };
 
 export type SessionMe = MeUser | MeAccountSession;

@@ -310,14 +310,14 @@ export function swapMemberName(roster: SwapRosterSlice | null | undefined, membe
   return teamMemberPlanningDisplayName(member);
 }
 
-export function swapSlotSummary(locale: Locale, slot: SwapRosterSlot | undefined): string {
+export function swapSlotSummary(locale: Locale, slot: SwapRosterSlot | undefined, timeZone?: string): string {
   if (!slot) {
     return "—";
   }
   const name = slot.template_name || slot.label || slot.template_code || `#${slot.id}`;
   const labeled = slot.variant_label ? `${name} · ${slot.variant_label}` : name;
   const when = formatPlanningDate(locale, slot.slot_date);
-  const time = formatShiftTimeRange(slot.starts_at, slot.ends_at);
+  const time = formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone);
   return time ? `${when} · ${labeled} · ${time}` : `${when} · ${labeled}`;
 }
 

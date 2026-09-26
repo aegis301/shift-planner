@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.services.export_colors import MemberPastelPalette, member_pastel_palette
 from app.services.matrix import get_planning_matrix
+from app.services.org_time import as_utc, instant_to_local, organization_timezone
 from app.services.plan_versions import get_plan_version_matrix, get_plan_version_roster
 from app.services.roster_matrix import get_roster_matrix
 from app.services.team_members import planning_display_name
@@ -55,20 +56,28 @@ def _period_label(year: int, month: int) -> str:
     return f"{year}-{month:02d}"
 
 
-def _slot_time_label(slot: Any) -> str:
+def _slot_time_label(slot: Any, tz: str) -> str:
     if slot.starts_at is None or slot.ends_at is None:
         return ""
-    return f"{slot.starts_at.strftime('%H:%M')}-{slot.ends_at.strftime('%H:%M')}"
+    start = instant_to_local(slot.starts_at, tz)
+    end = instant_to_local(slot.ends_at, tz)
+    return f"{start.strftime('%H:%M')}-{end.strftime('%H:%M')}"
 
 
-def _slot_column_title(slot: Any) -> str:
+def _slot_column_title(slot: Any, tz: str) -> str:
     base = slot.template_code or slot.label or "Slot"
     if slot.variant_label:
         base = f"{base} · {slot.variant_label}"
-    time_label = _slot_time_label(slot)
+    time_label = _slot_time_label(slot, tz)
     if time_label:
         base = f"{base} ({time_label})"
     return f"{base} #{slot.position}"
+
+
+def _instant_iso(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    return as_utc(value).isoformat()
 
 
 def _template_column_title(template: Any, fallback_slot: Any | None = None) -> str:
@@ -107,6 +116,7 @@ def build_roster_export_table(
     db: Session, planning_period_id: int, *, organization_id: int, shift_group_id: int | None = None
 ) -> RosterExportTable:
     matrix = get_roster_matrix(db, planning_period_id, organization_id=organization_id, shift_group_id=shift_group_id)
+    tz = organization_timezone(db, organization_id)
     slots_sorted = sorted(
         matrix.slots,
         key=lambda slot: (
@@ -132,7 +142,7 @@ def build_roster_export_table(
         if idx is None:
             idx = len(columns)
             column_index[signature] = idx
-            columns.append(RosterExportColumn(key=str(idx), title=_slot_column_title(slot)))
+            columns.append(RosterExportColumn(key=str(idx), title=_slot_column_title(slot, tz)))
         slot_to_column[slot.id] = idx
 
     assignments = {assignment.roster_slot_id: assignment for assignment in matrix.assignments}
@@ -294,8 +304,8 @@ def export_roster_matrix_csv(
                 [
                     day.date.isoformat(),
                     slot.label or "",
-                    slot.starts_at.isoformat() if slot.starts_at else "",
-                    slot.ends_at.isoformat() if slot.ends_at else "",
+                    _instant_iso(slot.starts_at),
+                    _instant_iso(slot.ends_at),
                     _planning_member_label(member) if member else "",
                     slot.template_code or "",
                     slot.variant_label or "",
@@ -480,8 +490,8 @@ def _export_roster_matrix_csv_from_read(matrix) -> str:
                 [
                     day.date.isoformat(),
                     slot.label or "",
-                    slot.starts_at.isoformat() if slot.starts_at else "",
-                    slot.ends_at.isoformat() if slot.ends_at else "",
+                    _instant_iso(slot.starts_at),
+                    _instant_iso(slot.ends_at),
                     _planning_member_label(member) if member else "",
                     slot.template_code or "",
                     slot.variant_label or "",

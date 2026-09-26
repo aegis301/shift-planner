@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Card } from "@/components/Card";
-import { useLocale } from "@/components/LocaleProvider";
+import { useLocale, useSession } from "@/components/LocaleProvider";
+import { sessionTimeZone } from "@/lib/orgTime";
 import { t } from "@/lib/i18n";
 import {
   acceptShiftSwap,
@@ -46,6 +47,8 @@ export function ShiftSwapMarketplace({
   onChanged?: () => void;
 }) {
   const { locale } = useLocale();
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const [rows, setRows] = useState<ShiftSwapRequestRead[]>([]);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -206,6 +209,8 @@ function SwapRequestSummary({
   roster: SwapRosterSlice | null;
 }) {
   const { locale } = useLocale();
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const offered = swapSlotById(roster, row.offered_slot_id);
   const counterparty = swapSlotById(roster, row.counterparty_slot_id);
   return (
@@ -218,7 +223,7 @@ function SwapRequestSummary({
           {shiftSwapStatusLabel(locale, row.status)}
         </span>
       </div>
-      <p className="text-sm font-medium text-ink">{swapSlotSummary(locale, offered)}</p>
+      <p className="text-sm font-medium text-ink">{swapSlotSummary(locale, offered, timeZone)}</p>
       <p className="text-sm text-slate-600">
         {t(locale, "shiftSwapOfferedBy")}: {swapMemberName(roster, row.offered_by_team_member_id)}
         {row.target_team_member_id != null
@@ -227,7 +232,7 @@ function SwapRequestSummary({
       </p>
       {counterparty ? (
         <p className="text-sm text-slate-600">
-          {t(locale, "shiftSwapChangeCounterparty")}: {swapSlotSummary(locale, counterparty)}
+          {t(locale, "shiftSwapChangeCounterparty")}: {swapSlotSummary(locale, counterparty, timeZone)}
         </p>
       ) : null}
       {row.warning_findings.length > 0 ? (
