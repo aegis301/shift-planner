@@ -65,6 +65,62 @@ test.describe("planner", () => {
     await expect(cells.first()).toBeVisible();
     expect(await indexOfCellText(page, name)).toBe(-1);
   });
+
+  test("loads each planning resource once", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    const counts = { roster: 0, wishes: 0, validation: 0, fairness: 0 };
+    page.on("request", (req) => {
+      if (req.method() !== "GET") {
+        return;
+      }
+      const url = req.url();
+      if (/\/api\/v1\/roster-matrix\/\d+/.test(url)) {
+        counts.roster += 1;
+      } else if (/\/api\/v1\/matrix\/\d+(\?|$)/.test(url)) {
+        counts.wishes += 1;
+      } else if (/\/api\/v1\/validation\/\d+/.test(url)) {
+        counts.validation += 1;
+      } else if (/\/api\/v1\/fairness\/\d+/.test(url)) {
+        counts.fairness += 1;
+      }
+    });
+    await page.goto(planningPath(target));
+    await expect(page.getByRole("heading", { name: "Wünsche" })).toBeVisible();
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    await expect(page.locator('button[aria-haspopup="listbox"]').first()).toBeVisible();
+    await page.getByRole("button", { name: "Analyse" }).click();
+    await expect(page.getByRole("heading", { name: "Fairness" })).toBeVisible();
+    expect(counts.roster).toBeLessThanOrEqual(1);
+    expect(counts.wishes).toBeLessThanOrEqual(1);
+    expect(counts.validation).toBeLessThanOrEqual(1);
+    expect(counts.fairness).toBeLessThanOrEqual(1);
+    expect(counts.roster).toBeGreaterThan(0);
+    expect(counts.wishes).toBeGreaterThan(0);
+  });
+
+  test("rolls back a refused roster assignment", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    await page.route("**/api/v1/roster-matrix/assignments?**", async (route) => {
+      if (route.request().method() === "PUT") {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "No-Go" })
+        });
+        return;
+      }
+      await route.continue();
+    });
+    await page.goto(planningPath(target));
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    const cell = page.locator('button[aria-haspopup="listbox"]', { hasText: "—" }).first();
+    await cell.scrollIntoViewIfNeeded();
+    await cell.click();
+    const option = page.getByRole("listbox").locator("button:has(span.font-medium)").first();
+    await option.click();
+    await expect(page.getByText("No-Go")).toBeVisible();
+    await expect(cell).toHaveText("—");
+  });
 });
 
 test.describe("admin", () => {

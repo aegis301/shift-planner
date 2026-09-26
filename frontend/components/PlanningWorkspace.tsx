@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -38,7 +39,20 @@ import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrix
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
-import { fetchTeamMemberDashboard, type TeamMemberDashboard } from "@/lib/dashboard";
+import {
+  useDayStatusDefinitions,
+  useFairness,
+  useMemberDashboard,
+  usePlanningOrganizationId,
+  usePlanningPeriods,
+  useRosterMatrix,
+  useShiftGroups,
+  useSuggestedPlanVersion,
+  useValidation,
+  useWishesMatrix
+} from "@/lib/queries/planning";
+import { invalidateQueryKeys, rosterAssignmentKeys, statusTransitionKeys, wishesEditKeys } from "@/lib/queries/invalidation";
+import { writeRosterBundle } from "@/lib/queries/rosterEdit";
 import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
 import { DutyActivityShiftList } from "@/components/DutyActivityShiftList";
 import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
@@ -144,17 +158,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const currentDate = new Date();
-  const [periods, setPeriods] = useState<PlanningPeriod[]>([]);
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
   const [periodId, setPeriodId] = useState("");
   const [newYear, setNewYear] = useState(String(currentDate.getFullYear()));
   const [newMonth, setNewMonth] = useState(String(currentDate.getMonth() + 1));
-  const [rosterMatrix, setRosterMatrix] = useState<RosterMatrix | null>(null);
-  const [fairnessAccounts, setFairnessAccounts] = useState<FairnessAccountsRead | null>(null);
-  const [fairnessError, setFairnessError] = useState("");
-  const [warnings, setWarnings] = useState<ValidationWarning[]>([]);
   const [message, setMessage] = useState("");
-  const [rosterReloadToken, setRosterReloadToken] = useState(0);
-  const [matrixReloadToken, setMatrixReloadToken] = useState(0);
   const [viewMode, setViewMode] = useState<PlanningViewMode>("tabs");
   const [activeTab, setActiveTab] = useState<PlanningTab>("wishes");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -162,15 +171,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
   const [syncRosterConfirmOpen, setSyncRosterConfirmOpen] = useState(false);
   const [solverDialogOpen, setSolverDialogOpen] = useState(false);
-  const [solverReloadToken, setSolverReloadToken] = useState(0);
-  const [swapReloadToken, setSwapReloadToken] = useState(0);
   const [offerSlotId, setOfferSlotId] = useState<number | null>(null);
   const [shiftGroupId, setShiftGroupId] = useState("");
-  const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
-  const [dayStatusDefinitions, setDayStatusDefinitions] = useState<PlanningDayStatusDefinition[]>([]);
-  const [groupPlanningStatus, setGroupPlanningStatus] = useState<ShiftGroupPlanningStatus | null>(null);
-  const [memberShifts, setMemberShifts] = useState<TeamMemberDashboard | null>(null);
-  const [memberShiftsLoading, setMemberShiftsLoading] = useState(false);
   const [icsExportStartDate, setIcsExportStartDate] = useState("");
   const [icsExportEndDate, setIcsExportEndDate] = useState("");
   const [viewingVersionId, setViewingVersionId] = useState<number | null>(null);
@@ -180,15 +182,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const [versionMajorUpdate, setVersionMajorUpdate] = useState(false);
 
   const userMe: MeUser | null = useMemo(() => (me && isUserSession(me) ? me : null), [me]);
-
-  useEffect(() => {
-    if (!userMe) {
-      return;
-    }
-    void apiFetch<PlanningDayStatusDefinition[]>("/api/v1/planning-day-status-definitions?active_only=true")
-      .then(setDayStatusDefinitions)
-      .catch(() => setDayStatusDefinitions([]));
-  }, [userMe]);
 
   useEffect(() => {
     if (sessionLoading || !me) {
@@ -272,37 +265,82 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     }
   }, [searchParams]);
 
-  useEffect(() => {
-    if (!planningUi || !userMe) {
-      return;
-    }
-    if (userMe.capabilities.admin) {
-      void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
-      return;
-    }
-    setShiftGroups(
-      (userMe.planner_shift_groups ?? []).map((g) => ({
-        id: g.id,
-        code: g.code,
-        name: g.name
-      }))
-    );
-  }, [planningUi, userMe]);
+  const resourcesReady =
+    !waitingForTeamMemberSession &&
+    !waitingForPlannerSession &&
+    Boolean(periodId) &&
+    !(teamMemberPortalUi && !shiftGroupId) &&
+    !(plannerNeedsShiftGroup && !shiftGroupId);
+  const periodsQuery = usePlanningPeriods(!waitingForTeamMemberSession && !waitingForPlannerSession);
+  const periods = periodsQuery.data;
+  const shiftGroupsQuery = useShiftGroups(Boolean(planningUi && userMe?.capabilities.admin));
+  const shiftGroups = planningUi
+    ? userMe?.capabilities.admin
+      ? (shiftGroupsQuery.data ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }))
+      : (userMe?.planner_shift_groups ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }))
+    : (userMe?.shift_groups ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }));
+  const dayStatusDefinitions = useDayStatusDefinitions(Boolean(userMe)).data ?? [];
+  const wishesQuery = useWishesMatrix({
+    periodId,
+    shiftGroupId,
+    teamMemberPortal: teamMemberPortalUi,
+    versionId: viewingVersionId,
+    enabled: resourcesReady
+  });
+  const wishesStatus = wishesQuery.data?.matrix.shift_group_planning_status?.status;
+  const rosterQuery = useRosterMatrix({
+    periodId,
+    shiftGroupId,
+    teamMemberPortal: teamMemberPortalUi,
+    versionId: viewingVersionId,
+    enabled: resourcesReady && (!teamMemberPortalUi || wishesStatus === "preliminary" || wishesStatus === "published")
+  });
+  const validationQuery = useValidation({ periodId, shiftGroupId, enabled: resourcesReady && planningUi });
+  const fairnessQuery = useFairness({ periodId, shiftGroupId, enabled: resourcesReady && planningUi });
+  const activePeriod = periods?.find((period) => String(period.id) === periodId);
+  const memberDashboard = useMemberDashboard({
+    year: activePeriod?.year ?? new Date().getFullYear(),
+    shiftGroupId,
+    enabled: teamMemberPortalUi && Boolean(shiftGroupId)
+  });
+  const memberShifts = memberDashboard.data ?? null;
+  const memberShiftsLoading = memberDashboard.isLoading;
+  const rosterMatrix = rosterQuery.data?.matrix ?? null;
+  const warnings = (validationQuery.data ?? []).map((warning) => ({
+    code: warning.code,
+    severity: warning.severity,
+    message: warning.message,
+    team_member_id: warning.team_member_id ?? null,
+    date: warning.date ?? null,
+    details: warning.details ?? {}
+  }));
+  const fairnessAccounts = fairnessQuery.data?.accounts ?? null;
+  const fairnessError = fairnessQuery.isError ? t(locale, "fairnessLoadError") : "";
+  const groupPlanningStatus =
+    rosterMatrix?.shift_group_planning_status ?? wishesQuery.data?.matrix.shift_group_planning_status ?? null;
+  const planningScope =
+    organizationId != null
+      ? {
+          organizationId,
+          periodId,
+          shiftGroupId,
+          teamMemberPortal: teamMemberPortalUi
+        }
+      : null;
 
   useEffect(() => {
-    if (variant !== "team_member" || !userMe?.shift_groups?.length) {
+    if (!periods?.length) {
       return;
     }
-    setShiftGroups(
-      userMe.shift_groups.map((g) => ({
-        id: g.id,
-        code: g.code,
-        name: g.name
-      }))
-    );
-  }, [userMe, variant]);
-
-  const activePeriod = periods.find((period) => String(period.id) === periodId);
+    const fromUrl = searchParams.get("period");
+    if (fromUrl && periods.some((row) => String(row.id) === fromUrl)) {
+      setPeriodId(fromUrl);
+      return;
+    }
+    if (!periodId && periods[0]) {
+      setPeriodId(String(periods[0].id));
+    }
+  }, [periods, periodId, searchParams]);
 
   useEffect(() => {
     const now = new Date();
@@ -312,19 +350,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     setIcsExportStartDate(bounds.min);
     setIcsExportEndDate(bounds.max);
   }, [activePeriod]);
-
-  useEffect(() => {
-    if (!teamMemberPortalUi || !shiftGroupId) {
-      setMemberShifts(null);
-      return;
-    }
-    const year = activePeriod?.year ?? new Date().getFullYear();
-    setMemberShiftsLoading(true);
-    void fetchTeamMemberDashboard({ year, shiftGroupId })
-      .then(setMemberShifts)
-      .catch(() => setMemberShifts(null))
-      .finally(() => setMemberShiftsLoading(false));
-  }, [teamMemberPortalUi, shiftGroupId, activePeriod?.year]);
   const stats = useMemo(() => buildMemberWorkloadRows(rosterMatrix, warnings), [rosterMatrix, warnings]);
   const duplicateMemberDayKeys = useMemo(() => duplicateMemberDayKeysFromWarnings(warnings), [warnings]);
   const duplicateDayWarningsCount = useMemo(
@@ -370,89 +395,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     !shiftGroupId ||
     groupPlanningStatus?.status === "published";
 
-  const loadGroupPlanningStatus = useCallback(
-    async (nextPeriodId: string) => {
-      if (!nextPeriodId || !shiftGroupId) {
-        setGroupPlanningStatus(null);
-        return;
-      }
-      try {
-        const matrix = await apiFetch<{ shift_group_planning_status: ShiftGroupPlanningStatus | null }>(
-          `/api/v1/matrix/${nextPeriodId}?shift_group_id=${encodeURIComponent(shiftGroupId)}`
-        );
-        setGroupPlanningStatus(matrix.shift_group_planning_status ?? null);
-      } catch {
-        setGroupPlanningStatus(null);
-      }
-    },
-    [shiftGroupId]
-  );
-
-  const loadWarnings = useCallback(
-    async (nextPeriodId: string) => {
-      if (!nextPeriodId || !planningUi) {
-        setWarnings([]);
-        return;
-      }
-      setWarnings(await apiFetch<ValidationWarning[]>(`/api/v1/validation/${nextPeriodId}${shiftGroupQuery}`));
-    },
-    [planningUi, shiftGroupQuery]
-  );
-
-  const loadRosterMatrix = useCallback(
-    async (nextPeriodId: string) => {
-      if (!nextPeriodId) {
-        setRosterMatrix(null);
-        return;
-      }
-      try {
-        const nextRoster = await apiFetch<RosterMatrix>(`/api/v1/roster-matrix/${nextPeriodId}${shiftGroupQuery}`);
-        setRosterMatrix(nextRoster);
-        setGroupPlanningStatus(nextRoster.shift_group_planning_status ?? null);
-        if (teamMemberPortalUi) {
-          setMessage("");
-        }
-      } catch (error) {
-        if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
-          setRosterMatrix(null);
-          if (teamMemberPortalUi) {
-            setMessage(t(locale, "rosterNotVisibleYet"));
-          }
-          return;
-        }
-        throw error;
-      }
-    },
-    [teamMemberPortalUi, locale, shiftGroupQuery]
-  );
-
-  const loadFairnessAccounts = useCallback(
-    async (nextPeriodId: string) => {
-      if (!nextPeriodId || teamMemberPortalUi || (plannerNeedsShiftGroup && !shiftGroupId)) {
-        setFairnessAccounts(null);
-        setFairnessError("");
-        return;
-      }
-      try {
-        const next = await apiFetch<FairnessAccountsRead>(`/api/v1/fairness/${nextPeriodId}${shiftGroupQuery}`);
-        setFairnessAccounts(next);
-        setFairnessError("");
-      } catch (error) {
-        setFairnessAccounts(null);
-        if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
-          setFairnessError("");
-          return;
-        }
-        setFairnessError(t(locale, "fairnessLoadError"));
-      }
-    },
-    [locale, plannerNeedsShiftGroup, shiftGroupId, shiftGroupQuery, teamMemberPortalUi]
-  );
-
-  useEffect(() => {
-    void loadGroupPlanningStatus(periodId);
-  }, [periodId, shiftGroupId, loadGroupPlanningStatus]);
-
   function updateShiftGroup(next: string) {
     setShiftGroupId(next);
     const params = new URLSearchParams(searchParams.toString());
@@ -497,52 +439,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     }
   }, [variant, userMe, shiftGroupId, pathname, router, searchParams]);
 
-  const refreshPeriods = useCallback(async () => {
-    const next = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
-    setPeriods(next);
-    const fromUrl = searchParams.get("period");
-    if (fromUrl && next.some((row) => String(row.id) === fromUrl)) {
-      setPeriodId(fromUrl);
+  async function refreshAfterStatusChange() {
+    if (!planningScope) {
       return;
     }
-    if (!periodId && next[0]) {
-      setPeriodId(String(next[0].id));
-    }
-  }, [periodId, searchParams]);
-
-  useEffect(() => {
-    if (waitingForTeamMemberSession || waitingForPlannerSession) {
-      return;
-    }
-    void refreshPeriods();
-  }, [refreshPeriods, waitingForTeamMemberSession, waitingForPlannerSession]);
-
-  useEffect(() => {
-    if (
-      !periodId ||
-      waitingForTeamMemberSession ||
-      waitingForPlannerSession ||
-      (teamMemberPortalUi && !shiftGroupId) ||
-      (plannerNeedsShiftGroup && !shiftGroupId)
-    ) {
-      setFairnessAccounts(null);
-      setFairnessError("");
-      return;
-    }
-    void loadWarnings(periodId);
-    void loadRosterMatrix(periodId);
-    void loadFairnessAccounts(periodId);
-  }, [
-    teamMemberPortalUi,
-    loadFairnessAccounts,
-    loadRosterMatrix,
-    loadWarnings,
-    periodId,
-    plannerNeedsShiftGroup,
-    shiftGroupId,
-    waitingForTeamMemberSession,
-    waitingForPlannerSession
-  ]);
+    await invalidateQueryKeys(queryClient, statusTransitionKeys(planningScope));
+  }
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -551,40 +453,35 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       body: JSON.stringify({ year: Number(newYear), month: Number(newMonth) })
     });
     const nextPeriodId = String(period.id);
-    const nextPeriods = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
-    setPeriods(nextPeriods);
+    if (organizationId != null) {
+      await queryClient.invalidateQueries({ queryKey: ["planning-periods", organizationId] });
+    }
     setPeriodId(nextPeriodId);
     setActiveTab("wishes");
     setIsCreateModalOpen(false);
     setMessage(`${t(locale, "saved")}: ${monthLabel(period)}`);
   }
 
+  const suggestTrigger =
+    destructiveAction === "status-published"
+      ? "status_published"
+      : destructiveAction === "status-preliminary"
+        ? "status_preliminary"
+        : "";
+  const suggestedVersion = useSuggestedPlanVersion({
+    periodId,
+    shiftGroupId,
+    trigger: suggestTrigger,
+    isMajorUpdate: destructiveAction === "status-preliminary" && groupPlanningStatus?.status === "published" && versionMajorUpdate,
+    enabled: suggestTrigger !== ""
+  });
   useEffect(() => {
-    if (
-      !destructiveAction ||
-      !periodId ||
-      !shiftGroupId ||
-      (destructiveAction !== "status-published" &&
-        destructiveAction !== "status-preliminary")
-    ) {
+    if (!suggestedVersion.data) {
       return;
     }
-    const trigger =
-      destructiveAction === "status-published" ? "status_published" : "status_preliminary";
-    const fromPublished =
-      destructiveAction === "status-preliminary" && groupPlanningStatus?.status === "published";
-    void apiFetch<{ major_version: number; minor_version: number }>(
-      `/api/v1/planning-periods/${periodId}/versions/suggest?shift_group_id=${encodeURIComponent(shiftGroupId)}&trigger=${trigger}&is_major_update=${fromPublished && versionMajorUpdate}`
-    )
-      .then((suggested) => {
-        setVersionMajor(String(suggested.major_version));
-        setVersionMinor(String(suggested.minor_version));
-      })
-      .catch(() => {
-        setVersionMajor("");
-        setVersionMinor("");
-      });
-  }, [destructiveAction, periodId, shiftGroupId, groupPlanningStatus?.status, versionMajorUpdate]);
+    setVersionMajor(String(suggestedVersion.data.major_version));
+    setVersionMinor(String(suggestedVersion.data.minor_version));
+  }, [suggestedVersion.data]);
 
   async function confirmDestructiveAction() {
     if (!periodId || !destructiveAction) {
@@ -606,9 +503,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         method: "POST",
         body: JSON.stringify(versionBody)
       });
-      await refreshPeriods();
-      await loadGroupPlanningStatus(periodId);
-      await loadRosterMatrix(periodId);
+      await refreshAfterStatusChange();
       setMessage(
         groupName ? `${t(locale, "periodPublishedGroup")} (${groupName})` : t(locale, "periodPublishedGroup")
       );
@@ -617,9 +512,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         method: "POST",
         body: JSON.stringify(versionBody)
       });
-      await refreshPeriods();
-      await loadGroupPlanningStatus(periodId);
-      await loadRosterMatrix(periodId);
+      await refreshAfterStatusChange();
       setMessage(
         groupName
           ? `${t(locale, "periodSetPreliminaryGroup")} (${groupName})`
@@ -629,9 +522,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       await apiFetch<ShiftGroupPlanningStatus>(`/api/v1/planning-periods/${periodId}/draft${statusQuery}`, {
         method: "POST"
       });
-      await refreshPeriods();
-      await loadGroupPlanningStatus(periodId);
-      await loadRosterMatrix(periodId);
+      await refreshAfterStatusChange();
       setMessage(
         groupName ? `${t(locale, "periodSetDraftGroup")} (${groupName})` : t(locale, "periodSetDraftGroup")
       );
@@ -639,17 +530,19 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       await apiFetch<RosterMatrix>(`/api/v1/planning-periods/${periodId}/regenerate-roster${statusQuery}`, {
         method: "POST"
       });
-      setRosterReloadToken((value) => value + 1);
-      await loadRosterMatrix(periodId);
-      await loadWarnings(periodId);
+      if (planningScope) {
+        await invalidateQueryKeys(queryClient, rosterAssignmentKeys(planningScope));
+      }
       setMessage(`${t(locale, "saved")}: ${t(locale, "regenerateRoster")}`);
     } else {
       await apiFetch(`/api/v1/planning-periods/${periodId}`, { method: "DELETE" });
-      const nextPeriods = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
-      setPeriods(nextPeriods);
-      setPeriodId(nextPeriods[0] ? String(nextPeriods[0].id) : "");
-      setRosterMatrix(null);
-      setWarnings([]);
+      if (organizationId != null) {
+        await queryClient.invalidateQueries({ queryKey: ["planning-periods", organizationId] });
+        const nextPeriods = queryClient.getQueryData<{ id: number }[]>(["planning-periods", organizationId]) ?? [];
+        setPeriodId(nextPeriods[0] ? String(nextPeriods[0].id) : "");
+      } else {
+        setPeriodId("");
+      }
       setActiveTab("wishes");
       setMessage(t(locale, "deletePlanningPeriod"));
     }
@@ -666,11 +559,10 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       `/api/v1/planning-periods/${periodId}/sync-roster${shiftGroupQuery}`,
       { method: "POST" }
     );
-    setRosterMatrix(response.matrix);
-    setGroupPlanningStatus(response.matrix.shift_group_planning_status ?? null);
-    setRosterReloadToken((value) => value + 1);
-    setMatrixReloadToken((value) => value + 1);
-    await loadWarnings(periodId);
+    if (planningScope) {
+      writeRosterBundle(queryClient, planningScope, response.matrix);
+      await invalidateQueryKeys(queryClient, wishesEditKeys(planningScope));
+    }
     setMessage(
       t(locale, "refreshRosterResult", {
         added: String(response.sync.added_count),
@@ -681,55 +573,42 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     setSyncRosterConfirmOpen(false);
   }
 
-  const handleRosterChange = useCallback(async (nextMatrix: RosterMatrix) => {
-    setRosterMatrix(nextMatrix);
-    setGroupPlanningStatus(nextMatrix.shift_group_planning_status ?? null);
-    await loadWarnings(String(nextMatrix.planning_period.id));
-  }, [loadWarnings]);
-
-  const handleWishesChanged = useCallback(async () => {
-    if (periodId) {
-      await loadWarnings(periodId);
-      setRosterReloadToken((value) => value + 1);
-      await loadRosterMatrix(periodId);
+  async function handleWishesChanged() {
+    if (planningScope) {
+      await invalidateQueryKeys(queryClient, wishesEditKeys(planningScope));
     }
-  }, [loadRosterMatrix, loadWarnings, periodId]);
+  }
 
-  const handleDayIntervalApplied = useCallback(async () => {
-    setMatrixReloadToken((value) => value + 1);
+  async function handleDayIntervalApplied() {
     await handleWishesChanged();
-  }, [handleWishesChanged]);
+  }
 
-  const handleSolverApplied = useCallback(
-    async (applied: SolverRunRead) => {
-      if (!periodId) {
-        return;
-      }
-      setSolverDialogOpen(false);
-      setSolverReloadToken((value) => value + 1);
-      setRosterReloadToken((value) => value + 1);
-      await loadRosterMatrix(periodId);
-      await loadWarnings(periodId);
-      await loadFairnessAccounts(periodId);
-      setMessage(t(locale, "solverApplied", { count: String((applied.proposed_assignments ?? []).length) }));
-    },
-    [loadFairnessAccounts, loadRosterMatrix, loadWarnings, locale, periodId]
-  );
+  async function handleSolverApplied(applied: SolverRunRead) {
+    setSolverDialogOpen(false);
+    if (planningScope) {
+      await invalidateQueryKeys(queryClient, rosterAssignmentKeys(planningScope));
+    }
+    if (organizationId != null) {
+      await queryClient.invalidateQueries({ queryKey: ["solver-runs", organizationId, periodId, shiftGroupId] });
+    }
+    setMessage(t(locale, "solverApplied", { count: String((applied.proposed_assignments ?? []).length) }));
+  }
 
-  const handleSolverRunChange = useCallback((_next: SolverRunRead) => {
-    setSolverReloadToken((value) => value + 1);
-  }, []);
-
-  const handleSwapApplied = useCallback(async () => {
-    if (!periodId) {
+  function handleSolverRunChange(next: SolverRunRead) {
+    if (organizationId == null) {
       return;
     }
-    setSwapReloadToken((value) => value + 1);
-    setRosterReloadToken((value) => value + 1);
-    await loadRosterMatrix(periodId);
-    await loadWarnings(periodId);
-    await loadFairnessAccounts(periodId);
-  }, [loadFairnessAccounts, loadRosterMatrix, loadWarnings, periodId]);
+    queryClient.setQueryData(["solver-runs", organizationId, periodId, shiftGroupId], next);
+  }
+
+  async function handleSwapApplied() {
+    if (planningScope) {
+      await invalidateQueryKeys(queryClient, rosterAssignmentKeys(planningScope));
+    }
+    if (organizationId != null) {
+      await queryClient.invalidateQueries({ queryKey: ["shift-swaps", organizationId, periodId, shiftGroupId] });
+    }
+  }
 
   const wishesSection = periodId ? (
     <section className="grid min-w-0 gap-3">
@@ -750,7 +629,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <MatrixEditor
           periodId={periodId}
           compact
-          reloadToken={matrixReloadToken}
           shiftGroupId={shiftGroupId || undefined}
           versionId={viewingVersionId ?? undefined}
           editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
@@ -788,13 +666,12 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           periodId={periodId}
           compact
           readOnly={Boolean(teamMemberPortalUi) || !plannerPlanningEditable || viewingVersionId != null}
-          reloadToken={rosterReloadToken}
+          teamMemberPortal={teamMemberPortalUi}
           shiftGroupId={shiftGroupId || undefined}
           versionId={viewingVersionId ?? undefined}
           duplicateMemberDayKeys={duplicateMemberDayKeys}
           validationWarnings={warnings}
           fairnessAccounts={teamMemberPortalUi ? null : fairnessAccounts}
-          onMatrixChange={handleRosterChange}
           highlightTeamMemberId={
             teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined
           }
@@ -816,7 +693,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         groupStatus={groupPlanningStatus?.status}
         onApplied={() => void handleSwapApplied()}
         periodId={periodId}
-        reloadToken={swapReloadToken}
         roster={rosterMatrix}
         shiftGroupId={shiftGroupId}
         teamMemberId={userMe?.team_member_id ?? null}
@@ -826,7 +702,6 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <SolverRunPanel
           periodId={periodId}
           shiftGroupId={shiftGroupId}
-          reloadToken={solverReloadToken}
           onApplied={handleSolverApplied}
         />
       ) : null}
@@ -878,9 +753,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       <ShiftSwapMarketplace
         capabilities={swapCapabilities}
         groupStatus={groupPlanningStatus?.status}
-        onChanged={() => setSwapReloadToken((value) => value + 1)}
+        onChanged={() => void handleSwapApplied()}
         periodId={periodId}
-        reloadToken={swapReloadToken}
         roster={rosterMatrix}
         shiftGroupId={shiftGroupId}
         teamMemberId={userMe?.team_member_id ?? null}
@@ -904,7 +778,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               <Field label={t(locale, "planningPeriod")}>
                 <select className={`${inputClass} h-10 min-w-40`} value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
                   <option value="">{t(locale, "emptyValue")}</option>
-                  {periods.map((period) => (
+                  {(periods ?? []).map((period) => (
                     <option key={period.id} value={period.id}>
                       {monthLabel(period)}
                     </option>
@@ -1320,7 +1194,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
           offeredSlotId={offerSlotId}
           onClose={() => setOfferSlotId(null)}
           onSubmitted={() => {
-            setSwapReloadToken((value) => value + 1);
+            void handleSwapApplied();
             setMessage(t(locale, "shiftSwapOffered"));
           }}
           open

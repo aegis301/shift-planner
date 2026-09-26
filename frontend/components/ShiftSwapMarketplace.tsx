@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
+import { useShiftSwapList } from "@/lib/queries/activity";
+import { usePlanningOrganizationId } from "@/lib/queries/planning";
 import { sessionTimeZone } from "@/lib/orgTime";
 import { t } from "@/lib/i18n";
 import {
   acceptShiftSwap,
   claimShiftSwap,
   declineShiftSwap,
-  listShiftSwaps,
   shiftSwapErrorText,
   readSwapFinding,
   shiftSwapFindingText,
@@ -34,7 +36,6 @@ export function ShiftSwapMarketplace({
   groupStatus,
   variant,
   capabilities,
-  reloadToken,
   onChanged
 }: {
   periodId: string;
@@ -44,14 +45,21 @@ export function ShiftSwapMarketplace({
   groupStatus: string | null | undefined;
   variant: SwapPortalVariant;
   capabilities: { team_member_portal: boolean };
-  reloadToken: number;
   onChanged?: () => void;
 }) {
   const { locale } = useLocale();
   const { me } = useSession();
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
   const timeZone = sessionTimeZone(me);
-  const [rows, setRows] = useState<ShiftSwapRequestRead[]>([]);
-  const [loadError, setLoadError] = useState("");
+  const swapsQuery = useShiftSwapList({
+    periodId,
+    shiftGroupId,
+    scope: "marketplace",
+    enabled: Boolean(periodId && shiftGroupId)
+  });
+  const rows = swapsQuery.data ?? [];
+  const loadError = swapsQuery.isError ? t(locale, "shiftSwapLoadError") : "";
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const availability = swapAvailability({
@@ -64,32 +72,19 @@ export function ShiftSwapMarketplace({
   });
   const unavailableKey = availability.available ? null : swapAvailabilityMessageKey("marketplace", availability.reason);
 
-  const reload = useCallback(async () => {
-    if (!availability.available) {
-      setRows([]);
-      setLoadError("");
+  async function refreshSwaps() {
+    if (organizationId == null) {
       return;
     }
-    try {
-      const next = await listShiftSwaps(periodId, shiftGroupId);
-      setRows(next);
-      setLoadError("");
-    } catch {
-      setRows([]);
-      setLoadError(t(locale, "shiftSwapLoadError"));
-    }
-  }, [availability.available, locale, periodId, shiftGroupId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload, reloadToken]);
+    await queryClient.invalidateQueries({ queryKey: ["shift-swaps", organizationId, periodId, shiftGroupId] });
+  }
 
   async function runAction(requestId: number, action: () => Promise<unknown>) {
     setBusyId(requestId);
     setActionError("");
     try {
       await action();
-      await reload();
+      await refreshSwaps();
       onChanged?.();
     } catch (error) {
       setActionError(shiftSwapErrorText(locale, error));

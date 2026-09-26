@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { sessionTimeZone } from "@/lib/orgTime";
@@ -17,25 +18,16 @@ import {
   toDatetimeLocalValue,
   utilizationPercentLabel,
   type DutyActivitySlotRef,
-  type DutyActivitySlotUtilization
 } from "@/lib/dutyActivity";
 import { formatPlanningDate, formatShiftTimeRange } from "@/lib/shiftDisplay";
 import { t } from "@/lib/i18n";
+import { queryKeys } from "@/lib/queryKeys";
+import { useDutyUtilization, usePlanningOrganizationId } from "@/lib/queries/planning";
 
 function DutyActivitySummary({ rosterSlotId }: { rosterSlotId: number }) {
   const { locale } = useLocale();
-  const [summary, setSummary] = useState<DutyActivitySlotUtilization | null>(null);
-
-  const reload = useCallback(async () => {
-    const next = await apiFetch<DutyActivitySlotUtilization>(
-      `/api/v1/duty-activity/slots/${rosterSlotId}/utilization`
-    );
-    setSummary(next);
-  }, [rosterSlotId]);
-
-  useEffect(() => {
-    void reload().catch(() => setSummary(null));
-  }, [reload]);
+  const summaryQuery = useDutyUtilization(rosterSlotId, true);
+  const summary = summaryQuery.data ?? null;
 
   if (!summary) {
     return null;
@@ -62,6 +54,8 @@ function DutyActivityRetrospective({
 }) {
   const { locale } = useLocale();
   const { me } = useSession();
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
   const timeZone = sessionTimeZone(me);
   const kind = kindForCategory(slot.category);
   const [startedAt, setStartedAt] = useState(slot.starts_at ? toDatetimeLocalValue(slot.starts_at, timeZone) : "");
@@ -86,6 +80,11 @@ function DutyActivityRetrospective({
           ended_at: fromDatetimeLocalValue(endedAt, timeZone)
         })
       });
+      if (organizationId != null) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.dutyUtilization(organizationId, slot.roster_slot_id)
+        });
+      }
       onSaved();
     } catch (error) {
       setMessage(error instanceof ApiError ? error.message : t(locale, "dutyActivitySaveError"));
@@ -132,7 +131,7 @@ export function DutyActivityShiftList({ slots }: { slots: DutyActivitySlotRef[] 
   const { locale } = useLocale();
   const { me } = useSession();
   const timeZone = sessionTimeZone(me);
-  const [reloadToken, setReloadToken] = useState(0);
+  const [formGeneration, setFormGeneration] = useState(0);
   const capturable = slots.filter(isCapturableSlot);
 
   if (capturable.length === 0) {
@@ -154,11 +153,15 @@ export function DutyActivityShiftList({ slots }: { slots: DutyActivitySlotRef[] 
               {formatPlanningDate(locale, slot.slot_date)}
               {slot.starts_at && slot.ends_at ? ` · ${formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone)}` : ""}
             </p>
-            <div className="mt-2" key={`${slot.roster_slot_id}-${reloadToken}`}>
+            <div className="mt-2">
               <DutyActivitySummary rosterSlotId={slot.roster_slot_id} />
             </div>
             {running ? null : ended ? (
-              <DutyActivityRetrospective slot={slot} onSaved={() => setReloadToken((value) => value + 1)} />
+              <DutyActivityRetrospective
+                key={`${slot.roster_slot_id}-${formGeneration}`}
+                slot={slot}
+                onSaved={() => setFormGeneration((value) => value + 1)}
+              />
             ) : null}
           </article>
         );
