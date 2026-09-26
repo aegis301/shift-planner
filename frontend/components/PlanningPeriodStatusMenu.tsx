@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 
 export type PlanningPeriodStatusAction = "status-draft" | "status-preliminary" | "status-published";
 
@@ -63,26 +70,6 @@ export function PlanningPeriodStatusMenu({
   disabledReason,
   onSelectAction
 }: PlanningPeriodStatusMenuProps) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    function onPointerDown(event: MouseEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [open]);
-
-  useEffect(() => {
-    setOpen(false);
-  }, [status, disabled]);
-
   const effectiveDisabled = disabled || status == null;
   const transitions = status ? transitionActions(status) : [];
   const triggerLabel = status
@@ -90,55 +77,35 @@ export function PlanningPeriodStatusMenu({
     : t(locale, "planningPeriodStatusSelectGroup");
 
   return (
-    <div ref={rootRef} className="relative min-w-44">
-      <button
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={t(locale, "planningPeriodStatusMenu")}
-        className={`inline-flex h-10 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-          status ? statusBadgeClass(status) : "border-slate-200 bg-white text-slate-600"
-        }`}
-        disabled={effectiveDisabled}
-        onClick={() => {
-          if (!effectiveDisabled) {
-            setOpen((value) => !value);
-          }
-        }}
-        title={disabledReason ? t(locale, disabledReason) : undefined}
-        type="button"
-      >
-        <span className="truncate">{triggerLabel}</span>
-        <ChevronDown className={`h-4 w-4 shrink-0 transition ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && status ? (
-        <div
-          className="absolute right-0 z-20 mt-1 min-w-full rounded-lg border border-slate-200 bg-white py-1 shadow-lg ring-1 ring-slate-100"
-          role="menu"
+    <DropdownMenu key={status ?? "none"}>
+      <DropdownMenuTrigger asChild disabled={effectiveDisabled}>
+        <button
+          aria-label={t(locale, "planningPeriodStatusMenu")}
+          className={`group inline-flex h-10 min-w-44 items-center justify-between gap-2 rounded-lg border px-3 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+            status ? statusBadgeClass(status) : "border-slate-200 bg-white text-slate-600"
+          }`}
+          disabled={effectiveDisabled}
+          title={disabledReason ? t(locale, disabledReason) : undefined}
+          type="button"
         >
-          <div
-            className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-slate-500"
-            role="presentation"
-          >
+          <span className="truncate">{triggerLabel}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 transition group-data-[state=open]:rotate-180" />
+        </button>
+      </DropdownMenuTrigger>
+      {status ? (
+        <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuLabel className="flex items-center gap-2 normal-case tracking-normal text-sm font-semibold">
             <Check className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
             <span>{t(locale, statusLabelKey(status))}</span>
-          </div>
-          <div className="my-1 border-t border-slate-100" role="separator" />
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           {transitions.map((action) => (
-            <button
-              key={action}
-              className="block w-full px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-50"
-              onClick={() => {
-                setOpen(false);
-                onSelectAction(action);
-              }}
-              role="menuitem"
-              type="button"
-            >
+            <DropdownMenuItem key={action} className="font-medium text-slate-800" onSelect={() => onSelectAction(action)}>
               {t(locale, actionLabelKey(action))}
-            </button>
+            </DropdownMenuItem>
           ))}
-        </div>
+        </DropdownMenuContent>
       ) : null}
-    </div>
+    </DropdownMenu>
   );
 }

@@ -9,6 +9,8 @@ import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TeamMemberCreateModal, TeamMemberEditorModal, isTeamMemberRecord, type TeamMemberRecord } from "@/components/ResourceForms";
 import { EmploymentContractSection } from "@/components/EmploymentContractSection";
 import { WorkTimeConsentSection } from "@/components/WorkTimeConsentSection";
@@ -609,27 +611,13 @@ export function StaffDirectoryPanel() {
       ) : null}
 
       {detailRow ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-3 py-6 backdrop-blur-sm"
-          role="presentation"
-          tabIndex={-1}
-          onClick={() => setDetailRow(null)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setDetailRow(null);
-          }}
-        >
-          <div
-            className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-soft ring-1 ring-slate-200"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="staff-detail-title"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Dialog open onOpenChange={(next) => { if (!next) setDetailRow(null); }}>
+          <DialogContent className="flex max-h-[92vh] max-w-3xl flex-col overflow-hidden p-0" aria-labelledby="staff-detail-title">
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
               <div className="min-w-0">
-                <h2 id="staff-detail-title" className="truncate text-lg font-semibold text-ink">
+                <DialogTitle id="staff-detail-title" className="truncate">
                   {detailRow.email}
-                </h2>
+                </DialogTitle>
                 <p className="mt-1 text-xs text-slate-500">{t(locale, linkStatusTranslationKey(detailRow.link_status))}</p>
               </div>
               <button
@@ -671,20 +659,12 @@ export function StaffDirectoryPanel() {
                 {renderAccessControls(detailRow, rowKeyOf(detailRow))}
               </section>
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
-      {confirmModal ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm"
-          role="presentation"
-          tabIndex={-1}
-          onClick={() => setConfirmModal(null)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setConfirmModal(null);
-          }}
-        >
+      <AlertDialog open={confirmModal != null} onOpenChange={(next) => { if (!next) setConfirmModal(null); }}>
+        <AlertDialogContent>
           <div
             className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200"
             role="dialog"
@@ -693,9 +673,9 @@ export function StaffDirectoryPanel() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 id={modalTitleId} className="text-lg font-semibold text-ink">
+              <AlertDialogTitle id={modalTitleId}>
                 {modalTitle}
-              </h2>
+              </AlertDialogTitle>
               <button
                 aria-label={t(locale, "close")}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
@@ -719,8 +699,8 @@ export function StaffDirectoryPanel() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

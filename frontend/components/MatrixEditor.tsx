@@ -6,6 +6,7 @@ import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale } from "@/lib/i18n";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   activePlanningDayStatusDefinitions,
   planningDayStatusBadgeClass,
@@ -842,10 +843,10 @@ function MonthlyCommentModal({
 }) {
   const title = t(locale, "monthPlanningNoteForMatrix", { month: monthLabel });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="monthly-comment-title">
-      <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-2xl" aria-labelledby="monthly-comment-title">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 id="monthly-comment-title" className="text-lg font-semibold text-ink">{title}</h2>
+          <DialogTitle id="monthly-comment-title">{title}</DialogTitle>
           <button
             type="button"
             onClick={onClose}
@@ -877,8 +878,8 @@ function MonthlyCommentModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1074,12 +1075,12 @@ function DayEditSheet({
     return null;
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/30 px-0 py-0 backdrop-blur-sm lg:items-center lg:px-4 lg:py-6">
-      <div className="flex max-h-[min(90dvh,90svh)] w-full flex-col rounded-t-xl bg-white shadow-soft ring-1 ring-slate-200 lg:max-w-lg lg:rounded-xl">
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="flex max-h-[min(90dvh,90svh)] w-full max-w-lg flex-col p-0">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-base font-semibold text-ink">
+          <DialogTitle className="text-base">
             {t(locale, "matrixDaySheetTitle")} · {formatDate(locale, cellDate)}
-          </h2>
+          </DialogTitle>
           <button
             type="button"
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600"
@@ -1105,8 +1106,8 @@ function DayEditSheet({
             commentInSheetOnly={false}
           />
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1695,11 +1696,11 @@ function TeamMemberNoteModal({
   const monthNoteLabel = monthLabel ? t(locale, "monthPlanningNoteForMatrix", { month: monthLabel }) : t(locale, "monthlyComment");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="member-note-title">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-xl bg-white shadow-soft ring-1 ring-slate-200">
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-auto p-0" aria-labelledby="member-note-title">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div>
-            <h2 id="member-note-title" className="text-lg font-semibold text-ink">{teamMemberLabel(member)}</h2>
+            <DialogTitle id="member-note-title">{teamMemberLabel(member)}</DialogTitle>
             <p className="mt-1 text-sm text-slate-600">{t(locale, "teamMemberPeriodNotes")}</p>
           </div>
           <button
@@ -1743,8 +1744,8 @@ function TeamMemberNoteModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

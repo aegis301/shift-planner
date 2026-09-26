@@ -6,6 +6,11 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   root,
+  oxc: {
+    jsx: {
+      runtime: "automatic"
+    }
+  },
   test: {
     environment: "jsdom",
     include: ["lib/**/*.test.ts", "components/**/*.test.tsx"],

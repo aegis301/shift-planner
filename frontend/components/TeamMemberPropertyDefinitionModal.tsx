@@ -6,6 +6,7 @@ import { Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   TEAM_MEMBER_PROPERTY_TYPE_KEYS,
   TEAM_MEMBER_PROPERTY_TYPES,
@@ -106,17 +107,17 @@ export function TeamMemberPropertyDefinitionModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-3 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-lg">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-ink">
+          <DialogTitle>
             {t(
               locale,
               definitionId === null
                 ? "teamMemberPropertyDefinitionAdd"
                 : "teamMemberPropertyDefinitionEdit"
             )}
-          </h2>
+          </DialogTitle>
           <button
             type="button"
             className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
@@ -249,7 +250,7 @@ export function TeamMemberPropertyDefinitionModal({
           </div>
           {message ? <p className="text-sm text-red-600">{message}</p> : null}
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

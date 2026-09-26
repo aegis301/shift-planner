@@ -1,7 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { BarChart3, ChevronDown, Download, RefreshCw, Save } from "lucide-react";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import {
@@ -26,6 +25,15 @@ import {
 } from "@/lib/planningDayStatus";
 import { overlapCalendarDaysForSlot } from "@/lib/shiftOverlap";
 import { Card, Field, inputClass } from "@/components/Card";
+import {
+  Combobox,
+  ComboboxAnchor,
+  ComboboxContent,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList
+} from "@/components/ui/combobox";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { FairnessMemberRollingSummary } from "@/components/FairnessAccountsPanel";
 import {
   fairnessDeviationChipClass,
@@ -946,10 +954,6 @@ function RosterCell({
   const [workloadModalMemberId, setWorkloadModalMemberId] = useState<number | null>(null);
   const [pickerFilter, setPickerFilter] = useState("");
   const [manualOverride, setManualOverride] = useState(() => assignment?.manual_override === true);
-  const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number } | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const workloadDialogTitleId = useId();
   const templateId = slot.shift_template_id;
   const { me } = useSession();
@@ -1044,30 +1048,6 @@ function RosterCell({
   const isMyAssignment = highlightTeamMemberId != null && assigneeId === highlightTeamMemberId;
   const highlightMine = isMyAssignment && !warnUnavailable && !duplicateSameDay;
 
-  const syncMenuPosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) {
-      return;
-    }
-    const viewportPadding = 8;
-    const gap = 4;
-    const estimatedMenuHeight = Math.min(280, Math.max(140, menuRef.current?.offsetHeight ?? 220));
-    const rect = trigger.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - gap - viewportPadding;
-    const spaceAbove = rect.top - gap - viewportPadding;
-    const shouldOpenUp = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow;
-    const idealTop = shouldOpenUp ? rect.top - estimatedMenuHeight - gap : rect.bottom + gap;
-    const top = Math.max(
-      viewportPadding,
-      Math.min(idealTop, window.innerHeight - estimatedMenuHeight - viewportPadding)
-    );
-    setMenuBox({
-      top,
-      left: rect.left,
-      width: Math.max(rect.width, 200)
-    });
-  }, []);
-
   useEffect(() => {
     setMemberId(assignment?.team_member_id ?? "");
     setManualOverride(assignment?.manual_override === true);
@@ -1079,290 +1059,18 @@ function RosterCell({
     }
   }, [open]);
 
-  useLayoutEffect(() => {
-    if (!open) {
-      setMenuBox(null);
-      return;
+  async function assignMember(nextMemberId: number | "") {
+    const previous = memberId;
+    setMemberId(nextMemberId);
+    setOpen(false);
+    const ok = await onSave(slot.id, nextMemberId, nextMemberId === "" ? undefined : manualOverride);
+    if (!ok) {
+      setMemberId(previous);
     }
-    syncMenuPosition();
-    const frame = window.requestAnimationFrame(() => {
-      syncMenuPosition();
-    });
-    function onReposition() {
-      syncMenuPosition();
-    }
-    window.addEventListener("scroll", onReposition, true);
-    window.addEventListener("resize", onReposition);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", onReposition, true);
-      window.removeEventListener("resize", onReposition);
-    };
-  }, [open, syncMenuPosition]);
-
-  useEffect(() => {
-    if (workloadModalMemberId == null) {
-      return;
-    }
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setWorkloadModalMemberId(null);
-      }
-    }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [workloadModalMemberId]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    function handlePointer(event: MouseEvent) {
-      const target = event.target as Node;
-      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    }
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handlePointer);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("mousedown", handlePointer);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [open]);
-
-  const menuPortal =
-    open && menuBox && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            ref={menuRef}
-            className="fixed z-[500] flex max-h-[min(50vh,280px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white py-0 shadow-xl ring-1 ring-slate-900/10"
-            style={{ top: menuBox.top, left: menuBox.left, width: menuBox.width }}
-            role="presentation"
-          >
-            <div className="shrink-0 border-b border-slate-200 p-2">
-              <input
-                type="search"
-                className={`${inputClass} h-9 text-xs`}
-                placeholder={t(locale, "searchTeamMembersPlaceholder")}
-                value={pickerFilter}
-                onChange={(event) => setPickerFilter(event.target.value)}
-                onKeyDown={(event) => event.stopPropagation()}
-                autoComplete="off"
-                autoFocus
-                aria-label={t(locale, "searchTeamMembersPlaceholder")}
-              />
-            </div>
-            <ul className="min-h-0 flex-1 list-none overflow-y-auto py-1" role="listbox">
-              <li role="none">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
-                  onClick={async () => {
-                    const previous = memberId;
-                    setMemberId("");
-                    setOpen(false);
-                    const ok = await onSave(slot.id, "");
-                    if (!ok) {
-                      setMemberId(previous);
-                    }
-                  }}
-                >
-                  {t(locale, "emptyValue")}
-                </button>
-              </li>
-              {filteredMembers.length === 0 && pickerFilter.trim() ? (
-                <li className="px-3 py-2 text-xs text-slate-500" role="presentation">
-                  {t(locale, "noTeamMemberMatches")}
-                </li>
-              ) : null}
-              {filteredMembers.map((member) => {
-                const overlapBlockingCell = overlapDays
-                  .map((day) => planningCellMap.get(`${day}:${member.id}`))
-                  .find((cell) => cell?.status && rosterBlocksForPlanningDayStatusCode(cell.status, dayStatusDefinitions));
-                const cell = overlapBlockingCell ?? planningCellMap.get(`${slot.slot_date}:${member.id}`);
-                const st = cell?.status;
-                const stRow = st ? planningDayStatusByCode(dayStatusDefinitions).get(st) : undefined;
-                const dotClass = stRow ? planningDayStatusSolidClass(stRow.color_preset) : "bg-slate-300";
-                const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
-                const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
-                const memberBlocked = memberHasBlockingOverlap(member);
-                const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
-                const fairnessValue =
-                  relevantDimension != null
-                    ? fairnessValueForMember(fairnessByMember, member.id, relevantDimension.id)
-                    : undefined;
-                const fairnessDeviationLabel =
-                  fairnessValue && relevantDimension
-                    ? formatFairnessDeviation(fairnessValue.deviation_absolute, relevantDimension.metric, locale)
-                    : null;
-                return (
-                  <li key={member.id} className="flex items-stretch" role="none">
-                    <button
-                      type="button"
-                      className={
-                        memberBlocked
-                          ? "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-rose-50"
-                          : "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
-                      }
-                      onClick={async () => {
-                        const previous = memberId;
-                        setMemberId(member.id);
-                        setOpen(false);
-                        const ok = await onSave(slot.id, member.id, manualOverride);
-                        if (!ok) {
-                          setMemberId(previous);
-                        }
-                      }}
-                    >
-                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
-                      <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{teamMemberLabel(member)}</span>
-                      {fairnessValue && relevantDimension && fairnessDeviationLabel ? (
-                        <span
-                          className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums ring-1 ${fairnessDeviationChipClass(fairnessValue.deviation_absolute)}`}
-                          title={t(locale, "fairnessPickerDeviationTitle", {
-                            dimension: fairnessDimensionLabel(locale, relevantDimension),
-                            window: fairnessWindowLabel,
-                            value: fairnessDeviationLabel
-                          })}
-                        >
-                                {`Δ ${fairnessDeviationLabel}`}
-                        </span>
-                      ) : null}
-                      <span
-                        className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums text-slate-700 ring-1 ring-slate-200/80"
-                        title={t(locale, "rosterPickerMonthAssignmentsTitle", { count: String(assignedThisTemplate) })}
-                      >
-                        {assignedThisTemplate}
-                      </span>
-                      {intentKind === "wish" ? (
-                        <span className="shrink-0 rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900">
-                          {t(locale, "wishShort")}
-                        </span>
-                      ) : null}
-                      {intentKind === "no_go" ? (
-                        <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
-                          {t(locale, "noGoShort")}
-                        </span>
-                      ) : null}
-                      {memberBlocked ? (
-                        <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
-                          {t(locale, "conflict")}
-                        </span>
-                      ) : null}
-                    </button>
-                    <button
-                      type="button"
-                      className="flex shrink-0 items-center justify-center border-l border-slate-100 px-2 text-slate-500 hover:bg-slate-50 hover:text-ink"
-                      aria-label={t(locale, "rosterMemberWorkloadStatsAria")}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setOpen(false);
-                        setWorkloadModalMemberId(member.id);
-                      }}
-                    >
-                      <BarChart3 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="shrink-0 border-t border-slate-100 bg-slate-50/95 px-2 py-1.5">
-              <label className="flex cursor-pointer items-center gap-2 text-[0.62rem] leading-tight text-slate-500">
-                <input
-                  type="checkbox"
-                  className="h-3 w-3 shrink-0 rounded border-slate-300"
-                  checked={manualOverride}
-                  onChange={(event) => setManualOverride(event.target.checked)}
-                />
-                <span title={t(locale, "manualOverride")}>{t(locale, "manualOverrideAbbr")}</span>
-              </label>
-            </div>
-          </div>,
-          document.body
-        )
-      : null;
-
-  const statsModalPortal =
-    workloadModalMemberId != null && workloadModalRow && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            className="fixed inset-0 z-[600] flex items-end justify-center bg-slate-900/40 p-4 sm:items-center sm:p-6"
-            role="presentation"
-            onMouseDown={(event) => {
-              if (event.target === event.currentTarget) {
-                setWorkloadModalMemberId(null);
-              }
-            }}
-          >
-            <div
-              className="max-h-[min(90dvh,32rem)] w-full max-w-md overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl ring-1 ring-slate-900/10"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby={workloadDialogTitleId}
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
-                <div className="min-w-0">
-                  <h2 id={workloadDialogTitleId} className="text-base font-semibold text-ink">
-                    {t(locale, "rosterMemberWorkloadModalTitle", { name: workloadModalRow.name })}
-                  </h2>
-                  <p className="mt-0.5 text-xs text-slate-600">
-                    {t(locale, "fairnessModalMonthTitle")} · {t(locale, "rosterMemberWorkloadModalSubtitle", { period: planningPeriodLabel })}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  onClick={() => setWorkloadModalMemberId(null)}
-                >
-                  {t(locale, "close")}
-                </button>
-              </div>
-              <FairnessMemberRollingSummary accounts={fairnessAccounts} teamMemberId={workloadModalRow.memberId} />
-              <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
-                <dt className="col-span-2 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">
-                  {t(locale, "fairnessModalMonthTitle")}
-                </dt>
-                <dt className="text-slate-600">{t(locale, "employment")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.employmentPercentage}%</dd>
-                <dt className="text-slate-600">{t(locale, "totalShifts")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.total}</dd>
-                <dt className="text-slate-600">{t(locale, "onCallDutyCategory")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.onCallDuty}</dd>
-                <dt className="text-slate-600">{t(locale, "standbyDutyCategory")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.standbyDuty}</dd>
-                <dt className="text-slate-600">{t(locale, "lateDutyCategory")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.lateDuty}</dd>
-                <dt className="text-slate-600">{t(locale, "other")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.other}</dd>
-                <dt className="text-slate-600">{t(locale, "workloadWeekendHolidayShifts")}</dt>
-                <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.weekendHolidayShifts}</dd>
-                <dt className="text-slate-600">{t(locale, "conflicts")}</dt>
-                <dd
-                  className={
-                    workloadModalRow.conflicts ? "text-right font-semibold tabular-nums text-rose-700" : "text-right font-medium tabular-nums text-ink"
-                  }
-                >
-                  {workloadModalRow.conflicts}
-                </dd>
-              </dl>
-            </div>
-          </div>,
-          document.body
-        )
-      : null;
+  }
 
   return (
     <div
-      ref={rootRef}
       className={`relative grid gap-1 rounded-lg p-0.5 ${
         warnUnavailable
           ? "bg-rose-50 ring-2 ring-rose-300"
@@ -1375,8 +1083,16 @@ function RosterCell({
       title={highlightMine ? t(locale, "rosterMyAssignmentHighlight") : undefined}
       aria-label={highlightMine ? t(locale, "rosterMyAssignmentHighlight") : undefined}
     >
+      <Combobox
+        open={open}
+        onOpenChange={(next) => {
+          if (!readOnly) {
+            setOpen(next);
+          }
+        }}
+      >
+      <ComboboxAnchor asChild>
       <button
-        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -1407,8 +1123,195 @@ function RosterCell({
         ) : null}
         <ChevronDown className={`pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 transition ${open ? "rotate-180" : ""}`} aria-hidden />
       </button>
-      {menuPortal}
-      {statsModalPortal}
+      </ComboboxAnchor>
+      <ComboboxContent
+        className="w-[max(var(--radix-popover-trigger-width),16rem)]"
+        shouldFilter={false}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <ComboboxInput
+          aria-label={t(locale, "searchTeamMembersPlaceholder")}
+          autoComplete="off"
+          placeholder={t(locale, "searchTeamMembersPlaceholder")}
+          value={pickerFilter}
+          onValueChange={setPickerFilter}
+        />
+        <ComboboxList>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-600 hover:bg-slate-50"
+            onClick={() => {
+              void assignMember("");
+            }}
+          >
+            {t(locale, "emptyValue")}
+          </button>
+          {filteredMembers.length === 0 && pickerFilter.trim() ? (
+            <p className="px-3 py-2 text-xs text-slate-500">{t(locale, "noTeamMemberMatches")}</p>
+          ) : null}
+          {filteredMembers.map((member) => {
+            const overlapBlockingCell = overlapDays
+              .map((day) => planningCellMap.get(`${day}:${member.id}`))
+              .find((cell) => cell?.status && rosterBlocksForPlanningDayStatusCode(cell.status, dayStatusDefinitions));
+            const cell = overlapBlockingCell ?? planningCellMap.get(`${slot.slot_date}:${member.id}`);
+            const st = cell?.status;
+            const stRow = st ? planningDayStatusByCode(dayStatusDefinitions).get(st) : undefined;
+            const dotClass = stRow ? planningDayStatusSolidClass(stRow.color_preset) : "bg-slate-300";
+            const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
+            const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
+            const memberBlocked = memberHasBlockingOverlap(member);
+            const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
+            const fairnessValue =
+              relevantDimension != null
+                ? fairnessValueForMember(fairnessByMember, member.id, relevantDimension.id)
+                : undefined;
+            const fairnessDeviationLabel =
+              fairnessValue && relevantDimension
+                ? formatFairnessDeviation(fairnessValue.deviation_absolute, relevantDimension.metric, locale)
+                : null;
+            return (
+              <div key={member.id} className="flex items-stretch">
+                <ComboboxItem
+                  asChild
+                  value={String(member.id)}
+                  onSelect={() => {
+                    void assignMember(member.id);
+                  }}
+                >
+                  <button
+                    type="button"
+                    className={
+                      memberBlocked
+                        ? "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-rose-50"
+                        : "flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-50"
+                    }
+                  >
+                    <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} aria-hidden />
+                    <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{teamMemberLabel(member)}</span>
+                    {fairnessValue && relevantDimension && fairnessDeviationLabel ? (
+                      <span
+                        className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums ring-1 ${fairnessDeviationChipClass(fairnessValue.deviation_absolute)}`}
+                        title={t(locale, "fairnessPickerDeviationTitle", {
+                          dimension: fairnessDimensionLabel(locale, relevantDimension),
+                          window: fairnessWindowLabel,
+                          value: fairnessDeviationLabel
+                        })}
+                      >
+                        {`Δ ${fairnessDeviationLabel}`}
+                      </span>
+                    ) : null}
+                    <span
+                      className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums text-slate-700 ring-1 ring-slate-200/80"
+                      title={t(locale, "rosterPickerMonthAssignmentsTitle", { count: String(assignedThisTemplate) })}
+                    >
+                      {assignedThisTemplate}
+                    </span>
+                    {intentKind === "wish" ? (
+                      <span className="shrink-0 rounded-md bg-sky-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-sky-900">
+                        {t(locale, "wishShort")}
+                      </span>
+                    ) : null}
+                    {intentKind === "no_go" ? (
+                      <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
+                        {t(locale, "noGoShort")}
+                      </span>
+                    ) : null}
+                    {memberBlocked ? (
+                      <span className="shrink-0 rounded-md bg-rose-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-rose-900">
+                        {t(locale, "conflict")}
+                      </span>
+                    ) : null}
+                  </button>
+                </ComboboxItem>
+                <button
+                  type="button"
+                  className="flex shrink-0 items-center justify-center border-l border-slate-100 px-2 text-slate-500 hover:bg-slate-50 hover:text-ink"
+                  aria-label={t(locale, "rosterMemberWorkloadStatsAria")}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setOpen(false);
+                    setWorkloadModalMemberId(member.id);
+                  }}
+                >
+                  <BarChart3 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                </button>
+              </div>
+            );
+          })}
+        </ComboboxList>
+        <div className="shrink-0 border-t border-slate-100 bg-slate-50/95 px-2 py-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-[0.62rem] leading-tight text-slate-500">
+            <input
+              type="checkbox"
+              className="h-3 w-3 shrink-0 rounded border-slate-300"
+              checked={manualOverride}
+              onChange={(event) => setManualOverride(event.target.checked)}
+            />
+            <span title={t(locale, "manualOverride")}>{t(locale, "manualOverrideAbbr")}</span>
+          </label>
+        </div>
+      </ComboboxContent>
+      </Combobox>
+      {workloadModalMemberId != null && workloadModalRow ? (
+        <Dialog
+          open
+          onOpenChange={(next) => {
+            if (!next) {
+              setWorkloadModalMemberId(null);
+            }
+          }}
+        >
+          <DialogContent aria-labelledby={workloadDialogTitleId} className="max-w-md p-0">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <DialogTitle id={workloadDialogTitleId} className="text-base">
+                  {t(locale, "rosterMemberWorkloadModalTitle", { name: workloadModalRow.name })}
+                </DialogTitle>
+                <p className="mt-0.5 text-xs text-slate-600">
+                  {t(locale, "fairnessModalMonthTitle")} · {t(locale, "rosterMemberWorkloadModalSubtitle", { period: planningPeriodLabel })}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => setWorkloadModalMemberId(null)}
+              >
+                {t(locale, "close")}
+              </button>
+            </div>
+            <FairnessMemberRollingSummary accounts={fairnessAccounts} teamMemberId={workloadModalRow.memberId} />
+            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 px-4 py-4 text-sm sm:px-5">
+              <dt className="col-span-2 text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">
+                {t(locale, "fairnessModalMonthTitle")}
+              </dt>
+              <dt className="text-slate-600">{t(locale, "employment")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.employmentPercentage}%</dd>
+              <dt className="text-slate-600">{t(locale, "totalShifts")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.total}</dd>
+              <dt className="text-slate-600">{t(locale, "onCallDutyCategory")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.onCallDuty}</dd>
+              <dt className="text-slate-600">{t(locale, "standbyDutyCategory")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.standbyDuty}</dd>
+              <dt className="text-slate-600">{t(locale, "lateDutyCategory")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.lateDuty}</dd>
+              <dt className="text-slate-600">{t(locale, "other")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.other}</dd>
+              <dt className="text-slate-600">{t(locale, "workloadWeekendHolidayShifts")}</dt>
+              <dd className="text-right font-medium tabular-nums text-ink">{workloadModalRow.weekendHolidayShifts}</dd>
+              <dt className="text-slate-600">{t(locale, "conflicts")}</dt>
+              <dd
+                className={
+                  workloadModalRow.conflicts ? "text-right font-semibold tabular-nums text-rose-700" : "text-right font-medium tabular-nums text-ink"
+                }
+              >
+                {workloadModalRow.conflicts}
+              </dd>
+            </dl>
+          </DialogContent>
+        </Dialog>
+      ) : null}
       {readOnly && isMyAssignment ? (
         <RosterSwapOfferButton locale={locale} slotDate={slot.slot_date} slotId={slot.id} swapOffer={swapOffer} />
       ) : null}

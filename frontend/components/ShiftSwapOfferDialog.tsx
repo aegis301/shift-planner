@@ -5,6 +5,7 @@ import { useLocale, useSession } from "@/components/LocaleProvider";
 import { sessionTimeZone } from "@/lib/orgTime";
 import { inputClass } from "@/components/Card";
 import { t } from "@/lib/i18n";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   createShiftSwap,
   fetchEligibleMembers,
@@ -88,16 +89,10 @@ export function ShiftSwapOfferDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[600] flex items-end justify-center bg-slate-900/40 p-4 sm:items-center sm:p-6"
-      onClick={onClose}
-    >
-      <div
-        className="grid w-full max-w-lg gap-4 rounded-2xl bg-white p-5 shadow-lg sm:p-6"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="grid max-w-lg gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftSwapOfferTitle")}</h2>
+          <DialogTitle>{t(locale, "shiftSwapOfferTitle")}</DialogTitle>
           <p className="mt-1 text-sm text-slate-600">{t(locale, "shiftSwapOfferHelp")}</p>
           {offeredSlot ? <p className="mt-2 text-sm font-medium text-ink">{swapSlotSummary(locale, offeredSlot, timeZone)}</p> : null}
         </div>
@@ -185,7 +180,7 @@ export function ShiftSwapOfferDialog({
             {t(locale, "shiftSwapOfferSubmit")}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

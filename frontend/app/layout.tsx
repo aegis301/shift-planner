@@ -16,7 +16,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="de">
+    <html lang="de" data-density="comfortable">
       <body>
         <ClientRoot>{children}</ClientRoot>
       </body>

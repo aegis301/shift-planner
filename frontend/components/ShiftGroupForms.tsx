@@ -13,6 +13,7 @@ import {
   type DateRangeStatus
 } from "@/lib/planningDates";
 import { Card, Field, inputClass } from "@/components/Card";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useLocale } from "@/components/LocaleProvider";
 
 type ShiftGroupMembership = {
@@ -384,10 +385,11 @@ function ShiftGroupEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
-      <form className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submit}>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-auto p-0">
+      <form className="p-5" onSubmit={submit}>
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold text-ink">{group ? t(locale, "editShiftGroup") : t(locale, "createShiftGroup")}</h2>
+          <DialogTitle>{group ? t(locale, "editShiftGroup") : t(locale, "createShiftGroup")}</DialogTitle>
           <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600" aria-label={t(locale, "close")}>
             <X size={17} />
           </button>
@@ -452,7 +454,8 @@ function ShiftGroupEditorModal({
           </button>
         </div>
       </form>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

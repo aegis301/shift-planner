@@ -12,6 +12,7 @@ import type {
   RegularWeekPatternDay
 } from "@/lib/api/types";
 import { t } from "@/lib/i18n";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 export type {
   ContractCategoryRule,
@@ -181,12 +182,12 @@ function ContractGroupModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-3 py-6 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-ink">
+          <DialogTitle>
             {isCreate ? t(locale, "contractGroupAdd") : t(locale, "contractGroupEdit")}
-          </h2>
+          </DialogTitle>
           <button type="button" className="rounded-lg p-2 text-slate-600 hover:bg-slate-100" onClick={onClose}>
             <X size={18} />
           </button>
@@ -325,8 +326,8 @@ function ContractGroupModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

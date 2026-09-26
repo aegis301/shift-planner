@@ -23,6 +23,8 @@ import {
   Trash2,
   X
 } from "lucide-react";
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
 import { PlanVersionPanel } from "@/components/PlanVersionPanel";
 import { Card, Field, inputClass } from "@/components/Card";
@@ -257,7 +259,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
     Boolean(icsExportEndDate) &&
     icsExportStartDate <= icsExportEndDate;
   const teamMemberExportReady = Boolean(shiftGroupId);
-  const exportModalOpen = isExportModalOpen && (periodId || (teamMemberPortalUi && teamMemberExportReady));
+  const exportModalOpen = isExportModalOpen && Boolean(periodId || (teamMemberPortalUi && teamMemberExportReady));
 
   useEffect(() => {
     setShiftGroupId(searchParams.get("shiftGroup") ?? "");
@@ -1119,11 +1121,11 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         <DutyActivityLiveBanner slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
       ) : null}
 
-      {isCreateModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="create-period-title">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+      <Dialog open={isCreateModalOpen} onOpenChange={(next) => { if (!next) setIsCreateModalOpen(false); }}>
+        <DialogContent className="max-w-md" aria-labelledby="create-period-title">
+          <div>
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 id="create-period-title" className="text-lg font-semibold text-ink">{t(locale, "createPeriod")}</h2>
+              <DialogTitle id="create-period-title">{t(locale, "createPeriod")}</DialogTitle>
               <button
                 aria-label={t(locale, "close")}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
@@ -1146,14 +1148,14 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               </button>
             </form>
           </div>
-        </div>
-      ) : null}
+        </DialogContent>
+      </Dialog>
 
-      {exportModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="export-title">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+      <Dialog open={exportModalOpen} onOpenChange={(next) => { if (!next) setIsExportModalOpen(false); }}>
+        <DialogContent className="max-w-md" aria-labelledby="export-title">
+          <div>
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 id="export-title" className="text-lg font-semibold text-ink">{t(locale, "exports")}</h2>
+              <DialogTitle id="export-title">{t(locale, "exports")}</DialogTitle>
               <button
                 aria-label={t(locale, "close")}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
@@ -1256,17 +1258,17 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               ) : null}
             </div>
           </div>
-        </div>
-      ) : null}
+        </DialogContent>
+      </Dialog>
 
-      {syncRosterConfirmOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="sync-roster-title">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+      <Dialog open={syncRosterConfirmOpen} onOpenChange={(next) => { if (!next) setSyncRosterConfirmOpen(false); }}>
+        <DialogContent className="max-w-md" aria-labelledby="sync-roster-title">
+          <div>
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h2 id="sync-roster-title" className="text-lg font-semibold text-ink">
+                <DialogTitle id="sync-roster-title">
                   {t(locale, "refreshRosterConfirmTitle")}
-                </h2>
+                </DialogTitle>
                 <p className="mt-2 text-sm text-slate-600">{t(locale, "refreshRosterConfirmBody")}</p>
               </div>
               <button
@@ -1296,8 +1298,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </DialogContent>
+      </Dialog>
 
       {planningUi && periodId ? (
         <SolverGenerateDialog
@@ -1328,16 +1330,16 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         />
       ) : null}
 
-      {destructiveAction ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="destructive-title">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-rose-200">
+      <AlertDialog open={destructiveAction != null} onOpenChange={(next) => { if (!next) setDestructiveAction(null); }}>
+        <AlertDialogContent aria-labelledby="destructive-title">
+          <div>
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="flex gap-3">
                 <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-700 ring-1 ring-rose-200">
                   <AlertTriangle size={19} />
                 </span>
                 <div>
-                  <h2 id="destructive-title" className="text-lg font-semibold text-ink">
+                  <AlertDialogTitle id="destructive-title">
                     {destructiveAction === "delete-period"
                       ? t(locale, "deletePlanningPeriod")
                       : destructiveAction === "status-published"
@@ -1347,7 +1349,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
                           : destructiveAction === "status-draft"
                             ? t(locale, "setPlanningPeriodDraft")
                         : t(locale, "regenerateRoster")}
-                  </h2>
+                  </AlertDialogTitle>
                   <p className="mt-1 text-sm text-slate-600">{t(locale, "destructiveAction")}</p>
                 </div>
               </div>
@@ -1451,8 +1453,8 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </AlertDialogContent>
+      </AlertDialog>
 
       {waitingForTeamMemberSession || waitingForPlannerSession ? (
         <Card>
