@@ -189,6 +189,7 @@ def build_user_read(db: Session, user: User) -> UserRead:
         organization_shift_groups=org_wide_shift_groups,
         capabilities=caps,
         memberships=memberships,
+        organization_timezone=org.timezone if org is not None and org.timezone else "Europe/Berlin",
     )
 
 

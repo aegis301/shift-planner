@@ -441,8 +441,25 @@ def test_auth_me_includes_organization(client: TestClient):
     assert data["organization"]["name"] == "Default"
     assert data["organization"]["slug"] == "default"
     assert data["organization"]["plan_tier"] == "team"
+    assert data["organization_timezone"] == "Europe/Berlin"
     assert len(data["memberships"]) == 1
     assert data["memberships"][0]["organization"]["slug"] == "default"
+
+
+def test_organization_timezone_round_trip(client: TestClient):
+    login(client)
+    current = client.get("/api/v1/organization")
+    assert current.status_code == 200
+    assert current.json()["timezone"] == "Europe/Berlin"
+    updated = client.patch("/api/v1/organization", json={"timezone": "America/New_York"})
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["timezone"] == "America/New_York"
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["organization_timezone"] == "America/New_York"
+    rejected = client.patch("/api/v1/organization", json={"timezone": "Mars/Phobos"})
+    assert rejected.status_code == 400
+    assert client.get("/api/v1/organization").json()["timezone"] == "America/New_York"
 
 
 def test_auth_me_admin_organization_shift_groups_reflects_org(client: TestClient):

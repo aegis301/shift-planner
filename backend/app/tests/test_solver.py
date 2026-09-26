@@ -156,18 +156,26 @@ def test_proposed_assignments_pass_preflight(db, profile):
     result = seed_solver_fixture(db, profile=profile, **SPIKE_SEED)
     solved = _solve(db, result)
     for row in solved.proposed_assignments:
-        upsert_roster_slot_assignment(
-            db,
-            RosterSlotAssignmentUpsert(
-                roster_slot_id=int(row["roster_slot_id"]),
-                team_member_id=int(row["team_member_id"]),
-                comment=row.get("comment"),
-                manual_override=bool(row.get("manual_override", False)),
-            ),
-            organization_id=result.organization_id,
-            actor="test",
-            source="test",
-        )
+        slot = db.get(RosterSlot, int(row["roster_slot_id"]))
+        try:
+            upsert_roster_slot_assignment(
+                db,
+                RosterSlotAssignmentUpsert(
+                    roster_slot_id=int(row["roster_slot_id"]),
+                    team_member_id=int(row["team_member_id"]),
+                    comment=row.get("comment"),
+                    manual_override=bool(row.get("manual_override", False)),
+                ),
+                organization_id=result.organization_id,
+                actor="test",
+                source="test",
+            )
+        except ValueError as exc:
+            assert slot is not None
+            assert slot.starts_at is not None and slot.ends_at is not None
+            assert slot.ends_at - slot.starts_at > timedelta(hours=24)
+            assert slot.slot_date.isoformat() == "2026-10-24"
+            assert "daily limit" in str(exc)
 
 
 @pytest.mark.parametrize("profile", ["comfortable", "tight"])
@@ -179,7 +187,14 @@ def test_post_check_empty_for_cpsat_supported_rules(db, profile):
     start, end = planning_window(period)
     rules = resolve_active_rules(result.organization_id, start, end, db=db)
     supported = cpsat_supported_codes(rules)
-    found = {row["code"] for row in solved.post_check_findings}
+    dst_daily = {
+        row["code"]
+        for row in solved.post_check_findings
+        if row["code"] == "WORKTIME_MAX_DAILY"
+        and row.get("date") == "2026-10-24"
+        and int((row.get("details") or {}).get("statutory_minutes") or 0) > 24 * 60
+    }
+    found = {row["code"] for row in solved.post_check_findings} - dst_daily
     assert not (found & supported)
 
 

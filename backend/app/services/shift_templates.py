@@ -1,6 +1,6 @@
 import calendar
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -17,6 +17,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.holidays import classify_day
+from app.services.org_time import organization_timezone, slot_bounds
 from app.services.team_member_property_requirements import (
     TeamMemberPropertyRequirementError,
     validate_property_requirement_expr,
@@ -384,11 +385,8 @@ def _variant_applies(
     )
 
 
-def _combine(day: date, value: time) -> datetime:
-    return datetime.combine(day, value)
-
-
 def generate_slots_for_month(db: Session, *, year: int, month: int, organization_id: int) -> list[GeneratedSlot]:
+    tz = organization_timezone(db, organization_id)
     templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
     days_in_month = calendar.monthrange(year, month)[1]
     generated: list[GeneratedSlot] = []
@@ -412,10 +410,13 @@ def generate_slots_for_month(db: Session, *, year: int, month: int, organization
                     has_end_holiday_variant=has_end_holiday_variant,
                 ):
                     continue
-                starts_at = _combine(slot_date, variant.starts_at)
-                ends_at = _combine(end_date, variant.ends_at)
-                if ends_at <= starts_at:
-                    ends_at = ends_at + timedelta(days=1)
+                starts_at, ends_at = slot_bounds(
+                    slot_date,
+                    variant.starts_at,
+                    variant.ends_at,
+                    variant.end_day_offset,
+                    tz,
+                )
                 time_label = f"{variant.starts_at.strftime('%H:%M')}-{variant.ends_at.strftime('%H:%M')}"
                 for position in range(1, variant.required_count + 1):
                     label = f"{template.name} {time_label}"

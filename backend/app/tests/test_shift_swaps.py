@@ -1,11 +1,15 @@
+import contextlib
+import os
+import sqlite3
+import tempfile
 from datetime import date
 from threading import Barrier, Thread
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 from app.api.deps import get_db
 from app.core.security import hash_password
@@ -67,11 +71,21 @@ def _add_linked_member(db, user: User, *, first_name: str, email: str, shift_gro
 
 @pytest.fixture()
 def swap_client():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    descriptor, database_path = tempfile.mkstemp(suffix=".sqlite")
+    os.close(descriptor)
+
+    def connect() -> sqlite3.Connection:
+        connection = sqlite3.connect(database_path, check_same_thread=False, timeout=30)
+        connection.execute("PRAGMA busy_timeout = 30000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        return connection
+
+    engine = create_engine("sqlite://", creator=connect, poolclass=NullPool)
+
+    @event.listens_for(engine, "connect")
+    def _reserve_write_lock(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.isolation_level = "IMMEDIATE"
+
     testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
     Base.metadata.create_all(engine)
     with testing_session() as db:
@@ -101,9 +115,15 @@ def swap_client():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
+        for suffix in ("", "-wal", "-shm"):
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(f"{database_path}{suffix}")
 
 
 def login_as(client: TestClient, email: str, password: str) -> None:
@@ -354,13 +374,21 @@ def test_concurrent_claims_exactly_one_succeeds(swap_client: TestClient):
     assert raced.status_code == 200, raced.text
     race_id = raced.json()["id"]
     barrier = Barrier(2)
-    outcomes: list[int] = []
+    outcomes: list[tuple[int, str]] = []
+    errors: list[str] = []
 
     def _claim(email: str, password: str) -> None:
-        with TestClient(app) as other:
-            login_as(other, email, password)
-            barrier.wait()
-            outcomes.append(other.post(f"/api/v1/shift-swaps/{race_id}/claim").status_code)
+        try:
+            with TestClient(app) as other:
+                login_as(other, email, password)
+                barrier.wait()
+                response = other.post(f"/api/v1/shift-swaps/{race_id}/claim")
+                code = ""
+                if response.status_code == 409:
+                    code = str(response.json()["detail"]["code"])
+                outcomes.append((response.status_code, code))
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
 
     threads = [
         Thread(target=_claim, args=("bob@example.com", "bobsecret")),
@@ -370,8 +398,11 @@ def test_concurrent_claims_exactly_one_succeeds(swap_client: TestClient):
         thread.start()
     for thread in threads:
         thread.join()
-    assert outcomes.count(200) == 1
-    assert outcomes.count(409) == 1
+    assert not errors, errors
+    statuses = [status for status, _code in outcomes]
+    assert statuses.count(200) == 1, outcomes
+    assert statuses.count(409) == 1, outcomes
+    assert [code for status, code in outcomes if status == 409] == ["SHIFT_SWAP_CONFLICT"]
     gen = app.dependency_overrides[get_db]()
     db = next(gen)
     try:

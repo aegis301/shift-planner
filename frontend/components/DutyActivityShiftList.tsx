@@ -2,7 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Field, inputClass } from "@/components/Card";
-import { useLocale } from "@/components/LocaleProvider";
+import { useLocale, useSession } from "@/components/LocaleProvider";
+import { sessionTimeZone } from "@/lib/orgTime";
 import { ApiError, apiFetch } from "@/lib/api";
 import {
   bandLabelKey,
@@ -60,9 +61,11 @@ function DutyActivityRetrospective({
   onSaved: () => void;
 }) {
   const { locale } = useLocale();
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const kind = kindForCategory(slot.category);
-  const [startedAt, setStartedAt] = useState(slot.starts_at ? toDatetimeLocalValue(slot.starts_at) : "");
-  const [endedAt, setEndedAt] = useState(slot.ends_at ? toDatetimeLocalValue(slot.ends_at) : "");
+  const [startedAt, setStartedAt] = useState(slot.starts_at ? toDatetimeLocalValue(slot.starts_at, timeZone) : "");
+  const [endedAt, setEndedAt] = useState(slot.ends_at ? toDatetimeLocalValue(slot.ends_at, timeZone) : "");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -79,8 +82,8 @@ function DutyActivityRetrospective({
         body: JSON.stringify({
           roster_slot_id: slot.roster_slot_id,
           kind,
-          started_at: fromDatetimeLocalValue(startedAt),
-          ended_at: fromDatetimeLocalValue(endedAt)
+          started_at: fromDatetimeLocalValue(startedAt, timeZone),
+          ended_at: fromDatetimeLocalValue(endedAt, timeZone)
         })
       });
       onSaved();
@@ -127,6 +130,8 @@ function DutyActivityRetrospective({
 
 export function DutyActivityShiftList({ slots }: { slots: DutyActivitySlotRef[] }) {
   const { locale } = useLocale();
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const [reloadToken, setReloadToken] = useState(0);
   const capturable = slots.filter(isCapturableSlot);
 
@@ -147,7 +152,7 @@ export function DutyActivityShiftList({ slots }: { slots: DutyActivitySlotRef[] 
             <h3 className="text-base font-semibold text-ink">{slotTitle(slot) || t(locale, "dutyActivityLiveTitle")}</h3>
             <p className="mt-1 text-sm text-slate-600">
               {formatPlanningDate(locale, slot.slot_date)}
-              {slot.starts_at && slot.ends_at ? ` · ${formatShiftTimeRange(slot.starts_at, slot.ends_at)}` : ""}
+              {slot.starts_at && slot.ends_at ? ` · ${formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone)}` : ""}
             </p>
             <div className="mt-2" key={`${slot.roster_slot_id}-${reloadToken}`}>
               <DutyActivitySummary rosterSlotId={slot.roster_slot_id} />

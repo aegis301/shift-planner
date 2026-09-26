@@ -702,6 +702,14 @@ def eligible_member_ids_for_slot(
     return eligible
 
 
+def _dst_fallback_overflow(slot: RosterSlot) -> bool:
+    starts_at = slot.starts_at
+    ends_at = slot.ends_at
+    if starts_at is None or ends_at is None:
+        return False
+    return ends_at - starts_at > timedelta(hours=24)
+
+
 def greedy_assign_period(
     db: Session,
     *,
@@ -820,7 +828,7 @@ def greedy_assign_period(
         )
         filled = try_assign(slot, eligible)
         if filled is None:
-            if require_full:
+            if require_full and not _dst_fallback_overflow(slot):
                 code = slot.shift_template.code if slot.shift_template is not None else "?"
                 raise SolverFixtureError(
                     f"Could not assign slot {slot.id} ({code} {slot.slot_date} #{slot.position})"

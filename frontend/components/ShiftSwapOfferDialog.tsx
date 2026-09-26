@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useLocale } from "@/components/LocaleProvider";
+import { useLocale, useSession } from "@/components/LocaleProvider";
+import { sessionTimeZone } from "@/lib/orgTime";
 import { inputClass } from "@/components/Card";
 import { t } from "@/lib/i18n";
 import {
@@ -33,6 +34,8 @@ export function ShiftSwapOfferDialog({
   onSubmitted: () => void;
 }) {
   const { locale } = useLocale();
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   const [kind, setKind] = useState<ShiftSwapKind>("giveaway");
   const [targetId, setTargetId] = useState("");
   const [counterpartySlotId, setCounterpartySlotId] = useState("");
@@ -96,7 +99,7 @@ export function ShiftSwapOfferDialog({
         <div>
           <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftSwapOfferTitle")}</h2>
           <p className="mt-1 text-sm text-slate-600">{t(locale, "shiftSwapOfferHelp")}</p>
-          {offeredSlot ? <p className="mt-2 text-sm font-medium text-ink">{swapSlotSummary(locale, offeredSlot)}</p> : null}
+          {offeredSlot ? <p className="mt-2 text-sm font-medium text-ink">{swapSlotSummary(locale, offeredSlot, timeZone)}</p> : null}
         </div>
         <fieldset className="grid gap-2">
           <legend className="text-sm font-medium text-slate-700">{t(locale, "shiftSwapKindGiveaway")}</legend>
@@ -158,7 +161,7 @@ export function ShiftSwapOfferDialog({
               <option value="">{t(locale, "shiftSwapCounterpartyNone")}</option>
               {partnerSlots.map((slot) => (
                 <option key={slot.id} value={slot.id}>
-                  {swapSlotSummary(locale, slot)}
+                  {swapSlotSummary(locale, slot, timeZone)}
                 </option>
               ))}
             </select>

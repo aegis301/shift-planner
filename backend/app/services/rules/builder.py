@@ -21,6 +21,7 @@ from app.models import (
     TimeEntry,
 )
 from app.services.holidays import classify_day
+from app.services.org_time import DEFAULT_TIMEZONE, is_night_duty, organization_timezone
 from app.services.rules.registry import max_lookback, max_roster_lookback, resolve_active_rules
 from app.services.rules.state import (
     DutyDayCounts,
@@ -346,10 +347,13 @@ def _load_statutory_minute_totals(
     return {(int(member_id), entry_date): int(total) for member_id, entry_date, total in rows}
 
 
-def _is_night_duty(entry_date: date, started_at: datetime | None, ended_at: datetime | None) -> bool:
-    if ended_at is not None and ended_at.date() > entry_date:
-        return True
-    return started_at is not None and started_at.hour >= NIGHT_AFTER_HOUR
+def _is_night_duty(
+    entry_date: date,
+    started_at: datetime | None,
+    ended_at: datetime | None,
+    tz: str = DEFAULT_TIMEZONE,
+) -> bool:
+    return is_night_duty(entry_date, started_at, ended_at, tz)
 
 
 def _bump_category(counts: dict[str, int], category: str | None) -> None:
@@ -365,6 +369,7 @@ def _load_duty_count_totals(
     team_member_ids: set[int],
     start_date: date,
     end_date: date,
+    tz: str = DEFAULT_TIMEZONE,
 ) -> dict[tuple[int, date], DutyDayCounts]:
     if not team_member_ids or end_date < start_date:
         return {}
@@ -404,7 +409,7 @@ def _load_duty_count_totals(
         if classify_day(entry_date) in ("weekend", "holiday"):
             bucket["weekend_holiday"] = int(bucket["weekend_holiday"]) + 1
             _bump_category(bucket["weekend_holiday_by_category"], cat or None)
-        if _is_night_duty(entry_date, started_at, ended_at):
+        if _is_night_duty(entry_date, started_at, ended_at, tz):
             bucket["night"] = int(bucket["night"]) + 1
             _bump_category(bucket["night_by_category"], cat or None)
     return {
@@ -445,7 +450,9 @@ def build_plan_state(
             load_start=start_date,
             load_end=end_date,
             shift_group_id=shift_group_id,
+            timezone=DEFAULT_TIMEZONE,
         )
+    tz = organization_timezone(db, organization_id)
 
     rules = resolve_active_rules(organization_id, start_date, end_date, db=db)
     roster_lookback = max_roster_lookback(rules)
@@ -589,11 +596,13 @@ def build_plan_state(
                 team_member_ids=member_ids,
                 start_date=effective_history_start,
                 end_date=history_end,
+                tz=tz,
             )
             if load_history_aggregates
             else {}
         ),
         period_roster_member_ids=frozen_mapping(period_roster_member_ids),
+        timezone=tz,
         work_time_consents_by_member_id=frozen_mapping(
             load_work_time_consents_for_members(
                 db,

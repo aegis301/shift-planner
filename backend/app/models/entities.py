@@ -91,6 +91,7 @@ class Organization(Base):
             "pair_warning": 70,
         },
     )
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="Europe/Berlin", server_default="Europe/Berlin")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")

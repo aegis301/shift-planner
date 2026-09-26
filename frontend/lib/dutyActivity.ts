@@ -1,4 +1,5 @@
 import type { Locale, TranslationKey } from "@/lib/i18n";
+import { fromDatetimeLocalValue as fromOrgDatetimeLocalValue, toDatetimeLocalValue as toOrgDatetimeLocalValue } from "@/lib/orgTime";
 
 export type DutyActivityKind = "call_out" | "in_duty_activity";
 
@@ -74,14 +75,12 @@ export function slotTitle(slot: DutyActivitySlotRef): string {
   return slot.variant_label ? `${base} · ${slot.variant_label}` : base;
 }
 
-export function toDatetimeLocalValue(iso: string): string {
-  const date = new Date(iso);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+export function toDatetimeLocalValue(iso: string, timeZone?: string): string {
+  return toOrgDatetimeLocalValue(iso, timeZone);
 }
 
-export function fromDatetimeLocalValue(value: string): string {
-  return new Date(value).toISOString();
+export function fromDatetimeLocalValue(value: string, timeZone?: string): string {
+  return fromOrgDatetimeLocalValue(value, timeZone);
 }
 
 export function utilizationPercentLabel(value: string | number): string {

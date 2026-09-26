@@ -11,7 +11,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale } from "@/lib/i18n";
 
-type OrgSettings = { id: number; name: string; slug: string; plan_tier: string };
+type OrgSettings = { id: number; name: string; slug: string; plan_tier: string; timezone: string };
 
 type MemberPatternPolicy = {
   hard_types: Array<"allowed_calendar_week_parity" | "iso_week_cycle">;
@@ -78,6 +78,14 @@ export function OrganizationManagementPanel() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [memberPatternPolicy, setMemberPatternPolicy] = useState<MemberPatternPolicy>({ hard_types: [] });
   const [patternPolicyMsg, setPatternPolicyMsg] = useState("");
+  const [timezone, setTimezone] = useState("Europe/Berlin");
+  const [timezoneMsg, setTimezoneMsg] = useState("");
+  const timeZones = useMemo(() => {
+    const supported =
+      typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["Europe/Berlin"];
+    const zones = supported.includes("Europe/Berlin") ? supported : ["Europe/Berlin", ...supported];
+    return zones.includes(timezone) ? zones : [timezone, ...zones];
+  }, [timezone]);
 
   const orgName = org?.name ?? "";
 
@@ -87,6 +95,7 @@ export function OrganizationManagementPanel() {
       apiFetch<MembershipInvite[]>("/api/v1/organization/invites"),
     ]);
     setOrg(o);
+    setTimezone(o.timezone || "Europe/Berlin");
     setInvites(inv);
     await refreshMe();
   }
@@ -106,6 +115,7 @@ export function OrganizationManagementPanel() {
         ]);
         if (!cancelled) {
           setOrg(o);
+          setTimezone(o.timezone || "Europe/Berlin");
           setInvites(inv);
         }
       } catch {
@@ -253,6 +263,26 @@ export function OrganizationManagementPanel() {
     }
   }
 
+  async function saveTimezone() {
+    setTimezoneMsg("");
+    try {
+      const saved = await apiFetch<OrgSettings>("/api/v1/organization", {
+        method: "PATCH",
+        body: JSON.stringify({ timezone })
+      });
+      setOrg(saved);
+      setTimezone(saved.timezone);
+      setTimezoneMsg(t(locale, "organizationTimezoneSaved"));
+      await refreshMe();
+    } catch (e) {
+      if (e instanceof ApiError && typeof e.detail === "string") {
+        setTimezoneMsg(e.detail);
+      } else {
+        setTimezoneMsg(t(locale, "orgManagementInviteError"));
+      }
+    }
+  }
+
   async function saveMemberPatternPolicy() {
     setPatternPolicyMsg("");
     try {
@@ -316,6 +346,26 @@ export function OrganizationManagementPanel() {
           <h2 className="text-lg font-semibold text-ink">{t(locale, "organizationNameField")}</h2>
           <p className="mt-1 text-sm text-slate-700">{org.name}</p>
           <p className="mt-1 font-mono text-sm text-slate-600">{org.slug}</p>
+          <div className="mt-4 grid max-w-md gap-2">
+            <Field label={t(locale, "organizationTimezoneLabel")}>
+              <select className={inputClass} value={timezone} onChange={(event) => setTimezone(event.target.value)}>
+                {timeZones.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <p className="text-sm text-slate-600">{t(locale, "organizationTimezoneHint")}</p>
+            <button
+              type="button"
+              className="inline-flex h-10 w-fit items-center justify-center rounded-lg bg-ink px-4 text-sm font-semibold text-white"
+              onClick={() => void saveTimezone()}
+            >
+              {t(locale, "save")}
+            </button>
+            {timezoneMsg ? <p className="text-sm text-emerald-700">{timezoneMsg}</p> : null}
+          </div>
         </Card>
       ) : null}
       <Card>

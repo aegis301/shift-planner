@@ -49,6 +49,8 @@ from mcp_app.server import (
     shift_swaps_resource,
     unresolved_shift_swaps_resource,
     time_entries_resource,
+    organization_resource,
+    update_organization_settings_tool,
 )
 
 
@@ -483,6 +485,47 @@ def test_unresolved_shift_swaps_resource_uses_unresolved_service(monkeypatch):
     assert calls == [
         {"organization_id": 23, "planning_period_id": 4, "shift_group_id": 2}
     ]
+
+
+def test_organization_timezone_resource_and_tool(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models.base import Base
+    from app.services.organizations import create_organization_record
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)()
+    org = create_organization_record(session, name="Clinic", slug="clinic")
+    session.commit()
+
+    class DbContext:
+        def __enter__(self):
+            return session
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr(server, "db_session", lambda: DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: org.id)
+
+    payload = organization_resource()
+    assert payload["timezone"] == "Europe/Berlin"
+    updated = update_organization_settings_tool(token="change-me-mcp-token", timezone="America/New_York")
+    assert updated["timezone"] == "America/New_York"
+    assert organization_resource()["timezone"] == "America/New_York"
+    with pytest.raises(ValueError, match="Unknown time zone"):
+        update_organization_settings_tool(token="change-me-mcp-token", timezone="Mars/Phobos")
+    with pytest.raises(PermissionError):
+        update_organization_settings_tool(token="wrong-token", timezone="Europe/Berlin")
+    session.close()
+    engine.dispose()
 
 
 def test_shift_swap_tools_require_token():

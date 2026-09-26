@@ -23,6 +23,7 @@ from app.schemas.domain import (
     WorkTimeRuleRestAfterLongDuty,
     WorkTimeRuleWeeklyAverageCap,
 )
+from app.services.org_time import DEFAULT_TIMEZONE, minutes_on_local_day
 from app.services.rules.state import PlanState
 from app.services.work_time_consents import applicable_weekly_cap, applicable_weekly_cap_detail
 from app.services.work_time_rule_sets import get_active_work_time_rule_set
@@ -133,12 +134,7 @@ def _duty_minutes_on_day(state: PlanState, member_id: int, day: date) -> int:
                 total += 24 * 60
             continue
         start, end = interval
-        cursor = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
-        next_day = cursor + timedelta(days=1)
-        overlap_start = max(start, cursor)
-        overlap_end = min(end, next_day)
-        if overlap_end > overlap_start:
-            total += int((overlap_end - overlap_start).total_seconds() // 60)
+        total += minutes_on_local_day(start, end, day, state.timezone)
     return total
 
 
@@ -154,18 +150,12 @@ def _slot_statutory_minutes_for_member(state: PlanState, slot: RosterSlot, membe
     )
 
 
-def _slot_duty_minutes_on_day(slot: RosterSlot, day: date) -> int:
+def _slot_duty_minutes_on_day(slot: RosterSlot, day: date, tz: str = DEFAULT_TIMEZONE) -> int:
     interval = _slot_interval(slot)
     if interval is None:
         return 24 * 60 if slot.slot_date == day else 0
     start, end = interval
-    cursor = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
-    next_day = cursor + timedelta(days=1)
-    overlap_start = max(start, cursor)
-    overlap_end = min(end, next_day)
-    if overlap_end > overlap_start:
-        return int((overlap_end - overlap_start).total_seconds() // 60)
-    return 0
+    return minutes_on_local_day(start, end, day, tz)
 
 
 def _warning(
@@ -275,7 +265,7 @@ class MaxDailyWorkingTimeRule:
                         (
                             expr,
                             _slot_statutory_minutes_for_member(state, slot, member_id),
-                            _slot_duty_minutes_on_day(slot, on_date),
+                            _slot_duty_minutes_on_day(slot, on_date, state.timezone),
                         )
                     )
                 for index, (left, left_stat, left_duty) in enumerate(items):

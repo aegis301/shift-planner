@@ -16,6 +16,7 @@ from app.models import (
     TeamMemberPropertyDefinition,
 )
 from app.schemas import ShiftConstraint, ValidationWarning
+from app.services.org_time import DEFAULT_TIMEZONE, local_dates_spanned
 from app.services.rules.builder import build_plan_state
 from app.services.rules.state import (
     PlanState,
@@ -469,7 +470,7 @@ class UnavailableOverlapPolicyRule:
                 continue
             blocking = _blocking_cells_for_member(state, assignment.team_member_id)
             conflicts: list[dict[str, object]] = []
-            for day in _overlap_days(slot):
+            for day in _overlap_days(slot, state.timezone):
                 cell = blocking.get(day)
                 if cell is None:
                     continue
@@ -508,7 +509,7 @@ class UnavailableOverlapPolicyRule:
             if policy_mode_allow(policy):
                 continue
             severity = "error" if policy == "block" else "warning"
-            overlap = set(_overlap_days(slot))
+            overlap = set(_overlap_days(slot, state.timezone))
             members = list(model.iter_candidates(slot.id))
             for member_id in members:
                 blocking = _blocking_cells_for_member(state, member_id)
@@ -679,16 +680,10 @@ class TeamMemberPropertyRequirementRule:
                             model.add_penalty(self.code, var, model.weights.warning)
 
 
-def _overlap_days(slot: RosterSlot) -> list[date]:
+def _overlap_days(slot: RosterSlot, tz: str = DEFAULT_TIMEZONE) -> list[date]:
     if slot.starts_at is None or slot.ends_at is None:
         return [slot.slot_date]
-    out: list[date] = []
-    day = slot.starts_at.date()
-    last = slot.ends_at.date()
-    while day <= last:
-        out.append(day)
-        day += timedelta(days=1)
-    return out
+    return local_dates_spanned(slot.starts_at, slot.ends_at, tz)
 
 
 def _blocking_cells_for_member(state: PlanState, team_member_id: int) -> dict[date, PlanningCell]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from app.schemas import (
     ValidationWarning,
 )
 from app.services.audit import record_audit
+from app.services.org_time import DEFAULT_TIMEZONE, local_dates_spanned, timezone_for_slot
 from app.services.planning_day_status_definitions import assert_valid_planning_cell_status
 from app.services.shift_intervals import (
     is_iso_week_cycle_on_week,
@@ -325,20 +327,15 @@ def _days_for_anchor(
     shift_start: datetime,
     shift_end: datetime,
     anchor: Literal["slot_start_day", "any_overlap_day"],
+    tz: str,
 ) -> list[date]:
     if anchor == "slot_start_day":
         return [slot.slot_date]
-    return overlap_calendar_days_from_interval(shift_start, shift_end)
+    return overlap_calendar_days_from_interval(shift_start, shift_end, tz)
 
 
-def overlap_calendar_days_from_interval(shift_start: datetime, shift_end: datetime) -> list[date]:
-    out: list[date] = []
-    day = shift_start.date()
-    last = shift_end.date()
-    while day <= last:
-        out.append(day)
-        day += timedelta(days=1)
-    return out
+def overlap_calendar_days_from_interval(shift_start: datetime, shift_end: datetime, tz: str = DEFAULT_TIMEZONE) -> list[date]:
+    return local_dates_spanned(shift_start, shift_end, tz)
 
 
 def _matches_avoid_time_window_band(
@@ -352,9 +349,16 @@ def _matches_avoid_time_window_band(
     if interval is None:
         return None
     shift_start, shift_end = interval
-    slot_tz = shift_start.tzinfo
+    tz_name = timezone_for_slot(db, slot)
+    slot_tz = ZoneInfo(tz_name)
     allowed_weekdays = {_WEEKDAY_TO_INDEX[code] for code in band.weekdays}
-    for day in _days_for_anchor(slot=slot, shift_start=shift_start, shift_end=shift_end, anchor=band.anchor):
+    for day in _days_for_anchor(
+        slot=slot,
+        shift_start=shift_start,
+        shift_end=shift_end,
+        anchor=band.anchor,
+        tz=tz_name,
+    ):
         if day.weekday() not in allowed_weekdays:
             continue
         window_start, window_end = _window_interval_for_day(

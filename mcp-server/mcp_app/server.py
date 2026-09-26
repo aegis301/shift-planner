@@ -1,6 +1,6 @@
-from contextlib import contextmanager
-from datetime import date, datetime, time
 import os
+from contextlib import contextmanager
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 from fastmcp import FastMCP
@@ -9,23 +9,31 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models import ShiftGroup, User
+from app.models import Organization, ShiftGroup, User
 from app.schemas import (
     ContractGroupCreate,
     ContractGroupUpdate,
-    EmploymentPeriodWrite,
-    TimeAccountOpeningUpsert,
     DutyActivityAccessPolicyUpdate,
     DutyActivityCreate,
     DutyActivityUpdate,
+    EmploymentPeriodWrite,
     FairnessPolicyUpdate,
-    TimeEntryCreate,
-    TimeEntryDeriveRequest,
-    TimeEntryUpdate,
-    WorkTimeRuleSetCreate,
-    WorkTimeRuleSetUpdate,
-    WorkTimeConsentCreate,
-    WorkTimeConsentRevoke,
+    OrganizationReadForAdmin,
+    PlanningCellBulkUpsert,
+    PlanningCellUpsert,
+    PlanningPeriodCreate,
+    PlanningShiftIntentBulkUpsert,
+    PlanningShiftIntentUpsert,
+    RosterSlotAssignmentClear,
+    RosterSlotAssignmentUpsert,
+    ShiftGroupCreate,
+    ShiftGroupMembershipWrite,
+    ShiftSwapRequestCreate,
+    ShiftTemplateCreate,
+    ShiftTemplateUpdate,
+    ShiftVariantCreate,
+    ShiftVariantUpdate,
+    SolverRunCreate,
     TeamMemberCreate,
     TeamMemberPeriodNoteUpsert,
     TeamMemberPlanningPatternsReplace,
@@ -35,22 +43,18 @@ from app.schemas import (
     TeamMemberPropertyMatrixFilter,
     TeamMemberPropertyValuesReplace,
     TeamMemberPropertyValueUpsertItem,
-    PlanningCellBulkUpsert,
-    PlanningCellUpsert,
-    PlanningPeriodCreate,
-    PlanningShiftIntentBulkUpsert,
-    PlanningShiftIntentUpsert,
-    RosterSlotAssignmentClear,
-    RosterSlotAssignmentUpsert,
-    SolverRunCreate,
-    ShiftSwapRequestCreate,
-    ShiftGroupCreate,
-    ShiftGroupMembershipWrite,
-    ShiftTemplateCreate,
-    ShiftTemplateUpdate,
-    ShiftVariantCreate,
-    ShiftVariantUpdate,
+    TimeAccountOpeningUpsert,
+    TimeEntryCreate,
+    TimeEntryDeriveRequest,
+    TimeEntryUpdate,
+    WorkTimeConsentCreate,
+    WorkTimeConsentRevoke,
+    WorkTimeRuleSetCreate,
+    WorkTimeRuleSetUpdate,
 )
+from app.schemas.domain import TeamMemberPropertyDefinitionRead
+from app.services.authz import ROLE_ADMIN
+from app.services.compliance_report import build_compliance_report
 from app.services.contract_groups import (
     contract_group_to_read,
     create_contract_group,
@@ -59,22 +63,11 @@ from app.services.contract_groups import (
     list_contract_groups,
     update_contract_group,
 )
-from app.services.employment_periods import (
-    employment_period_to_read,
-    get_time_account_opening,
-    list_employment_periods,
-    replace_employment_periods,
-    time_account_opening_to_read,
-    upsert_time_account_opening,
+from app.services.duty_activity import (
+    duty_activity_to_read,
+    record_duty_activity,
+    update_duty_activity,
 )
-from app.services.hours_ledger import get_hours_ledger
-from app.services.compliance_report import build_compliance_report
-from app.services.fairness import (
-    build_fairness_accounts,
-    read_fairness_policy,
-    update_fairness_policy,
-)
-from app.services.duty_activity import duty_activity_to_read, record_duty_activity, update_duty_activity
 from app.services.duty_activity_privacy import (
     build_works_council_duty_rows,
     filter_duty_activity_entries,
@@ -84,51 +77,20 @@ from app.services.duty_activity_privacy import (
     works_council_row_to_dict,
 )
 from app.services.duty_utilization import period_utilization
-from app.services.time_entries import (
-    create_manual_entry,
-    derive_entries,
-    list_time_entries,
-    time_entry_to_read,
-    update_time_entry,
+from app.services.employment_periods import (
+    employment_period_to_read,
+    get_time_account_opening,
+    list_employment_periods,
+    replace_employment_periods,
+    time_account_opening_to_read,
+    upsert_time_account_opening,
 )
-from app.services.work_time_consents import (
-    list_work_time_consents,
-    record_work_time_consent,
-    revoke_work_time_consent,
-    work_time_consent_to_read,
+from app.services.fairness import (
+    build_fairness_accounts,
+    read_fairness_policy,
+    update_fairness_policy,
 )
-from app.services.work_time_presets import (
-    adopt_work_time_rule_set_preset,
-    list_work_time_rule_set_presets,
-    work_time_rule_set_preset_to_read,
-)
-from app.services.work_time_rule_sets import (
-    create_work_time_rule_set,
-    delete_work_time_rule_set,
-    list_work_time_rule_sets,
-    update_work_time_rule_set,
-    work_time_rule_set_to_read,
-)
-from app.services.member_planning_patterns import (
-    list_team_member_planning_patterns,
-    pattern_to_read,
-    read_organization_member_pattern_policy,
-    replace_team_member_planning_patterns,
-)
-from app.services.team_members import create_team_member, delete_team_member, list_team_members, team_member_to_read
-from app.services.team_member_property_definitions import (
-    create_team_member_property_definition,
-    delete_team_member_property_definition,
-    list_team_member_property_definitions,
-    update_team_member_property_definition,
-)
-from app.services.team_member_property_matrix import get_team_member_property_matrix
-from app.services.team_member_property_values import (
-    list_property_values_for_member,
-    replace_team_member_property_values,
-)
-from app.schemas.domain import TeamMemberPropertyDefinitionRead
-from app.models import Organization
+from app.services.hours_ledger import get_hours_ledger
 from app.services.matrix import (
     bulk_upsert_planning_cells,
     bulk_upsert_planning_shift_intents,
@@ -137,6 +99,13 @@ from app.services.matrix import (
     save_team_member_period_note,
     upsert_planning_cell,
 )
+from app.services.member_planning_patterns import (
+    list_team_member_planning_patterns,
+    pattern_to_read,
+    read_organization_member_pattern_policy,
+    replace_team_member_planning_patterns,
+)
+from app.services.organizations import update_organization_settings
 from app.services.plan_versions import list_plan_versions, manual_save_plan_version
 from app.services.planning import (
     create_planning_period,
@@ -147,24 +116,21 @@ from app.services.planning import (
     set_shift_group_planning_to_preliminary,
 )
 from app.services.roster_matrix import (
+    RosterSyncPublishedError,
     clear_roster_slot_assignment,
     get_roster_matrix,
     reset_roster_slots_for_period,
     sync_roster_slots_for_period,
-    RosterSyncPublishedError,
     upsert_roster_slot_assignment,
 )
-from app.services.solver_runs import (
-    SolverRunConflictError,
-    SolverRunNotFoundError,
-    SolverRunPublishedError,
-    apply_solver_run,
-    applied_assignments_to_read,
-    cancel_solver_run,
-    get_solver_run,
-    list_solver_runs,
-    queue_solver_run,
-    solver_run_to_read,
+from app.services.shift_groups import (
+    _membership_read,
+    _stint_active_on,
+    create_shift_group,
+    list_shift_groups,
+    replace_group_shift_templates,
+    replace_group_team_member_memberships,
+    replace_group_team_members,
 )
 from app.services.shift_swaps import (
     ShiftSwapConflictError,
@@ -184,15 +150,6 @@ from app.services.shift_swaps import (
     shift_swap_to_read,
     withdraw_shift_swap,
 )
-from app.services.shift_groups import (
-    _membership_read,
-    _stint_active_on,
-    create_shift_group,
-    list_shift_groups,
-    replace_group_shift_templates,
-    replace_group_team_member_memberships,
-    replace_group_team_members,
-)
 from app.services.shift_templates import (
     ShiftConstraintInvalidError,
     ShiftTemplateCodeConflictError,
@@ -205,9 +162,62 @@ from app.services.shift_templates import (
     update_shift_template,
     update_shift_variant,
 )
-from app.services.authz import ROLE_ADMIN
+from app.services.solver_runs import (
+    SolverRunConflictError,
+    SolverRunNotFoundError,
+    SolverRunPublishedError,
+    applied_assignments_to_read,
+    apply_solver_run,
+    cancel_solver_run,
+    get_solver_run,
+    list_solver_runs,
+    queue_solver_run,
+    solver_run_to_read,
+)
+from app.services.team_member_property_definitions import (
+    create_team_member_property_definition,
+    delete_team_member_property_definition,
+    list_team_member_property_definitions,
+    update_team_member_property_definition,
+)
+from app.services.team_member_property_matrix import get_team_member_property_matrix
+from app.services.team_member_property_values import (
+    list_property_values_for_member,
+    replace_team_member_property_values,
+)
+from app.services.team_members import (
+    create_team_member,
+    delete_team_member,
+    list_team_members,
+    team_member_to_read,
+)
+from app.services.time_entries import (
+    create_manual_entry,
+    derive_entries,
+    list_time_entries,
+    time_entry_to_read,
+    update_time_entry,
+)
 from app.services.users import admin_reset_account_password
 from app.services.validation import validate_roster
+from app.services.work_time_consents import (
+    list_work_time_consents,
+    record_work_time_consent,
+    revoke_work_time_consent,
+    work_time_consent_to_read,
+)
+from app.services.work_time_presets import (
+    adopt_work_time_rule_set_preset,
+    list_work_time_rule_set_presets,
+    work_time_rule_set_preset_to_read,
+)
+from app.services.work_time_rule_sets import (
+    create_work_time_rule_set,
+    delete_work_time_rule_set,
+    list_work_time_rule_sets,
+    update_work_time_rule_set,
+    work_time_rule_set_to_read,
+)
 
 mcp = FastMCP("Shift Planner")
 
@@ -241,7 +251,10 @@ def serialize_model(model: Any) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for column in model.__table__.columns:
         value = getattr(model, column.name)
-        if hasattr(value, "isoformat"):
+        if isinstance(value, datetime):
+            aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+            value = aware.isoformat()
+        elif hasattr(value, "isoformat"):
             value = value.isoformat()
         output[column.name] = value
     return output
@@ -251,6 +264,41 @@ def serialize_model(model: Any) -> dict[str, Any]:
 def health() -> dict[str, str]:
     """Return MCP server health."""
     return {"status": "ok", "service": "shift-planner-mcp"}
+
+
+@mcp.resource("shift-planner://organization")
+def organization_resource() -> dict[str, Any]:
+    """Return the MCP target organization, including its IANA time zone."""
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        return OrganizationReadForAdmin.model_validate(org).model_dump(mode="json")
+
+
+@mcp.tool
+def update_organization_settings_tool(
+    token: str,
+    name: str | None = None,
+    organization_slug: str | None = None,
+    timezone: str | None = None,
+) -> dict[str, Any]:
+    """Update organization name, code, or IANA time zone. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        org = db.get(Organization, mcp_organization_id())
+        if org is None:
+            raise ValueError("Organization not found")
+        updated = update_organization_settings(
+            db,
+            org,
+            name=name,
+            organization_slug=organization_slug,
+            timezone=timezone,
+            actor="mcp",
+            source="mcp",
+        )
+        return OrganizationReadForAdmin.model_validate(updated).model_dump(mode="json")
 
 
 @mcp.resource("shift-planner://team-members")

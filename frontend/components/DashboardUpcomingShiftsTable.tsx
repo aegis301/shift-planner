@@ -4,6 +4,8 @@ import { Calendar } from "lucide-react";
 import { categoryLabel } from "@/components/dashboardCharts";
 import type { TeamMemberDashboard } from "@/lib/dashboard";
 import { API_BASE_URL } from "@/lib/api";
+import { useSession } from "@/components/LocaleProvider";
+import { sessionTimeZone } from "@/lib/orgTime";
 import { formatPlanningDate, formatShiftTimeRange } from "@/lib/shiftDisplay";
 import type { Locale, TranslationKey } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
@@ -40,6 +42,8 @@ export function DashboardUpcomingShiftsTable({
   showIcsExport?: boolean;
   swapOffer?: SwapOfferContext;
 }) {
+  const { me } = useSession();
+  const timeZone = sessionTimeZone(me);
   if (slots.length === 0) {
     return <p className="text-sm text-slate-500">{t(locale, emptyLabelKey)}</p>;
   }
@@ -70,7 +74,7 @@ export function DashboardUpcomingShiftsTable({
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
           {slots.map((slot, index) => {
-            const timeRange = formatShiftTimeRange(slot.starts_at, slot.ends_at);
+            const timeRange = formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone);
             return (
               <tr key={`${slot.slot_date}-${slot.template_code ?? index}-${index}`}>
                 <td className="whitespace-nowrap px-3 py-2.5 font-medium text-ink">

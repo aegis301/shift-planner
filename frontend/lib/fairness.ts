@@ -1,5 +1,6 @@
 import { slotTouchesWeekendOrNrwHoliday } from "@/lib/nrwCalendar";
 import { t, type Locale } from "@/lib/i18n";
+import { DEFAULT_ORG_TIMEZONE, localDateKey, localHour } from "@/lib/orgTime";
 
 export type FairnessMetric = "duty_count" | "statutory_minutes";
 export type FairnessDayFilter = "any" | "weekend_holiday";
@@ -63,39 +64,24 @@ const KNOWN_DIMENSION_KEYS = {
   statutory_hours: "fairnessDimensionStatutoryHours"
 } as const;
 
-function isoDatePrefix(value: string | null, fallback: string): string {
-  if (!value) {
-    return fallback;
+export function slotIsNightDuty(slot: FairnessSlotHint, timeZone: string = DEFAULT_ORG_TIMEZONE): boolean {
+  if (slot.ends_at) {
+    const endDay = localDateKey(slot.ends_at, timeZone);
+    if (endDay > slot.slot_date) {
+      return true;
+    }
   }
-  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
-  return match ? match[1] : fallback;
+  if (!slot.starts_at) {
+    return false;
+  }
+  return localHour(slot.starts_at, timeZone) >= NIGHT_AFTER_HOUR;
 }
 
-function startHourFromIso(value: string | null): number | null {
-  if (!value) {
-    return null;
-  }
-  const match = value.match(/T(\d{2}):/);
-  if (!match) {
-    return null;
-  }
-  return Number(match[1]);
-}
-
-export function slotIsNightDuty(slot: FairnessSlotHint): boolean {
-  const endDay = isoDatePrefix(slot.ends_at, slot.slot_date);
-  if (endDay > slot.slot_date) {
-    return true;
-  }
-  const hour = startHourFromIso(slot.starts_at);
-  return hour != null && hour >= NIGHT_AFTER_HOUR;
-}
-
-export function slotIsWeekendOrHoliday(slot: FairnessSlotHint): boolean {
+export function slotIsWeekendOrHoliday(slot: FairnessSlotHint, timeZone: string = DEFAULT_ORG_TIMEZONE): boolean {
   if (slot.day_class === "weekend" || slot.day_class === "holiday") {
     return true;
   }
-  return slotTouchesWeekendOrNrwHoliday(slot);
+  return slotTouchesWeekendOrNrwHoliday(slot, timeZone);
 }
 
 export function indexFairnessMembers(accounts: FairnessAccountsRead | null | undefined): FairnessMemberIndex {
@@ -144,10 +130,11 @@ function dimensionMatchScore(slot: FairnessSlotHint, dimension: FairnessDimensio
 
 export function relevantFairnessDimension(
   slot: FairnessSlotHint,
-  dimensions: FairnessDimension[]
+  dimensions: FairnessDimension[],
+  timeZone: string = DEFAULT_ORG_TIMEZONE
 ): FairnessDimension | undefined {
-  const night = slotIsNightDuty(slot);
-  const weekend = slotIsWeekendOrHoliday(slot);
+  const night = slotIsNightDuty(slot, timeZone);
+  const weekend = slotIsWeekendOrHoliday(slot, timeZone);
   let best: FairnessDimension | undefined;
   let bestScore = 0;
   for (const dimension of dimensions) {
