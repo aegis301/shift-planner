@@ -207,7 +207,7 @@ Any implementation that changes setup, behavior, architecture, API shape, MCP ca
 - Backend changes should include or update pytest coverage for services and API behavior.
 - Solver and related regression tests use `python -m app.scripts.seed_solver_fixture` (`comfortable` / `tight` / `infeasible` / `arbzg`) rather than hand-built months.
 - MCP changes should test resources/tools, authorization for mutations, and parity with backend services.
-- Frontend logic (formatting, grid selection, keyboard handling, query hooks) gets Vitest unit tests, and user-visible workbench flows get Playwright tests once the harness from `docs/workbench/issues/02-frontend-test-harness.md` exists. A frontend refactor that claims to preserve behaviour starts from the Playwright golden screenshots.
+- Frontend logic (formatting, grid selection, keyboard handling, query hooks) gets Vitest unit tests: `cd frontend && npm run test` (watch with `npm run test:watch`). User-visible workbench flows get Playwright tests: `npm run test:e2e` against Compose after `python -m app.scripts.seed_e2e` (see README). A frontend refactor that claims to preserve behaviour starts from the Playwright golden screenshots.
 - Frontend changes should keep TypeScript, linting, and i18n key coverage passing. German and English dictionaries in `frontend/lib/i18n.ts` must have the same keys (`true satisfies` parity check).
 - Pull request CI merges the latest base branch before tests so combined `main` + PR is what is checked. Enable **Require branches to be up to date before merging** (or a merge queue) on `main` so GitHub cannot merge a PR whose last green run predates newer `main` commits.
 - Docker startup should remain the baseline development path.

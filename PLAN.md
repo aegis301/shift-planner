@@ -9,7 +9,7 @@ Refine the unified `/planning` workflow with shared month state, wishes, final r
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 5. Improve matrix ergonomics with keyboard navigation, copy/paste, and further bulk editing. Now planned as the workbench grid (#117 roster, #118 wishes) on top of roster change sets (#116).
-6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 (slot times as instants) has landed. Next independent issues: #110 (frontend test harness), #111 (generated API types), #116 (roster change sets), #119 (token auth). #123 (offline duty activity) can use `Organization.timezone`.
+6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 (slot times as instants) and #110 (frontend test harness) have landed. Next independent issues: #111 (generated API types), #116 (roster change sets), #119 (token auth). #123 (offline duty activity) can use `Organization.timezone`.
 
 ## Roadmap
 - Team member self-service for wishes/no-gos.

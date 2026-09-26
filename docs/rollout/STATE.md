@@ -47,7 +47,7 @@ Two things carry the whole design:
 the CP-SAT roster model (tier A), solver controls in `/planning`, shift swap requests, the
 swap marketplace UI, swap UI states that name why an offer or the approval queue is
 unavailable, duty activity privacy on every time entry read path, and swap legality that sees
-a member's duties in other shift groups. Roster slot times are UTC instants of the organization time zone (`organizations.timezone`, default `Europe/Berlin`); this change lands **#109**.
+a member's duties in other shift groups. Roster slot times are UTC instants of the organization time zone (`organizations.timezone`, default `Europe/Berlin`); this change lands **#109**. The frontend test harness (Vitest, Playwright smoke flows, and golden screenshots) lands **#110**.
 
 Shipped:
 
@@ -70,6 +70,7 @@ Shipped:
 - Swap legality and claimant eligibility load in-scope members' duties from every shift group, so rest and daily limits are not bypassed across groups
 - Planner unresolved swap pool: `open` and `targeted` requests by duty date, with withdraw (`#100`)
 - Organization IANA time zone and roster slot instants (`#109`). A 24 h wall-clock duty across the autumn clock change is 25 statutory hours and can exceed the 24 h extended daily cap; the solver fixture leaves that history slot unassigned.
+- Frontend test harness: Vitest, Playwright smoke flows against `seed_e2e`, and golden screenshots (`#110`)
 
 In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 
@@ -99,7 +100,7 @@ dependencies are in the ADR's **Work plan** table.
 | Issue | What | State |
 |---|---|---|
 | #109 | Slot times as real instants in the org time zone (defect) | shipped |
-| #110 | Frontend test harness and golden screenshots | open |
+| #110 | Frontend test harness and golden screenshots | shipped |
 | #111 | Generated API types from OpenAPI | open |
 | #112 | UI foundation: Radix primitives, tokens | open |
 | #113 | TanStack Query for server state | open |
@@ -116,7 +117,7 @@ dependencies are in the ADR's **Work plan** table.
 | #124 | Member app: wishes, swaps, hours, calendar | open |
 | #125 | Push as a channel of #101's notifications (design: PR #127; needs #101 implemented) | open |
 
-#110, #111, #116 and #119 have no dependencies and can start in parallel. #109 has shipped; #123 can use `Organization.timezone` for offline capture.
+#111, #116 and #119 have no dependencies and can start in parallel. #109 and #110 have shipped; #123 can use `Organization.timezone` for offline capture.
 
 **Why #75 is split.** The spike showed that encoding all 18 rules at once is the way to get a
 model nobody can debug. Tier A is the set the TdL fixture actually exercises and that the spike
