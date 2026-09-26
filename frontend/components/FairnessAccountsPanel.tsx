@@ -24,7 +24,7 @@ function defaultSortDir(field: SortField): "asc" | "desc" {
 }
 
 function memberValue(member: FairnessMemberAccount, dimensionId: string) {
-  return member.dimensions.find((row) => row.dimension_id === dimensionId);
+  return (member.dimensions ?? []).find((row) => row.dimension_id === dimensionId);
 }
 
 function compareMembers(
@@ -131,7 +131,7 @@ export function FairnessMemberRollingSummary({
   teamMemberId: number;
 }) {
   const { locale } = useLocale();
-  const member = accounts?.members.find((row) => row.team_member_id === teamMemberId);
+  const member = accounts?.members?.find((row) => row.team_member_id === teamMemberId);
   if (!accounts || !member) {
     return null;
   }
@@ -145,7 +145,7 @@ export function FairnessMemberRollingSummary({
       <h3 className="mt-0.5 text-sm font-semibold text-teal-950">{t(locale, "fairnessModalRollingTitle")}</h3>
       <p className="mt-0.5 text-xs text-teal-900">{windowLabel}</p>
       <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
-        {accounts.dimensions.map((dimension) => {
+        {(accounts.dimensions ?? []).map((dimension) => {
           const value = memberValue(member, dimension.id);
           return (
             <div key={dimension.id} className="col-span-2 grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
@@ -178,7 +178,7 @@ export function FairnessAccountsPanel({
   loadError: string;
 }) {
   const { locale } = useLocale();
-  const firstDimensionId = accounts?.dimensions[0]?.id ?? null;
+  const firstDimensionId = accounts?.dimensions?.[0]?.id ?? null;
   const [sort, setSort] = useState<{ field: SortField; dimensionId: string | null; dir: "asc" | "desc" }>({
     field: "deviation",
     dimensionId: firstDimensionId,
@@ -186,18 +186,19 @@ export function FairnessAccountsPanel({
   });
 
   useEffect(() => {
-    if (!accounts?.dimensions.length) {
+    const dimensions = accounts?.dimensions ?? [];
+    if (dimensions.length === 0) {
       return;
     }
     setSort((prev) => {
       if (prev.field === "name") {
         return prev;
       }
-      const stillValid = prev.dimensionId != null && accounts.dimensions.some((row) => row.id === prev.dimensionId);
+      const stillValid = prev.dimensionId != null && dimensions.some((row) => row.id === prev.dimensionId);
       if (stillValid) {
         return prev;
       }
-      return { field: "deviation", dimensionId: accounts.dimensions[0].id, dir: "desc" };
+      return { field: "deviation", dimensionId: dimensions[0].id, dir: "desc" };
     });
   }, [accounts]);
 
@@ -205,7 +206,7 @@ export function FairnessAccountsPanel({
     if (!accounts) {
       return [];
     }
-    const next = [...accounts.members];
+    const next = [...(accounts.members ?? [])];
     next.sort((a, b) => compareMembers(a, b, sort.field, sort.dimensionId, sort.dir));
     return next;
   }, [accounts, sort]);
@@ -237,7 +238,7 @@ export function FairnessAccountsPanel({
           {windowLabel ? <p className="mt-1 text-sm font-medium text-teal-900">{windowLabel}</p> : null}
         </div>
         {loadError ? <p className="text-sm text-rose-700">{loadError}</p> : null}
-        {accounts?.members.length ? (
+        {accounts && (accounts.members ?? []).length ? (
           <div className={`${dataTableScrollShellClassName} rounded-lg border border-teal-200`}>
             <table className="min-w-full text-sm">
               <thead className="text-teal-950">
@@ -251,7 +252,7 @@ export function FairnessAccountsPanel({
                     dir={sort.dir}
                     onSort={activateSort}
                   />
-                  {accounts.dimensions.map((dimension) => (
+                  {(accounts.dimensions ?? []).map((dimension) => (
                     <SortableFairnessTh
                       key={dimension.id}
                       locale={locale}
@@ -269,7 +270,7 @@ export function FairnessAccountsPanel({
                 {sortedMembers.map((member) => (
                   <tr key={member.team_member_id} className="border-t border-teal-100">
                     <td className="p-3 font-medium text-ink">{member.display_name}</td>
-                    {accounts.dimensions.map((dimension) => (
+                    {(accounts.dimensions ?? []).map((dimension) => (
                       <DimensionCell key={dimension.id} member={member} dimension={dimension} locale={locale} />
                     ))}
                   </tr>

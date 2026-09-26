@@ -11,6 +11,7 @@ import {
   declineShiftSwap,
   listShiftSwaps,
   shiftSwapErrorText,
+  readSwapFinding,
   shiftSwapFindingText,
   shiftSwapKindLabel,
   shiftSwapStatusLabel,
@@ -235,10 +236,10 @@ function SwapRequestSummary({
           {t(locale, "shiftSwapChangeCounterparty")}: {swapSlotSummary(locale, counterparty, timeZone)}
         </p>
       ) : null}
-      {row.warning_findings.length > 0 ? (
+      {(row.warning_findings ?? []).length > 0 ? (
         <ul className="grid gap-1">
-          {row.warning_findings.map((finding, index) => (
-            <li className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950 ring-1 ring-amber-200" key={`${finding.code}-${index}`}>
+          {(row.warning_findings ?? []).map((finding, index) => (
+            <li className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950 ring-1 ring-amber-200" key={`${readSwapFinding(finding).code}-${index}`}>
               {shiftSwapFindingText(locale, finding)}
             </li>
           ))}

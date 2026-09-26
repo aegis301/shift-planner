@@ -54,6 +54,7 @@ export function SolverGenerateDialog({
   const [budget, setBudget] = useState("30");
   const [overwrite, setOverwrite] = useState(false);
   const [weights, setWeights] = useState<FormWeights | null>(null);
+  const [sourceWeights, setSourceWeights] = useState<SolverObjectiveWeights | null>(null);
   const [run, setRun] = useState<SolverRunRead | null>(null);
   const [confirmApply, setConfirmApply] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -71,6 +72,7 @@ export function SolverGenerateDialog({
       .then((config) => {
         setCeiling(config.time_budget_ceiling_seconds);
         setBudget(String(config.default_time_budget_seconds));
+        setSourceWeights(config.weights);
         setWeights(weightsToForm(config.weights));
       })
       .catch(() => {
@@ -123,6 +125,15 @@ export function SolverGenerateDialog({
         time_budget_seconds: Number(budget),
         overwrite_existing: overwrite,
         objective_weights: {
+          ...(sourceWeights ?? {
+            unfilled: 10000,
+            duty_count: 250,
+            fairness: 8,
+            wish: 25,
+            avoid_time_window: 15,
+            warning: 40,
+            pair_warning: 70
+          }),
           unfilled: Number(weights.unfilled),
           duty_count: Number(weights.duty_count),
           fairness: Number(weights.fairness),
@@ -273,7 +284,7 @@ export function SolverGenerateDialog({
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-sm font-semibold text-ink">{t(locale, "solverApplyConfirmTitle")}</p>
                 <p className="mt-1 text-sm text-slate-700">
-                  {t(locale, "solverApplyConfirmBody", { count: String(run.proposed_assignments.length) })}
+                  {t(locale, "solverApplyConfirmBody", { count: String((run.proposed_assignments ?? []).length) })}
                 </p>
                 <div className="mt-3 flex flex-wrap justify-end gap-2">
                   <button

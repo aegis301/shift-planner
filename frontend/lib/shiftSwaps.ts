@@ -1,71 +1,43 @@
 import { ApiError, apiFetch } from "@/lib/api";
+import type {
+  ShiftSwapApplyRead,
+  ShiftSwapRequestCreate,
+  ShiftSwapRequestRead,
+  ShiftSwapUnresolvedRead
+} from "@/lib/api/types";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 import { formatPlanningDate, formatShiftTimeRange } from "@/lib/shiftDisplay";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 
-export type ShiftSwapKind = "giveaway" | "direct";
-export type ShiftSwapStatus =
-  | "draft"
-  | "open"
-  | "claimed"
-  | "targeted"
-  | "accepted"
-  | "approved"
-  | "applied"
-  | "withdrawn"
-  | "rejected"
-  | "expired";
+export type {
+  ShiftSwapApplyRead,
+  ShiftSwapRequestCreate,
+  ShiftSwapRequestRead,
+  ShiftSwapUnresolvedRead
+} from "@/lib/api/types";
 
-export type ShiftSwapFinding = {
+export type ShiftSwapKind = ShiftSwapRequestRead["kind"];
+export type ShiftSwapStatus = ShiftSwapRequestRead["status"];
+
+export type ShiftSwapFindingView = {
   code: string;
-  severity: "info" | "warning" | "error";
+  severity: string;
   message: string;
-  team_member_id: number | null;
   date: string | null;
-  details: Record<string, unknown>;
 };
 
-export type ShiftSwapRequestRead = {
-  id: number;
-  organization_id: number;
-  planning_period_id: number;
-  shift_group_id: number;
-  kind: ShiftSwapKind;
-  status: ShiftSwapStatus;
-  offered_by_team_member_id: number;
-  offered_slot_id: number;
-  target_team_member_id: number | null;
-  counterparty_slot_id: number | null;
-  warning_findings: ShiftSwapFinding[];
-  eligible_member_ids: number[];
-  created_by_user_id: number | null;
-  resolved_by_user_id: number | null;
-  applied_plan_version_id: number | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type ShiftSwapRequestCreate = {
-  planning_period_id: number;
-  shift_group_id: number;
-  kind: ShiftSwapKind;
-  offered_slot_id: number;
-  target_team_member_id?: number | null;
-  counterparty_slot_id?: number | null;
-  open_immediately?: boolean;
-};
-
-export type ShiftSwapApplyRead = {
-  request: ShiftSwapRequestRead;
-  assignments: unknown[];
-  plan_version: { id: number; trigger: string } | null;
-};
-
-export type ShiftSwapUnresolvedRead = ShiftSwapRequestRead & {
-  duty_date: string;
-  days_until_duty: number;
-  request_age_days: number;
-};
+export function readSwapFinding(value: unknown): ShiftSwapFindingView {
+  if (!value || typeof value !== "object") {
+    return { code: "", severity: "info", message: "", date: null };
+  }
+  const row = value as Record<string, unknown>;
+  return {
+    code: typeof row.code === "string" ? row.code : "",
+    severity: typeof row.severity === "string" ? row.severity : "info",
+    message: typeof row.message === "string" ? row.message : "",
+    date: typeof row.date === "string" ? row.date : null
+  };
+}
 
 export const SWAP_APPROVAL_QUEUE_STATUSES = ["claimed", "accepted", "approved"] as const;
 
@@ -81,12 +53,12 @@ export type SwapRosterMember = {
 export type SwapRosterSlot = {
   id: number;
   slot_date: string;
-  label: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
-  template_code: string | null;
-  template_name: string | null;
-  variant_label: string | null;
+  label?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  template_code?: string | null;
+  template_name?: string | null;
+  variant_label?: string | null;
 };
 
 export type SwapRosterAssignment = {
@@ -299,7 +271,10 @@ export function swapDutyUrgencyLabelKey(urgency: SwapDutyUrgency): TranslationKe
   return "shiftSwapUrgencyLater";
 }
 
-export function swapMemberName(roster: SwapRosterSlice | null | undefined, memberId: number | null): string {
+export function swapMemberName(
+  roster: SwapRosterSlice | null | undefined,
+  memberId: number | null | undefined
+): string {
   if (memberId == null) {
     return "—";
   }
@@ -317,11 +292,14 @@ export function swapSlotSummary(locale: Locale, slot: SwapRosterSlot | undefined
   const name = slot.template_name || slot.label || slot.template_code || `#${slot.id}`;
   const labeled = slot.variant_label ? `${name} · ${slot.variant_label}` : name;
   const when = formatPlanningDate(locale, slot.slot_date);
-  const time = formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone);
+  const time = formatShiftTimeRange(slot.starts_at ?? null, slot.ends_at ?? null, timeZone);
   return time ? `${when} · ${labeled} · ${time}` : `${when} · ${labeled}`;
 }
 
-export function swapSlotById(roster: SwapRosterSlice | null | undefined, slotId: number | null): SwapRosterSlot | undefined {
+export function swapSlotById(
+  roster: SwapRosterSlice | null | undefined,
+  slotId: number | null | undefined
+): SwapRosterSlot | undefined {
   if (slotId == null) {
     return undefined;
   }
@@ -346,11 +324,12 @@ function uniqueParts(parts: string[]): string {
   return [...new Set(parts.filter((part) => part.trim()))].join(" — ");
 }
 
-export function shiftSwapFindingText(locale: Locale, finding: ShiftSwapFinding): string {
-  const mapped = FINDING_LABELS[finding.code];
-  const label = mapped ? t(locale, mapped) : finding.code;
-  if (finding.message && finding.message !== label) {
-    return `${label}: ${finding.message}`;
+export function shiftSwapFindingText(locale: Locale, finding: unknown): string {
+  const view = readSwapFinding(finding);
+  const mapped = FINDING_LABELS[view.code];
+  const label = mapped ? t(locale, mapped) : view.code;
+  if (view.message && view.message !== label) {
+    return `${label}: ${view.message}`;
   }
   return label;
 }
@@ -361,7 +340,7 @@ export function shiftSwapErrorText(locale: Locale, error: unknown): string {
   }
   const detail = error.detail;
   if (detail && typeof detail === "object" && !Array.isArray(detail)) {
-    const row = detail as { code?: string; message?: string; findings?: ShiftSwapFinding[] };
+    const row = detail as { code?: string; message?: string; findings?: unknown[] };
     const parts: string[] = [];
     if (typeof row.code === "string" && row.code in CONFLICT_LABELS) {
       parts.push(t(locale, CONFLICT_LABELS[row.code]));

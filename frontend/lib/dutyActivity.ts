@@ -1,5 +1,8 @@
+import type { DutyActivitySlotUtilization } from "@/lib/api/types";
 import type { Locale, TranslationKey } from "@/lib/i18n";
 import { fromDatetimeLocalValue as fromOrgDatetimeLocalValue, toDatetimeLocalValue as toOrgDatetimeLocalValue } from "@/lib/orgTime";
+
+export type { DutyActivityEpisode, DutyActivitySlotUtilization } from "@/lib/api/types";
 
 export type DutyActivityKind = "call_out" | "in_duty_activity";
 
@@ -8,30 +11,10 @@ export type DutyActivitySlotRef = {
   slot_date: string;
   starts_at: string | null;
   ends_at: string | null;
-  category: string | null;
-  template_name: string | null;
-  template_code: string | null;
-  variant_label: string | null;
-};
-
-export type DutyActivityEpisode = {
-  id: number;
-  roster_slot_id: number | null;
-  kind: DutyActivityKind | string;
-  started_at: string | null;
-  ended_at: string | null;
-  duration_minutes: number;
-  reason: { code?: string | null; note?: string | null } | null;
-};
-
-export type DutyActivitySlotUtilization = {
-  roster_slot_id: number;
-  duty_minutes: number;
-  worked_minutes: number;
-  utilization_percent: string | number;
-  band: "stufe_i" | "stufe_ii" | "full_work" | null;
-  exceeds_on_call_threshold: boolean;
-  has_activity_record: boolean;
+  category?: string | null;
+  template_name?: string | null;
+  template_code?: string | null;
+  variant_label?: string | null;
 };
 
 export const DUTY_ACTIVITY_REASON_CODES = ["ward", "emergency", "other"] as const;

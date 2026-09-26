@@ -5,6 +5,7 @@ from app.api.deps import get_current_admin, get_current_planning_user, get_curre
 from app.db.session import get_db
 from app.models import Organization, User
 from app.schemas import (
+    DeletedFlagRead,
     TeamMemberCreate,
     TeamMemberPlanningPatternRead,
     TeamMemberPlanningPatternsReplace,
@@ -82,17 +83,17 @@ def patch_team_member(
     return team_member_to_read(member)
 
 
-@router.delete("/{team_member_id}")
+@router.delete("/{team_member_id}", response_model=DeletedFlagRead)
 def delete_team_member_endpoint(
     team_member_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
-    return {
-        "deleted": delete_team_member(
+    return DeletedFlagRead(
+        deleted=delete_team_member(
             db, team_member_id, organization_id=user.organization_id, actor=user.email, source="rest"
         )
-    }
+    )
 
 
 @router.get("/{team_member_id}/planning-patterns", response_model=list[TeamMemberPlanningPatternRead])

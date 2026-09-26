@@ -5,6 +5,7 @@ from app.api.deps import get_current_admin, get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     PlanningDayStatusDefinitionCreate,
     PlanningDayStatusDefinitionRead,
     PlanningDayStatusDefinitionUpdate,
@@ -71,12 +72,12 @@ def patch_planning_day_status_definition(
     return PlanningDayStatusDefinitionRead.model_validate(row)
 
 
-@router.delete("/{definition_id}")
+@router.delete("/{definition_id}", response_model=DeletedFlagRead)
 def delete_planning_day_status_definition_endpoint(
     definition_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> dict[str, bool]:
+) -> DeletedFlagRead:
     try:
         deleted = delete_planning_day_status_definition(
             db,
@@ -89,4 +90,4 @@ def delete_planning_day_status_definition_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Day status definition not found")
-    return {"deleted": True}
+    return DeletedFlagRead(deleted=True)

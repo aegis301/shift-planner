@@ -78,7 +78,7 @@ export function TeamMemberPropertyCellEditor({
         aria-label={definition.name}
       >
         <option value="">{t(locale, "teamMemberPropertySelectEmpty")}</option>
-        {definition.options.map((option) => (
+        {(definition.options ?? []).map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
@@ -105,7 +105,7 @@ export function TeamMemberPropertyCellEditor({
       </button>
       {multiSelectOpen ? (
         <div className="absolute left-0 top-full z-30 mt-1 flex min-w-full flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-soft">
-          {definition.options.map((option) => {
+          {(definition.options ?? []).map((option) => {
             const selected = selectedValues.includes(option);
             return (
               <button

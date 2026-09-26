@@ -5,6 +5,7 @@ from app.api.deps import get_current_admin
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     TeamMemberPropertyDefinitionCreate,
     TeamMemberPropertyDefinitionRead,
     TeamMemberPropertyDefinitionUpdate,
@@ -69,12 +70,12 @@ def patch_team_member_property_definition(
     return TeamMemberPropertyDefinitionRead.model_validate(row)
 
 
-@router.delete("/{definition_id}")
+@router.delete("/{definition_id}", response_model=DeletedFlagRead)
 def delete_team_member_property_definition_endpoint(
     definition_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> dict[str, bool]:
+) -> DeletedFlagRead:
     deleted = delete_team_member_property_definition(
         db,
         definition_id,
@@ -84,4 +85,4 @@ def delete_team_member_property_definition_endpoint(
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Property definition not found")
-    return {"deleted": True}
+    return DeletedFlagRead(deleted=True)

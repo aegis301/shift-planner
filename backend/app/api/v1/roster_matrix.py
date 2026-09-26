@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_planner, get_current_user
+from app.api.file_responses import ICS_RESPONSES, PDF_RESPONSES, XLSX_RESPONSES
 from app.db.session import get_db
 from app.models import RosterSlot, ShiftGroup, ShiftGroupShiftTemplate, User
 from app.schemas import (
+    DeletedFlagRead,
     RosterMatrixRead,
     RosterSlotAssignmentClear,
     RosterSlotAssignmentRead,
@@ -216,7 +218,7 @@ def put_roster_slot_assignment(
         raise HTTPException(status_code=400, detail=detail) from exc
 
 
-@router.post("/assignments/clear")
+@router.post("/assignments/clear", response_model=DeletedFlagRead)
 def clear_assignment(
     payload: RosterSlotAssignmentClear,
     shift_group_id: int | None = Query(default=None),
@@ -245,10 +247,14 @@ def clear_assignment(
     deleted = clear_roster_slot_assignment(
         db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
     )
-    return {"deleted": deleted}
+    return DeletedFlagRead(deleted=deleted)
 
 
-@export_router.get("/exports/roster-matrix/{planning_period_id}.xlsx")
+@export_router.get(
+    "/exports/roster-matrix/{planning_period_id}.xlsx",
+    response_class=Response,
+    responses=XLSX_RESPONSES,
+)
 def get_roster_matrix_xlsx(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
@@ -277,7 +283,11 @@ def get_roster_matrix_xlsx(
     )
 
 
-@export_router.get("/exports/duty-activity/works-council/{planning_period_id}.xlsx")
+@export_router.get(
+    "/exports/duty-activity/works-council/{planning_period_id}.xlsx",
+    response_class=Response,
+    responses=XLSX_RESPONSES,
+)
 def get_works_council_duty_xlsx(
     planning_period_id: int,
     db: Session = Depends(get_db),
@@ -300,7 +310,11 @@ def get_works_council_duty_xlsx(
     )
 
 
-@export_router.get("/exports/duty-activity/works-council/{planning_period_id}.pdf")
+@export_router.get(
+    "/exports/duty-activity/works-council/{planning_period_id}.pdf",
+    response_class=Response,
+    responses=PDF_RESPONSES,
+)
 def get_works_council_duty_pdf(
     planning_period_id: int,
     db: Session = Depends(get_db),
@@ -323,7 +337,11 @@ def get_works_council_duty_pdf(
     )
 
 
-@export_router.get("/exports/roster-matrix/{planning_period_id}.pdf")
+@export_router.get(
+    "/exports/roster-matrix/{planning_period_id}.pdf",
+    response_class=Response,
+    responses=PDF_RESPONSES,
+)
 def get_roster_matrix_pdf(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
@@ -361,7 +379,11 @@ def _require_team_member_export_user(db: Session, user: User):
     return linked
 
 
-@export_router.get("/exports/roster-slots/{roster_slot_id}.ics")
+@export_router.get(
+    "/exports/roster-slots/{roster_slot_id}.ics",
+    response_class=Response,
+    responses=ICS_RESPONSES,
+)
 def get_roster_slot_ics(
     roster_slot_id: int,
     db: Session = Depends(get_db),
@@ -387,7 +409,7 @@ def get_roster_slot_ics(
     )
 
 
-@export_router.get("/exports/my-shifts.ics")
+@export_router.get("/exports/my-shifts.ics", response_class=Response, responses=ICS_RESPONSES)
 def get_my_shifts_ics(
     shift_group_id: int = Query(...),
     start_date: date | None = Query(default=None),
@@ -427,7 +449,11 @@ def get_my_shifts_ics(
     )
 
 
-@export_router.get("/exports/my-shifts/{planning_period_id}.ics")
+@export_router.get(
+    "/exports/my-shifts/{planning_period_id}.ics",
+    response_class=Response,
+    responses=ICS_RESPONSES,
+)
 def get_my_shifts_period_ics(
     planning_period_id: int,
     shift_group_id: int = Query(...),

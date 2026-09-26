@@ -36,8 +36,16 @@ jobs:
         run: ruff check app
       - name: Pytest
         run: pytest
+      - name: Export OpenAPI schema
+        run: python -m app.scripts.export_openapi > "$GITHUB_WORKSPACE/openapi.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi-schema
+          path: openapi.json
+          if-no-files-found: error
 
   frontend:
+    needs: backend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -55,6 +63,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: openapi-schema
+          path: frontend/lib/api
+      - name: Check generated API types
+        run: |
+          node --input-type=module -e "import { execFileSync } from 'node:child_process'; import { stampSchema } from './scripts/stamp-schema.mjs'; execFileSync('npx', ['openapi-typescript', 'lib/api/openapi.json', '-o', 'lib/api/schema.d.ts'], { stdio: 'inherit' }); stampSchema('lib/api/schema.d.ts');"
+          git diff --exit-code -- lib/api/openapi.json lib/api/schema.d.ts
       - name: Lint
         run: npm run lint
       - name: Typecheck

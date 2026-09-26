@@ -69,7 +69,7 @@ export function TeamMemberPropertyMatrixPanel() {
   filterDefinitionsRef.current = matrix.definitions;
   const completeFilters = completeTeamMemberPropertyFilters(filters, matrix.definitions);
   const definitionSignature = matrix.definitions
-    .map((definition) => `${definition.id}:${definition.type}:${definition.options.join("\u0000")}`)
+    .map((definition) => `${definition.id}:${definition.type}:${(definition.options ?? []).join("\u0000")}`)
     .join("\u0001");
 
   const load = useCallback(async (activeFilters: TeamMemberPropertyFilter[]) => {

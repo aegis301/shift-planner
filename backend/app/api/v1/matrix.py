@@ -5,6 +5,7 @@ from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     PlanningCellBulkUpsert,
     PlanningCellClear,
     PlanningCellRead,
@@ -265,7 +266,7 @@ def put_shift_intents_bulk(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/{planning_period_id}/cells/clear")
+@router.post("/{planning_period_id}/cells/clear", response_model=DeletedFlagRead)
 def clear_cell(
     planning_period_id: int,
     payload: PlanningCellClear,
@@ -289,7 +290,7 @@ def clear_cell(
         actor=user.email,
         source="rest",
     )
-    return {"deleted": deleted}
+    return DeletedFlagRead(deleted=deleted)
 
 
 @router.get("/{planning_period_id}/notes", response_model=list[TeamMemberPeriodNoteRead])

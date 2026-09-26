@@ -14,6 +14,7 @@ import {
   listShiftSwaps,
   listUnresolvedShiftSwaps,
   memberPlanningHref,
+  readSwapFinding,
   rejectShiftSwap,
   shiftSwapErrorText,
   shiftSwapFindingText,
@@ -234,7 +235,7 @@ export function ShiftSwapApprovalQueue({
                           </span>
                         </div>
                         <RosterChangeBlock
-                          afterId={row.target_team_member_id}
+                          afterId={row.target_team_member_id ?? null}
                           beforeId={offeredBefore}
                           label={t(locale, "shiftSwapChangeOffered")}
                           roster={roster}
@@ -253,14 +254,14 @@ export function ShiftSwapApprovalQueue({
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                             {t(locale, "shiftSwapWarningsTitle")}
                           </p>
-                          {row.warning_findings.length === 0 ? (
+                          {(row.warning_findings ?? []).length === 0 ? (
                             <p className="text-sm text-slate-500">{t(locale, "shiftSwapNoWarnings")}</p>
                           ) : (
                             <ul className="grid gap-1">
-                              {row.warning_findings.map((finding, index) => (
+                              {(row.warning_findings ?? []).map((finding, index) => (
                                 <li
                                   className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-950 ring-1 ring-amber-200"
-                                  key={`${finding.code}-${index}`}
+                                  key={`${readSwapFinding(finding).code}-${index}`}
                                 >
                                   {shiftSwapFindingText(locale, finding)}
                                 </li>

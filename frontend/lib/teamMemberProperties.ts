@@ -1,43 +1,14 @@
+import type { TeamMemberPropertyDefinition, TeamMemberPropertyFilter } from "@/lib/api/types";
 import type { TranslationKey } from "@/lib/i18n";
 
-export type TeamMemberPropertyType = "number" | "date" | "select" | "multi_select" | "text";
+export type { TeamMemberPropertyDefinition, TeamMemberPropertyFilter } from "@/lib/api/types";
 
-export type TeamMemberPropertyDefinition = {
-  id: number;
-  name: string;
-  type: TeamMemberPropertyType;
-  options: string[];
-  editable_by_team_member: boolean;
-  display_order: number;
-  is_active: boolean;
-};
+export type TeamMemberPropertyType = TeamMemberPropertyDefinition["type"];
+export type TeamMemberPropertyFilterOperator = TeamMemberPropertyFilter["operator"];
 
 export type TeamMemberPropertyValueRow = TeamMemberPropertyDefinition & {
   property_definition_id: number;
   value: unknown;
-};
-
-export type TeamMemberPropertyFilterOperator =
-  | "is_empty"
-  | "is_not_empty"
-  | "contains"
-  | "equals"
-  | "not_equals"
-  | "contains_any"
-  | "contains_all"
-  | "greater_than"
-  | "greater_or_equal"
-  | "less_than"
-  | "less_or_equal"
-  | "before"
-  | "on_or_before"
-  | "after"
-  | "on_or_after";
-
-export type TeamMemberPropertyFilter = {
-  property_definition_id: number;
-  operator: TeamMemberPropertyFilterOperator;
-  value?: unknown;
 };
 
 export const TEAM_MEMBER_PROPERTY_TYPES: TeamMemberPropertyType[] = [

@@ -237,7 +237,7 @@ function SettingsContent() {
                   <p className="mt-2 text-sm text-slate-600">{t(locale, "settingsMembershipsHelp")}</p>
                 </div>
                 <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-slate-50/60">
-                  {[...me.memberships]
+                  {[...(me.memberships ?? [])]
                     .sort((a, b) => a.organization.slug.localeCompare(b.organization.slug))
                     .map((m) => {
                       const active = m.organization.id === me.organization_id;

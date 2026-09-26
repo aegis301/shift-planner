@@ -262,5 +262,8 @@ at every width.
   tokens, not from ad-hoc Tailwind values. *(target, #112)*
 - Server state goes through TanStack Query with the query keys in `frontend/lib/queryKeys.ts`. Do
   not add `useEffect` fetches or `*ReloadToken` counters. *(target, #113)*
-- API payload types are generated from the backend OpenAPI schema. Do not hand-write a type that
-  mirrors a backend schema. *(target, #111)*
+- API payload types come from `frontend/lib/api/schema.d.ts`. Regenerate with
+  `cd frontend && npm run api:generate` (exports `python -m app.scripts.export_openapi`, then
+  `openapi-typescript`). Aliases live in `frontend/lib/api/types.ts`. `npm run api:check` fails
+  when the committed schema drifts. New fetches use `apiClient` from `frontend/lib/api/client.ts`.
+  Do not hand-write a type that mirrors a backend schema.

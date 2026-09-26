@@ -21,7 +21,7 @@ export class ApiError extends Error {
   }
 }
 
-function messageFromDetail(detail: unknown, status: number): string {
+export function messageFromDetail(detail: unknown, status: number): string {
   if (typeof detail === "string") {
     return detail;
   }
@@ -34,6 +34,20 @@ function messageFromDetail(detail: unknown, status: number): string {
   return `API request failed: ${status}`;
 }
 
+export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  const detail =
+    body && typeof body === "object" && body !== null && "detail" in body
+      ? (body as { detail: unknown }).detail
+      : body;
+  return new ApiError(response.status, messageFromDetail(detail, response.status), detail);
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -44,17 +58,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     }
   });
   if (!response.ok) {
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      body = undefined;
-    }
-    const detail =
-      body && typeof body === "object" && body !== null && "detail" in body
-        ? (body as { detail: unknown }).detail
-        : body;
-    throw new ApiError(response.status, messageFromDetail(detail, response.status), detail);
+    throw await apiErrorFromResponse(response);
   }
   if (response.status === 204) {
     return undefined as T;

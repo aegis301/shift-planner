@@ -13,27 +13,9 @@ import { TeamMemberCreateModal, TeamMemberEditorModal, isTeamMemberRecord, type 
 import { EmploymentContractSection } from "@/components/EmploymentContractSection";
 import { WorkTimeConsentSection } from "@/components/WorkTimeConsentSection";
 
-type StaffDirectoryLinkStatus =
-  | "team_member_only"
-  | "login_only"
-  | "login_unlinked"
-  | "linked_ok"
-  | "linked_wrong_user"
-  | "linked_foreign_user";
+import type { StaffDirectoryRow } from "@/lib/api/types";
 
-type StaffDirectoryRow = {
-  email: string;
-  team_member_id: number | null;
-  team_member_label: string | null;
-  team_member_is_active: boolean | null;
-  user_id: number | null;
-  user_role: string | null;
-  user_is_active: boolean | null;
-  linked_user_id: number | null;
-  linked_user_role: string | null;
-  linked_user_is_active: boolean | null;
-  link_status: StaffDirectoryLinkStatus;
-};
+type StaffDirectoryLinkStatus = StaffDirectoryRow["link_status"];
 
 const STAFF_ASSIGNABLE_ROLES = ["admin", "planner", "team_member"] as const;
 type StaffAssignableRole = (typeof STAFF_ASSIGNABLE_ROLES)[number];
