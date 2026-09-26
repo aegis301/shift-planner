@@ -79,7 +79,26 @@ npm install
 npm run dev
 npm run lint
 npm run typecheck
+npm run test
 ```
+
+`npm run test` runs Vitest once. `npm run test:watch` keeps it running.
+
+### End-to-end tests
+
+Playwright smoke tests and golden screenshots live in `frontend/e2e`. They sign in as three users in the comfortable solver fixture for October 2026. Start Compose, seed those users, install Chromium once on this machine, then run the suite:
+
+```bash
+docker compose up -d postgres backend frontend
+docker compose exec -e E2E_SEED_PASSWORD=local-e2e-password backend python -m app.scripts.seed_e2e
+cd frontend
+npx playwright install chromium
+E2E_SEED_PASSWORD=local-e2e-password npm run test:e2e
+```
+
+`npm run test:e2e` does not download browsers. In the cloud dev container Chromium is already at `/opt/pw-browsers`; set `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` there instead of running `playwright install`.
+
+Screenshot baselines are the linux/Chromium images committed next to the tests. Generate or refresh them in a Playwright Ubuntu container (`mcr.microsoft.com/playwright:v1.63.0-noble`) against Compose, on a database that only contains the default organization and this seed, so they match the `ubuntu-24.04` CI job. On a Mac the container reaches the published ports through `host.docker.internal`. The Next dev server only serves page scripts for hosts listed in `ALLOWED_DEV_ORIGINS`. The Compose default and `.env.example` include `localhost` and `host.docker.internal`; a local `.env` that sets `ALLOWED_DEV_ORIGINS` has to list `host.docker.internal` as well. `npx playwright test --update-snapshots` is only for a change you can justify in the pull request. A Mac run looks for darwin snapshots and is not the baseline.
 
 The App Router root layout wraps the app in one **`LocaleShell`** (see `app/ClientRoot.tsx`) so locale and `/api/v1/auth/me` session state are not reset on every navigation. Individual pages do not nest another `LocaleShell`.
 

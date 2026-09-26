@@ -59,6 +59,8 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
+      - name: Unit tests
+        run: npm run test
       - name: Build
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
@@ -103,3 +105,66 @@ jobs:
       - name: Shutdown smoke environment
         if: always()
         run: docker compose -f docker-compose.prod.yml down -v --remove-orphans
+
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Merge latest base branch
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/merge-latest-base.sh"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Start Compose
+        env:
+          DOCKER_BUILDKIT: 1
+          COMPOSE_DOCKER_CLI_BUILD: 1
+        run: docker compose up -d postgres backend frontend
+      - name: Wait for backend and frontend
+        run: |
+          set -eu
+          for _ in $(seq 1 90); do
+            if curl -fsS --max-time 5 http://localhost:18180/health >/dev/null 2>&1 \
+              && curl -fsS --max-time 20 http://localhost:18130/login | grep -q "Admin Login"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Compose services did not become ready in time."
+          docker compose logs backend frontend
+          exit 1
+      - name: Seed end-to-end organization
+        env:
+          E2E_SEED_PASSWORD: ci-e2e-password
+        run: docker compose exec -T -e E2E_SEED_PASSWORD backend python -m app.scripts.seed_e2e
+      - name: Playwright
+        working-directory: frontend
+        env:
+          E2E_BASE_URL: http://localhost:18130
+          E2E_API_URL: http://localhost:18180
+          E2E_SEED_PASSWORD: ci-e2e-password
+          CI: "true"
+        run: npm run test:e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+      - name: Shutdown end-to-end environment
+        if: always()
+        run: docker compose down -v --remove-orphans
