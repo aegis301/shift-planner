@@ -123,9 +123,6 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-      - name: Install Playwright Chromium
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
       - name: Start Compose
         env:
           DOCKER_BUILDKIT: 1
@@ -149,13 +146,19 @@ jobs:
           E2E_SEED_PASSWORD: ci-e2e-password
         run: docker compose exec -T -e E2E_SEED_PASSWORD backend python -m app.scripts.seed_e2e
       - name: Playwright
-        working-directory: frontend
         env:
-          E2E_BASE_URL: http://localhost:18130
-          E2E_API_URL: http://localhost:18180
           E2E_SEED_PASSWORD: ci-e2e-password
-          CI: "true"
-        run: npm run test:e2e
+        run: |
+          docker run --rm --network host \
+            -v "${GITHUB_WORKSPACE}/frontend:/work" \
+            -w /work \
+            -e E2E_BASE_URL=http://localhost:18130 \
+            -e E2E_API_URL=http://localhost:18180 \
+            -e E2E_SEED_PASSWORD \
+            -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+            -e CI=true \
+            mcr.microsoft.com/playwright:v1.63.0-noble \
+            npx playwright test
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
