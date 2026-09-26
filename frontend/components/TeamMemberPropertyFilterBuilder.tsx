@@ -24,7 +24,7 @@ function initialValue(definition: TeamMemberPropertyDefinition): unknown {
     return [];
   }
   if (definition.type === "select") {
-    return definition.options[0] ?? "";
+    return (definition.options ?? [])[0] ?? "";
   }
   return "";
 }
@@ -188,7 +188,7 @@ export function TeamMemberPropertyFilterBuilder({
                       updateFilter(index, { ...propertyFilter, value: event.target.value })
                     }
                   >
-                    {definition.options.map((option) => (
+                    {(definition.options ?? []).map((option) => (
                       <option key={option} value={option}>
                         {option}
                       </option>
@@ -196,7 +196,7 @@ export function TeamMemberPropertyFilterBuilder({
                   </select>
                 ) : needsValue && definition.type === "multi_select" ? (
                   <div className="flex min-h-10 flex-wrap items-center gap-1.5">
-                    {definition.options.map((option) => {
+                    {(definition.options ?? []).map((option) => {
                       const selected = selectedValues.includes(option);
                       return (
                         <button

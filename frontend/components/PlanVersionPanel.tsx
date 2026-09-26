@@ -3,31 +3,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Clock, Download, Eye, History, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
+import type { PlanVersion, PlanVersionList, SuggestedPlanVersionRead } from "@/lib/api/types";
 import { t, type Locale } from "@/lib/i18n";
 
-export type PlanVersion = {
-  id: number;
-  planning_period_id: number;
-  shift_group_id: number;
-  major_version: number;
-  minor_version: number;
-  lifecycle_phase: "preliminary" | "published";
-  trigger: string;
-  note: string | null;
-  created_at: string;
-};
+export type { PlanVersion, PlanVersionList } from "@/lib/api/types";
 
-export type PlanVersionList = {
-  working_major_version: number | null;
-  working_minor_version: number | null;
-  versions: PlanVersion[];
-};
-
-type SuggestedVersion = {
-  major_version: number;
-  minor_version: number;
-  label: string;
-};
+type SuggestedVersion = SuggestedPlanVersionRead;
 
 type PlanVersionPanelProps = {
   locale: Locale;
@@ -218,11 +199,11 @@ export function PlanVersionPanel({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              {!versions?.versions.length ? (
+              {!(versions?.versions ?? []).length ? (
                 <p className="text-sm text-slate-600">{t(locale, "planVersionHistoryEmpty")}</p>
               ) : (
                 <ul className="grid gap-3">
-                  {versions.versions.map((version) => (
+                  {(versions?.versions ?? []).map((version) => (
                     <li key={version.id} className="rounded-xl border border-slate-200 p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div>

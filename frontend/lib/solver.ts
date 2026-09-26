@@ -1,80 +1,71 @@
 import { apiFetch } from "@/lib/api";
+import type {
+  SolverConfigRead,
+  SolverObjectiveWeights,
+  SolverRunApplyRead,
+  SolverRunCreate,
+  SolverRunRead
+} from "@/lib/api/types";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
-export type SolverRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type {
+  SolverConfigRead,
+  SolverObjectiveWeights,
+  SolverRunApplyRead,
+  SolverRunCreate,
+  SolverRunRead
+} from "@/lib/api/types";
 
-export type SolverObjectiveWeights = {
-  unfilled: number;
-  duty_count: number;
-  fairness: number;
-  wish: number;
-  avoid_time_window: number;
-  warning: number;
-  pair_warning: number;
-};
+export type SolverRunStatus = SolverRunRead["status"];
 
-export type SolverConfigRead = {
-  time_budget_ceiling_seconds: number;
-  default_time_budget_seconds: number;
-  weights: SolverObjectiveWeights;
-};
-
-export type SolverUnfilledSlot = {
+export type SolverUnfilledSlotView = {
   roster_slot_id: number;
   slot_date: string;
   label: string;
   binding_constraints: string[];
 };
 
-export type SolverPostCheckFinding = {
+export type SolverPostCheckFindingView = {
   code: string;
-  severity: "info" | "warning" | "error";
+  severity: string;
   message: string;
-  team_member_id: number | null;
   date: string | null;
-  details: Record<string, unknown>;
 };
 
-export type SolverRunRead = {
-  id: number;
-  organization_id: number;
-  planning_period_id: number;
-  shift_group_id: number;
-  status: SolverRunStatus;
-  parameters: Record<string, unknown>;
-  proposed_assignments: Array<{
-    roster_slot_id: number;
-    team_member_id: number;
-    comment: string | null;
-    manual_override: boolean;
-  }>;
-  objective_breakdown: Record<string, number>;
-  unfilled_slots: SolverUnfilledSlot[];
-  post_check_findings: SolverPostCheckFinding[];
-  rule_set_version_id: number | null;
-  failure_reason: string | null;
-  cancel_requested: boolean;
-  created_by_user_id: number | null;
-  queued_at: string;
-  started_at: string | null;
-  finished_at: string | null;
-  applied_at: string | null;
-  duration_ms: number | null;
-  created_at: string;
-  updated_at: string;
-};
+function recordField(value: unknown, key: string): unknown {
+  if (value && typeof value === "object" && key in value) {
+    return (value as Record<string, unknown>)[key];
+  }
+  return undefined;
+}
 
-export type SolverRunApplyRead = {
-  run: SolverRunRead;
-  assignments: unknown[];
-};
+export function readUnfilledSlot(value: unknown, index: number): SolverUnfilledSlotView {
+  const constraints = recordField(value, "binding_constraints");
+  const rosterSlotId = recordField(value, "roster_slot_id");
+  const slotDate = recordField(value, "slot_date");
+  const label = recordField(value, "label");
+  return {
+    roster_slot_id: typeof rosterSlotId === "number" ? rosterSlotId : index,
+    slot_date: typeof slotDate === "string" ? slotDate : "",
+    label: typeof label === "string" ? label : "",
+    binding_constraints: Array.isArray(constraints)
+      ? constraints.filter((item): item is string => typeof item === "string")
+      : []
+  };
+}
 
-export type SolverRunCreate = {
-  shift_group_id: number;
-  time_budget_seconds?: number;
-  overwrite_existing?: boolean;
-  objective_weights?: Partial<SolverObjectiveWeights>;
-};
+export function readPostCheckFinding(value: unknown): SolverPostCheckFindingView {
+  const severity = recordField(value, "severity");
+  const date = recordField(value, "date");
+  const code = recordField(value, "code");
+  const message = recordField(value, "message");
+  return {
+    code: typeof code === "string" ? code : "",
+    severity: typeof severity === "string" ? severity : "info",
+    message: typeof message === "string" ? message : "",
+    date: typeof date === "string" ? date : null
+  };
+}
 
 export const SOLVER_FORM_WEIGHT_KEYS = [
   "unfilled",

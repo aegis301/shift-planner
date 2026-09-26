@@ -122,7 +122,7 @@ export function SolverRunPanel({
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-sm font-semibold text-ink">{t(locale, "solverApplyConfirmTitle")}</p>
                 <p className="mt-1 text-sm text-slate-700">
-                  {t(locale, "solverApplyConfirmBody", { count: String(run.proposed_assignments.length) })}
+                  {t(locale, "solverApplyConfirmBody", { count: String((run.proposed_assignments ?? []).length) })}
                 </p>
                 <div className="mt-3 flex flex-wrap justify-end gap-2">
                   <button

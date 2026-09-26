@@ -5,6 +5,7 @@ from app.api.deps import get_current_admin, get_current_planning_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     WorkTimeRuleSetAdoptRead,
     WorkTimeRuleSetAdoptRequest,
     WorkTimeRuleSetCreate,
@@ -118,12 +119,12 @@ def patch_work_time_rule_set(
     return work_time_rule_set_to_read(row)
 
 
-@router.delete("/{rule_set_id}")
+@router.delete("/{rule_set_id}", response_model=DeletedFlagRead)
 def delete_work_time_rule_set_endpoint(
     rule_set_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> dict[str, bool]:
+) -> DeletedFlagRead:
     try:
         deleted = delete_work_time_rule_set(
             db,
@@ -136,4 +137,4 @@ def delete_work_time_rule_set_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Work time rule set not found")
-    return {"deleted": True}
+    return DeletedFlagRead(deleted=True)

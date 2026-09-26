@@ -2289,3 +2289,21 @@ class ShiftSwapApplyRead(BaseModel):
     request: ShiftSwapRequestRead
     assignments: list[RosterSlotAssignmentRead]
     plan_version: PlanVersionRead | None = None
+
+
+class HealthRead(BaseModel):
+    status: str
+
+
+class OkFlagRead(BaseModel):
+    ok: bool
+
+
+class DeletedFlagRead(BaseModel):
+    deleted: bool
+
+
+class SuggestedPlanVersionRead(BaseModel):
+    major_version: int
+    minor_version: int
+    label: str

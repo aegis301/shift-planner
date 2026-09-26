@@ -101,7 +101,7 @@ dependencies are in the ADR's **Work plan** table.
 |---|---|---|
 | #109 | Slot times as real instants in the org time zone (defect) | shipped |
 | #110 | Frontend test harness and golden screenshots | shipped |
-| #111 | Generated API types from OpenAPI | open |
+| #111 | Generated API types from OpenAPI | this change |
 | #112 | UI foundation: Radix primitives, tokens | open |
 | #113 | TanStack Query for server state | open |
 | #114 | Route split: workbench and member area | open |
@@ -117,7 +117,7 @@ dependencies are in the ADR's **Work plan** table.
 | #124 | Member app: wishes, swaps, hours, calendar | open |
 | #125 | Push as a channel of #101's notifications (design: PR #127; needs #101 implemented) | open |
 
-#111, #116 and #119 have no dependencies and can start in parallel. #109 and #110 have shipped; #123 can use `Organization.timezone` for offline capture.
+#116 and #119 have no dependencies and can start in parallel. #109, #110, and #111 have shipped or are in this change; #113 still needs the generated client from #111. #123 can use `Organization.timezone` for offline capture.
 
 **Why #75 is split.** The spike showed that encoding all 18 rules at once is the way to get a
 model nobody can debug. Tier A is the set the TdL fixture actually exercises and that the spike

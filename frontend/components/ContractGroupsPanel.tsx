@@ -5,45 +5,23 @@ import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
+import type {
+  ContractCategoryRule,
+  ContractGroup,
+  ContractStatusMapping,
+  RegularWeekPatternDay
+} from "@/lib/api/types";
 import { t } from "@/lib/i18n";
 
-type CreditMode = "duration" | "factor" | "none";
-type Category = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
+export type {
+  ContractCategoryRule,
+  ContractGroup,
+  ContractStatusMapping,
+  RegularWeekPatternDay
+} from "@/lib/api/types";
 
-export type ContractCategoryRule = {
-  category: Category;
-  counts_toward_contract: boolean;
-  credit_mode: CreditMode;
-  credit_factor: number | string | null;
-  holiday_credit_bonus: number | string;
-  statutory_factor: number | string;
-  call_outs_count_as_work: boolean;
-};
-
-export type ContractStatusMapping = {
-  code: string;
-  absence_kind: "vacation" | "sick" | "other" | "none";
-  consumes_vacation: boolean;
-  counts_as_work_day: boolean;
-};
-
-export type RegularWeekPatternDay = {
-  weekday: string;
-  start: string;
-  end: string;
-};
-
-export type ContractGroup = {
-  id: number;
-  name: string;
-  display_order: number;
-  is_active: boolean;
-  weekly_hours_at_100: number | string;
-  vacation_days_at_100: number | string;
-  regular_week_pattern: RegularWeekPatternDay[];
-  category_rules: ContractCategoryRule[];
-  status_mappings: ContractStatusMapping[];
-};
+type CreditMode = ContractCategoryRule["credit_mode"];
+type Category = ContractCategoryRule["category"];
 
 const CATEGORIES: Category[] = ["bereitschaftsdienst", "rufdienst", "spaetdienst", "other"];
 
@@ -53,9 +31,9 @@ function defaultRules(): ContractCategoryRule[] {
       category: "bereitschaftsdienst",
       counts_toward_contract: true,
       credit_mode: "factor",
-      credit_factor: 0.6,
-      holiday_credit_bonus: 25,
-      statutory_factor: 1,
+      credit_factor: "0.6",
+      holiday_credit_bonus: "25",
+      statutory_factor: "1",
       call_outs_count_as_work: false
     },
     {
@@ -63,8 +41,8 @@ function defaultRules(): ContractCategoryRule[] {
       counts_toward_contract: false,
       credit_mode: "none",
       credit_factor: null,
-      holiday_credit_bonus: 0,
-      statutory_factor: 1,
+      holiday_credit_bonus: "0",
+      statutory_factor: "1",
       call_outs_count_as_work: true
     },
     {
@@ -72,8 +50,8 @@ function defaultRules(): ContractCategoryRule[] {
       counts_toward_contract: true,
       credit_mode: "duration",
       credit_factor: null,
-      holiday_credit_bonus: 0,
-      statutory_factor: 1,
+      holiday_credit_bonus: "0",
+      statutory_factor: "1",
       call_outs_count_as_work: false
     },
     {
@@ -81,8 +59,8 @@ function defaultRules(): ContractCategoryRule[] {
       counts_toward_contract: true,
       credit_mode: "duration",
       credit_factor: null,
-      holiday_credit_bonus: 0,
-      statutory_factor: 1,
+      holiday_credit_bonus: "0",
+      statutory_factor: "1",
       call_outs_count_as_work: false
     }
   ];
@@ -98,7 +76,7 @@ function defaultMappings(): ContractStatusMapping[] {
 }
 
 function defaultWeek(): RegularWeekPatternDay[] {
-  return ["mon", "tue", "wed", "thu", "fri"].map((weekday) => ({
+  return (["mon", "tue", "wed", "thu", "fri"] as const).map((weekday) => ({
     weekday,
     start: "08:00:00",
     end: "16:30:00"
@@ -270,7 +248,7 @@ function ContractGroupModal({
                           onChange={(event) =>
                             updateRule(category, {
                               credit_mode: event.target.value as CreditMode,
-                              credit_factor: event.target.value === "factor" ? Number(rule.credit_factor ?? 0.6) : null
+                              credit_factor: event.target.value === "factor" ? String(rule.credit_factor ?? "0.6") : null
                             })
                           }
                         >

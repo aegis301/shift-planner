@@ -7,6 +7,7 @@ from app.api.deps import get_current_admin, get_current_planning_user
 from app.db.session import get_db
 from app.models import ShiftGroup, User
 from app.schemas import (
+    DeletedFlagRead,
     ShiftGroupCreate,
     ShiftGroupMembershipsPut,
     ShiftGroupRead,
@@ -90,15 +91,15 @@ def patch_shift_group(
     return _shift_group_read(group)
 
 
-@router.delete("/{shift_group_id}")
+@router.delete("/{shift_group_id}", response_model=DeletedFlagRead)
 def delete_shift_group_endpoint(
     shift_group_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_admin)
 ):
-    return {
-        "deleted": delete_shift_group(
+    return DeletedFlagRead(
+        deleted=delete_shift_group(
             db, shift_group_id, organization_id=user.organization_id, actor=user.email, source="rest"
         )
-    }
+    )
 
 
 @router.put("/{shift_group_id}/team-members", response_model=ShiftGroupRead)

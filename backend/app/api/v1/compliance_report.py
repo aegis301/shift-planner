@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_planning_user
+from app.api.file_responses import PDF_RESPONSES, XLSX_RESPONSES
 from app.db.session import get_db
 from app.models import User
 from app.schemas import ComplianceReportRead
@@ -39,7 +40,11 @@ def get_compliance_report(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/exports/compliance-report/{planning_period_id}.xlsx")
+@router.get(
+    "/exports/compliance-report/{planning_period_id}.xlsx",
+    response_class=Response,
+    responses=XLSX_RESPONSES,
+)
 def get_compliance_report_xlsx(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
@@ -69,7 +74,11 @@ def get_compliance_report_xlsx(
     )
 
 
-@router.get("/exports/compliance-report/{planning_period_id}.pdf")
+@router.get(
+    "/exports/compliance-report/{planning_period_id}.pdf",
+    response_class=Response,
+    responses=PDF_RESPONSES,
+)
 def get_compliance_report_pdf(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),

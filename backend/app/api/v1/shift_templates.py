@@ -5,6 +5,7 @@ from app.api.deps import get_current_admin, get_current_planning_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     GeneratedRosterSlotPreview,
     ShiftTemplateCreate,
     ShiftTemplatePreviewRequest,
@@ -83,17 +84,17 @@ def patch_shift_template(
     return template
 
 
-@router.delete("/{template_id}")
+@router.delete("/{template_id}", response_model=DeletedFlagRead)
 def delete_shift_template_endpoint(
     template_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
-    return {
-        "deleted": delete_shift_template(
+    return DeletedFlagRead(
+        deleted=delete_shift_template(
             db, template_id, organization_id=user.organization_id, actor=user.email, source="rest"
         )
-    }
+    )
 
 
 @router.post("/{template_id}/variants", response_model=ShiftVariantRead)
@@ -132,17 +133,17 @@ def patch_shift_variant(
     return variant
 
 
-@router.delete("/variants/{variant_id}")
+@router.delete("/variants/{variant_id}", response_model=DeletedFlagRead)
 def delete_shift_variant_endpoint(
     variant_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
 ):
-    return {
-        "deleted": delete_shift_variant(
+    return DeletedFlagRead(
+        deleted=delete_shift_variant(
             db, variant_id, organization_id=user.organization_id, actor=user.email, source="rest"
         )
-    }
+    )
 
 
 @router.post("/preview", response_model=list[GeneratedRosterSlotPreview])

@@ -4,54 +4,12 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
+import type { ComplianceMemberReport, ComplianceReport, ValidationWarning } from "@/lib/api/types";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t } from "@/lib/i18n";
 
-type ComplianceFinding = {
-  code: string;
-  severity: string;
-  message: string;
-  team_member_id: number | null;
-  date: string | null;
-};
-
-type ComplianceRestViolation = {
-  code: string;
-  compensation_pending: boolean;
-  rest_minutes: number | null;
-  date: string | null;
-};
-
-type ComplianceMember = {
-  team_member_id: number;
-  display_name: string;
-  statutory_minutes: number;
-  credited_minutes: number;
-  weekly_average_minutes: number;
-  weekly_cap_minutes: number;
-  weekly_cap_source: "base" | "opt_out";
-  weekly_cap_tier: string | null;
-  weekly_cap_consent_id: number | null;
-  consecutive_work_days: number;
-  consecutive_work_days_limit: number | null;
-  duty_count: number;
-  duty_count_allowed: number | null;
-  duty_count_period: string | null;
-  documentation_days_above_threshold: number;
-  documentation_days_recorded: number;
-  rest_violations: ComplianceRestViolation[];
-  findings: ComplianceFinding[];
-};
-
-type ComplianceReport = {
-  planning_period_id: number;
-  year: number;
-  month: number;
-  generated_at: string;
-  rule_set: { id: number; name: string; version: number } | null;
-  members: ComplianceMember[];
-  findings: ComplianceFinding[];
-};
+type ComplianceFinding = ValidationWarning;
+type ComplianceMember = ComplianceMemberReport;
 
 function minutesLabel(value: number): string {
   return `${value.toLocaleString()} min`;
@@ -123,10 +81,10 @@ export function ComplianceReportPanel({
           <p className="text-sm text-slate-500">{t(locale, "complianceReportNoRuleSet")}</p>
         ) : null}
         {message ? <p className="text-sm text-rose-700">{message}</p> : null}
-        {report && report.members.length === 0 ? (
+        {report && (report.members ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
         ) : null}
-        {report && report.members.length > 0 ? (
+        {report && (report.members ?? []).length > 0 ? (
           <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
             <table className="min-w-full text-sm">
               <thead className="text-left text-slate-600">
@@ -142,7 +100,7 @@ export function ComplianceReportPanel({
                 </tr>
               </thead>
               <tbody>
-                {report.members.map((member) => (
+                {(report.members ?? []).map((member) => (
                   <tr key={member.team_member_id} className="border-b border-slate-100">
                     <td className="px-3 py-2 font-medium text-ink">{member.display_name}</td>
                     <td className="px-3 py-2">{minutesLabel(member.statutory_minutes)}</td>
@@ -171,8 +129,8 @@ export function ComplianceReportPanel({
                       {member.documentation_days_recorded} / {member.documentation_days_above_threshold}
                     </td>
                     <td className="px-3 py-2">
-                      {member.rest_violations.length
-                        ? member.rest_violations
+                      {(member.rest_violations ?? []).length
+                        ? (member.rest_violations ?? [])
                             .map((item) =>
                               item.compensation_pending
                                 ? t(locale, "complianceReportRestPending")

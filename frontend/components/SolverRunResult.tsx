@@ -2,6 +2,8 @@
 
 import { t, type Locale } from "@/lib/i18n";
 import {
+  readPostCheckFinding,
+  readUnfilledSlot,
   solverWeightLabel,
   type SolverRunRead
 } from "@/lib/solver";
@@ -17,8 +19,10 @@ function findingTone(severity: string): string {
 }
 
 export function SolverRunResult({ locale, run }: { locale: Locale; run: SolverRunRead }) {
-  const breakdownEntries = Object.entries(run.objective_breakdown).filter(([name]) => name !== "nogo");
-  const assignmentCount = run.proposed_assignments.length;
+  const breakdownEntries = Object.entries(run.objective_breakdown ?? {}).filter(([name]) => name !== "nogo");
+  const assignmentCount = run.proposed_assignments?.length ?? 0;
+  const unfilledSlots = (run.unfilled_slots ?? []).map(readUnfilledSlot);
+  const postCheckFindings = (run.post_check_findings ?? []).map(readPostCheckFinding);
 
   return (
     <div className="grid gap-4">
@@ -41,7 +45,7 @@ export function SolverRunResult({ locale, run }: { locale: Locale; run: SolverRu
             {breakdownEntries.map(([name, value]) => (
               <li className="flex items-center justify-between gap-3" key={name}>
                 <span>{solverWeightLabel(locale, name)}</span>
-                <span className="font-medium tabular-nums">{value.toLocaleString()}</span>
+                <span className="font-medium tabular-nums">{typeof value === "number" ? value.toLocaleString() : String(value)}</span>
               </li>
             ))}
           </ul>
@@ -49,11 +53,11 @@ export function SolverRunResult({ locale, run }: { locale: Locale; run: SolverRu
       </div>
       <div>
         <h3 className="text-sm font-semibold text-ink">{t(locale, "solverUnfilledSlots")}</h3>
-        {run.unfilled_slots.length === 0 ? (
+        {unfilledSlots.length === 0 ? (
           <p className="mt-1 text-sm text-slate-500">{t(locale, "solverUnfilledNone")}</p>
         ) : (
           <ul className="mt-2 grid gap-2">
-            {run.unfilled_slots.map((slot) => (
+            {unfilledSlots.map((slot) => (
               <li className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" key={slot.roster_slot_id}>
                 <p className="font-medium">
                   {slot.slot_date} · {slot.label}
@@ -72,11 +76,11 @@ export function SolverRunResult({ locale, run }: { locale: Locale; run: SolverRu
       </div>
       <div>
         <h3 className="text-sm font-semibold text-ink">{t(locale, "solverPostCheckFindings")}</h3>
-        {run.post_check_findings.length === 0 ? (
+        {postCheckFindings.length === 0 ? (
           <p className="mt-1 text-sm text-slate-500">{t(locale, "solverPostCheckNone")}</p>
         ) : (
           <ul className="mt-2 grid gap-1 text-sm">
-            {run.post_check_findings.map((finding, index) => (
+            {postCheckFindings.map((finding, index) => (
               <li className={findingTone(finding.severity)} key={`${finding.code}-${finding.date ?? ""}-${index}`}>
                 {finding.code}
                 {finding.date ? ` · ${finding.date}` : ""}

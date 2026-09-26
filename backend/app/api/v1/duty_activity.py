@@ -5,6 +5,7 @@ from app.api.deps import get_current_planning_user, get_current_user
 from app.db.session import get_db
 from app.models import Organization, User
 from app.schemas import (
+    DeletedFlagRead,
     DutyActivityCreate,
     DutyActivityPurposeRead,
     DutyActivityUpdate,
@@ -195,12 +196,12 @@ def patch_own_duty_activity(
     return duty_activity_to_read(row)
 
 
-@router.delete("/{entry_id}")
+@router.delete("/{entry_id}", response_model=DeletedFlagRead)
 def delete_own_duty_activity(
     entry_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> dict[str, bool]:
+) -> DeletedFlagRead:
     member = _require_linked_member(db, user)
     try:
         deleted = delete_duty_activity(
@@ -215,4 +216,4 @@ def delete_own_duty_activity(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Duty activity episode not found")
-    return {"deleted": True}
+    return DeletedFlagRead(deleted=True)

@@ -90,7 +90,7 @@ export function TeamMemberPropertyDefinitionsPanel() {
               <p className="font-semibold text-slate-800">{row.name}</p>
               <p className="text-xs text-slate-500">
                 {t(locale, TEAM_MEMBER_PROPERTY_TYPE_KEYS[row.type])}
-                {row.options.length ? ` · ${row.options.join(", ")}` : ""}
+                {(row.options ?? []).length ? ` · ${(row.options ?? []).join(", ")}` : ""}
                 {row.editable_by_team_member
                   ? ` · ${t(locale, "teamMemberPropertyDefinitionEditableByMemberShort")}`
                   : ` · ${t(locale, "teamMemberPropertyAdminOnly")}`}

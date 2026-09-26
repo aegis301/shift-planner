@@ -3,6 +3,7 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, MoreVertical, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { ApiError, apiFetch } from "@/lib/api";
+import type { ShiftGroupMembershipRead, TeamMemberRecord } from "@/lib/api/types";
 import {
   defaultPropertyRequirementExpr,
   TeamMemberPropertyRequirementConstraintEditor,
@@ -126,29 +127,9 @@ type ShiftTemplateRecord = {
   valuation_override?: ContractCategoryRule | null;
 };
 
-export type TeamMemberRecord = {
-  id: number;
-  first_name: string;
-  last_name: string;
-  nickname?: string | null;
-  email: string;
-  employment_percentage: number;
-  notes: string | null;
-  planning_preferences?: string | null;
-  is_active: boolean;
-  created_at: string;
-  shift_group_ids?: number[];
-  shift_group_memberships?: TeamMemberShiftGroupMembership[];
-  user_id?: number | null;
-};
+export type { TeamMemberRecord } from "@/lib/api/types";
 
-type TeamMemberShiftGroupMembership = {
-  id: number;
-  team_member_id: number;
-  shift_group_id: number;
-  start_date: string;
-  end_date: string | null;
-};
+type TeamMemberShiftGroupMembership = ShiftGroupMembershipRead;
 
 type ShiftGroupOption = { id: number; code: string; name: string };
 
@@ -1576,9 +1557,9 @@ function defaultValuationOverride(category: ShiftTemplateCategory): ContractCate
     category,
     counts_toward_contract: true,
     credit_mode: "factor",
-    credit_factor: 0.6,
-    holiday_credit_bonus: 25,
-    statutory_factor: 1,
+    credit_factor: "0.6",
+    holiday_credit_bonus: "25",
+    statutory_factor: "1",
     call_outs_count_as_work: false
   };
 }
@@ -1847,7 +1828,7 @@ function ShiftTemplateEditorModal({
                     setValuationOverride((current) => ({
                       ...current,
                       credit_mode: event.target.value as ContractCategoryRule["credit_mode"],
-                      credit_factor: event.target.value === "factor" ? Number(current.credit_factor ?? 0.6) : null
+                      credit_factor: event.target.value === "factor" ? String(current.credit_factor ?? "0.6") : null
                     }))
                   }
                 >
@@ -2164,7 +2145,7 @@ export function TeamMemberEditorModal({
     const today = todayIsoDate();
     const map = new Map<number, TeamMemberShiftGroupMembership>();
     for (const row of member.shift_group_memberships ?? []) {
-      if (isoDateRangeStatus(row.start_date, row.end_date, today) !== "ended") {
+      if (isoDateRangeStatus(row.start_date, row.end_date ?? null, today) !== "ended") {
         map.set(row.shift_group_id, row);
       }
     }

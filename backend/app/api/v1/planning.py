@@ -7,9 +7,11 @@ from app.api.deps import (
     get_current_planner,
     get_current_user_excluding_applicant,
 )
+from app.api.file_responses import CSV_RESPONSES, PDF_RESPONSES, XLSX_RESPONSES
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     PlanningMatrixRead,
     PlanningPeriodCreate,
     PlanningPeriodRead,
@@ -21,6 +23,7 @@ from app.schemas import (
     RosterMatrixSyncRead,
     RosterSlotSyncSummary,
     ShiftGroupPlanningStatusRead,
+    SuggestedPlanVersionRead,
     ValidationWarning,
 )
 from app.services.authz import assert_planning_shift_group_scope, is_admin, is_shift_planner_role
@@ -214,15 +217,15 @@ def post_unpublish_planning_period(
     return ShiftGroupPlanningStatusRead.model_validate(row)
 
 
-@router.delete("/planning-periods/{planning_period_id}")
+@router.delete("/planning-periods/{planning_period_id}", response_model=DeletedFlagRead)
 def delete_planning_period_endpoint(
     planning_period_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_admin)
 ):
-    return {
-        "deleted": delete_planning_period(
+    return DeletedFlagRead(
+        deleted=delete_planning_period(
             db, planning_period_id, organization_id=user.organization_id, actor=user.email, source="rest"
         )
-    }
+    )
 
 
 @router.post("/planning-periods/{planning_period_id}/regenerate-roster", response_model=RosterMatrixRead)
@@ -317,7 +320,11 @@ def get_validation(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/exports/roster-matrix/{planning_period_id}.csv", response_class=PlainTextResponse)
+@router.get(
+    "/exports/roster-matrix/{planning_period_id}.csv",
+    response_class=PlainTextResponse,
+    responses=CSV_RESPONSES,
+)
 def get_roster_matrix_csv(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
@@ -339,7 +346,11 @@ def get_roster_matrix_csv(
     )
 
 
-@router.get("/exports/matrix/{planning_period_id}.csv", response_class=PlainTextResponse)
+@router.get(
+    "/exports/matrix/{planning_period_id}.csv",
+    response_class=PlainTextResponse,
+    responses=CSV_RESPONSES,
+)
 def get_matrix_csv(
     planning_period_id: int,
     shift_group_id: int | None = Query(default=None),
@@ -383,7 +394,10 @@ def get_plan_versions(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/planning-periods/{planning_period_id}/versions/suggest")
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/suggest",
+    response_model=SuggestedPlanVersionRead,
+)
 def get_suggested_plan_version(
     planning_period_id: int,
     shift_group_id: int = Query(...),
@@ -413,7 +427,11 @@ def get_suggested_plan_version(
         )
     except PlanVersionValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"major_version": suggested.major, "minor_version": suggested.minor, "label": suggested.label}
+    return SuggestedPlanVersionRead(
+        major_version=suggested.major,
+        minor_version=suggested.minor,
+        label=suggested.label,
+    )
 
 
 @router.get("/planning-periods/{planning_period_id}/versions/{version_id}", response_model=PlanVersionRead)
@@ -532,6 +550,7 @@ def get_plan_version_roster_endpoint(
 @router.get(
     "/planning-periods/{planning_period_id}/versions/{version_id}/export/matrix.csv",
     response_class=PlainTextResponse,
+    responses=CSV_RESPONSES,
 )
 def get_plan_version_matrix_csv(
     planning_period_id: int,
@@ -571,6 +590,7 @@ def get_plan_version_matrix_csv(
 @router.get(
     "/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.csv",
     response_class=PlainTextResponse,
+    responses=CSV_RESPONSES,
 )
 def get_plan_version_roster_csv(
     planning_period_id: int,
@@ -607,7 +627,11 @@ def get_plan_version_roster_csv(
     )
 
 
-@router.get("/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.xlsx")
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.xlsx",
+    response_class=Response,
+    responses=XLSX_RESPONSES,
+)
 def get_plan_version_roster_xlsx(
     planning_period_id: int,
     version_id: int,
@@ -645,7 +669,11 @@ def get_plan_version_roster_xlsx(
     )
 
 
-@router.get("/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.pdf")
+@router.get(
+    "/planning-periods/{planning_period_id}/versions/{version_id}/export/roster-matrix.pdf",
+    response_class=Response,
+    responses=PDF_RESPONSES,
+)
 def get_plan_version_roster_pdf(
     planning_period_id: int,
     version_id: int,

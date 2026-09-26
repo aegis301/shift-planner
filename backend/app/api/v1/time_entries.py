@@ -7,7 +7,9 @@ from app.api.deps import get_current_planning_user, get_current_user
 from app.db.session import get_db
 from app.models import User
 from app.schemas import (
+    DeletedFlagRead,
     HoursLedgerRead,
+    OkFlagRead,
     TimeEntryCreate,
     TimeEntryDeriveRequest,
     TimeEntryRead,
@@ -179,12 +181,12 @@ def get_ledger(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/derive")
+@router.post("/derive", response_model=OkFlagRead)
 def post_derive(
     payload: TimeEntryDeriveRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planning_user),
-) -> dict[str, bool]:
+) -> OkFlagRead:
     try:
         member_ids = _member_ids_for_derive(db, user, payload.member_ids)
         derive_entries(
@@ -198,7 +200,7 @@ def post_derive(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True}
+    return OkFlagRead(ok=True)
 
 
 @router.post("", response_model=TimeEntryRead)
@@ -245,13 +247,13 @@ def patch_time_entry(
     return time_entry_to_read(row)
 
 
-@router.delete("/{entry_id}")
+@router.delete("/{entry_id}", response_model=DeletedFlagRead)
 def delete_time_entry_endpoint(
     entry_id: int,
     team_member_portal: bool = Query(default=False),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> dict[str, bool]:
+) -> DeletedFlagRead:
     current = get_time_entry(db, entry_id, organization_id=user.organization_id)
     if current is None:
         raise HTTPException(status_code=404, detail="Time entry not found")
@@ -266,4 +268,4 @@ def delete_time_entry_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Time entry not found")
-    return {"deleted": True}
+    return DeletedFlagRead(deleted=True)

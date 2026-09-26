@@ -1,30 +1,9 @@
+import type { PlanningDayStatusDefinition } from "@/lib/api/types";
 import type { Locale } from "@/lib/i18n";
 
-export type PlanningDayStatusColorPreset =
-  | "rose"
-  | "violet"
-  | "amber"
-  | "slate"
-  | "emerald"
-  | "sky"
-  | "cyan"
-  | "orange"
-  | "lime"
-  | "fuchsia"
-  | "zinc"
-  | "indigo"
-  | "teal";
+export type { PlanningDayStatusDefinition } from "@/lib/api/types";
 
-export type PlanningDayStatusDefinition = {
-  id: number;
-  organization_id: number;
-  code: string;
-  label: string;
-  color_preset: PlanningDayStatusColorPreset;
-  blocks_roster_assignment: boolean;
-  display_order: number;
-  is_active: boolean;
-};
+export type PlanningDayStatusColorPreset = PlanningDayStatusDefinition["color_preset"];
 
 export const PLANNING_DAY_STATUS_COLOR_PRESETS: PlanningDayStatusColorPreset[] = [
   "rose",

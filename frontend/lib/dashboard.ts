@@ -1,127 +1,26 @@
 import { apiFetch } from "@/lib/api";
+import type {
+  AdminDashboard,
+  DashboardPeriodCard,
+  MonthCategorySeries,
+  MonthTemplateSeries,
+  PlannerDashboard,
+  ShiftCategoryCount,
+  ShiftTemplateCount,
+  TeamMemberDashboard
+} from "@/lib/api/types";
 import type { Locale } from "@/lib/i18n";
 
-export type DashboardPeriodCard = {
-  period_id: number;
-  year: number;
-  month: number;
-  status: string;
-  slot_count: number;
-  assigned_count: number;
-  unassigned_count: number;
-  validation_errors: number;
-  validation_warnings: number;
-};
-
-export type ShiftCategoryCount = { category: string; count: number };
-
-export type ShiftTemplateCount = {
-  shift_template_id: number;
-  template_code: string | null;
-  template_name: string | null;
-  count: number;
-};
-
-export type MonthCategorySeries = {
-  year: number;
-  month: number;
-  categories: ShiftCategoryCount[];
-};
-
-export type MonthTemplateSeries = {
-  year: number;
-  month: number;
-  templates: ShiftTemplateCount[];
-};
-
-export type AdminDashboard = {
-  year: number;
-  shift_group_id: number | null;
-  kpis: {
-    active_team_members: number;
-    active_shift_groups: number;
-    active_shift_templates: number;
-    pending_join_requests: number;
-  };
-  staff_snapshot: {
-    linked_ok: number;
-    team_member_only: number;
-    login_unlinked: number;
-    linked_wrong_user: number;
-    linked_foreign_user: number;
-    login_only: number;
-  };
-  period_status_counts: { status: string; count: number }[];
-  periods: DashboardPeriodCard[];
-  year_shift_distribution: MonthCategorySeries[];
-  current_period: DashboardPeriodCard | null;
-};
-
-export type PlannerDashboard = {
-  year: number;
-  shift_group_id: number | null;
-  shift_group_code: string;
-  shift_group_name: string;
-  shift_group_member_count: number;
-  current_period: DashboardPeriodCard | null;
-  periods: DashboardPeriodCard[];
-  current_month_categories: ShiftCategoryCount[];
-  workload_rows: {
-    team_member_id: number;
-    name: string;
-    employment_percentage: number;
-    total: number;
-    on_call_duty: number;
-    standby_duty: number;
-    late_duty: number;
-    other: number;
-    weekend_holiday_shifts: number;
-    conflicts: number;
-  }[];
-  unassigned_slots: number;
-  validation_by_code: { code: string; count: number; severity: "warning" | "error" }[];
-  wishes_response_percent: number;
-  wishes_responded_count: number;
-  wishes_total_count: number;
-};
-
-export type TeamMemberDashboard = {
-  year: number;
-  shift_group_id: number | null;
-  team_member_id: number;
-  periods: DashboardPeriodCard[];
-  shifts_by_month: MonthTemplateSeries[];
-  current_period: DashboardPeriodCard | null;
-  wishes_day_statuses: { status: string; count: number }[];
-  my_validation_errors: number;
-  my_validation_warnings: number;
-  upcoming_slots: {
-    roster_slot_id: number;
-    slot_date: string;
-    template_code: string | null;
-    template_name: string | null;
-    starts_at: string | null;
-    ends_at: string | null;
-    category: string | null;
-    variant_label: string | null;
-    day_class: string | null;
-    period_year: number | null;
-    period_month: number | null;
-  }[];
-  past_slots: {
-    roster_slot_id: number;
-    slot_date: string;
-    template_code: string | null;
-    template_name: string | null;
-    starts_at: string | null;
-    ends_at: string | null;
-    category: string | null;
-    variant_label: string | null;
-    day_class: string | null;
-    period_year: number | null;
-    period_month: number | null;
-  }[];
-};
+export type {
+  AdminDashboard,
+  DashboardPeriodCard,
+  MonthCategorySeries,
+  MonthTemplateSeries,
+  PlannerDashboard,
+  ShiftCategoryCount,
+  ShiftTemplateCount,
+  TeamMemberDashboard
+} from "@/lib/api/types";
 
 export function periodLabel(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;

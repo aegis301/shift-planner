@@ -80,9 +80,13 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run test
+npm run api:generate
+npm run api:check
 ```
 
 `npm run test` runs Vitest once. `npm run test:watch` keeps it running.
+
+`npm run api:generate` writes `frontend/lib/api/openapi.json` and `frontend/lib/api/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails the frontend job if `frontend/lib/api/` drifts. Friendly names are in `frontend/lib/api/types.ts`. New code uses `apiClient` from `frontend/lib/api/client.ts` (`credentials: "include"`, same base URL as `apiFetch`). `ApiError` is shared.
 
 ### End-to-end tests
 

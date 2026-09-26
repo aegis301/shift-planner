@@ -45,99 +45,30 @@ import {
   type SwapOfferContext
 } from "@/lib/shiftSwaps";
 
-type ShiftIntentKind = "wish" | "no_go";
+import type {
+  MatrixDay,
+  MatrixTeamMember as RosterMatrixTeamMember,
+  PlanningCellRead as PlanningCell,
+  PlanningPeriodRead as PlanningPeriod,
+  PlanningShiftIntentRead as RosterShiftIntent,
+  RosterMatrix,
+  RosterSlotAssignmentRead as RosterSlotAssignment,
+  RosterSlotRead as RosterSlot,
+  ShiftGroupPlanningStatusRead as ShiftGroupPlanningStatus,
+} from "@/lib/api/types";
 
-type RosterMatrixTeamMember = {
-  id: number;
-  first_name: string;
-  last_name: string;
-  nickname?: string | null;
-  email: string;
-  employment_percentage: number;
-  planning_preferences?: string | null;
-};
+export type { RosterMatrix } from "@/lib/api/types";
 
-type MatrixDay = {
-  date: string;
-  weekday: string;
-};
-
-type PlanningPeriod = {
-  id: number;
-  year: number;
-  month: number;
-  status: string;
-};
-
-type SlotCategory = "bereitschaftsdienst" | "rufdienst" | "spaetdienst" | "other";
-type DayClass = "weekday" | "weekend" | "holiday" | "any";
-
-type RosterSlot = {
-  id: number;
-  planning_period_id: number;
-  shift_template_id: number | null;
-  shift_variant_id: number | null;
-  slot_date: string;
-  position: number;
-  label: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
-  day_class: string | null;
-  template_code: string | null;
-  template_name: string | null;
-  variant_label: string | null;
-  category: SlotCategory | null;
-};
-
-type ShiftTemplateSummary = {
+type ShiftIntentKind = RosterShiftIntent["kind"];
+type SlotCategory = NonNullable<RosterSlot["category"]>;
+type DayClass = NonNullable<RosterSlot["day_class"]>;
+type TemplateColumn = {
   id: number;
   code: string;
   name: string;
-  category: SlotCategory;
+  category: string;
   display_order: number;
   is_active: boolean;
-};
-
-type RosterSlotAssignment = {
-  id: number;
-  roster_slot_id: number;
-  team_member_id: number;
-  manual_override: boolean;
-};
-
-type PlanningCell = {
-  id: number;
-  planning_period_id: number;
-  team_member_id: number;
-  cell_date: string;
-  status: string;
-  comment: string | null;
-};
-
-type RosterShiftIntent = {
-  cell_date: string;
-  team_member_id: number;
-  shift_template_id: number;
-  kind: ShiftIntentKind;
-};
-
-type ShiftGroupPlanningStatus = {
-  shift_group_id: number;
-  status: "draft" | "preliminary" | "published";
-  published_at?: string | null;
-};
-
-export type RosterMatrix = {
-  planning_period: PlanningPeriod;
-  shift_group_planning_status?: ShiftGroupPlanningStatus | null;
-  team_members: RosterMatrixTeamMember[];
-  days: MatrixDay[];
-  shift_templates: ShiftTemplateSummary[];
-  slots: RosterSlot[];
-  assignments: RosterSlotAssignment[];
-  planning_cells: PlanningCell[];
-  day_status_definitions: PlanningDayStatusDefinition[];
-  shift_intents: RosterShiftIntent[];
 };
 
 function formatDate(locale: Locale, value: string) {
@@ -169,7 +100,7 @@ function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): 
 }
 
 function formatTimeRange(slot: RosterSlot, timeZone: string) {
-  return formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone);
+  return formatShiftTimeRange(slot.starts_at ?? null, slot.ends_at ?? null, timeZone);
 }
 
 function dayClassPillClass(dayClass: string | null): string {
@@ -232,17 +163,17 @@ function categoryLabel(locale: Locale, category: SlotCategory): string {
   return t(locale, "other");
 }
 
-function buildTemplateColumns(matrix: RosterMatrix, locale: Locale): ShiftTemplateSummary[] {
+function buildTemplateColumns(matrix: RosterMatrix, locale: Locale): TemplateColumn[] {
   const usedTemplateIds = new Set<number>();
   for (const slot of matrix.slots) {
-    if (slot.shift_template_id !== null) {
+    if (slot.shift_template_id != null) {
       usedTemplateIds.add(slot.shift_template_id);
     }
   }
 
   const shiftTemplates = matrix.shift_templates ?? [];
   const templatesById = new Map(shiftTemplates.map((template) => [template.id, template]));
-  const ordered: ShiftTemplateSummary[] = [...shiftTemplates]
+  const ordered: TemplateColumn[] = [...shiftTemplates]
     .filter((template) => usedTemplateIds.has(template.id))
     .sort((a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name) || a.code.localeCompare(b.code));
 
@@ -650,7 +581,7 @@ function DesktopRosterMatrix({
   onSave: (rosterSlotId: number, memberId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   dense: boolean;
-  templateColumns: ShiftTemplateSummary[];
+  templateColumns: TemplateColumn[];
   readOnly: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   highlightTeamMemberId?: number;
@@ -829,7 +760,7 @@ function MobileRosterMatrix({
   onSave: (rosterSlotId: number, memberId: number | "", manualOverride?: boolean) => Promise<boolean>;
   locale: Locale;
   dense: boolean;
-  templateColumns: ShiftTemplateSummary[];
+  templateColumns: TemplateColumn[];
   readOnly: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   highlightTeamMemberId?: number;
@@ -1030,7 +961,7 @@ function RosterCell({
       : null;
 
   const relevantDimension = useMemo(
-    () => (fairnessAccounts ? relevantFairnessDimension(slot, fairnessAccounts.dimensions, timeZone) : undefined),
+    () => (fairnessAccounts ? relevantFairnessDimension(slot, fairnessAccounts.dimensions ?? [], timeZone) : undefined),
     [fairnessAccounts, slot, timeZone]
   );
 

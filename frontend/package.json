@@ -8,6 +8,8 @@
     "start": "next start --hostname 0.0.0.0",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "api:generate": "node scripts/generate-api.mjs",
+    "api:check": "node scripts/check-api.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
@@ -15,6 +17,7 @@
   "dependencies": {
     "lucide-react": "^0.468.0",
     "next": "^14.2.18",
+    "openapi-fetch": "^0.17.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.15.0"
@@ -30,6 +33,7 @@
     "eslint": "^8.57.0",
     "eslint-config-next": "^15.0.0",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.0",

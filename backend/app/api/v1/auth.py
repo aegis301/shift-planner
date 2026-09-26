@@ -26,6 +26,7 @@ from app.schemas import (
     JoinRequestRead,
     JoinRequestResubmitInput,
     LoginInput,
+    OkFlagRead,
     OnboardingCreateOrganizationInput,
     OnboardingJoinOrganizationInput,
     OrganizationInviteAcceptInput,
@@ -290,10 +291,10 @@ def post_register_join_organization(
     return build_user_read(db, user)
 
 
-@router.post("/logout")
-def logout(response: Response) -> dict[str, bool]:
+@router.post("/logout", response_model=OkFlagRead)
+def logout(response: Response) -> OkFlagRead:
     _clear_session_cookie(response)
-    return {"ok": True}
+    return OkFlagRead(ok=True)
 
 
 @router.post("/me/change-password", status_code=status.HTTP_204_NO_CONTENT)

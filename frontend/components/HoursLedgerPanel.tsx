@@ -57,7 +57,8 @@ const KIND_KEYS: Record<HoursLedgerEntryKind, TranslationKey> = {
 const SOURCE_KEYS: Record<HoursLedgerEntry["source"], TranslationKey> = {
   roster: "hoursSourceRoster",
   day_status: "hoursSourceDayStatus",
-  manual: "hoursSourceManual"
+  manual: "hoursSourceManual",
+  duty_activity: "hoursSourceDutyActivity"
 };
 
 function monthLabel(period: PlanningPeriod, locale: string): string {

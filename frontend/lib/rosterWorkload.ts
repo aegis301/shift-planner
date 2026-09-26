@@ -4,11 +4,11 @@ import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 export type RosterWorkloadMatrixSlice = {
   slots: {
     id: number;
-    shift_template_id: number | null;
-    category: string | null;
+    shift_template_id?: number | null;
+    category?: string | null;
     slot_date: string;
-    starts_at: string | null;
-    ends_at: string | null;
+    starts_at?: string | null;
+    ends_at?: string | null;
   }[];
   assignments: { roster_slot_id: number; team_member_id: number }[];
   team_members: {
@@ -107,7 +107,14 @@ export function buildMemberWorkloadRows(
       continue;
     }
     memberStats.total += 1;
-    if (slot && slotTouchesWeekendOrNrwHoliday(slot)) {
+    if (
+      slot &&
+      slotTouchesWeekendOrNrwHoliday({
+        slot_date: slot.slot_date,
+        starts_at: slot.starts_at ?? null,
+        ends_at: slot.ends_at ?? null
+      })
+    ) {
       memberStats.weekendHolidayShifts += 1;
     }
     if (category === "bereitschaftsdienst") {

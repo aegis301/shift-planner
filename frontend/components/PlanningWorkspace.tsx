@@ -709,7 +709,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
       await loadRosterMatrix(periodId);
       await loadWarnings(periodId);
       await loadFairnessAccounts(periodId);
-      setMessage(t(locale, "solverApplied", { count: String(applied.proposed_assignments.length) }));
+      setMessage(t(locale, "solverApplied", { count: String((applied.proposed_assignments ?? []).length) }));
     },
     [loadFairnessAccounts, loadRosterMatrix, loadWarnings, locale, periodId]
   );

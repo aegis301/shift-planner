@@ -3,40 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { apiFetch } from "@/lib/api";
+import type { MeUser, SessionMe } from "@/lib/api/types";
 import { Locale } from "@/lib/i18n";
 
-export type MembershipSummary = {
-  membership_id: number;
-  organization: { id: number; name: string; slug: string; plan_tier: string };
-  role: string;
-  team_member_id: number | null;
-};
-
-export type MeAccountSession = {
-  auth_kind: "account";
-  email: string;
-  locale: string;
-  memberships: MembershipSummary[];
-};
-
-export type MeUser = {
-  auth_kind: "user";
-  id: number;
-  email: string;
-  role: string;
-  locale: string;
-  organization_id: number;
-  organization: { id: number; name: string; slug: string; plan_tier: string };
-  team_member_id: number | null;
-  shift_groups: { id: number; code: string; name: string; is_active?: boolean }[];
-  planner_shift_groups: { id: number; code: string; name: string; is_active?: boolean }[];
-  organization_shift_groups?: { id: number; code: string; name: string; is_active?: boolean }[];
-  capabilities: { admin: boolean; planning: boolean; team_member_portal: boolean };
-  memberships: MembershipSummary[];
-  organization_timezone: string;
-};
-
-export type SessionMe = MeUser | MeAccountSession;
+export type { MeAccountSession, MembershipSummary, MeUser, SessionMe } from "@/lib/api/types";
 
 type SessionValue = {
   me: SessionMe | null;

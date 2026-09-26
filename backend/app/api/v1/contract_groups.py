@@ -4,7 +4,12 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin, get_current_planning_user
 from app.db.session import get_db
 from app.models import User
-from app.schemas import ContractGroupCreate, ContractGroupRead, ContractGroupUpdate
+from app.schemas import (
+    ContractGroupCreate,
+    ContractGroupRead,
+    ContractGroupUpdate,
+    DeletedFlagRead,
+)
 from app.services.contract_groups import (
     contract_group_to_read,
     create_contract_group,
@@ -67,12 +72,12 @@ def patch_contract_group(
     return contract_group_to_read(row)
 
 
-@router.delete("/{contract_group_id}")
+@router.delete("/{contract_group_id}", response_model=DeletedFlagRead)
 def delete_contract_group_endpoint(
     contract_group_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> dict[str, bool]:
+) -> DeletedFlagRead:
     try:
         deleted = delete_contract_group(
             db,
@@ -85,4 +90,4 @@ def delete_contract_group_endpoint(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Contract group not found")
-    return {"deleted": True}
+    return DeletedFlagRead(deleted=True)

@@ -1,56 +1,31 @@
+import type {
+  FairnessAccountsRead,
+  FairnessDimension,
+  FairnessDimensionValue,
+  FairnessMemberAccount,
+  FairnessWindow
+} from "@/lib/api/types";
 import { slotTouchesWeekendOrNrwHoliday } from "@/lib/nrwCalendar";
 import { t, type Locale } from "@/lib/i18n";
 import { DEFAULT_ORG_TIMEZONE, localDateKey, localHour } from "@/lib/orgTime";
 
-export type FairnessMetric = "duty_count" | "statutory_minutes";
-export type FairnessDayFilter = "any" | "weekend_holiday";
+export type {
+  FairnessAccountsRead,
+  FairnessDimension,
+  FairnessDimensionValue,
+  FairnessMemberAccount,
+  FairnessWindow
+} from "@/lib/api/types";
 
-export type FairnessDimension = {
-  id: string;
-  metric: FairnessMetric;
-  day_filter: FairnessDayFilter;
-  night: boolean;
-  category: string | null;
-};
-
-export type FairnessDimensionValue = {
-  dimension_id: string;
-  actual: number;
-  expected: number;
-  deviation_absolute: number;
-  deviation_normalized: number;
-};
-
-export type FairnessMemberAccount = {
-  team_member_id: number;
-  display_name: string;
-  dimensions: FairnessDimensionValue[];
-};
-
-export type FairnessWindow = {
-  start_year: number;
-  start_month: number;
-  end_year: number;
-  end_month: number;
-  months: number;
-};
-
-export type FairnessAccountsRead = {
-  planning_period_id: number;
-  year: number;
-  month: number;
-  shift_group_id: number | null;
-  window: FairnessWindow;
-  dimensions: FairnessDimension[];
-  members: FairnessMemberAccount[];
-};
+export type FairnessMetric = FairnessDimension["metric"];
+export type FairnessDayFilter = FairnessDimension["day_filter"];
 
 export type FairnessSlotHint = {
   slot_date: string;
-  starts_at: string | null;
-  ends_at: string | null;
-  day_class: string | null;
-  category: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  day_class?: string | null;
+  category?: string | null;
 };
 
 export type FairnessMemberIndex = Map<number, Map<string, FairnessDimensionValue>>;
@@ -81,7 +56,10 @@ export function slotIsWeekendOrHoliday(slot: FairnessSlotHint, timeZone: string 
   if (slot.day_class === "weekend" || slot.day_class === "holiday") {
     return true;
   }
-  return slotTouchesWeekendOrNrwHoliday(slot, timeZone);
+  return slotTouchesWeekendOrNrwHoliday(
+    { slot_date: slot.slot_date, starts_at: slot.starts_at ?? null, ends_at: slot.ends_at ?? null },
+    timeZone
+  );
 }
 
 export function indexFairnessMembers(accounts: FairnessAccountsRead | null | undefined): FairnessMemberIndex {
@@ -89,9 +67,9 @@ export function indexFairnessMembers(accounts: FairnessAccountsRead | null | und
   if (!accounts) {
     return index;
   }
-  for (const member of accounts.members) {
+  for (const member of accounts.members ?? []) {
     const byDimension = new Map<string, FairnessDimensionValue>();
-    for (const value of member.dimensions) {
+    for (const value of member.dimensions ?? []) {
       byDimension.set(value.dimension_id, value);
     }
     index.set(member.team_member_id, byDimension);

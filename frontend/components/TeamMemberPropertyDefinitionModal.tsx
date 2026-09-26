@@ -39,7 +39,7 @@ export function teamMemberPropertyDefinitionDraft(
   return {
     name: definition.name,
     type: definition.type,
-    options: [...definition.options],
+    options: [...(definition.options ?? [])],
     optionInput: "",
     editable_by_team_member: definition.editable_by_team_member,
     is_active: definition.is_active
