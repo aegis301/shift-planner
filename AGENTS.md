@@ -259,7 +259,8 @@ at every width.
 
 - UI primitives come from `frontend/components/ui/` (Radix-based). Do not hand-roll dialogs,
   menus, popovers, comboboxes or tooltips. Colors, spacing, radii and density come from the design
-  tokens, not from ad-hoc Tailwind values. *(target, #112)*
+  tokens in `frontend/app/globals.css` (`bg-surface`, `text-muted`, `border-default`, `text-danger`,
+  `rounded-token-*`, cell spacing via `data-density` on `<html>`). See `frontend/components/ui/README.md`.
 - Server state goes through TanStack Query with the query keys in `frontend/lib/queryKeys.ts`. Do
   not add `useEffect` fetches or `*ReloadToken` counters. *(target, #113)*
 - API payload types come from `frontend/lib/api/schema.d.ts`. Regenerate with

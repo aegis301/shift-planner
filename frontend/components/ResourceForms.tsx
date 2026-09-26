@@ -3,6 +3,8 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Info, MoreVertical, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { ApiError, apiFetch } from "@/lib/api";
+import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { ShiftGroupMembershipRead, TeamMemberRecord } from "@/lib/api/types";
 import {
   defaultPropertyRequirementExpr,
@@ -1743,11 +1745,12 @@ function ShiftTemplateEditorModal({
   const visibleVariants = (template.variants ?? []).filter((variant) => !removedVariantIds.includes(variant.id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby={`shift-template-edit-${template.id}`}>
-      <form className="max-h-[90vh] w-full max-w-6xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submitEditor}>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-6xl overflow-auto" aria-labelledby={`shift-template-edit-${template.id}`}>
+      <form onSubmit={submitEditor}>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
-            <h2 id={`shift-template-edit-${template.id}`} className="text-lg font-semibold text-ink">{t(locale, "editShiftTemplate")}</h2>
+            <DialogTitle id={`shift-template-edit-${template.id}`}>{t(locale, "editShiftTemplate")}</DialogTitle>
             <p className="mt-1 text-sm text-slate-500">{template.code} · {title}</p>
             {editorSaveError ? (
               <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" role="alert">
@@ -2002,38 +2005,32 @@ function ShiftTemplateEditorModal({
             </div>
           </div>
         ) : null}
-        {isDeleteConfirmOpen ? (
-          <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
-            <div className="flex gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-rose-700 ring-1 ring-rose-200">
-                <AlertTriangle size={19} />
-              </span>
-              <div>
-                <h3 className="text-sm font-semibold text-rose-950">{t(locale, "deleteShiftTemplate")}</h3>
-                <p className="mt-1 text-sm text-rose-900">{t(locale, "deleteShiftTemplateWarning")}</p>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <button
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
-                onClick={() => setIsDeleteConfirmOpen(false)}
-                type="button"
-              >
-                {t(locale, "close")}
-              </button>
-              <button
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
-                onClick={deleteTemplate}
-                type="button"
-              >
-                <Trash2 size={16} />
-                {t(locale, "confirm")}
-              </button>
-            </div>
-          </div>
-        ) : null}
       </form>
-    </div>
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={(next) => { if (!next) setIsDeleteConfirmOpen(false); }}>
+        <AlertDialogContent>
+          <AlertDialogTitle>{t(locale, "deleteShiftTemplate")}</AlertDialogTitle>
+          <p className="mt-2 text-sm text-muted">{t(locale, "deleteShiftTemplateWarning")}</p>
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            <button
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
+              onClick={() => setIsDeleteConfirmOpen(false)}
+              type="button"
+            >
+              {t(locale, "close")}
+            </button>
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-rose-700 px-4 text-sm font-semibold text-white"
+              onClick={deleteTemplate}
+              type="button"
+            >
+              <Trash2 size={16} />
+              {t(locale, "confirm")}
+            </button>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2186,15 +2183,12 @@ export function TeamMemberEditorModal({
     onClose();
   }
 
-  const shellClass = embedded
-    ? "w-full"
-    : "fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm";
   const formShellClass = embedded
     ? "max-h-[55vh] w-full overflow-auto rounded-xl border border-slate-200 bg-white p-4 shadow-sm ring-1 ring-slate-100"
     : "max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200";
 
-  return (
-    <div className={shellClass} role="dialog" aria-modal="true" aria-labelledby={`team-member-edit-${member.id}`}>
+  const editor = (
+    <>
       <form className={formShellClass} onSubmit={submitEditor}>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
@@ -2299,17 +2293,10 @@ export function TeamMemberEditorModal({
             })}
           </div>
         </div>
-        {isDeleteConfirmOpen ? (
-          <div className="mt-5 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-200">
-            <div className="flex gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-rose-700 ring-1 ring-rose-200">
-                <AlertTriangle size={19} />
-              </span>
-              <div>
-                <h3 className="text-sm font-semibold text-rose-950">{t(locale, "deleteTeamMember")}</h3>
-                <p className="mt-1 text-sm text-rose-900">{t(locale, "deleteTeamMemberWarning")}</p>
-              </div>
-            </div>
+        <AlertDialog open={isDeleteConfirmOpen} onOpenChange={(next) => { if (!next) setIsDeleteConfirmOpen(false); }}>
+          <AlertDialogContent>
+            <AlertDialogTitle>{t(locale, "deleteTeamMember")}</AlertDialogTitle>
+            <p className="mt-2 text-sm text-muted">{t(locale, "deleteTeamMemberWarning")}</p>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700"
@@ -2327,8 +2314,8 @@ export function TeamMemberEditorModal({
                 {t(locale, "confirm")}
               </button>
             </div>
-          </div>
-        ) : null}
+          </AlertDialogContent>
+        </AlertDialog>
       </form>
       <div className={embedded ? "mt-4" : "mt-4 px-1"}>
         <TeamMemberPropertyValuesEditor teamMemberId={member.id} adminMode />
@@ -2336,7 +2323,15 @@ export function TeamMemberEditorModal({
       <div className={embedded ? "mt-4" : "mt-4 px-1"}>
         <TeamMemberPlanningPatternsEditor teamMemberId={member.id} allowErrorSeverity={embedded} />
       </div>
-    </div>
+    </>
+  );
+  if (embedded) {
+    return <div className="w-full">{editor}</div>;
+  }
+  return (
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-auto p-0">{editor}</DialogContent>
+    </Dialog>
   );
 }
 
@@ -2381,10 +2376,11 @@ export function TeamMemberCreateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
-      <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submit}>
+    <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-auto">
+      <form onSubmit={submit}>
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold text-ink">{t(locale, "addTeamMember")}</h2>
+          <DialogTitle>{t(locale, "addTeamMember")}</DialogTitle>
           <button
             type="button"
             onClick={onClose}
@@ -2469,7 +2465,8 @@ export function TeamMemberCreateModal({
           </button>
         </div>
       </form>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2580,11 +2577,11 @@ export function ShiftTemplateForm() {
           </div>
         </div>
       </Card>
-      {isCreateTemplateModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <form className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200" onSubmit={submitTemplate}>
+      <Dialog open={isCreateTemplateModalOpen} onOpenChange={(next) => { if (!next) { setCreateTemplateError(null); setIsCreateTemplateModalOpen(false); } }}>
+          <DialogContent className="max-h-[90vh] max-w-2xl overflow-auto">
+          <form onSubmit={submitTemplate}>
             <div className="mb-4 flex items-start justify-between gap-3">
-              <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftTemplateBuilder")}</h2>
+              <DialogTitle>{t(locale, "shiftTemplateBuilder")}</DialogTitle>
               <button
                 type="button"
                 onClick={() => {
@@ -2681,13 +2678,12 @@ export function ShiftTemplateForm() {
               </button>
             </div>
           </form>
-        </div>
-      ) : null}
-      {isPreviewModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true">
-          <div className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+          </DialogContent>
+      </Dialog>
+      <Dialog open={isPreviewModalOpen} onOpenChange={(next) => { if (!next) setIsPreviewModalOpen(false); }}>
+          <DialogContent className="max-h-[90vh] max-w-5xl overflow-auto">
             <div className="mb-4 flex items-start justify-between gap-3">
-              <h2 className="text-lg font-semibold text-ink">{t(locale, "slotPreview")}</h2>
+              <DialogTitle>{t(locale, "slotPreview")}</DialogTitle>
               <button
                 type="button"
                 onClick={() => setIsPreviewModalOpen(false)}
@@ -2704,9 +2700,8 @@ export function ShiftTemplateForm() {
               <button type="button" onClick={loadPreview} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-semibold text-white"><RefreshCw size={17} />{t(locale, "refresh")}</button>
             </div>
             <div className="mt-5"><DataList rows={previewRows.slice(0, 24)} /></div>
-          </div>
-        </div>
-      ) : null}
+          </DialogContent>
+      </Dialog>
       <Card>
         <h2 className="text-lg font-semibold text-ink">{t(locale, "shiftTemplates")}</h2>
         <div className="mt-5"><ShiftTemplateList rows={rows} onChanged={refresh} /></div>

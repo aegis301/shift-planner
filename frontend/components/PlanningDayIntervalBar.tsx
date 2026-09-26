@@ -6,6 +6,7 @@ import { Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { expandInclusiveDateRange } from "@/lib/planningDates";
 import {
   activePlanningDayStatusDefinitions,
@@ -330,22 +331,18 @@ export function PlanningDayIntervalBar({
       </div>
 
       {pendingApply ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="day-interval-overwrite-title"
-        >
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-soft ring-1 ring-amber-200">
+      <Dialog open onOpenChange={(next) => { if (!next) setPendingApply(null); }}>
+        <DialogContent className="max-w-md ring-severity-warning" aria-labelledby="day-interval-overwrite-title">
+          <div>
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="flex gap-3">
                 <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700 ring-1 ring-amber-200">
                   <AlertTriangle size={19} />
                 </span>
                 <div>
-                  <h2 id="day-interval-overwrite-title" className="text-lg font-semibold text-ink">
+                  <DialogTitle id="day-interval-overwrite-title">
                     {t(locale, "planningDayIntervalOverwriteTitle")}
-                  </h2>
+                  </DialogTitle>
                   <p className="mt-1 text-sm text-slate-600">
                     {t(locale, "planningDayIntervalOverwriteBody", {
                       count: String(pendingApply.overwriteCount)
@@ -380,7 +377,8 @@ export function PlanningDayIntervalBar({
               </button>
             </div>
           </div>
-        </div>
+        </DialogContent>
+      </Dialog>
       ) : null}
     </>
   );

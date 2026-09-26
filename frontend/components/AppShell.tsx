@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -28,6 +28,14 @@ import {
   membershipRoleLabel,
   pathnameCompatibleWithMembership,
 } from "@/lib/membershipRouting";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const SIDEBAR_STORAGE_KEY = "shift-planner-sidebar-expanded";
 
@@ -49,15 +57,13 @@ function OrgMembershipRows({
       {(me.memberships ?? []).map((m) => {
         const activeOrg = m.organization.id === me.organization_id;
         return (
-          <button
+          <DropdownMenuItem
             key={m.membership_id}
-            type="button"
-            role="menuitem"
             disabled={activeOrg || orgSwitchBusy}
-            className={`flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left text-sm ${
-              activeOrg ? "bg-slate-100 text-slate-900" : "text-slate-800 hover:bg-slate-50"
-            } disabled:opacity-60`}
-            onClick={() => {
+            className={`flex-col items-start gap-0.5 rounded-lg px-2 py-2 text-sm ${
+              activeOrg ? "bg-slate-100 text-slate-900" : "text-slate-800"
+            }`}
+            onSelect={() => {
               if (!activeOrg && !orgSwitchBusy) {
                 onPick(m.organization.slug);
               }
@@ -74,7 +80,7 @@ function OrgMembershipRows({
             {activeOrg ? (
               <span className="text-xs text-emerald-800">{t(locale, "organizationSwitcherCurrent")}</span>
             ) : null}
-          </button>
+          </DropdownMenuItem>
         );
       })}
     </>
@@ -97,8 +103,6 @@ export function AppShell({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const orgMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     try {
@@ -128,30 +132,6 @@ export function AppShell({
       router.replace(membershipDefaultPath(me));
     }
   }, [loading, me, pathname, router]);
-
-  useEffect(() => {
-    if (!userMenuOpen) return;
-    function onDocMouseDown(ev: MouseEvent) {
-      const el = userMenuRef.current;
-      if (el && !el.contains(ev.target as Node)) {
-        setUserMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [userMenuOpen]);
-
-  useEffect(() => {
-    if (!orgMenuOpen) return;
-    function onDocMouseDown(ev: MouseEvent) {
-      const el = orgMenuRef.current;
-      if (el && !el.contains(ev.target as Node)) {
-        setOrgMenuOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
-  }, [orgMenuOpen]);
 
   const sidebarNavItems: SidebarNavItem[] = [];
   if (me) {
@@ -368,113 +348,97 @@ export function AppShell({
             )}
           </div>
           {!loading && me && isUserSession(me) && (me.memberships ?? []).length > 1 ? (
-            <div ref={orgMenuRef} className="relative z-30 max-w-[min(100%,18rem)] shrink-0">
-              <button
-                type="button"
-                aria-expanded={orgMenuOpen}
-                aria-haspopup="menu"
-                aria-label={t(locale, "organizationSwitcherButton")}
-                title={t(locale, "organizationSwitcherButton")}
-                className="inline-flex h-10 max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-left text-sm font-medium text-slate-800 shadow-sm sm:gap-2 sm:px-3"
-                onClick={() => {
-                  setOrgMenuOpen((o) => !o);
+            <DropdownMenu
+              open={orgMenuOpen}
+              onOpenChange={(next) => {
+                setOrgMenuOpen(next);
+                if (next) {
                   setUserMenuOpen(false);
-                }}
-              >
-                <Building2 aria-hidden className="h-4 w-4 shrink-0 text-emerald-700" />
-                <span className="hidden min-w-0 truncate sm:inline">
-                  {me.organization.name.trim() ? me.organization.name : me.organization.slug}
-                </span>
-                <span className="min-w-0 truncate sm:hidden">{t(locale, "organizationSwitcherButtonShort")}</span>
-                <ChevronDown
-                  aria-hidden
-                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${orgMenuOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-              {orgMenuOpen ? (
-                <div
-                  role="menu"
-                  aria-label={t(locale, "organizationSwitcherMenuAria")}
-                  className="absolute right-0 top-full z-50 mt-1 max-h-[min(70vh,24rem)] w-[min(calc(100vw-2rem),20rem)] overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-white py-2 shadow-lg"
+                }
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t(locale, "organizationSwitcherButton")}
+                  title={t(locale, "organizationSwitcherButton")}
+                  className="inline-flex h-10 max-w-[min(100%,18rem)] shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-left text-sm font-medium text-slate-800 shadow-sm sm:gap-2 sm:px-3"
                 >
-                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {t(locale, "organizationSwitcherLabel")}
-                  </p>
-                  <div className="px-1">
+                  <Building2 aria-hidden className="h-4 w-4 shrink-0 text-emerald-700" />
+                  <span className="hidden min-w-0 truncate sm:inline">
+                    {me.organization.name.trim() ? me.organization.name : me.organization.slug}
+                  </span>
+                  <span className="min-w-0 truncate sm:hidden">{t(locale, "organizationSwitcherButtonShort")}</span>
+                  <ChevronDown
+                    aria-hidden
+                    className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${orgMenuOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                aria-label={t(locale, "organizationSwitcherMenuAria")}
+                className="max-h-[min(70vh,24rem)] w-[min(calc(100vw-2rem),20rem)] overflow-y-auto py-2"
+              >
+                <DropdownMenuLabel>{t(locale, "organizationSwitcherLabel")}</DropdownMenuLabel>
+                <OrgMembershipRows
+                  locale={locale}
+                  me={me}
+                  orgSwitchBusy={orgSwitchBusy}
+                  onPick={(slug) => void switchOrganization(slug)}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+          {!loading && me ? (
+            <DropdownMenu
+              open={userMenuOpen}
+              onOpenChange={(next) => {
+                setUserMenuOpen(next);
+                if (next) {
+                  setOrgMenuOpen(false);
+                }
+              }}
+            >
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t(locale, "userMenuAriaLabel")}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold uppercase text-white shadow-md ring-2 ring-white transition hover:bg-emerald-700"
+                >
+                  {me.email.trim().charAt(0) || "?"}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {isUserSession(me) && (me.memberships ?? []).length > 0 ? (
+                  <>
+                    <DropdownMenuLabel>{t(locale, "organizationSwitcherLabel")}</DropdownMenuLabel>
                     <OrgMembershipRows
                       locale={locale}
                       me={me}
                       orgSwitchBusy={orgSwitchBusy}
                       onPick={(slug) => void switchOrganization(slug)}
                     />
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {!loading && me ? (
-            <div ref={userMenuRef} className="relative shrink-0">
-              <button
-                type="button"
-                aria-expanded={userMenuOpen}
-                aria-haspopup="menu"
-                aria-label={t(locale, "userMenuAriaLabel")}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold uppercase text-white shadow-md ring-2 ring-white transition hover:bg-emerald-700"
-                onClick={() => {
-                  setUserMenuOpen((o) => !o);
-                  setOrgMenuOpen(false);
-                }}
-              >
-                {me.email.trim().charAt(0) || "?"}
-              </button>
-              {userMenuOpen ? (
-                <div
-                  role="menu"
-                  className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                >
-                  {isUserSession(me) && (me.memberships ?? []).length > 0 ? (
-                    <div className="border-b border-slate-100 px-2 py-2" role="none">
-                      <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {t(locale, "organizationSwitcherLabel")}
-                      </p>
-                      <OrgMembershipRows
-                        locale={locale}
-                        me={me}
-                        orgSwitchBusy={orgSwitchBusy}
-                        onPick={(slug) => void switchOrganization(slug)}
-                      />
-                    </div>
-                  ) : null}
-                  <Link
-                    role="menuitem"
-                    href="/settings"
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-800 hover:bg-slate-50"
-                    onClick={() => setUserMenuOpen(false)}
-                  >
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+                <DropdownMenuItem asChild>
+                  <Link href="/settings" className="text-slate-800">
                     <Settings aria-hidden size={16} className="text-slate-500" />
                     {t(locale, "settings")}
                   </Link>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-800 hover:bg-slate-50"
-                    onClick={() => setLocale(locale === "de" ? "en" : "de")}
-                  >
-                    <Languages aria-hidden size={16} className="text-slate-500" />
-                    {t(locale, "language")}: {locale.toUpperCase()}
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"
-                    onClick={() => void logout()}
-                  >
-                    <LogOut aria-hidden size={16} />
-                    {t(locale, "logout")}
-                  </button>
-                </div>
-              ) : null}
-            </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="text-slate-800" onSelect={() => setLocale(locale === "de" ? "en" : "de")}>
+                  <Languages aria-hidden size={16} className="text-slate-500" />
+                  {t(locale, "language")}: {locale.toUpperCase()}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="font-medium text-red-700 focus:bg-red-50" onSelect={() => void logout()}>
+                  <LogOut aria-hidden size={16} />
+                  {t(locale, "logout")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : !loading ? (
             <div className="flex shrink-0 items-center gap-2">
               <Link

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Clock, Download, Eye, History, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { PlanVersion, PlanVersionList, SuggestedPlanVersionRead } from "@/lib/api/types";
 import { t, type Locale } from "@/lib/i18n";
 
@@ -133,13 +134,13 @@ export function PlanVersionPanel({
         ) : null}
       </div>
 
-      {saveOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <Dialog open={saveOpen} onOpenChange={(next) => { if (!next) setSaveOpen(false); }}>
+          <DialogContent className="max-w-md p-0">
           <form
             onSubmit={(event) => void submitSave(event)}
             className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl ring-1 ring-slate-200"
           >
-            <h3 className="text-lg font-semibold text-ink">{t(locale, "planVersionSaveTitle")}</h3>
+            <DialogTitle>{t(locale, "planVersionSaveTitle")}</DialogTitle>
             <p className="mt-1 text-sm text-slate-600">{t(locale, "planVersionSaveHelp")}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               <label className="grid gap-1 text-sm">
@@ -186,14 +187,13 @@ export function PlanVersionPanel({
               </button>
             </div>
           </form>
-        </div>
-      ) : null}
+          </DialogContent>
+      </Dialog>
 
-      {historyOpen ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30">
-          <div className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl ring-1 ring-slate-200">
+      <Dialog open={historyOpen} onOpenChange={(next) => { if (!next) setHistoryOpen(false); }}>
+          <DialogContent className="left-auto right-0 top-0 h-full max-h-none w-full max-w-md translate-x-0 translate-y-0 rounded-none p-0">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <h3 className="text-lg font-semibold text-ink">{t(locale, "planVersionHistory")}</h3>
+              <DialogTitle>{t(locale, "planVersionHistory")}</DialogTitle>
               <button type="button" onClick={() => setHistoryOpen(false)} className="rounded-lg p-2 hover:bg-slate-100">
                 <X className="h-4 w-4" />
               </button>
@@ -247,9 +247,8 @@ export function PlanVersionPanel({
                 </ul>
               )}
             </div>
-          </div>
-        </div>
-      ) : null}
+          </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import { Field, inputClass } from "@/components/Card";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SolverRunResult } from "@/components/SolverRunResult";
 import { ApiError } from "@/lib/api";
 import { t, type Locale } from "@/lib/i18n";
@@ -196,13 +197,13 @@ export function SolverGenerateDialog({
   const canApply = run?.status === "succeeded" && run.applied_at == null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="solver-generate-title">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-soft ring-1 ring-slate-200">
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto" aria-labelledby="solver-generate-title">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 id="solver-generate-title" className="text-lg font-semibold text-ink">
+            <DialogTitle id="solver-generate-title">
               {t(locale, "solverGenerateTitle")}
-            </h2>
+            </DialogTitle>
             <p className="mt-2 text-sm text-slate-600">{t(locale, "solverGenerateHelp")}</p>
           </div>
           <button
@@ -336,7 +337,7 @@ export function SolverGenerateDialog({
             )}
           </div>
         ) : null}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

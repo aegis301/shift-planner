@@ -10,6 +10,11 @@ import { isUserSession } from "@/lib/membershipRouting";
 import { ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t, type Locale } from "@/lib/i18n";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 
 type OrgSettings = { id: number; name: string; slug: string; plan_tier: string; timezone: string };
 
@@ -596,20 +601,15 @@ export function OrganizationManagementPanel() {
           </div>
         </div>
       </Card>
-      {deleteOpen ? (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="org-delete-title"
-        >
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+      <AlertDialog open={deleteOpen} onOpenChange={(next) => { if (!next) { setDeleteOpen(false); setDeleteMsg(""); } }}>
+        <AlertDialogContent aria-labelledby="org-delete-title">
+          <div>
             <div className="flex items-start gap-3">
               <AlertTriangle className="shrink-0 text-amber-600" aria-hidden />
               <div>
-                <h3 id="org-delete-title" className="text-lg font-semibold text-ink">
+                <AlertDialogTitle id="org-delete-title">
                   {t(locale, "orgManagementDeleteModalTitle")}
-                </h3>
+                </AlertDialogTitle>
                 <p className="mt-2 text-sm text-slate-600">{t(locale, "orgManagementDeleteTypeNameHint", { name: orgName })}</p>
               </div>
             </div>
@@ -647,8 +647,8 @@ export function OrganizationManagementPanel() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
