@@ -21,7 +21,7 @@ export function membershipDefaultPath(me: SessionMe): string {
     return "/planning";
   }
   if (me.capabilities.team_member_portal) {
-    return "/my-planning";
+    return "/my";
   }
   return "/";
 }
@@ -40,16 +40,19 @@ export function pathnameCompatibleWithMembership(pathname: string, me: SessionMe
   if (p.startsWith("/pending-onboarding")) {
     return false;
   }
+  if (p === "/") {
+    return me.capabilities.planning || me.capabilities.admin || !me.capabilities.team_member_portal;
+  }
   if (p.startsWith("/planning")) {
     return me.capabilities.planning;
   }
-  if (p.startsWith("/hours")) {
+  if (p.startsWith("/hours") && !p.startsWith("/hours/")) {
     return me.capabilities.planning;
   }
-  if (p.startsWith("/my-hours")) {
+  if (p === "/my" || p.startsWith("/my/")) {
     return me.capabilities.team_member_portal;
   }
-  if (p.startsWith("/my-planning") || p.startsWith("/profile")) {
+  if (p.startsWith("/my-hours") || p.startsWith("/my-planning") || p.startsWith("/profile")) {
     return me.capabilities.team_member_portal;
   }
   if (p.startsWith("/organization")) {

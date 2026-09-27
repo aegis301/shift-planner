@@ -1,11 +1,10 @@
 "use client";
 
-import { LayoutDashboard, UserRound, UsersRound } from "lucide-react";
+import { LayoutDashboard, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
 import { DashboardAdminPanel } from "@/components/DashboardAdminPanel";
-import { DashboardMemberPanel } from "@/components/DashboardMemberPanel";
 import { DashboardPlannerPanel } from "@/components/DashboardPlannerPanel";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
@@ -13,14 +12,12 @@ import { ApiError, apiFetch } from "@/lib/api";
 import {
   fetchAdminDashboard,
   fetchPlannerDashboard,
-  fetchTeamMemberDashboard,
   type AdminDashboard,
   type PlannerDashboard,
-  type TeamMemberDashboard,
 } from "@/lib/dashboard";
 import { t } from "@/lib/i18n";
 
-type DashboardTab = "admin" | "planner" | "member";
+type DashboardTab = "admin" | "planner";
 
 type ShiftGroupOption = { id: number; code: string; name: string };
 
@@ -43,9 +40,6 @@ export function Dashboard() {
     if (userMe.capabilities.planning) {
       next.push("planner");
     }
-    if (userMe.capabilities.team_member_portal) {
-      next.push("member");
-    }
     return next;
   }, [userMe]);
 
@@ -57,9 +51,7 @@ export function Dashboard() {
   const [error, setError] = useState("");
   const [adminData, setAdminData] = useState<AdminDashboard | null>(null);
   const [plannerData, setPlannerData] = useState<PlannerDashboard | null>(null);
-  const [memberData, setMemberData] = useState<TeamMemberDashboard | null>(null);
-
-  const scopeTabs: DashboardTab[] = ["planner", "member"];
+  const scopeTabs: DashboardTab[] = ["planner"];
 
   useEffect(() => {
     if (tabs.length === 0) {
@@ -103,15 +95,6 @@ export function Dashboard() {
       }
       return;
     }
-    if (activeTab === "member" && userMe.shift_groups?.length) {
-      setShiftGroups(
-        userMe.shift_groups.map((g) => ({
-          id: g.id,
-          code: g.code,
-          name: g.name,
-        }))
-      );
-    }
   }, [userMe, activeTab]);
 
   function updateTab(tab: DashboardTab) {
@@ -154,13 +137,6 @@ export function Dashboard() {
             shiftGroupId: shiftGroupId || undefined,
           })
         );
-      } else if (activeTab === "member" && userMe.capabilities.team_member_portal) {
-        setMemberData(
-          await fetchTeamMemberDashboard({
-            year: yearNum,
-            shiftGroupId: shiftGroupId || undefined,
-          })
-        );
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t(locale, "dashboardLoadError"));
@@ -191,13 +167,11 @@ export function Dashboard() {
   const tabDefs: { id: DashboardTab; labelKey: "dashboardTabAdmin" | "dashboardTabPlanner" | "dashboardTabMember"; icon: typeof LayoutDashboard }[] = [
     { id: "admin", labelKey: "dashboardTabAdmin", icon: LayoutDashboard },
     { id: "planner", labelKey: "dashboardTabPlanner", icon: UsersRound },
-    { id: "member", labelKey: "dashboardTabMember", icon: UserRound },
   ];
 
   const showShiftGroupSelector =
     scopeTabs.includes(activeTab) &&
-    ((activeTab === "planner" && (shiftGroups.length > 1 || userMe.capabilities.admin)) ||
-      (activeTab === "member" && shiftGroups.length > 1));
+    activeTab === "planner" && (shiftGroups.length > 1 || userMe.capabilities.admin);
 
   return (
     <div className="grid gap-5">
@@ -270,9 +244,6 @@ export function Dashboard() {
       ) : null}
       {!loading && activeTab === "planner" && plannerData ? (
         <DashboardPlannerPanel locale={locale} data={plannerData} shiftGroupId={shiftGroupId} />
-      ) : null}
-      {!loading && activeTab === "member" && memberData ? (
-        <DashboardMemberPanel locale={locale} data={memberData} shiftGroupId={shiftGroupId} />
       ) : null}
     </div>
   );

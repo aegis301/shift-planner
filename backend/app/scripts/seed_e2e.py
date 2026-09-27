@@ -114,12 +114,53 @@ def seed_e2e(db: Session, *, password: str) -> E2ESeedResult:
     )
     if linked is None:
         raise SolverFixtureError(f"Team member {member.id} was not linked")
+    _link_planner_membership(db, organization.id, planner.id, group.id, member.id)
     return E2ESeedResult(
         organization_id=organization.id,
         organization_slug=organization.slug,
         target_period_id=period.id,
         shift_group_id=group.id,
         linked_team_member_id=linked.id,
+    )
+
+
+def _link_planner_membership(
+    db: Session,
+    organization_id: int,
+    planner_id: int,
+    shift_group_id: int,
+    reserved_member_id: int,
+) -> None:
+    already = db.scalar(
+        select(TeamMember).where(
+            TeamMember.organization_id == organization_id,
+            TeamMember.user_id == planner_id,
+        )
+    )
+    if already is not None:
+        return
+    candidate = db.scalar(
+        select(TeamMember)
+        .join(TeamMemberShiftGroup, TeamMemberShiftGroup.team_member_id == TeamMember.id)
+        .where(
+            TeamMember.organization_id == organization_id,
+            TeamMemberShiftGroup.shift_group_id == shift_group_id,
+            TeamMember.is_active.is_(True),
+            TeamMember.user_id.is_(None),
+            TeamMember.id != reserved_member_id,
+        )
+        .order_by(TeamMember.id)
+        .limit(1)
+    )
+    if candidate is None:
+        return
+    update_team_member(
+        db,
+        candidate.id,
+        TeamMemberUpdate(user_id=planner_id),
+        organization_id=organization_id,
+        actor=E2E_ACTOR,
+        source=E2E_SOURCE,
     )
 
 

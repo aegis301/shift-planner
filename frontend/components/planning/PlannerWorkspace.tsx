@@ -151,7 +151,10 @@ function duplicateMemberDayKeysFromWarnings(warnings: ValidationWarning[]): Set<
   return keys;
 }
 
-function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_member" }) {
+type WorkspaceAudience = "planner" | "team_member";
+
+function PlannerWorkspaceContent() {
+  const variant = "planner" as WorkspaceAudience;
   const { locale } = useLocale();
   const { me, loading: sessionLoading } = useSession();
   const router = useRouter();
@@ -773,7 +776,7 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
         roster={rosterMatrix}
         shiftGroupId={shiftGroupId}
         teamMemberId={userMe?.team_member_id ?? null}
-        variant="team_member"
+        variant={"team_member" as const}
       />
     </section>
   ) : null;
@@ -2010,6 +2013,6 @@ function WorkloadStats({
   );
 }
 
-export function PlanningWorkspace({ variant = "planner" }: { variant?: "planner" | "team_member" } = {}) {
-  return <PlanningWorkspaceContent variant={variant} />;
+export function PlannerWorkspace() {
+  return <PlannerWorkspaceContent />;
 }

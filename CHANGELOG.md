@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-27
+- **Route split:** The app shell is now two layouts. `(workbench)` serves `/`, `/planning`, `/hours`, and organization pages with a desktop sidebar and a narrow-screen notice below 1024 px. `(member)` serves `/my`, `/my-planning`, `/my-hours`, and `/profile` with a bottom tab bar on phones. `(shared)` covers login, registration, onboarding, and settings. Team-member-only users land on `/my`. Dual-role users switch areas from the user menu. `PlanningWorkspace` is replaced by `PlannerWorkspace` and `MemberPlanning`.
+
 ## 2026-09-26
 - **Planning server state:** TanStack Query owns the session and the planning workspace reads (periods, wishes, roster, validation, fairness, solver runs, shift swaps, plan versions, compliance, member shifts). Query keys live in `frontend/lib/queryKeys.ts` and include the organization and shift group. Roster assignment and wishes cell edits update the cache immediately and roll back when the API refuses. A roster write invalidates the roster, validation, and fairness keys. Solver polling stops when a run is terminal. Switching organization clears the cache.
 - **UI foundation:** `frontend/components/ui/` wraps Radix dialogs, alert dialogs, menus, popovers, tooltips, tabs, selects, toggle groups, and scroll areas, plus a `cmdk` combobox. Design tokens live in `globals.css` (`bg-surface`, `text-muted`, `border-default`, `text-danger`, severity colors, `rounded-token-*`). `<html data-density="comfortable">` is the default; `compact` tightens `--space-cell-x`, `--space-cell-y`, and `--font-size-cell`. Hand-rolled `fixed inset-0` dialogs, the app-shell menus, the planning-period status menu, and the roster cell picker now use those primitives. Destructive confirms use `AlertDialog`.
