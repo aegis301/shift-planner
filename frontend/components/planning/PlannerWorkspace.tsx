@@ -10,7 +10,6 @@ import {
   ArrowUp,
   BarChart3,
   CalendarCheck,
-  CalendarClock,
   Columns3,
   Download,
   Heart,
@@ -30,7 +29,6 @@ import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu"
 import { PlanVersionPanel } from "@/components/PlanVersionPanel";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
-import { DashboardUpcomingShiftsTable } from "@/components/DashboardUpcomingShiftsTable";
 import { PlanningDayIntervalBar } from "@/components/PlanningDayIntervalBar";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
@@ -42,7 +40,6 @@ import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWork
 import {
   useDayStatusDefinitions,
   useFairness,
-  useMemberDashboard,
   usePlanningOrganizationId,
   usePlanningPeriods,
   useRosterMatrix,
@@ -53,21 +50,15 @@ import {
 } from "@/lib/queries/planning";
 import { invalidateQueryKeys, rosterAssignmentKeys, statusTransitionKeys, wishesEditKeys } from "@/lib/queries/invalidation";
 import { writeRosterBundle } from "@/lib/queries/rosterEdit";
-import { DutyActivityLiveBanner } from "@/components/DutyActivityControl";
-import { DutyActivityShiftList } from "@/components/DutyActivityShiftList";
 import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
 import { FairnessAccountsPanel } from "@/components/FairnessAccountsPanel";
 import { SolverGenerateDialog } from "@/components/SolverGenerateDialog";
 import { SolverRunPanel } from "@/components/SolverRunPanel";
 import { ShiftSwapApprovalQueue } from "@/components/ShiftSwapApprovalQueue";
-import { ShiftSwapMarketplace } from "@/components/ShiftSwapMarketplace";
-import { ShiftSwapOfferDialog } from "@/components/ShiftSwapOfferDialog";
 import { type FairnessAccountsRead } from "@/lib/fairness";
 import { type SolverRunRead } from "@/lib/solver";
-import { type SwapOfferContext } from "@/lib/shiftSwaps";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
-import { monthDateBounds } from "@/lib/planningDates";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type ShiftGroupPlanningStatus = {
@@ -97,7 +88,7 @@ type ValidationWarning = {
 };
 
 type PlanningViewMode = "stacked" | "tabs";
-type PlanningTab = "wishes" | "roster" | "analysis" | "shifts";
+type PlanningTab = "wishes" | "roster" | "analysis";
 type DestructiveAction =
   | "delete-period"
   | "regenerate-roster"
@@ -151,10 +142,7 @@ function duplicateMemberDayKeysFromWarnings(warnings: ValidationWarning[]): Set<
   return keys;
 }
 
-type WorkspaceAudience = "planner" | "team_member";
-
 function PlannerWorkspaceContent() {
-  const variant = "planner" as WorkspaceAudience;
   const { locale } = useLocale();
   const { me, loading: sessionLoading } = useSession();
   const router = useRouter();
@@ -174,10 +162,7 @@ function PlannerWorkspaceContent() {
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
   const [syncRosterConfirmOpen, setSyncRosterConfirmOpen] = useState(false);
   const [solverDialogOpen, setSolverDialogOpen] = useState(false);
-  const [offerSlotId, setOfferSlotId] = useState<number | null>(null);
   const [shiftGroupId, setShiftGroupId] = useState("");
-  const [icsExportStartDate, setIcsExportStartDate] = useState("");
-  const [icsExportEndDate, setIcsExportEndDate] = useState("");
   const [viewingVersionId, setViewingVersionId] = useState<number | null>(null);
   const [versionMajor, setVersionMajor] = useState("");
   const [versionMinor, setVersionMinor] = useState("");
@@ -195,26 +180,19 @@ function PlannerWorkspaceContent() {
     }
   }, [me, router, sessionLoading]);
 
-  const planningUi = variant === "planner" && Boolean(userMe?.capabilities.planning);
-  const adminUi = variant === "planner" && Boolean(userMe?.capabilities.admin);
-  const teamMemberPortalUi = variant === "team_member" && Boolean(userMe?.capabilities.team_member_portal);
-  const editableMemberId =
-    teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined;
-  const waitingForTeamMemberSession = variant === "team_member" && (sessionLoading || !teamMemberPortalUi);
-  const waitingForPlannerSession = variant === "planner" && (sessionLoading || !userMe);
-  const plannerNeedsShiftGroup = variant === "planner" && userMe?.role === "planner";
+  const planningUi = Boolean(userMe?.capabilities.planning);
+  const adminUi = Boolean(userMe?.capabilities.admin);
+  const waitingForPlannerSession = sessionLoading || !userMe;
+  const plannerNeedsShiftGroup = userMe?.role === "planner";
 
   useEffect(() => {
     if (sessionLoading || !userMe) {
       return;
     }
-    if (variant === "planner" && !userMe.capabilities.planning) {
-      router.replace(userMe.capabilities.team_member_portal ? "/my-planning" : "/");
+    if (!userMe.capabilities.planning) {
+      router.replace(userMe.capabilities.team_member_portal ? "/my" : "/");
     }
-    if (variant === "team_member" && !userMe.capabilities.team_member_portal) {
-      router.replace(userMe.capabilities.planning ? "/planning" : "/");
-    }
-  }, [userMe, router, sessionLoading, variant]);
+  }, [userMe, router, sessionLoading]);
 
   const shiftGroupQuery = useMemo(
     () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
@@ -225,37 +203,10 @@ function PlannerWorkspaceContent() {
     if (shiftGroupId) {
       params.set("shift_group_id", shiftGroupId);
     }
-    if (teamMemberPortalUi) {
-      params.set("team_member_portal", "true");
-    }
     const query = params.toString();
     return query ? `?${query}` : "";
-  }, [shiftGroupId, teamMemberPortalUi]);
-  const myShiftsIcsQuery = useMemo(
-    () => (shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : ""),
-    [shiftGroupId]
-  );
-  const myShiftsIcsRangeQuery = useMemo(() => {
-    const params = new URLSearchParams();
-    if (shiftGroupId) {
-      params.set("shift_group_id", shiftGroupId);
-    }
-    if (icsExportStartDate) {
-      params.set("start_date", icsExportStartDate);
-    }
-    if (icsExportEndDate) {
-      params.set("end_date", icsExportEndDate);
-    }
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  }, [shiftGroupId, icsExportStartDate, icsExportEndDate]);
-  const icsExportRangeReady =
-    Boolean(shiftGroupId) &&
-    Boolean(icsExportStartDate) &&
-    Boolean(icsExportEndDate) &&
-    icsExportStartDate <= icsExportEndDate;
-  const teamMemberExportReady = Boolean(shiftGroupId);
-  const exportModalOpen = isExportModalOpen && Boolean(periodId || (teamMemberPortalUi && teamMemberExportReady));
+  }, [shiftGroupId]);
+  const exportModalOpen = isExportModalOpen && Boolean(periodId);
 
   useEffect(() => {
     setShiftGroupId(searchParams.get("shiftGroup") ?? "");
@@ -269,45 +220,33 @@ function PlannerWorkspaceContent() {
   }, [searchParams]);
 
   const resourcesReady =
-    !waitingForTeamMemberSession &&
     !waitingForPlannerSession &&
     Boolean(periodId) &&
-    !(teamMemberPortalUi && !shiftGroupId) &&
     !(plannerNeedsShiftGroup && !shiftGroupId);
-  const periodsQuery = usePlanningPeriods(!waitingForTeamMemberSession && !waitingForPlannerSession);
+  const periodsQuery = usePlanningPeriods(!waitingForPlannerSession);
   const periods = periodsQuery.data;
   const shiftGroupsQuery = useShiftGroups(Boolean(planningUi && userMe?.capabilities.admin));
-  const shiftGroups = planningUi
-    ? userMe?.capabilities.admin
-      ? (shiftGroupsQuery.data ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }))
-      : (userMe?.planner_shift_groups ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }))
-    : (userMe?.shift_groups ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }));
+  const shiftGroups = userMe?.capabilities.admin
+    ? (shiftGroupsQuery.data ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }))
+    : (userMe?.planner_shift_groups ?? []).map((group) => ({ id: group.id, code: group.code, name: group.name }));
   const dayStatusDefinitions = useDayStatusDefinitions(Boolean(userMe)).data ?? [];
   const wishesQuery = useWishesMatrix({
     periodId,
     shiftGroupId,
-    teamMemberPortal: teamMemberPortalUi,
+    teamMemberPortal: false,
     versionId: viewingVersionId,
     enabled: resourcesReady
   });
-  const wishesStatus = wishesQuery.data?.matrix.shift_group_planning_status?.status;
   const rosterQuery = useRosterMatrix({
     periodId,
     shiftGroupId,
-    teamMemberPortal: teamMemberPortalUi,
+    teamMemberPortal: false,
     versionId: viewingVersionId,
-    enabled: resourcesReady && (!teamMemberPortalUi || wishesStatus === "preliminary" || wishesStatus === "published")
+    enabled: resourcesReady
   });
   const validationQuery = useValidation({ periodId, shiftGroupId, enabled: resourcesReady && planningUi });
   const fairnessQuery = useFairness({ periodId, shiftGroupId, enabled: resourcesReady && planningUi });
   const activePeriod = periods?.find((period) => String(period.id) === periodId);
-  const memberDashboard = useMemberDashboard({
-    year: activePeriod?.year ?? new Date().getFullYear(),
-    shiftGroupId,
-    enabled: teamMemberPortalUi && Boolean(shiftGroupId)
-  });
-  const memberShifts = memberDashboard.data ?? null;
-  const memberShiftsLoading = memberDashboard.isLoading;
   const rosterMatrix = rosterQuery.data?.matrix ?? null;
   const warnings = (validationQuery.data ?? []).map((warning) => ({
     code: warning.code,
@@ -322,27 +261,13 @@ function PlannerWorkspaceContent() {
   const groupPlanningStatus =
     rosterMatrix?.shift_group_planning_status ?? wishesQuery.data?.matrix.shift_group_planning_status ?? null;
 
-  const groupStatus = groupPlanningStatus?.status;
-  useEffect(() => {
-    if (!teamMemberPortalUi || !shiftGroupId || !groupStatus) {
-      return;
-    }
-    const hidden = groupStatus !== "preliminary" && groupStatus !== "published";
-    const hiddenMessage = t(locale, "rosterNotVisibleYet");
-    setMessage((current) => {
-      if (hidden) {
-        return hiddenMessage;
-      }
-      return current === hiddenMessage ? "" : current;
-    });
-  }, [teamMemberPortalUi, shiftGroupId, groupStatus, locale]);
   const planningScope =
     organizationId != null
       ? {
           organizationId,
           periodId,
           shiftGroupId,
-          teamMemberPortal: teamMemberPortalUi
+          teamMemberPortal: false
         }
       : null;
 
@@ -360,44 +285,16 @@ function PlannerWorkspaceContent() {
     }
   }, [periods, periodId, searchParams]);
 
-  useEffect(() => {
-    const now = new Date();
-    const bounds = activePeriod
-      ? monthDateBounds(activePeriod.year, activePeriod.month)
-      : monthDateBounds(now.getFullYear(), now.getMonth() + 1);
-    setIcsExportStartDate(bounds.min);
-    setIcsExportEndDate(bounds.max);
-  }, [activePeriod]);
   const stats = useMemo(() => buildMemberWorkloadRows(rosterMatrix, warnings), [rosterMatrix, warnings]);
   const duplicateMemberDayKeys = useMemo(() => duplicateMemberDayKeysFromWarnings(warnings), [warnings]);
   const duplicateDayWarningsCount = useMemo(
     () => warnings.filter((w) => w.code === "ROSTER_MATRIX_DUPLICATE_DAY").length,
     [warnings]
   );
-  const exportRequiresShiftGroup = plannerNeedsShiftGroup || teamMemberPortalUi;
-  const exportBlockedByShiftGroup = exportRequiresShiftGroup && !shiftGroupId;
+  const exportBlockedByShiftGroup = plannerNeedsShiftGroup && !shiftGroupId;
   const exportRosterFileReady =
     groupPlanningStatus?.status === "preliminary" || groupPlanningStatus?.status === "published";
-  const teamMemberWishesEditable =
-    teamMemberPortalUi &&
-    (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
-  const teamMemberRosterVisible = teamMemberPortalUi
-    ? groupPlanningStatus?.status === "preliminary" || groupPlanningStatus?.status === "published"
-    : true;
   const swapCapabilities = { team_member_portal: Boolean(userMe?.capabilities.team_member_portal) };
-  const rosterSlotIds = useMemo(() => new Set(rosterMatrix?.slots.map((slot) => slot.id) ?? []), [rosterMatrix]);
-  const memberSwapOffer: SwapOfferContext | undefined = teamMemberPortalUi
-    ? {
-        variant: "team_member",
-        capabilities: swapCapabilities,
-        teamMemberId: userMe?.team_member_id ?? null,
-        shiftGroupId: shiftGroupId || null,
-        periodId: periodId || null,
-        groupStatus: groupPlanningStatus?.status,
-        rosterSlotIds,
-        onOffer: (slotId) => setOfferSlotId(slotId)
-      }
-    : undefined;
   const refreshRosterDisabled =
     !periodId ||
     (plannerNeedsShiftGroup && !shiftGroupId) ||
@@ -406,7 +303,7 @@ function PlannerWorkspaceContent() {
     planningUi &&
     !viewingVersionId &&
     (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
-  const wishesEditable = teamMemberPortalUi ? teamMemberWishesEditable : plannerPlanningEditable;
+  const wishesEditable = plannerPlanningEditable;
   const regenerateRosterDisabled = !periodId || groupPlanningStatus?.status === "published";
   const generateRosterDisabled =
     !periodId ||
@@ -426,21 +323,7 @@ function PlannerWorkspaceContent() {
   }
 
   useEffect(() => {
-    if (variant !== "team_member" || !userMe?.shift_groups?.length || shiftGroupId) {
-      return;
-    }
-    if (userMe.shift_groups.length === 1) {
-      const id = String(userMe.shift_groups[0].id);
-      setShiftGroupId(id);
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("shiftGroup", id);
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    }
-  }, [variant, userMe, shiftGroupId, pathname, router, searchParams]);
-
-  useEffect(() => {
     if (
-      variant !== "planner" ||
       !userMe?.capabilities.planning ||
       userMe.capabilities.admin ||
       !userMe.planner_shift_groups?.length ||
@@ -455,7 +338,7 @@ function PlannerWorkspaceContent() {
       params.set("shiftGroup", id);
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     }
-  }, [variant, userMe, shiftGroupId, pathname, router, searchParams]);
+  }, [userMe, shiftGroupId, pathname, router, searchParams]);
 
   async function refreshAfterStatusChange() {
     if (!planningScope) {
@@ -633,15 +516,8 @@ function PlannerWorkspaceContent() {
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "wishesSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "matrixHelp")}</p>
-        {teamMemberPortalUi && teamMemberWishesEditable ? (
-          <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-100">
-            {groupPlanningStatus?.status === "preliminary"
-              ? t(locale, "myPlanningWishesFeedbackHintPreliminary")
-              : t(locale, "myPlanningWishesFeedbackHintDraft")}
-          </p>
-        ) : null}
       </div>
-      {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
+      {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
         <MatrixEditor
@@ -649,10 +525,8 @@ function PlannerWorkspaceContent() {
           compact
           shiftGroupId={shiftGroupId || undefined}
           versionId={viewingVersionId ?? undefined}
-          editableMemberId={teamMemberWishesEditable ? editableMemberId : undefined}
-          teamMemberPortal={teamMemberPortalUi}
+          teamMemberPortal={false}
           readOnly={!wishesEditable || viewingVersionId != null}
-          dayFeedbackAlwaysVisible={Boolean(teamMemberPortalUi && teamMemberWishesEditable)}
           onChanged={handleWishesChanged}
         />
       )}
@@ -664,42 +538,31 @@ function PlannerWorkspaceContent() {
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "rosterSection")}</h2>
         <p className="mt-1 text-sm text-slate-600">{t(locale, "finalRosterHelp")}</p>
-        {teamMemberPortalUi && groupPlanningStatus?.status === "preliminary" && teamMemberWishesEditable ? (
-          <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950 ring-1 ring-sky-100">
-            {t(locale, "myPlanningRosterFeedbackRedirect")}
-          </p>
-        ) : null}
       </div>
       {duplicateDayWarningsCount > 0 ? (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950 ring-1 ring-amber-200">
           {t(locale, "rosterDuplicateDayPlanningHint", { count: String(duplicateDayWarningsCount) })}
         </p>
       ) : null}
-      {waitingForPlannerSession ? null : (teamMemberPortalUi || plannerNeedsShiftGroup) && !shiftGroupId ? (
+      {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
-      ) : teamMemberPortalUi && !teamMemberRosterVisible ? (
-        <p className="text-sm text-slate-600">{t(locale, "rosterNotVisibleYet")}</p>
       ) : (
         <RosterMatrixEditor
           periodId={periodId}
           compact
-          readOnly={Boolean(teamMemberPortalUi) || !plannerPlanningEditable || viewingVersionId != null}
-          teamMemberPortal={teamMemberPortalUi}
+          readOnly={!plannerPlanningEditable || viewingVersionId != null}
+          teamMemberPortal={false}
           shiftGroupId={shiftGroupId || undefined}
           versionId={viewingVersionId ?? undefined}
           duplicateMemberDayKeys={duplicateMemberDayKeys}
           validationWarnings={warnings}
-          fairnessAccounts={teamMemberPortalUi ? null : fairnessAccounts}
-          highlightTeamMemberId={
-            teamMemberPortalUi && userMe?.team_member_id != null ? userMe.team_member_id : undefined
-          }
-          swapOffer={teamMemberPortalUi ? memberSwapOffer : undefined}
+          fairnessAccounts={fairnessAccounts}
         />
       )}
     </section>
   ) : null;
 
-  const analysisSection = !teamMemberPortalUi ? (
+  const analysisSection = (
     <section className="grid gap-4">
       <div>
         <h2 className="text-xl font-semibold text-ink">{t(locale, "analysisSection")}</h2>
@@ -730,56 +593,7 @@ function PlannerWorkspaceContent() {
       />
       {periodId ? <ComplianceReportPanel periodId={periodId} shiftGroupId={shiftGroupId} /> : null}
     </section>
-  ) : null;
-
-  const shiftsSection = teamMemberPortalUi ? (
-    <section className="grid gap-4">
-      <div>
-        <h2 className="text-xl font-semibold text-ink">{t(locale, "myPlanningShiftsSection")}</h2>
-        <p className="mt-1 text-sm text-slate-600">{t(locale, "myPlanningShiftsSectionHelp")}</p>
-      </div>
-      {!shiftGroupId ? (
-        <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
-      ) : memberShiftsLoading ? (
-        <p className="text-sm text-slate-600">{t(locale, "saving")}</p>
-      ) : memberShifts ? (
-        <div className="grid gap-5">
-          <div className="grid gap-2">
-            <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardUpcomingShifts")}</h3>
-            <p className="text-sm text-slate-600">{t(locale, "dashboardUpcomingShiftsHint")}</p>
-            <DashboardUpcomingShiftsTable
-              locale={locale}
-              slots={memberShifts.upcoming_slots}
-              showIcsExport
-              swapOffer={memberSwapOffer}
-            />
-          </div>
-          <div className="grid gap-2">
-            <h3 className="text-base font-semibold text-ink">{t(locale, "dashboardPastShifts")}</h3>
-            <p className="text-sm text-slate-600">{t(locale, "dashboardPastShiftsHint")}</p>
-            <DashboardUpcomingShiftsTable locale={locale} slots={memberShifts.past_slots} emptyLabelKey="dashboardPastShiftsEmpty" showIcsExport />
-          </div>
-          <div className="grid gap-2">
-            <h3 className="text-base font-semibold text-ink">{t(locale, "dutyActivityRetrospectiveTitle")}</h3>
-            <p className="text-sm text-slate-600">{t(locale, "dutyActivityRetrospectiveHelp")}</p>
-            <DutyActivityShiftList slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
-          </div>
-        </div>
-      ) : (
-        <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
-      )}
-      <ShiftSwapMarketplace
-        capabilities={swapCapabilities}
-        groupStatus={groupPlanningStatus?.status}
-        onChanged={() => void handleSwapApplied()}
-        periodId={periodId}
-        roster={rosterMatrix}
-        shiftGroupId={shiftGroupId}
-        teamMemberId={userMe?.team_member_id ?? null}
-        variant={"team_member" as const}
-      />
-    </section>
-  ) : null;
+  );
 
   const planningConflictSummary =
     periodId && planningUi && !waitingForPlannerSession ? (
@@ -791,7 +605,7 @@ function PlannerWorkspaceContent() {
       <Card>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-semibold text-ink">{teamMemberPortalUi ? t(locale, "myPlanning") : t(locale, "planning")}</h1>
+            <h1 className="text-2xl font-semibold text-ink">{t(locale, "planning")}</h1>
             <div className="flex flex-wrap items-center gap-2">
               <Field label={t(locale, "planningPeriod")}>
                 <select className={`${inputClass} h-10 min-w-40`} value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
@@ -934,18 +748,6 @@ function PlannerWorkspaceContent() {
                   </div>
                 </>
               ) : null}
-              {teamMemberPortalUi ? (
-                <button
-                  aria-label={t(locale, "exports")}
-                  className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!teamMemberExportReady}
-                  onClick={() => setIsExportModalOpen(true)}
-                  title={t(locale, "exports")}
-                  type="button"
-                >
-                  <Download size={18} />
-                </button>
-              ) : null}
             </div>
           </div>
           <details className="group rounded-lg border border-slate-200 bg-slate-50/60">
@@ -986,20 +788,13 @@ function PlannerWorkspaceContent() {
             </summary>
             <div className="grid gap-3 border-t border-slate-200 px-3 py-3">
               {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
-              {teamMemberPortalUi && groupPlanningStatus?.status === "preliminary" ? (
-                <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 ring-1 ring-sky-100">
-                  <p className="font-semibold">{t(locale, "myPlanningPreliminaryBannerTitle")}</p>
-                  <p className="mt-1 text-sky-900">{t(locale, "myPlanningPreliminaryBannerBody")}</p>
-                </div>
-              ) : null}
               <PlanningDayStatusLegend locale={locale} definitions={dayStatusDefinitions} />
               {periodId && shiftGroupId ? (
                 <PlanningDayIntervalBar
                   periodId={periodId}
                   shiftGroupId={shiftGroupId}
                   readOnly={!wishesEditable}
-                  teamMemberPortal={teamMemberPortalUi}
-                  editableMemberId={editableMemberId}
+                  teamMemberPortal={false}
                   dayStatusDefinitions={dayStatusDefinitions}
                   onApplied={handleDayIntervalApplied}
                 />
@@ -1008,10 +803,6 @@ function PlannerWorkspaceContent() {
           </details>
         </div>
       </Card>
-
-      {teamMemberPortalUi && memberShifts ? (
-        <DutyActivityLiveBanner slots={[...memberShifts.upcoming_slots, ...memberShifts.past_slots]} />
-      ) : null}
 
       <Dialog open={isCreateModalOpen} onOpenChange={(next) => { if (!next) setIsCreateModalOpen(false); }}>
         <DialogContent className="max-w-md" aria-labelledby="create-period-title">
@@ -1058,49 +849,6 @@ function PlannerWorkspaceContent() {
               </button>
             </div>
             <div className="grid gap-3">
-              {teamMemberPortalUi ? (
-                <>
-                  <a
-                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                      exportBlockedByShiftGroup ? "pointer-events-none opacity-40" : ""
-                    }`}
-                    href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${myShiftsIcsQuery}`}
-                  >
-                    <Download size={17} />
-                    {t(locale, "myShiftsIcsExport")}
-                  </a>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label={t(locale, "planningDayIntervalFrom")}>
-                        <input
-                          className={`${inputClass} min-w-0`}
-                          onChange={(event) => setIcsExportStartDate(event.target.value)}
-                          type="date"
-                          value={icsExportStartDate}
-                        />
-                      </Field>
-                      <Field label={t(locale, "planningDayIntervalTo")}>
-                        <input
-                          className={`${inputClass} min-w-0`}
-                          onChange={(event) => setIcsExportEndDate(event.target.value)}
-                          type="date"
-                          value={icsExportEndDate}
-                        />
-                      </Field>
-                    </div>
-                    <a
-                      className={`mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 ${
-                        !icsExportRangeReady ? "pointer-events-none opacity-40" : ""
-                      }`}
-                      href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${myShiftsIcsRangeQuery}`}
-                    >
-                      <Download size={17} />
-                      {t(locale, "myShiftsRangeIcsExport")}
-                    </a>
-                  </div>
-                  <p className="text-xs text-slate-500">{t(locale, "exportRosterVisibleHint")}</p>
-                </>
-              ) : null}
               {planningUi && periodId ? (
                 <>
                   <a
@@ -1204,21 +952,6 @@ function PlannerWorkspaceContent() {
             void handleSolverApplied(run);
           }}
           onRunChange={handleSolverRunChange}
-        />
-      ) : null}
-
-      {teamMemberPortalUi && periodId && shiftGroupId && offerSlotId != null ? (
-        <ShiftSwapOfferDialog
-          offeredSlotId={offerSlotId}
-          onClose={() => setOfferSlotId(null)}
-          onSubmitted={() => {
-            void handleSwapApplied();
-            setMessage(t(locale, "shiftSwapOffered"));
-          }}
-          open
-          periodId={periodId}
-          roster={rosterMatrix}
-          shiftGroupId={shiftGroupId}
         />
       ) : null}
 
@@ -1348,11 +1081,9 @@ function PlannerWorkspaceContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {waitingForTeamMemberSession || waitingForPlannerSession ? (
+      {waitingForPlannerSession ? (
         <Card>
-          <p className="text-sm text-slate-600">
-            {waitingForPlannerSession ? t(locale, "planningSessionLoading") : t(locale, "saving")}
-          </p>
+          <p className="text-sm text-slate-600">{t(locale, "planningSessionLoading")}</p>
         </Card>
       ) : periodId ? (
         viewMode === "stacked" ? (
@@ -1360,23 +1091,16 @@ function PlannerWorkspaceContent() {
             {wishesSection}
             {planningConflictSummary}
             {rosterSection}
-            {!teamMemberPortalUi ? analysisSection : null}
+            {analysisSection}
           </>
         ) : (
           <div className="grid gap-5">
             <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              {(teamMemberPortalUi
-                ? ([
-                    ["wishes", "wishesSection", Heart],
-                    ["roster", "rosterSection", CalendarCheck],
-                    ["shifts", "myPlanningShiftsSection", CalendarClock]
-                  ] as const)
-                : ([
-                    ["wishes", "wishesSection", Heart],
-                    ["roster", "rosterSection", CalendarCheck],
-                    ["analysis", "analysisSection", BarChart3]
-                  ] as const)
-              ).map(([tab, label, Icon]) => (
+              {([
+                ["wishes", "wishesSection", Heart],
+                ["roster", "rosterSection", CalendarCheck],
+                ["analysis", "analysisSection", BarChart3]
+              ] as const).map(([tab, label, Icon]) => (
                 <button
                   key={tab}
                   aria-label={t(locale, label)}
@@ -1402,7 +1126,6 @@ function PlannerWorkspaceContent() {
                 {analysisSection}
               </>
             ) : null}
-            {activeTab === "shifts" ? shiftsSection : null}
           </div>
         )
       ) : (

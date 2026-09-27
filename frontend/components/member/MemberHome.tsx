@@ -7,6 +7,8 @@ import { Card } from "@/components/Card";
 import { DashboardMemberPanel } from "@/components/DashboardMemberPanel";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { t } from "@/lib/i18n";
+import { memberAreaHref } from "@/lib/memberAreaHref";
+import { isActionableMemberSwap } from "@/lib/memberSwapActions";
 import { isUserSession } from "@/lib/membershipRouting";
 import { useMemberDashboard } from "@/lib/queries/planning";
 import { useShiftSwapList } from "@/lib/queries/activity";
@@ -37,6 +39,9 @@ export function MemberHome() {
     enabled: Boolean(shiftGroupId && dashboard.data?.current_period)
   });
   const draft = dashboard.data?.periods.find((period) => period.status === "draft");
+  const teamMemberId = user?.team_member_id ?? null;
+  const openSwaps = (swaps.data ?? []).filter((row) => isActionableMemberSwap(row, teamMemberId));
+  const swapsPeriodId = dashboard.data?.current_period?.period_id;
 
   if (loading) {
     return <p className="text-sm text-slate-600">{t(locale, "planningSessionLoading")}</p>;
@@ -70,16 +75,22 @@ export function MemberHome() {
           </Link>
         </Card>
       ) : null}
-      {(swaps.data ?? []).length > 0 ? (
+      {openSwaps.length > 0 ? (
         <Card>
           <p className="text-sm font-semibold text-ink">
-            {t(locale, "memberOpenSwaps")}: {(swaps.data ?? []).length}
+            {t(locale, "memberOpenSwaps")}: {openSwaps.length}
           </p>
-          <Link href={`/my-planning?tab=shifts&shiftGroup=${shiftGroupId}`} className="mt-2 inline-flex min-h-11 items-center font-semibold text-ink">
+          <Link
+            href={`/my-planning?tab=shifts&period=${swapsPeriodId ?? ""}&shiftGroup=${shiftGroupId}`}
+            className="mt-2 inline-flex min-h-11 items-center font-semibold text-ink"
+          >
             {t(locale, "memberTabSwaps")}
           </Link>
         </Card>
       ) : null}
+      <Link href={memberAreaHref("/my-hours", new URLSearchParams(shiftGroupId ? { shiftGroup: shiftGroupId } : undefined))} className="inline-flex min-h-11 items-center text-sm font-semibold text-ink">
+        {t(locale, "myHoursNav")}
+      </Link>
       {dashboard.data ? <DashboardMemberPanel locale={locale} data={dashboard.data} shiftGroupId={shiftGroupId} /> : null}
     </div>
   );

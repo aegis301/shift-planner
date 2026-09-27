@@ -186,6 +186,7 @@ export function MemberPlanning() {
   if (icsEnd) {
     rangeQuery.set("end_date", icsEnd);
   }
+  const icsRangeReady = Boolean(shiftGroupId) && Boolean(icsStart) && Boolean(icsEnd) && icsStart <= icsEnd;
 
   return (
     <div className="grid min-w-0 gap-5">
@@ -332,15 +333,29 @@ export function MemberPlanning() {
               <X size={17} />
             </button>
           </div>
-          <a className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-semibold" href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${icsQuery}`}>
+          <a className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-semibold" href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${icsQuery}`}>
+            <Download size={17} />
             {t(locale, "myShiftsIcsExport")}
           </a>
-          <a
-            className="mt-3 inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-semibold"
-            href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics?${rangeQuery.toString()}`}
-          >
-            {t(locale, "myShiftsRangeIcsExport")}
-          </a>
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t(locale, "planningDayIntervalFrom")}>
+                <input className={`${inputClass} min-w-0`} onChange={(event) => setIcsStart(event.target.value)} type="date" value={icsStart} />
+              </Field>
+              <Field label={t(locale, "planningDayIntervalTo")}>
+                <input className={`${inputClass} min-w-0`} onChange={(event) => setIcsEnd(event.target.value)} type="date" value={icsEnd} />
+              </Field>
+            </div>
+            <a
+              className={`mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold ${
+                icsRangeReady ? "" : "pointer-events-none opacity-40"
+              }`}
+              href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics?${rangeQuery.toString()}`}
+            >
+              <Download size={17} />
+              {t(locale, "myShiftsRangeIcsExport")}
+            </a>
+          </div>
         </DialogContent>
       </Dialog>
       {periodId && shiftGroupId && offerSlotId != null ? (

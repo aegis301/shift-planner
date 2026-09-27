@@ -3,19 +3,20 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarCheck, CalendarDays, Heart, House, UserRound } from "lucide-react";
+import { CalendarCheck, CalendarDays, Clock, Heart, House, UserRound } from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { NotificationSlot } from "@/components/shell/NotificationSlot";
 import { ShellHeaderMenus, useAreaGuard, useShellSession } from "@/components/shell/shellSession";
 import { t } from "@/lib/i18n";
+import { memberAreaHref } from "@/lib/memberAreaHref";
 import { isUserSession, membershipDefaultPath } from "@/lib/membershipRouting";
 
 const tabs = [
-  { href: "/my", key: "memberTabHome" as const, icon: House },
-  { href: "/my-planning", key: "memberTabWishes" as const, icon: Heart },
-  { href: "/my-planning?tab=roster", key: "memberTabDuties" as const, icon: CalendarCheck },
-  { href: "/my-planning?tab=shifts", key: "memberTabSwaps" as const, icon: CalendarDays },
-  { href: "/profile", key: "memberTabProfile" as const, icon: UserRound }
+  { path: "/my", tab: null, key: "memberTabHome" as const, icon: House },
+  { path: "/my-planning", tab: null, key: "memberTabWishes" as const, icon: Heart },
+  { path: "/my-planning", tab: "roster" as const, key: "memberTabDuties" as const, icon: CalendarCheck },
+  { path: "/my-planning", tab: "shifts" as const, key: "memberTabSwaps" as const, icon: CalendarDays },
+  { path: "/profile", tab: null, key: "memberTabProfile" as const, icon: UserRound }
 ];
 
 function tabActive(key: (typeof tabs)[number]["key"], pathname: string, planningTab: string | null): boolean {
@@ -39,7 +40,8 @@ export function MemberShell({ children }: { children: React.ReactNode }) {
   const session = useShellSession(locale, setLocale);
   const guard = useAreaGuard();
   const { me, pathname } = session;
-  const planningTab = useSearchParams().get("tab");
+  const searchParams = useSearchParams();
+  const planningTab = searchParams.get("tab");
 
   useEffect(() => {
     if (guard.redirect && guard.me) {
@@ -61,21 +63,39 @@ export function MemberShell({ children }: { children: React.ReactNode }) {
             return (
               <Link
                 key={item.key}
-                href={item.href}
+                href={memberAreaHref(item.path, searchParams, item.tab)}
                 className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium ${
                   active ? "bg-ink text-white" : "text-slate-700 hover:bg-slate-100"
                 }`}
               >
                 <Icon aria-hidden size={18} />
                 {t(locale, item.key)}
-              </Link>
-            );
+            </Link>
+          );
           })}
+          <Link
+            href={memberAreaHref("/my-hours", searchParams)}
+            className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium ${
+              pathname.startsWith("/my-hours") ? "bg-ink text-white" : "text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            <Clock aria-hidden size={18} />
+            {t(locale, "myHoursNav")}
+          </Link>
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4">
           <p className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{t(locale, "appName")}</p>
+          <Link
+            href={memberAreaHref("/my-hours", searchParams)}
+            aria-label={t(locale, "myHoursNav")}
+            className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-sm font-semibold md:hidden ${
+              pathname.startsWith("/my-hours") ? "bg-ink text-white" : "text-slate-700 hover:bg-slate-100"
+            }`}
+          >
+            <Clock aria-hidden size={18} />
+          </Link>
           <NotificationSlot />
           <ShellHeaderMenus session={session} areaSwitch={areaSwitch} />
         </header>
@@ -87,7 +107,7 @@ export function MemberShell({ children }: { children: React.ReactNode }) {
             return (
               <Link
                 key={item.key}
-                href={item.href}
+                href={memberAreaHref(item.path, searchParams, item.tab)}
                 className={`flex min-h-11 flex-col items-center justify-center gap-0.5 text-[0.65rem] font-semibold ${
                   active ? "text-ink" : "text-slate-500"
                 }`}
