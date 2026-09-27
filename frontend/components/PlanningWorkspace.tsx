@@ -318,6 +318,21 @@ function PlanningWorkspaceContent({ variant }: { variant: "planner" | "team_memb
   const fairnessError = fairnessQuery.isError ? t(locale, "fairnessLoadError") : "";
   const groupPlanningStatus =
     rosterMatrix?.shift_group_planning_status ?? wishesQuery.data?.matrix.shift_group_planning_status ?? null;
+
+  const groupStatus = groupPlanningStatus?.status;
+  useEffect(() => {
+    if (!teamMemberPortalUi || !shiftGroupId || !groupStatus) {
+      return;
+    }
+    const hidden = groupStatus !== "preliminary" && groupStatus !== "published";
+    const hiddenMessage = t(locale, "rosterNotVisibleYet");
+    setMessage((current) => {
+      if (hidden) {
+        return hiddenMessage;
+      }
+      return current === hiddenMessage ? "" : current;
+    });
+  }, [teamMemberPortalUi, shiftGroupId, groupStatus, locale]);
   const planningScope =
     organizationId != null
       ? {
