@@ -1,11 +1,12 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarRange, Save, X } from "lucide-react";
 import { Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { t } from "@/lib/i18n";
+import { useWishesMatrix } from "@/lib/queries/planning";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { expandInclusiveDateRange } from "@/lib/planningDates";
 import {
@@ -70,7 +71,32 @@ export function PlanningDayIntervalBar({
   onApplied: () => void | Promise<void>;
 }) {
   const { locale } = useLocale();
-  const [matrixMeta, setMatrixMeta] = useState<PlanningMatrixMeta | null>(null);
+  const wishesQuery = useWishesMatrix({
+    periodId,
+    shiftGroupId,
+    teamMemberPortal,
+    enabled: Boolean(periodId && shiftGroupId)
+  });
+  const matrixSource = wishesQuery.data?.matrix;
+  const matrixMeta = useMemo<PlanningMatrixMeta | null>(() => {
+    if (!matrixSource) {
+      return null;
+    }
+    return {
+      planning_period: {
+        year: matrixSource.planning_period.year,
+        month: matrixSource.planning_period.month
+      },
+      team_members: matrixSource.team_members,
+      days: matrixSource.days,
+      cells: matrixSource.cells.map((cell) => ({
+        team_member_id: cell.team_member_id,
+        cell_date: cell.cell_date,
+        status: cell.status,
+        comment: cell.comment ?? null
+      }))
+    };
+  }, [matrixSource]);
   const [memberId, setMemberId] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -114,23 +140,6 @@ export function PlanningDayIntervalBar({
   }, [matrixMeta]);
 
   const effectiveMemberId = teamMemberPortal && editableMemberId != null ? String(editableMemberId) : memberId;
-
-  const loadMatrixMeta = useCallback(async () => {
-    if (!periodId || !shiftGroupId) {
-      setMatrixMeta(null);
-      return;
-    }
-    try {
-      const data = await apiFetch<PlanningMatrixMeta>(`/api/v1/matrix/${periodId}${groupQuery}`);
-      setMatrixMeta(data);
-    } catch {
-      setMatrixMeta(null);
-    }
-  }, [groupQuery, periodId, shiftGroupId]);
-
-  useEffect(() => {
-    void loadMatrixMeta();
-  }, [loadMatrixMeta]);
 
   useEffect(() => {
     if (teamMemberPortal && editableMemberId != null) {
@@ -204,7 +213,6 @@ export function PlanningDayIntervalBar({
       });
       setMessage(t(locale, "saved"));
       setPendingApply(null);
-      await loadMatrixMeta();
       await onApplied();
     } catch {
       setError(t(locale, "planningDayIntervalApplyFailed"));
