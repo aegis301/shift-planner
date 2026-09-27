@@ -1,11 +1,14 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Clock, Download, Eye, History, Save, X } from "lucide-react";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { PlanVersion, PlanVersionList, SuggestedPlanVersionRead } from "@/lib/api/types";
 import { t, type Locale } from "@/lib/i18n";
+import { queryKeys } from "@/lib/queryKeys";
+import { usePlanVersions, usePlanningOrganizationId } from "@/lib/queries/planning";
 
 export type { PlanVersion, PlanVersionList } from "@/lib/api/types";
 
@@ -37,28 +40,16 @@ export function PlanVersionPanel({
   onViewVersion,
   viewingVersionId
 }: PlanVersionPanelProps) {
-  const [versions, setVersions] = useState<PlanVersionList | null>(null);
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
+  const versionsQuery = usePlanVersions({ periodId, shiftGroupId, enabled: Boolean(periodId && shiftGroupId) });
+  const versions = versionsQuery.data ?? null;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [majorVersion, setMajorVersion] = useState("");
   const [minorVersion, setMinorVersion] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
-
-  async function loadVersions() {
-    if (!periodId || !shiftGroupId) {
-      setVersions(null);
-      return;
-    }
-    const data = await apiFetch<PlanVersionList>(
-      `/api/v1/planning-periods/${periodId}/versions?shift_group_id=${encodeURIComponent(shiftGroupId)}`
-    );
-    setVersions(data);
-  }
-
-  useEffect(() => {
-    void loadVersions().catch(() => setVersions(null));
-  }, [periodId, shiftGroupId, status]);
 
   async function openSaveModal() {
     const suggested = await apiFetch<SuggestedVersion>(
@@ -83,7 +74,9 @@ export function PlanVersionPanel({
         })
       });
       setSaveOpen(false);
-      await loadVersions();
+      if (organizationId != null) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.planVersions(organizationId, periodId, shiftGroupId) });
+      }
       onVersionsChange?.();
     } finally {
       setSaving(false);

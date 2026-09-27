@@ -262,7 +262,8 @@ at every width.
   tokens in `frontend/app/globals.css` (`bg-surface`, `text-muted`, `border-default`, `text-danger`,
   `rounded-token-*`, cell spacing via `data-density` on `<html>`). See `frontend/components/ui/README.md`.
 - Server state goes through TanStack Query with the query keys in `frontend/lib/queryKeys.ts`. Do
-  not add `useEffect` fetches or `*ReloadToken` counters. *(target, #113)*
+  not add `useEffect` fetches or `*ReloadToken` counters. Planning workspace reads and the session
+  query live in `frontend/lib/queries/`. Switching organization clears the cache.
 - API payload types come from `frontend/lib/api/schema.d.ts`. Regenerate with
   `cd frontend && npm run api:generate` (exports `python -m app.scripts.export_openapi`, then
   `openapi-typescript`). Aliases live in `frontend/lib/api/types.ts`. `npm run api:check` fails

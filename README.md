@@ -88,6 +88,8 @@ npm run api:check
 
 Shared controls live in `frontend/components/ui/` (Radix dialogs, menus, popovers, a `cmdk` combobox, and form controls). Tokens are CSS variables in `frontend/app/globals.css`, mapped in `tailwind.config.ts` (`bg-surface`, `text-muted`, `border-default`, `rounded-token-md`). `<html data-density="comfortable">` is the default; `compact` changes the cell spacing tokens. The inventory is `frontend/components/ui/README.md`.
 
+Planning screens read server state through TanStack Query (`frontend/lib/queryKeys.ts`, `frontend/lib/queries/`). The client is created in `frontend/app/ClientRoot.tsx` (30 second stale time, one retry, no retry on 401 or 403). React Query Devtools render in development. Switching the active organization clears the cache.
+
 `npm run api:generate` writes `frontend/lib/api/openapi.json` and `frontend/lib/api/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails the frontend job if `frontend/lib/api/` drifts. Friendly names are in `frontend/lib/api/types.ts`. New code uses `apiClient` from `frontend/lib/api/client.ts` (`credentials: "include"`, same base URL as `apiFetch`). `ApiError` is shared.
 
 ### End-to-end tests

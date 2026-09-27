@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useComplianceReport } from "@/lib/queries/planning";
 import { Card } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { API_BASE_URL } from "@/lib/api";
 import type { ComplianceMemberReport, ComplianceReport, ValidationWarning } from "@/lib/api/types";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { t } from "@/lib/i18n";
@@ -23,25 +23,9 @@ export function ComplianceReportPanel({
   shiftGroupId: string;
 }) {
   const { locale } = useLocale();
-  const [report, setReport] = useState<ComplianceReport | null>(null);
-  const [message, setMessage] = useState("");
-
-  useEffect(() => {
-    if (!periodId) {
-      setReport(null);
-      return;
-    }
-    const query = shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : "";
-    void apiFetch<ComplianceReport>(`/api/v1/compliance-report/${periodId}${query}`)
-      .then((next) => {
-        setReport(next);
-        setMessage("");
-      })
-      .catch(() => {
-        setReport(null);
-        setMessage(t(locale, "complianceReportLoadError"));
-      });
-  }, [locale, periodId, shiftGroupId]);
+  const reportQuery = useComplianceReport({ periodId, shiftGroupId, enabled: Boolean(periodId) });
+  const report = reportQuery.data ?? null;
+  const message = reportQuery.isError ? t(locale, "complianceReportLoadError") : "";
 
   const exportQuery = shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : "";
 

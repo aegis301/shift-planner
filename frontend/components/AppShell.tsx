@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { useSession, type MeUser, type SessionMe } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
+import { clearOrganizationCache } from "@/lib/queries/invalidation";
 import { Locale, t, TranslationKey } from "@/lib/i18n";
 import {
   isUserSession,
@@ -99,6 +101,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const { me, loading, refreshMe } = useSession();
+  const queryClient = useQueryClient();
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [orgMenuOpen, setOrgMenuOpen] = useState(false);
@@ -229,6 +232,7 @@ export function AppShell({
     } catch {
       return;
     }
+    clearOrganizationCache(queryClient);
     await refreshMe();
     router.push("/login");
     router.refresh();
@@ -242,6 +246,7 @@ export function AppShell({
         method: "POST",
         body: JSON.stringify({ organization_slug: slug }),
       });
+      clearOrganizationCache(queryClient);
       await refreshMe();
       const next = membershipDefaultPath(updated);
       if (!pathnameCompatibleWithMembership(pathname, updated)) {

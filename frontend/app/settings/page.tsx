@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { Bot, Building2, KeyRound, Languages, Trash2 } from "lucide-react";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
@@ -14,6 +15,7 @@ import {
   pathnameCompatibleWithMembership,
 } from "@/lib/membershipRouting";
 import { t } from "@/lib/i18n";
+import { clearOrganizationCache } from "@/lib/queries/invalidation";
 
 type LookupResult = { slug: string; name: string };
 
@@ -34,6 +36,7 @@ function messageFromApiError(locale: "de" | "en", err: unknown): string {
 function SettingsContent() {
   const { locale, setLocale } = useLocale();
   const { me, refreshMe } = useSession();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
   const [deleteMsg, setDeleteMsg] = useState("");
@@ -71,6 +74,7 @@ function SettingsContent() {
         method: "POST",
         body: JSON.stringify({ organization_slug: slug }),
       });
+      clearOrganizationCache(queryClient);
       await refreshMe();
       const next = membershipDefaultPath(updated);
       if (!pathnameCompatibleWithMembership(pathname, updated)) {

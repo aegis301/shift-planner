@@ -1,9 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { Card } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
+import { useShiftSwapList, useUnresolvedShiftSwaps } from "@/lib/queries/activity";
+import { usePlanningOrganizationId } from "@/lib/queries/planning";
 import { sessionTimeZone } from "@/lib/orgTime";
 import { t, type Locale } from "@/lib/i18n";
 import {
@@ -39,7 +42,6 @@ export function ShiftSwapApprovalQueue({
   periodId,
   shiftGroupId,
   roster,
-  reloadToken,
   onApplied,
   variant,
   capabilities,
@@ -49,7 +51,6 @@ export function ShiftSwapApprovalQueue({
   periodId: string;
   shiftGroupId: string;
   roster: SwapRosterSlice | null;
-  reloadToken: number;
   onApplied: () => void;
   variant: SwapPortalVariant;
   capabilities: { team_member_portal: boolean };
@@ -58,10 +59,24 @@ export function ShiftSwapApprovalQueue({
 }) {
   const { locale } = useLocale();
   const { me } = useSession();
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
   const timeZone = sessionTimeZone(me);
-  const [unresolved, setUnresolved] = useState<ShiftSwapUnresolvedRead[]>([]);
-  const [rows, setRows] = useState<ShiftSwapRequestRead[]>([]);
-  const [loadError, setLoadError] = useState("");
+  const unresolvedQuery = useUnresolvedShiftSwaps({
+    periodId,
+    shiftGroupId,
+    enabled: Boolean(periodId && shiftGroupId)
+  });
+  const queueQuery = useShiftSwapList({
+    periodId,
+    shiftGroupId,
+    scope: "approval",
+    statuses: [...SWAP_APPROVAL_QUEUE_STATUSES],
+    enabled: Boolean(periodId && shiftGroupId)
+  });
+  const unresolved = unresolvedQuery.data ?? [];
+  const rows = queueQuery.data ?? [];
+  const loadError = unresolvedQuery.isError || queueQuery.isError ? t(locale, "shiftSwapLoadError") : "";
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const availability = swapAvailability({
@@ -75,44 +90,25 @@ export function ShiftSwapApprovalQueue({
   const selectionMissing = !availability.available && availability.reason === "no_shift_group";
   const linkKey = availability.available ? null : swapAvailabilityMessageKey("queue", availability.reason);
 
-  const reload = useCallback(async () => {
-    if (selectionMissing) {
-      setUnresolved([]);
-      setRows([]);
-      setLoadError("");
+  async function refreshSwaps() {
+    if (organizationId == null) {
       return;
     }
-    try {
-      const [nextUnresolved, nextQueue] = await Promise.all([
-        listUnresolvedShiftSwaps(periodId, shiftGroupId),
-        listShiftSwaps(periodId, shiftGroupId, { statuses: SWAP_APPROVAL_QUEUE_STATUSES })
-      ]);
-      setUnresolved(nextUnresolved);
-      setRows(nextQueue);
-      setLoadError("");
-    } catch {
-      setUnresolved([]);
-      setRows([]);
-      setLoadError(t(locale, "shiftSwapLoadError"));
-    }
-  }, [locale, periodId, selectionMissing, shiftGroupId]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload, reloadToken]);
+    await queryClient.invalidateQueries({ queryKey: ["shift-swaps", organizationId, periodId, shiftGroupId] });
+  }
 
   async function run(requestId: number, action: () => Promise<unknown>, applied = false) {
     setBusyId(requestId);
     setActionError("");
     try {
       await action();
-      await reload();
+      await refreshSwaps();
       if (applied) {
         onApplied();
       }
     } catch (error) {
       setActionError(shiftSwapErrorText(locale, error));
-      await reload();
+      await refreshSwaps();
     } finally {
       setBusyId(null);
     }
@@ -126,11 +122,11 @@ export function ShiftSwapApprovalQueue({
         await approveShiftSwap(row.id);
       }
       await applyShiftSwap(row.id);
-      await reload();
+      await refreshSwaps();
       onApplied();
     } catch (error) {
       setActionError(shiftSwapErrorText(locale, error));
-      await reload();
+      await refreshSwaps();
     } finally {
       setBusyId(null);
     }

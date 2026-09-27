@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BarChart3, ChevronDown, Download, RefreshCw, Save } from "lucide-react";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import {
@@ -46,6 +47,9 @@ import {
   type FairnessAccountsRead
 } from "@/lib/fairness";
 import { useLocale } from "@/components/LocaleProvider";
+import { queryKeys } from "@/lib/queryKeys";
+import { usePlanningOrganizationId, useRosterMatrix } from "@/lib/queries/planning";
+import { useRosterAssignmentMutation } from "@/lib/queries/rosterEdit";
 import {
   swapAvailability,
   swapAvailabilityMessageKey,
@@ -241,50 +245,68 @@ function slotDiscriminator(slot: RosterSlot, needsDiscriminator: boolean): strin
 export function RosterMatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
-  reloadToken = 0,
   shiftGroupId,
   versionId,
+  teamMemberPortal = false,
   readOnly = false,
   duplicateMemberDayKeys,
   validationWarnings = [],
   fairnessAccounts = null,
-  onMatrixChange,
   highlightTeamMemberId,
   swapOffer,
 }: {
   periodId?: string;
   compact?: boolean;
-  reloadToken?: number;
   shiftGroupId?: string;
   versionId?: number;
+  teamMemberPortal?: boolean;
   readOnly?: boolean;
   duplicateMemberDayKeys?: ReadonlySet<string>;
   validationWarnings?: RosterWorkloadWarning[];
   fairnessAccounts?: FairnessAccountsRead | null;
-  onMatrixChange?: (matrix: RosterMatrix) => void | Promise<void>;
   highlightTeamMemberId?: number;
   swapOffer?: SwapOfferContext;
 } = {}) {
   const { locale } = useLocale();
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
   const currentDate = new Date();
-  const [periodId, setPeriodId] = useState("1");
+  const [periodId, setPeriodId] = useState("");
   const [newYear, setNewYear] = useState(String(currentDate.getFullYear()));
   const [newMonth, setNewMonth] = useState(String(currentDate.getMonth() + 1));
-  const [matrix, setMatrix] = useState<RosterMatrix | null>(null);
   const [message, setMessage] = useState("");
   const [savingAssignments, setSavingAssignments] = useState(0);
+  const activePeriodId = controlledPeriodId ?? periodId;
+  const rosterQuery = useRosterMatrix({
+    periodId: activePeriodId,
+    shiftGroupId: shiftGroupId ?? "",
+    teamMemberPortal,
+    versionId: versionId ?? null,
+    enabled: activePeriodId !== ""
+  });
+  const matrix = rosterQuery.data?.matrix ?? null;
+  const assignmentScope =
+    organizationId != null && activePeriodId !== ""
+      ? {
+          organizationId,
+          periodId: activePeriodId,
+          shiftGroupId: shiftGroupId ?? "",
+          teamMemberPortal
+        }
+      : null;
+  const assignmentMutation = useRosterAssignmentMutation(assignmentScope);
 
   const groupQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (shiftGroupId) {
       params.set("shift_group_id", shiftGroupId);
     }
-    if (readOnly) {
+    if (teamMemberPortal) {
       params.set("team_member_portal", "true");
     }
     const qs = params.toString();
     return qs ? `?${qs}` : "";
-  }, [readOnly, shiftGroupId]);
+  }, [shiftGroupId, teamMemberPortal]);
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, RosterSlot[]>();
@@ -321,49 +343,28 @@ export function RosterMatrixEditor({
 
   const templateColumns = useMemo(() => (matrix ? buildTemplateColumns(matrix, locale) : []), [matrix, locale]);
 
-  const activePeriodId = controlledPeriodId ?? periodId;
-
-  const publishMatrix = useCallback(
-    async (next: RosterMatrix) => {
-      const normalized: RosterMatrix = { ...next, shift_intents: next.shift_intents ?? [] };
-      setMatrix(normalized);
-      await onMatrixChange?.(normalized);
-    },
-    [onMatrixChange]
-  );
-
-  const loadRosterById = useCallback(async (nextPeriodId: string) => {
-    const next = await apiFetch<RosterMatrix>(
-      versionId
-        ? `/api/v1/planning-periods/${nextPeriodId}/versions/${versionId}/roster-matrix`
-        : `/api/v1/roster-matrix/${nextPeriodId}${groupQuery}`
-    );
-    await publishMatrix(next);
-  }, [publishMatrix, groupQuery, versionId]);
-
   const loadRoster = useCallback(async () => {
-    await loadRosterById(activePeriodId);
-  }, [activePeriodId, loadRosterById]);
-
-  useEffect(() => {
-    if (controlledPeriodId) {
-      void loadRosterById(controlledPeriodId);
+    if (organizationId == null || activePeriodId === "") {
       return;
     }
+    const key =
+      versionId != null
+        ? queryKeys.rosterMatrixVersion(organizationId, activePeriodId, versionId)
+        : queryKeys.rosterMatrix(organizationId, activePeriodId, shiftGroupId ?? "", teamMemberPortal);
+    await queryClient.invalidateQueries({ queryKey: key });
+  }, [activePeriodId, organizationId, queryClient, shiftGroupId, teamMemberPortal, versionId]);
 
-    async function loadLatestPeriod() {
-      const periods = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
-      const latest = periods[0];
-      if (!latest) {
-        return;
-      }
-      const nextPeriodId = String(latest.id);
-      setPeriodId(nextPeriodId);
-      await loadRosterById(nextPeriodId);
+  useEffect(() => {
+    if (controlledPeriodId || periodId) {
+      return;
     }
-
-    void loadLatestPeriod();
-  }, [controlledPeriodId, loadRosterById, reloadToken, groupQuery]);
+    void apiFetch<PlanningPeriod[]>("/api/v1/planning-periods").then((periods) => {
+      const latest = periods[0];
+      if (latest) {
+        setPeriodId(String(latest.id));
+      }
+    });
+  }, [controlledPeriodId, periodId]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -371,10 +372,8 @@ export function RosterMatrixEditor({
       method: "POST",
       body: JSON.stringify({ year: Number(newYear), month: Number(newMonth) })
     });
-    const nextPeriodId = String(period.id);
-    setPeriodId(nextPeriodId);
-    await loadRosterById(nextPeriodId);
-    setMessage(`${t(locale, "saved")}: ${t(locale, "periodId")} ${nextPeriodId}`);
+    setPeriodId(String(period.id));
+    setMessage(`${t(locale, "saved")}: ${t(locale, "periodId")} ${period.id}`);
   }
 
   async function manualSave() {
@@ -388,40 +387,11 @@ export function RosterMatrixEditor({
     }
     setSavingAssignments((count) => count + 1);
     try {
-      if (!memberId) {
-        await apiFetch(`/api/v1/roster-matrix/assignments/clear?shift_group_id=${shiftGroupId ?? ""}`, {
-          method: "POST",
-          body: JSON.stringify({ roster_slot_id: rosterSlotId })
-        });
-        if (matrix) {
-          await publishMatrix({
-            ...matrix,
-            assignments: matrix.assignments.filter((assignment) => assignment.roster_slot_id !== rosterSlotId)
-          });
-        }
-      } else {
-        const saved = await apiFetch<RosterSlotAssignment>(
-          `/api/v1/roster-matrix/assignments?shift_group_id=${shiftGroupId ?? ""}`,
-          {
-          method: "PUT",
-          body: JSON.stringify({
-            roster_slot_id: rosterSlotId,
-            team_member_id: memberId,
-            comment: null,
-            manual_override: manualOverride
-          })
-        }
-        );
-        if (matrix) {
-          await publishMatrix({
-            ...matrix,
-            assignments: [
-              ...matrix.assignments.filter((assignment) => assignment.roster_slot_id !== rosterSlotId),
-              saved
-            ]
-          });
-        }
-      }
+      await assignmentMutation.mutateAsync({
+        rosterSlotId,
+        teamMemberId: memberId,
+        manualOverride
+      });
       setMessage(t(locale, "autosaved"));
       return true;
     } catch (error) {

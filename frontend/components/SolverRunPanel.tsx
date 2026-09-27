@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Card } from "@/components/Card";
 import { SolverRunResult } from "@/components/SolverRunResult";
 import { useLocale } from "@/components/LocaleProvider";
@@ -8,70 +8,28 @@ import { ApiError } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import {
   applySolverRun,
-  getSolverRun,
   isSolverRunActive,
-  listSolverRuns,
   solverStatusLabel,
   type SolverRunRead
 } from "@/lib/solver";
+import { useLatestSolverRun } from "@/lib/queries/activity";
 
 export function SolverRunPanel({
   periodId,
   shiftGroupId,
-  reloadToken,
   onApplied
 }: {
   periodId: string;
   shiftGroupId: string;
-  reloadToken: number;
   onApplied: (run: SolverRunRead) => void;
 }) {
   const { locale } = useLocale();
-  const [run, setRun] = useState<SolverRunRead | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const solverQuery = useLatestSolverRun({ periodId, shiftGroupId, enabled: Boolean(periodId && shiftGroupId) });
+  const run = solverQuery.data ?? null;
+  const loadError = solverQuery.isError ? t(locale, "solverLoadError") : "";
   const [confirmApply, setConfirmApply] = useState(false);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!periodId || !shiftGroupId) {
-      setRun(null);
-      setLoadError("");
-      return;
-    }
-    void listSolverRuns(periodId, shiftGroupId)
-      .then((runs) => {
-        setRun(runs[0] ?? null);
-        setLoadError("");
-      })
-      .catch(() => {
-        setRun(null);
-        setLoadError(t(locale, "solverLoadError"));
-      });
-  }, [periodId, shiftGroupId, reloadToken, locale]);
-
-  useEffect(() => {
-    if (!periodId || !run || !isSolverRunActive(run.status)) {
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void getSolverRun(periodId, run.id)
-        .then((next) => {
-          if (!cancelled) {
-            setRun(next);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setLoadError(t(locale, "solverLoadError"));
-          }
-        });
-    }, 1000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [periodId, run, locale]);
+  const [actionError, setActionError] = useState("");
 
   async function handleApply() {
     if (!run) {
@@ -80,14 +38,13 @@ export function SolverRunPanel({
     setBusy(true);
     try {
       const applied = await applySolverRun(periodId, run.id);
-      setRun(applied.run);
       setConfirmApply(false);
       onApplied(applied.run);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        setLoadError(t(locale, "solverGeneratePublishedBlocked"));
+        setActionError(t(locale, "solverGeneratePublishedBlocked"));
       } else {
-        setLoadError(t(locale, "solverLoadError"));
+        setActionError(t(locale, "solverLoadError"));
       }
     } finally {
       setBusy(false);
@@ -103,7 +60,7 @@ export function SolverRunPanel({
           <h2 className="text-lg font-semibold text-ink">{t(locale, "solverSection")}</h2>
           <p className="mt-1 text-sm text-slate-600">{t(locale, "solverSectionHelp")}</p>
         </div>
-        {loadError ? <p className="text-sm text-rose-700">{loadError}</p> : null}
+        {loadError || actionError ? <p className="text-sm text-rose-700">{actionError || loadError}</p> : null}
         {!shiftGroupId ? (
           <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
         ) : !run ? (

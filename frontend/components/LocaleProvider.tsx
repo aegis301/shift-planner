@@ -1,10 +1,12 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
-import { apiFetch } from "@/lib/api";
 import type { MeUser, SessionMe } from "@/lib/api/types";
 import { Locale } from "@/lib/i18n";
+import { queryKeys } from "@/lib/queryKeys";
+import { useSessionQuery } from "@/lib/queries/session";
 
 export type { MeAccountSession, MembershipSummary, MeUser, SessionMe } from "@/lib/api/types";
 
@@ -19,25 +21,15 @@ const SessionContext = createContext<SessionValue | null>(null);
 
 export function LocaleShell({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = useState<Locale>("de");
-  const [me, setMe] = useState<SessionMe | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const session = useSessionQuery();
   const localeValue = useMemo(() => ({ locale, setLocale }), [locale]);
+  const me = session.data ?? null;
+  const loading = session.isPending;
 
   const refreshMe = useCallback(async () => {
-    setLoading(true);
-    try {
-      const next = await apiFetch<SessionMe>("/api/v1/auth/me");
-      setMe(next);
-    } catch {
-      setMe(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshMe();
-  }, [refreshMe]);
+    await queryClient.refetchQueries({ queryKey: queryKeys.session() });
+  }, [queryClient]);
 
   const sessionValue = useMemo(() => ({ me, loading, refreshMe }), [me, loading, refreshMe]);
 

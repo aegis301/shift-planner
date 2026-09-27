@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Download, ListChecks, MessageSquarePlus, MessageSquareText, Pencil, RefreshCw, Save, X } from "lucide-react";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { t, type Locale } from "@/lib/i18n";
@@ -17,6 +18,8 @@ import {
 } from "@/lib/planningDayStatus";
 import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
+import { queryKeys } from "@/lib/queryKeys";
+import { usePlanningOrganizationId, useWishesMatrix } from "@/lib/queries/planning";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 
 type PlanningShiftIntentKind = "wish" | "no_go";
@@ -90,6 +93,8 @@ type PlanningMatrix = {
   shift_intents: MatrixShiftIntent[];
   template_slot_days: TemplateSlotDay[];
 };
+
+const emptyNotes: TeamMemberPeriodNote[] = [];
 
 type TeamMemberIntentStats = { wish: number; noGo: number };
 
@@ -228,7 +233,6 @@ function matrixApiQuery(shiftGroupId?: string, teamMemberPortal?: boolean) {
 export function MatrixEditor({
   periodId: controlledPeriodId,
   compact = false,
-  reloadToken = 0,
   shiftGroupId,
   versionId,
   editableMemberId,
@@ -239,7 +243,6 @@ export function MatrixEditor({
 }: {
   periodId?: string;
   compact?: boolean;
-  reloadToken?: number;
   shiftGroupId?: string;
   versionId?: number;
   editableMemberId?: number;
@@ -249,13 +252,13 @@ export function MatrixEditor({
   onChanged?: () => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
+  const queryClient = useQueryClient();
+  const organizationId = usePlanningOrganizationId();
   const currentDate = new Date();
-  const [periodId, setPeriodId] = useState("1");
+  const [periodId, setPeriodId] = useState("");
   const [newYear, setNewYear] = useState(String(currentDate.getFullYear()));
   const [newMonth, setNewMonth] = useState(String(currentDate.getMonth() + 1));
-  const [matrix, setMatrix] = useState<PlanningMatrix | null>(null);
   const [activeMemberId, setActiveMemberId] = useState<number | null>(null);
-  const [notes, setNotes] = useState<TeamMemberPeriodNote[]>([]);
   const [noteMember, setNoteMember] = useState<MatrixTeamMember | null>(null);
   const [preferencesDraft, setPreferencesDraft] = useState("");
   const [summary, setSummary] = useState("");
@@ -269,6 +272,61 @@ export function MatrixEditor({
   const groupQuery = useMemo(
     () => matrixApiQuery(shiftGroupId, teamMemberPortal),
     [shiftGroupId, teamMemberPortal]
+  );
+  const activePeriodId = controlledPeriodId ?? periodId;
+  const wishesQuery = useWishesMatrix({
+    periodId: activePeriodId,
+    shiftGroupId: shiftGroupId ?? "",
+    teamMemberPortal: Boolean(teamMemberPortal),
+    versionId: versionId ?? null,
+    enabled: activePeriodId !== ""
+  });
+  const matrix = (wishesQuery.data?.matrix ?? null) as PlanningMatrix | null;
+  const notes = (wishesQuery.data?.notes as TeamMemberPeriodNote[] | undefined) ?? emptyNotes;
+  const wishesCacheKey = useCallback(() => {
+    if (organizationId == null || activePeriodId === "") {
+      return null;
+    }
+    if (versionId != null) {
+      return queryKeys.wishesMatrixVersion(organizationId, activePeriodId, versionId);
+    }
+    return queryKeys.wishesMatrix(organizationId, activePeriodId, shiftGroupId ?? "", Boolean(teamMemberPortal));
+  }, [activePeriodId, organizationId, shiftGroupId, teamMemberPortal, versionId]);
+  const setMatrix = useCallback(
+    (update: PlanningMatrix | ((prev: PlanningMatrix | null) => PlanningMatrix | null)) => {
+      const key = wishesCacheKey();
+      if (!key) {
+        return;
+      }
+      queryClient.setQueryData(
+        key,
+        (current: { matrix: PlanningMatrix; notes: TeamMemberPeriodNote[] } | undefined) => {
+          if (!current) {
+            return current;
+          }
+          const next = typeof update === "function" ? update(current.matrix) : update;
+          if (!next) {
+            return current;
+          }
+          return { ...current, matrix: next };
+        }
+      );
+    },
+    [queryClient, wishesCacheKey]
+  );
+  const setNotes = useCallback(
+    (next: TeamMemberPeriodNote[]) => {
+      const key = wishesCacheKey();
+      if (!key) {
+        return;
+      }
+      queryClient.setQueryData(
+        key,
+        (current: { matrix: PlanningMatrix; notes: TeamMemberPeriodNote[] } | undefined) =>
+          current ? { ...current, notes: next } : current
+      );
+    },
+    [queryClient, wishesCacheKey]
   );
   const monthWeeks = useMemo(() => (matrix ? splitMonthIntoWeeks(matrix.days) : []), [matrix]);
 
@@ -309,30 +367,12 @@ export function MatrixEditor({
     return out;
   }, [matrix?.team_members, matrix?.shift_intents]);
 
-  const loadMatrixById = useCallback(async (nextPeriodId: string) => {
-    const next = await apiFetch<PlanningMatrix>(
-      versionId
-        ? `/api/v1/planning-periods/${nextPeriodId}/versions/${versionId}/matrix`
-        : `/api/v1/matrix/${nextPeriodId}${groupQuery}`
-    );
-    const nextNotes = versionId
-      ? []
-      : await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${nextPeriodId}/notes${groupQuery}`);
-    setMatrix({
-      ...next,
-      shift_templates: next.shift_templates ?? [],
-      shift_intents: next.shift_intents ?? [],
-      template_slot_days: next.template_slot_days ?? []
-    });
-    setNotes(nextNotes);
-    setActiveMemberId(next.team_members[0]?.id ?? null);
-  }, [groupQuery, versionId]);
-
-  const activePeriodId = controlledPeriodId ?? periodId;
-
   const loadMatrix = useCallback(async () => {
-    await loadMatrixById(activePeriodId);
-  }, [activePeriodId, loadMatrixById]);
+    const key = wishesCacheKey();
+    if (key) {
+      await queryClient.invalidateQueries({ queryKey: key });
+    }
+  }, [queryClient, wishesCacheKey]);
 
   async function manualSave() {
     await loadMatrix();
@@ -340,24 +380,22 @@ export function MatrixEditor({
   }
 
   useEffect(() => {
-    if (controlledPeriodId) {
-      void loadMatrixById(controlledPeriodId);
+    if (controlledPeriodId || periodId) {
       return;
     }
-
-    async function loadLatestPeriod() {
-      const periods = await apiFetch<PlanningPeriod[]>("/api/v1/planning-periods");
+    void apiFetch<PlanningPeriod[]>("/api/v1/planning-periods").then((periods) => {
       const latest = periods[0];
-      if (!latest) {
-        return;
+      if (latest) {
+        setPeriodId(String(latest.id));
       }
-      const nextPeriodId = String(latest.id);
-      setPeriodId(nextPeriodId);
-      await loadMatrixById(nextPeriodId);
-    }
+    });
+  }, [controlledPeriodId, periodId]);
 
-    void loadLatestPeriod();
-  }, [controlledPeriodId, loadMatrixById, groupQuery, reloadToken]);
+  useEffect(() => {
+    if (activeMemberId == null && matrix?.team_members[0]) {
+      setActiveMemberId(matrix.team_members[0].id);
+    }
+  }, [activeMemberId, matrix?.team_members]);
 
   async function createAndLoadPeriod(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -365,10 +403,8 @@ export function MatrixEditor({
       method: "POST",
       body: JSON.stringify({ year: Number(newYear), month: Number(newMonth) })
     });
-    const nextPeriodId = String(period.id);
-    setPeriodId(nextPeriodId);
-    await loadMatrixById(nextPeriodId);
-    setMessage(`${t(locale, "saved")}: ${t(locale, "periodId")} ${nextPeriodId}`);
+    setPeriodId(String(period.id));
+    setMessage(`${t(locale, "saved")}: ${t(locale, "periodId")} ${period.id}`);
   }
 
   useEffect(() => {
@@ -386,31 +422,42 @@ export function MatrixEditor({
   }, [editableMemberId]);
 
   async function saveCell(memberId: number, cellDate: string, status: string, comment?: string | null) {
+    if (!shiftGroupId) {
+      return;
+    }
+    const key = wishesCacheKey();
+    const previous = key ? queryClient.getQueryData(key) : undefined;
     setSavingCells((count) => count + 1);
+    setMatrix((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      const cells = prev.cells.filter((cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate));
+      if (!status) {
+        return { ...prev, cells };
+      }
+      return {
+        ...prev,
+        cells: [
+          ...cells,
+          {
+            id: -1,
+            planning_period_id: Number(activePeriodId),
+            team_member_id: memberId,
+            cell_date: cellDate,
+            status,
+            comment: comment ?? null
+          }
+        ]
+      };
+    });
     try {
       if (!status) {
-        if (!shiftGroupId) {
-          return;
-        }
         await apiFetch(`/api/v1/matrix/${activePeriodId}/cells/clear${groupQuery}`, {
           method: "POST",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate })
         });
-        setMatrix((prev) => {
-          if (!prev) {
-            return prev;
-          }
-          return {
-            ...prev,
-            cells: prev.cells.filter(
-              (cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate)
-            )
-          };
-        });
       } else {
-        if (!shiftGroupId) {
-          return;
-        }
         const saved = await apiFetch<PlanningCell>(`/api/v1/matrix/${activePeriodId}/cells${groupQuery}`, {
           method: "PUT",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null })
@@ -419,14 +466,19 @@ export function MatrixEditor({
           if (!prev) {
             return prev;
           }
-          const cells = prev.cells.filter(
-            (cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate)
-          );
+          const cells = prev.cells.filter((cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate));
           return { ...prev, cells: [...cells, saved] };
         });
       }
       setMessage(t(locale, "autosaved"));
       await onChanged?.();
+    } catch (error) {
+      if (key) {
+        queryClient.setQueryData(key, previous);
+      }
+      if (error instanceof ApiError) {
+        setMessage(error.message);
+      }
     } finally {
       setSavingCells((count) => Math.max(0, count - 1));
     }
@@ -457,7 +509,7 @@ export function MatrixEditor({
             })
           });
           setMessage(t(locale, "autosaved"));
-          await loadMatrixById(activePeriodId);
+          await loadMatrix();
           await onChanged?.();
         } finally {
           setSavingCells((count) => Math.max(0, count - 1));
@@ -485,13 +537,13 @@ export function MatrixEditor({
           })
         });
         setMessage(t(locale, "autosaved"));
-        await loadMatrixById(activePeriodId);
+        await loadMatrix();
         await onChanged?.();
       } finally {
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, groupQuery, loadMatrixById, locale, matrix, onChanged, shiftGroupId]
+    [activePeriodId, groupQuery, loadMatrix, locale, matrix, onChanged, shiftGroupId]
   );
 
   async function persistNote(memberId: number, monthlyCommentOnly = false) {
@@ -551,7 +603,7 @@ export function MatrixEditor({
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, groupQuery, locale, notes, onChanged]
+    [activePeriodId, groupQuery, locale, notes, onChanged, setNotes]
   );
 
   async function saveNote(event: FormEvent<HTMLFormElement>) {
