@@ -121,6 +121,31 @@ test.describe("planner", () => {
     await expect(page.getByText("No-Go")).toBeVisible();
     await expect(cell).toHaveText("—");
   });
+
+  test("shows slot candidates in the inspector and restores a deep link", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    await page.goto(planningPath(target));
+    await expect(page.locator("[data-slot='workbench-context-bar']")).toBeVisible();
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    const cell = page.locator('button[aria-haspopup="listbox"]').first();
+    await cell.click();
+    await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" }).or(page.getByRole("heading", { name: "Blockiert" }))).toBeVisible();
+    const url = new URL(page.url());
+    expect(url.searchParams.get("slot")).toBeTruthy();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" }).or(page.getByRole("heading", { name: "Blockiert" }))).toBeVisible();
+    await page.keyboard.press("Control+K");
+    await expect(page.getByPlaceholder("Seite, Person oder Aktion suchen")).toBeVisible();
+  });
+
+  test("keeps the density choice after reload", async ({ page }) => {
+    await page.goto("/planning");
+    await page.getByRole("button", { name: "Konto und Einstellungen" }).click();
+    await page.getByRole("menuitem", { name: /Dichte/ }).click();
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.density)).toBe("compact");
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.density)).toBe("compact");
+  });
 });
 
 test.describe("admin", () => {

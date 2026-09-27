@@ -50,6 +50,7 @@ export type ShiftSwapRequestRead = Schemas["ShiftSwapRequestRead"];
 export type ShiftSwapUnresolvedRead = Schemas["ShiftSwapUnresolvedRead"];
 export type ShiftTemplateCount = Schemas["ShiftTemplateCount"];
 export type ShiftTemplateRead = Schemas["ShiftTemplateRead"];
+export type SlotCandidatesRead = Schemas["SlotCandidatesRead"];
 export type SolverConfigRead = Schemas["SolverConfigRead"];
 export type SolverObjectiveWeights = Schemas["SolverObjectiveWeights"];
 export type SolverRunApplyRead = Schemas["SolverRunApplyRead"];

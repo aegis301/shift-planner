@@ -8,6 +8,7 @@ import { useLocale } from "@/components/LocaleProvider";
 import { NotificationSlot } from "@/components/shell/NotificationSlot";
 import { ShellHeaderMenus, useAreaGuard, useShellSession } from "@/components/shell/shellSession";
 import { WorkbenchNarrowNotice } from "@/components/shell/WorkbenchNarrowNotice";
+import { applyDensity, readDensity } from "@/lib/density";
 import { t, type TranslationKey } from "@/lib/i18n";
 import { isUserSession, membershipDefaultPath } from "@/lib/membershipRouting";
 
@@ -21,6 +22,10 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
   const guard = useAreaGuard();
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const { me, loading, pathname } = session;
+
+  useEffect(() => {
+    applyDensity(readDensity());
+  }, []);
 
   useEffect(() => {
     try {
@@ -127,11 +132,10 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
               {me && isUserSession(me) ? me.organization.name || me.organization.slug : loading ? "" : t(locale, "aiFirst")}
             </p>
           </div>
-          <div data-slot="workbench-context-bar" className="hidden" />
           <NotificationSlot />
           <ShellHeaderMenus session={session} areaSwitch={areaSwitch} />
         </header>
-        <main className="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-6">{children}</main>
+        <main className="w-full min-w-0 flex-1 px-4 py-4">{children}</main>
       </div>
     </div>
   );

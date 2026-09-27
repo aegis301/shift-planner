@@ -14,6 +14,7 @@ from app.schemas import (
     RosterSlotAssignmentClear,
     RosterSlotAssignmentRead,
     RosterSlotAssignmentUpsert,
+    SlotCandidatesRead,
 )
 from app.services.authz import (
     assert_planning_shift_group_scope,
@@ -38,6 +39,7 @@ from app.services.planning import (
     get_shift_group_planning_status,
     is_team_member_roster_visible,
 )
+from app.services.roster_candidates import list_slot_candidates
 from app.services.roster_matrix import (
     clear_roster_slot_assignment,
     get_roster_matrix,
@@ -179,6 +181,35 @@ def _assert_roster_editable(
             status_code=403,
             detail="Roster assignments are read-only while this shift group's plan is published",
         )
+
+
+@router.get(
+    "/{planning_period_id}/slots/{roster_slot_id}/candidates",
+    response_model=SlotCandidatesRead,
+)
+def get_slot_candidates(
+    planning_period_id: int,
+    roster_slot_id: int,
+    shift_group_id: int = Query(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+) -> SlotCandidatesRead:
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    try:
+        payload = list_slot_candidates(
+            db,
+            roster_slot_id,
+            organization_id=user.organization_id,
+            shift_group_id=shift_group_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if payload.planning_period_id != planning_period_id:
+        raise HTTPException(status_code=404, detail="Roster slot not found")
+    return payload
 
 
 @router.put("/assignments", response_model=RosterSlotAssignmentRead)

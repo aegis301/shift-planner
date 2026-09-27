@@ -1912,6 +1912,50 @@ class ValidationWarning(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class SlotCandidateRead(BaseModel):
+    team_member_id: int
+    display_name: str
+    status: Literal["ok", "warning", "blocked", "ineligible"]
+    findings: list[ValidationWarning] = Field(default_factory=list)
+    wish: bool = False
+    no_go: bool = False
+    day_status: str | None = None
+    fairness_deviation: float | None = None
+    is_current_assignee: bool = False
+
+
+class SlotCandidateHistoryRead(BaseModel):
+    id: int
+    action: str
+    actor: str
+    created_at: datetime
+    team_member_id: int | None = None
+
+
+class SlotCandidateSwapRead(BaseModel):
+    id: int
+    kind: str
+    status: str
+    offered_by_team_member_id: int
+    target_team_member_id: int | None = None
+
+
+class SlotCandidatesRead(BaseModel):
+    roster_slot_id: int
+    planning_period_id: int
+    shift_group_id: int
+    slot_date: date_type
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    day_class: str | None = None
+    template_name: str | None = None
+    variant_label: str | None = None
+    category: str | None = None
+    candidates: list[SlotCandidateRead]
+    assignment_history: list[SlotCandidateHistoryRead] = Field(default_factory=list)
+    swap_requests: list[SlotCandidateSwapRead] = Field(default_factory=list)
+
+
 class ComplianceRestViolation(BaseModel):
     code: str
     severity: str

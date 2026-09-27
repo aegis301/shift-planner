@@ -1571,6 +1571,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roster-matrix/{planning_period_id}/slots/{roster_slot_id}/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slot Candidates */
+        get: operations["roster_matrix_get_slot_candidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/shift-groups": {
         parameters: {
             query?: never;
@@ -4775,6 +4792,100 @@ export interface components {
             start_weekdays?: ("mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun")[] | null;
             /** Starts At */
             starts_at?: string | null;
+        };
+        /** SlotCandidateHistoryRead */
+        SlotCandidateHistoryRead: {
+            /** Action */
+            action: string;
+            /** Actor */
+            actor: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Team Member Id */
+            team_member_id?: number | null;
+        };
+        /** SlotCandidateRead */
+        SlotCandidateRead: {
+            /** Day Status */
+            day_status?: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Fairness Deviation */
+            fairness_deviation?: number | null;
+            /** Findings */
+            findings?: components["schemas"]["ValidationWarning"][];
+            /**
+             * Is Current Assignee
+             * @default false
+             */
+            is_current_assignee: boolean;
+            /**
+             * No Go
+             * @default false
+             */
+            no_go: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "warning" | "blocked" | "ineligible";
+            /** Team Member Id */
+            team_member_id: number;
+            /**
+             * Wish
+             * @default false
+             */
+            wish: boolean;
+        };
+        /** SlotCandidateSwapRead */
+        SlotCandidateSwapRead: {
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Offered By Team Member Id */
+            offered_by_team_member_id: number;
+            /** Status */
+            status: string;
+            /** Target Team Member Id */
+            target_team_member_id?: number | null;
+        };
+        /** SlotCandidatesRead */
+        SlotCandidatesRead: {
+            /** Assignment History */
+            assignment_history?: components["schemas"]["SlotCandidateHistoryRead"][];
+            /** Candidates */
+            candidates: components["schemas"]["SlotCandidateRead"][];
+            /** Category */
+            category?: string | null;
+            /** Day Class */
+            day_class?: string | null;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Roster Slot Id */
+            roster_slot_id: number;
+            /** Shift Group Id */
+            shift_group_id: number;
+            /**
+             * Slot Date
+             * Format: date
+             */
+            slot_date: string;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Swap Requests */
+            swap_requests?: components["schemas"]["SlotCandidateSwapRead"][];
+            /** Template Name */
+            template_name?: string | null;
+            /** Variant Label */
+            variant_label?: string | null;
         };
         /** SolverConfigRead */
         SolverConfigRead: {
@@ -10083,6 +10194,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RosterMatrixRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    roster_matrix_get_slot_candidates: {
+        parameters: {
+            query: {
+                shift_group_id: number;
+            };
+            header?: never;
+            path: {
+                planning_period_id: number;
+                roster_slot_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlotCandidatesRead"];
                 };
             };
             /** @description Validation Error */

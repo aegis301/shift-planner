@@ -234,11 +234,11 @@ type), and design new planner features desktop-first already.
   or a notice that links to the member area. Do not build phone layouts for planner features.
 - Prefer density: compact tables, tabular numbers, several panes on screen at once.
 - Detail belongs in a persistent inspector panel on the right, not in a modal. Keep modals for
-  destructive confirmations and short forms. *(target, #115)*
+  destructive confirmations and short forms.
 - Period, shift group and plan status live in a context bar and in the URL (`?period=`,
-  `?shiftGroup=`). Every workbench view is linkable. *(target, #115)*
-- Every primary action is reachable from the keyboard and from the command palette.
-  *(target, #115)*
+  `?shiftGroup=`, `?tab=`, `?slot=`, `?member=`, `?day=`). Every workbench view is linkable.
+- Every primary action is reachable from the keyboard and from the command palette
+  (`Ctrl/Cmd+K`). Density is `localStorage` key `shift-planner-density` on `data-density`.
 - Matrices use the shared grid primitive: arrow-key navigation, range selection, copy and paste,
   undo and redo, virtualization. Do not add another hand-built matrix table. *(target, #117)*
 

@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, Field, inputClass } from "@/components/Card";
+import { ContextBar } from "@/components/workbench/ContextBar";
+import { Inspector } from "@/components/workbench/Inspector";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
@@ -308,7 +310,20 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
   const totals = ledger?.totals;
 
   return (
-    <div className="grid gap-4">
+    <div className={variant === "planner" ? "flex min-w-0 items-start gap-4" : "grid gap-4"}>
+    <div className="grid min-w-0 flex-1 gap-4">
+      {variant === "planner" ? (
+        <ContextBar
+          allowAllGroups={Boolean(userMe?.capabilities.admin)}
+          groups={shiftGroups.map((group) => ({ id: String(group.id), label: group.name }))}
+          locale={locale}
+          onPeriod={setPeriodId}
+          onShiftGroup={setShiftGroupId}
+          periodId={periodId}
+          periods={periods.map((period) => ({ id: String(period.id), label: monthLabel(period, locale) }))}
+          shiftGroupId={shiftGroupId}
+        />
+      ) : null}
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">{t(locale, variant === "member" ? "myHoursNav" : "hoursNav")}</h1>
         <p className="mt-1 max-w-3xl text-sm text-slate-600">{t(locale, "hoursHelp")}</p>
@@ -340,15 +355,21 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
             </Field>
           ) : null}
           {variant === "planner" ? (
-            <Field label={t(locale, "hoursSelectMember")}>
-              <select className={inputClass} value={memberId} onChange={(event) => setMemberId(event.target.value)} disabled={!canLoadPlanner}>
+            <div className="grid gap-1 sm:col-span-2">
+              <p className="text-xs font-medium text-slate-600">{t(locale, "hoursSelectMember")}</p>
+              <div className="grid max-h-64 gap-1 overflow-auto">
                 {scopedMembers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {teamMemberPlanningDisplayName(member)} ({member.first_name})
-                  </option>
+                  <button
+                    key={member.id}
+                    className={`min-h-11 rounded-md px-3 text-left text-sm ${String(member.id) === memberId ? "bg-ink text-white" : "bg-slate-50 text-slate-800"}`}
+                    type="button"
+                    onClick={() => setMemberId(String(member.id))}
+                  >
+                    {teamMemberPlanningDisplayName(member)}
+                  </button>
                 ))}
-              </select>
-            </Field>
+              </div>
+            </div>
           ) : null}
         </div>
         {plannerNeedsShiftGroup && !shiftGroupId ? (
@@ -560,6 +581,19 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
           </button>
         </form>
       </Card>
+    </div>
+    {variant === "planner" ? (
+      <Inspector locale={locale} open title={t(locale, "hoursNav")}>
+        {totals ? <p className="text-2xl font-semibold tabular-nums">{formatLedgerMinutes(totals.running_overtime_minutes)}</p> : <p className="text-sm text-slate-600">{t(locale, "inspectorEmpty")}</p>}
+        <ul className="mt-3 grid gap-2">
+          {(ledger?.entries ?? []).map((entry) => (
+            <li key={entry.id} className="rounded-md border border-slate-200 px-2 py-2 text-sm">
+              <span className="font-medium">{entry.entry_date}</span> · {t(locale, KIND_KEYS[entry.kind])} · {formatLedgerMinutes(entry.credited_minutes)}
+            </li>
+          ))}
+        </ul>
+      </Inspector>
+    ) : null}
     </div>
   );
 }

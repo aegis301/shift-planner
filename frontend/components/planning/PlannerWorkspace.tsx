@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -27,6 +27,11 @@ import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
 import { PlanVersionPanel } from "@/components/PlanVersionPanel";
+import { CommandPalette } from "@/components/workbench/CommandPalette";
+import { ContextBar } from "@/components/workbench/ContextBar";
+import { Inspector } from "@/components/workbench/Inspector";
+import { PlanningInspector } from "@/components/workbench/PlanningInspector";
+import { ShortcutHelp } from "@/components/workbench/ShortcutHelp";
 import { Card, Field, inputClass } from "@/components/Card";
 import { MatrixEditor } from "@/components/MatrixEditor";
 import { PlanningDayIntervalBar } from "@/components/PlanningDayIntervalBar";
@@ -50,6 +55,10 @@ import {
 } from "@/lib/queries/planning";
 import { invalidateQueryKeys, rosterAssignmentKeys, statusTransitionKeys, wishesEditKeys } from "@/lib/queries/invalidation";
 import { writeRosterBundle } from "@/lib/queries/rosterEdit";
+import { useRosterAssignmentMutation } from "@/lib/queries/rosterEdit";
+import { buildPaletteCommands } from "@/lib/paletteCommands";
+import { isTypingTarget } from "@/lib/shortcuts";
+import { readWorkbenchSelection, selectionQuery } from "@/lib/workbenchSelection";
 import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
 import { FairnessAccountsPanel } from "@/components/FairnessAccountsPanel";
 import { SolverGenerateDialog } from "@/components/SolverGenerateDialog";
@@ -157,6 +166,10 @@ function PlannerWorkspaceContent() {
   const [message, setMessage] = useState("");
   const [viewMode, setViewMode] = useState<PlanningViewMode>("tabs");
   const [activeTab, setActiveTab] = useState<PlanningTab>("wishes");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const pendingGo = useRef(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
@@ -270,6 +283,17 @@ function PlannerWorkspaceContent() {
           teamMemberPortal: false
         }
       : null;
+  const assignSlot = useRosterAssignmentMutation(planningScope);
+  const selection = readWorkbenchSelection(searchParams);
+
+  function patchSelection(patch: Parameters<typeof selectionQuery>[1]) {
+    const qs = selectionQuery(searchParams, patch);
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  useEffect(() => {
+    setActiveTab(selection.tab);
+  }, [selection.tab]);
 
   useEffect(() => {
     if (!periods?.length) {
@@ -359,6 +383,7 @@ function PlannerWorkspaceContent() {
     }
     setPeriodId(nextPeriodId);
     setActiveTab("wishes");
+    patchSelection({ tab: "wishes" });
     setIsCreateModalOpen(false);
     setMessage(`${t(locale, "saved")}: ${monthLabel(period)}`);
   }
@@ -445,6 +470,7 @@ function PlannerWorkspaceContent() {
         setPeriodId("");
       }
       setActiveTab("wishes");
+    patchSelection({ tab: "wishes" });
       setMessage(t(locale, "deletePlanningPeriod"));
     }
     setDestructiveAction(null);
@@ -527,6 +553,8 @@ function PlannerWorkspaceContent() {
           versionId={viewingVersionId ?? undefined}
           teamMemberPortal={false}
           readOnly={!wishesEditable || viewingVersionId != null}
+          embedMemberNotes
+          onInspectMember={(memberId) => patchSelection({ member: String(memberId), slot: null, finding: null })}
           onChanged={handleWishesChanged}
         />
       )}
@@ -557,6 +585,8 @@ function PlannerWorkspaceContent() {
           duplicateMemberDayKeys={duplicateMemberDayKeys}
           validationWarnings={warnings}
           fairnessAccounts={fairnessAccounts}
+          onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
+          onInspectMember={(memberId) => patchSelection({ member: String(memberId), slot: null, finding: null })}
         />
       )}
     </section>
@@ -597,41 +627,125 @@ function PlannerWorkspaceContent() {
 
   const planningConflictSummary =
     periodId && planningUi && !waitingForPlannerSession ? (
-      <InlineValidation rosterMatrix={rosterMatrix} warnings={warnings} dayStatusDefinitions={dayStatusDefinitions} />
+      <InlineValidation
+        rosterMatrix={rosterMatrix}
+        warnings={warnings}
+        dayStatusDefinitions={dayStatusDefinitions}
+        onSelect={(warning) =>
+          patchSelection({
+            finding: `${warning.code}|${warning.team_member_id ?? ""}|${warning.date ?? ""}`,
+            member: warning.team_member_id != null ? String(warning.team_member_id) : null,
+            day: warning.date,
+            slot: null
+          })
+        }
+      />
     ) : null;
 
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+      if (event.key === "?") {
+        setHelpOpen(true);
+      } else if (event.key === "i") {
+        setInspectorOpen((open) => !open);
+      } else if (event.key === "Escape") {
+        patchSelection({ slot: null, member: null, day: null, finding: null });
+      } else if (event.key === "[") {
+        shiftPeriod(-1);
+      } else if (event.key === "]") {
+        shiftPeriod(1);
+      } else if (event.key === "g") {
+        pendingGo.current = true;
+      } else if (pendingGo.current && (event.key === "w" || event.key === "r" || event.key === "a")) {
+        pendingGo.current = false;
+        const tab = event.key === "r" ? "roster" : event.key === "a" ? "analysis" : "wishes";
+        setActiveTab(tab);
+        patchSelection({ tab });
+      } else {
+        pendingGo.current = false;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  function shiftPeriod(delta: number) {
+    const rows = periods ?? [];
+    const index = rows.findIndex((period) => String(period.id) === periodId);
+    const next = rows[index + delta];
+    if (!next) {
+      return;
+    }
+    setPeriodId(String(next.id));
+    patchSelection({ period: String(next.id) });
+  }
+
+  const palette = buildPaletteCommands({
+    isAdmin: adminUi,
+    hasPeriod: Boolean(periodId),
+    hasShiftGroup: Boolean(shiftGroupId),
+    status: groupPlanningStatus?.status ?? null,
+    labels: {
+      planning: t(locale, "planning"),
+      hours: t(locale, "hoursNav"),
+      publish: t(locale, "publishPlanningPeriod"),
+      preliminary: t(locale, "setPlanningPeriodPreliminary"),
+      draft: t(locale, "setPlanningPeriodDraft"),
+      solver: t(locale, "solverGenerate"),
+      export: t(locale, "exports"),
+      deletePeriod: t(locale, "deletePlanningPeriod"),
+      adminOnly: t(locale, "paletteReasonAdmin"),
+      published: t(locale, "paletteReasonPublished"),
+      statusForbidden: t(locale, "paletteReasonStatus"),
+      needGroup: t(locale, "paletteReasonNeedGroup"),
+      needPeriod: t(locale, "paletteReasonNeedPeriod")
+    },
+    go: (href) => router.push(href),
+    publish: () => setDestructiveAction("status-published"),
+    preliminary: () => setDestructiveAction("status-preliminary"),
+    draft: () => setDestructiveAction("status-draft"),
+    solver: () => setSolverDialogOpen(true),
+    export: () => setIsExportModalOpen(true),
+    deletePeriod: () => setDestructiveAction("delete-period")
+  });
+
   return (
-    <div className="grid min-w-0 gap-6">
+    <div className="flex min-w-0 items-start gap-4">
+    <div className="grid min-w-0 flex-1 gap-6">
+      <ContextBar
+        locale={locale}
+        periods={(periods ?? []).map((period) => ({ id: String(period.id), label: monthLabel(period) }))}
+        periodId={periodId}
+        onPeriod={(id) => {
+          setPeriodId(id);
+          patchSelection({ period: id || null });
+        }}
+        groups={shiftGroups.map((group) => ({ id: String(group.id), label: `${group.name} (${group.code})` }))}
+        shiftGroupId={shiftGroupId}
+        onShiftGroup={updateShiftGroup}
+        allowAllGroups={adminUi}
+        status={groupPlanningStatus?.status ?? null}
+        statusDisabled={!periodId || !shiftGroupId}
+        onStatus={setDestructiveAction}
+        versionLabel={
+          groupPlanningStatus?.working_major_version != null
+            ? `${groupPlanningStatus.working_major_version}.${groupPlanningStatus.working_minor_version ?? 0}`
+            : null
+        }
+      />
       <Card>
         <div className="grid gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-semibold text-ink">{t(locale, "planning")}</h1>
             <div className="flex flex-wrap items-center gap-2">
-              <Field label={t(locale, "planningPeriod")}>
-                <select className={`${inputClass} h-10 min-w-40`} value={periodId} onChange={(event) => setPeriodId(event.target.value)}>
-                  <option value="">{t(locale, "emptyValue")}</option>
-                  {(periods ?? []).map((period) => (
-                    <option key={period.id} value={period.id}>
-                      {monthLabel(period)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={t(locale, "selectPlanningShiftGroup")}>
-                <select
-                  className={`${inputClass} h-10 min-w-44`}
-                  value={shiftGroupId}
-                  onChange={(event) => updateShiftGroup(event.target.value)}
-                  title={t(locale, "planningShiftGroupHelp")}
-                >
-                  {adminUi ? <option value="">{t(locale, "allShiftGroupsLabel")}</option> : null}
-                  {shiftGroups.map((group) => (
-                    <option key={group.id} value={String(group.id)}>
-                      {group.name} ({group.code})
-                    </option>
-                  ))}
-                </select>
-              </Field>
               {planningUi ? (
                 <>
                   {adminUi ? (
@@ -655,15 +769,6 @@ function PlannerWorkspaceContent() {
                   >
                     <Download size={18} />
                   </button>
-                  <Field label={t(locale, "planningPeriodStatus")}>
-                    <PlanningPeriodStatusMenu
-                      disabled={!periodId || !shiftGroupId}
-                      disabledReason="planningPeriodStatusSelectGroup"
-                      locale={locale}
-                      onSelectAction={setDestructiveAction}
-                      status={groupPlanningStatus?.status ?? null}
-                    />
-                  </Field>
                   {periodId && shiftGroupId ? (
                     <div className="mt-5">
                       <PlanVersionPanel
@@ -1105,7 +1210,10 @@ function PlannerWorkspaceContent() {
                   key={tab}
                   aria-label={t(locale, label)}
                   className={`inline-flex h-10 w-12 shrink-0 items-center justify-center rounded-md text-sm font-semibold ${activeTab === tab ? "bg-ink text-white" : "text-slate-600"}`}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => {
+                    setActiveTab(tab);
+                    patchSelection({ tab });
+                  }}
                   title={t(locale, label)}
                   type="button"
                 >
@@ -1133,6 +1241,31 @@ function PlannerWorkspaceContent() {
           <p className="text-sm text-slate-500">{t(locale, "noPlanningPeriodSelected")}</p>
         </Card>
       )}
+    </div>
+      <Inspector locale={locale} open={inspectorOpen} title={t(locale, "inspectorSlot")}>
+        <PlanningInspector
+          locale={locale}
+          periodId={periodId}
+          shiftGroupId={shiftGroupId}
+          slotId={selection.slot}
+          memberId={selection.member}
+          day={selection.day}
+          findingKey={selection.finding}
+          roster={rosterMatrix}
+          warnings={warnings}
+          fairness={fairnessAccounts}
+          timeZone={userMe?.organization_timezone ?? "Europe/Berlin"}
+          onAssign={(memberId) => {
+            if (selection.slot) {
+              void assignSlot.mutateAsync({ rosterSlotId: Number(selection.slot), teamMemberId: memberId, manualOverride: false });
+            }
+          }}
+          onSelectMember={(memberId) => patchSelection({ member: memberId, slot: null, finding: null })}
+          onSelectSlot={(slotId) => patchSelection({ slot: slotId, tab: "roster", member: null, day: null, finding: null })}
+        />
+      </Inspector>
+      <CommandPalette locale={locale} open={paletteOpen} commands={palette} onOpenChange={setPaletteOpen} />
+      <ShortcutHelp locale={locale} open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }
@@ -1442,11 +1575,13 @@ function inlineValidationRowClasses(tone: ReturnType<typeof inlineValidationRowT
 function InlineValidation({
   rosterMatrix,
   warnings,
-  dayStatusDefinitions
+  dayStatusDefinitions,
+  onSelect
 }: {
   rosterMatrix: RosterMatrix | null;
   warnings: ValidationWarning[];
   dayStatusDefinitions: PlanningDayStatusDefinition[];
+  onSelect?: (warning: ValidationWarning) => void;
 }) {
   const { locale } = useLocale();
   const rosterWarnings = warnings.filter(
@@ -1480,9 +1615,11 @@ function InlineValidation({
               const rowTone = inlineValidationRowTone(warning.severity);
               const rowClass = inlineValidationRowClasses(rowTone);
               return (
-                <div
+                <button
                   key={`${warning.code}-${warning.team_member_id}-${warning.date}-${index}`}
-                  className={rowClass.wrap}
+                  className={`${rowClass.wrap} text-left`}
+                  type="button"
+                  onClick={() => onSelect?.(warning)}
                 >
                   {hasLead ? (
                     <div className={rowClass.lead}>
@@ -1496,7 +1633,7 @@ function InlineValidation({
                   ) : (
                     <p className={`${rowClass.fallback} ${hasLead ? "mt-1" : ""}`}>{warning.message}</p>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>

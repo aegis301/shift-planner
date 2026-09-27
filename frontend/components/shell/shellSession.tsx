@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { apiFetch } from "@/lib/api";
+import { applyDensity, readDensity } from "@/lib/density";
 import { Locale, t } from "@/lib/i18n";
 import {
   isUserSession,
@@ -200,6 +201,15 @@ export function ShellHeaderMenus({
                 <Settings aria-hidden size={16} className="text-slate-500" />
                 {t(locale, "settings")}
               </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-slate-800"
+              onSelect={(event) => {
+                event.preventDefault();
+                applyDensity(readDensity() === "compact" ? "comfortable" : "compact");
+              }}
+            >
+              {t(locale, "densityLabel")}: {t(locale, readDensity() === "compact" ? "densityCompact" : "densityComfortable")}
             </DropdownMenuItem>
             <DropdownMenuItem className="text-slate-800" onSelect={() => setLocale(locale === "de" ? "en" : "de")}>
               <Languages aria-hidden size={16} className="text-slate-500" />
