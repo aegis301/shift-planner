@@ -3,6 +3,7 @@ import { FairnessMemberRollingSummary } from "@/components/FairnessAccountsPanel
 import { apiClient } from "@/lib/api/client";
 import type { FairnessAccountsRead, SlotCandidatesRead } from "@/lib/api/types";
 import { t, type Locale } from "@/lib/i18n";
+import { formatShiftTimeRange } from "@/lib/shiftDisplay";
 import {
   fairnessValueForMember,
   formatFairnessDeviation,
@@ -32,6 +33,7 @@ export function PlanningInspector({
   warnings,
   fairness,
   timeZone,
+  canAssign,
   onAssign,
   onSelectMember,
   onSelectSlot
@@ -47,6 +49,7 @@ export function PlanningInspector({
   warnings: Warning[];
   fairness: FairnessAccountsRead | null;
   timeZone: string;
+  canAssign: boolean;
   onAssign: (memberId: number) => void;
   onSelectMember: (memberId: string) => void;
   onSelectSlot: (slotId: string) => void;
@@ -110,13 +113,13 @@ export function PlanningInspector({
             {candidates.data.slot_date} · {candidates.data.variant_label} · {candidates.data.day_class}
           </p>
           <p className="text-slate-600">
-            {candidates.data.starts_at} – {candidates.data.ends_at}
+            {formatShiftTimeRange(candidates.data.starts_at ?? null, candidates.data.ends_at ?? null, timeZone)}
           </p>
         </div>
-        <CandidateGroup locale={locale} title={t(locale, "candidatesOk")} rows={candidates.data.candidates.filter((row) => row.status === "ok")} dimension={dimension} fairnessIndex={fairnessIndex} onAssign={onAssign} />
-        <CandidateGroup locale={locale} title={t(locale, "candidatesWarning")} rows={candidates.data.candidates.filter((row) => row.status === "warning")} dimension={dimension} fairnessIndex={fairnessIndex} onAssign={onAssign} />
-        <CandidateGroup locale={locale} title={t(locale, "candidatesBlocked")} rows={candidates.data.candidates.filter((row) => row.status === "blocked")} dimension={dimension} fairnessIndex={fairnessIndex} onAssign={onAssign} />
-        <CandidateGroup locale={locale} title={t(locale, "candidatesIneligible")} rows={candidates.data.candidates.filter((row) => row.status === "ineligible")} dimension={dimension} fairnessIndex={fairnessIndex} onAssign={onAssign} />
+        <CandidateGroup locale={locale} title={t(locale, "candidatesOk")} rows={candidates.data.candidates.filter((row) => row.status === "ok")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
+        <CandidateGroup locale={locale} title={t(locale, "candidatesWarning")} rows={candidates.data.candidates.filter((row) => row.status === "warning")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
+        <CandidateGroup locale={locale} title={t(locale, "candidatesBlocked")} rows={candidates.data.candidates.filter((row) => row.status === "blocked")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
+        <CandidateGroup locale={locale} title={t(locale, "candidatesIneligible")} rows={candidates.data.candidates.filter((row) => row.status === "ineligible")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
         <section>
           <h4 className="font-semibold text-ink">{t(locale, "inspectorHistory")}</h4>
           <ul className="mt-1 grid gap-1 text-xs text-slate-600">
@@ -184,6 +187,7 @@ function CandidateGroup({
   rows,
   dimension,
   fairnessIndex,
+  canAssign,
   onAssign
 }: {
   locale: Locale;
@@ -191,6 +195,7 @@ function CandidateGroup({
   rows: SlotCandidatesRead["candidates"];
   dimension: ReturnType<typeof relevantFairnessDimension>;
   fairnessIndex: ReturnType<typeof indexFairnessMembers>;
+  canAssign: boolean;
   onAssign: (memberId: number) => void;
 }) {
   if (rows.length === 0) {
@@ -216,7 +221,7 @@ function CandidateGroup({
                 {finding.message}
               </p>
             ))}
-            {row.status !== "blocked" && row.status !== "ineligible" ? (
+            {canAssign && row.status !== "blocked" && row.status !== "ineligible" ? (
               <button className="mt-2 inline-flex min-h-11 items-center rounded-md bg-ink px-3 text-xs font-semibold text-white" type="button" onClick={() => onAssign(row.team_member_id)}>
                 {t(locale, "candidateAssign")}
               </button>

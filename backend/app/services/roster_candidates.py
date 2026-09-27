@@ -1,7 +1,7 @@
 import logging
 from time import perf_counter
 
-from sqlalchemy import or_, select
+from sqlalchemy import Integer, cast, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import AuditLog, RosterSlot, ShiftSwapRequest, TeamMember
@@ -64,7 +64,6 @@ def list_slot_candidates(
         organization_id=organization_id,
         start_date=slot.slot_date,
         end_date=slot.slot_date,
-        shift_group_id=shift_group_id,
     )
     eligible = eligible_members_for_slots(db, state=state, target_slots=[slot]).get(slot.id, set())
     current = state.assignments_by_slot_id.get(slot.id)
@@ -202,9 +201,13 @@ def _assignment_would_refuse(
 
 
 def _assignment_history(db: Session, roster_slot_id: int) -> list[SlotCandidateHistoryRead]:
+    slot_id = cast(AuditLog.details["roster_slot_id"].as_string(), Integer)
     rows = db.scalars(
         select(AuditLog)
-        .where(AuditLog.entity_type == "roster_slot_assignment")
+        .where(
+            AuditLog.entity_type == "roster_slot_assignment",
+            slot_id == roster_slot_id,
+        )
         .order_by(AuditLog.id.desc())
         .limit(400)
     ).all()

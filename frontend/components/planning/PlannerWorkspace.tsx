@@ -706,9 +706,27 @@ function PlannerWorkspaceContent() {
       published: t(locale, "paletteReasonPublished"),
       statusForbidden: t(locale, "paletteReasonStatus"),
       needGroup: t(locale, "paletteReasonNeedGroup"),
-      needPeriod: t(locale, "paletteReasonNeedPeriod")
+      needPeriod: t(locale, "paletteReasonNeedPeriod"),
+      sync: t(locale, "refreshRosterFromTemplates"),
+      regenerate: t(locale, "regenerateRoster")
     },
+    periods: (periods ?? []).map((period) => ({ id: String(period.id), label: monthLabel(period) })),
+    groups: shiftGroups.map((group) => ({ id: String(group.id), label: `${group.name} (${group.code})` })),
+    members: (rosterMatrix?.team_members ?? []).map((member) => ({
+      id: String(member.id),
+      label: teamMemberPlanningDisplayName(member)
+    })),
+    days: (rosterMatrix?.days ?? []).map((day) => ({ id: day.date, label: day.date })),
     go: (href) => router.push(href),
+    selectPeriod: (id) => {
+      setPeriodId(id);
+      patchSelection({ period: id });
+    },
+    selectGroup: updateShiftGroup,
+    selectMember: (id) => patchSelection({ member: id, slot: null, finding: null }),
+    selectDay: (id) => patchSelection({ day: id, slot: null, member: null, finding: null }),
+    sync: () => setSyncRosterConfirmOpen(true),
+    regenerate: () => setDestructiveAction("regenerate-roster"),
     publish: () => setDestructiveAction("status-published"),
     preliminary: () => setDestructiveAction("status-preliminary"),
     draft: () => setDestructiveAction("status-draft"),
@@ -1255,10 +1273,12 @@ function PlannerWorkspaceContent() {
           warnings={warnings}
           fairness={fairnessAccounts}
           timeZone={userMe?.organization_timezone ?? "Europe/Berlin"}
+          canAssign={plannerPlanningEditable && viewingVersionId == null}
           onAssign={(memberId) => {
-            if (selection.slot) {
-              void assignSlot.mutateAsync({ rosterSlotId: Number(selection.slot), teamMemberId: memberId, manualOverride: false });
+            if (!plannerPlanningEditable || viewingVersionId != null || !selection.slot) {
+              return;
             }
+            void assignSlot.mutateAsync({ rosterSlotId: Number(selection.slot), teamMemberId: memberId, manualOverride: false });
           }}
           onSelectMember={(memberId) => patchSelection({ member: memberId, slot: null, finding: null })}
           onSelectSlot={(slotId) => patchSelection({ slot: slotId, tab: "roster", member: null, day: null, finding: null })}

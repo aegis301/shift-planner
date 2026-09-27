@@ -6,11 +6,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_current_user, get_db
 from app.main import app
-from app.models import Account, RosterSlot, ShiftGroupShiftTemplate, User
+from app.models import Account, AuditLog, RosterSlot, ShiftGroupShiftTemplate, User
 from app.models.base import Base
 from app.schemas import RosterSlotAssignmentUpsert
 from app.services import roster_candidates
-from app.services.roster_candidates import list_slot_candidates
+from app.services.roster_candidates import _assignment_history, list_slot_candidates
 from app.services.roster_matrix import upsert_roster_slot_assignment
 from app.services.solver_fixture import seed_solver_fixture
 
@@ -84,8 +84,11 @@ def test_slot_candidates_build_plan_state_once(monkeypatch):
         calls = {"count": 0}
         real = roster_candidates.build_plan_state
 
+        seen: list[dict] = []
+
         def wrapped(*args, **kwargs):
             calls["count"] += 1
+            seen.append(kwargs)
             return real(*args, **kwargs)
 
         monkeypatch.setattr(roster_candidates, "build_plan_state", wrapped)
@@ -96,6 +99,40 @@ def test_slot_candidates_build_plan_state_once(monkeypatch):
             shift_group_id=shift_group_id,
         )
         assert calls["count"] == 1
+        assert seen[0].get("shift_group_id") is None
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_assignment_history_is_filtered_before_the_limit():
+    db, engine = _memory_db()
+    try:
+        for index in range(401):
+            db.add(
+                AuditLog(
+                    actor="test",
+                    source="test",
+                    action="create",
+                    entity_type="roster_slot_assignment",
+                    entity_id=str(index),
+                    details={"roster_slot_id": 999, "team_member_id": 1},
+                )
+            )
+        db.add(
+            AuditLog(
+                actor="keeper",
+                source="test",
+                action="update",
+                entity_type="roster_slot_assignment",
+                entity_id="slot-7",
+                details={"roster_slot_id": 7, "team_member_id": 3},
+            )
+        )
+        db.commit()
+        history = _assignment_history(db, 7)
+        assert [row.actor for row in history] == ["keeper"]
+        assert history[0].team_member_id == 3
     finally:
         db.close()
         engine.dispose()
