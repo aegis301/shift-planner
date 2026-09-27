@@ -512,6 +512,8 @@ def test_no_existing_module_imports_rules_package():
             continue
         if posix.endswith("/services/roster_matrix.py") or posix.endswith("/services/workload.py"):
             continue
+        if posix.endswith("/services/roster_candidates.py") or posix.endswith("/tests/test_roster_candidates.py"):
+            continue
         if posix.endswith("/services/shift_swaps.py"):
             continue
         if posix.endswith("/services/dashboard.py"):
