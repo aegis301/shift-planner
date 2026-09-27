@@ -167,8 +167,8 @@ test.describe("member", () => {
 
   test("shows the member dashboard", async ({ page, request }) => {
     const target = await planningTarget(request);
-    await page.goto(`/?shiftGroup=${target.shiftGroupId}`);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await page.goto(`/my?shiftGroup=${target.shiftGroupId}`);
+    await expect(page.getByRole("heading", { name: "Mein Bereich" })).toBeVisible();
     await expect(page.getByText("Schichten (Jahr)", { exact: true })).toBeVisible();
     const sections = await pinDashboardSections(page);
     const yearSelect = page.getByRole("combobox", { name: "Jahr" });
