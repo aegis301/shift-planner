@@ -63,14 +63,14 @@ describe("membershipDefaultPath", () => {
     ).toBe("/planning");
   });
 
-  it("sends a team member to my planning and anyone else home", () => {
+  it("sends a team member to the member home and anyone else home", () => {
     expect(
       membershipDefaultPath(
         user({
           capabilities: { admin: false, planning: false, team_member_portal: true }
         })
       )
-    ).toBe("/my-planning");
+    ).toBe("/my");
     expect(membershipDefaultPath(user())).toBe("/");
   });
 });
@@ -126,6 +126,8 @@ describe("pathnameCompatibleWithMembership", () => {
     expect(pathnameCompatibleWithMembership("/organization/team", admin)).toBe(true);
     expect(pathnameCompatibleWithMembership("/planning", admin)).toBe(true);
 
+    expect(pathnameCompatibleWithMembership("/my", member)).toBe(true);
+    expect(pathnameCompatibleWithMembership("/", member)).toBe(false);
     expect(pathnameCompatibleWithMembership("/my-planning", member)).toBe(true);
     expect(pathnameCompatibleWithMembership("/profile", member)).toBe(true);
     expect(pathnameCompatibleWithMembership("/my-hours", member)).toBe(true);
@@ -141,7 +143,8 @@ describe("pathnameCompatibleWithMembership", () => {
   });
 
   it("treats an empty pathname as home and allows settings for a user", () => {
-    expect(pathnameCompatibleWithMembership("", member)).toBe(true);
+    expect(pathnameCompatibleWithMembership("", member)).toBe(false);
+    expect(pathnameCompatibleWithMembership("/", planner)).toBe(true);
     expect(pathnameCompatibleWithMembership("/settings", member)).toBe(true);
   });
 });

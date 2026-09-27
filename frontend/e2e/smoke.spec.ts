@@ -167,8 +167,8 @@ test.describe("member", () => {
 
   test("shows the member dashboard", async ({ page, request }) => {
     const target = await planningTarget(request);
-    await page.goto(`/?shiftGroup=${target.shiftGroupId}`);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await page.goto(`/my?shiftGroup=${target.shiftGroupId}`);
+    await expect(page.getByRole("heading", { name: "Mein Bereich" })).toBeVisible();
     await expect(page.getByText("Schichten (Jahr)", { exact: true })).toBeVisible();
     const sections = await pinDashboardSections(page);
     const yearSelect = page.getByRole("combobox", { name: "Jahr" });
@@ -191,6 +191,55 @@ test.describe("planner signs out", () => {
   test("signs out", async ({ page }) => {
     await page.goto("/planning");
     await signOut(page);
+  });
+});
+
+test.describe("routes", () => {
+  test.use({ storageState: adminAuth, viewport: desktop });
+
+  test("keeps the existing workbench URLs", async ({ page }) => {
+    for (const path of ["/planning", "/hours", "/organization/team", "/organization/shifts/groups", "/shift-groups", "/shift-types", "/organization/users", "/organization/team/members"]) {
+      await page.goto(path);
+      await expect(page.getByRole("heading").first()).toBeVisible();
+    }
+  });
+});
+
+test.describe("member home", () => {
+  test.use({ storageState: memberAuth, viewport: phone });
+
+  test("redirects / to /my and keeps the page within the viewport", async ({ page }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/my$/);
+    await expect(page.getByRole("heading", { name: "Mein Bereich" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Start" })).toBeVisible();
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+  });
+});
+
+test.describe("dual role", () => {
+  test.use({ storageState: plannerAuth, viewport: desktop });
+
+  test("switches between the workbench and the member area", async ({ page }) => {
+    await page.goto("/planning");
+    await page.getByRole("button", { name: "Konto und Einstellungen" }).click();
+    await page.getByRole("menuitem", { name: "Mitgliederbereich" }).click();
+    await expect(page).toHaveURL(/\/my$/);
+    await page.getByRole("button", { name: "Konto und Einstellungen" }).click();
+    await page.getByRole("menuitem", { name: "Planungsbereich" }).click();
+    await expect(page).toHaveURL(/\/planning/);
+  });
+});
+
+test.describe("narrow workbench", () => {
+  test.use({ storageState: plannerAuth, viewport: { width: 1000, height: 800 } });
+
+  test("shows the narrow-screen notice", async ({ page }) => {
+    await page.goto("/planning");
+    await expect(page.getByText("Dieser Bereich ist für größere Bildschirme gedacht.")).toBeVisible();
+    await page.getByRole("button", { name: "Trotzdem weiter" }).click();
+    await expect(page.getByText("Dieser Bereich ist für größere Bildschirme gedacht.")).toBeHidden();
   });
 });
 

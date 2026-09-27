@@ -20,7 +20,6 @@ import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { queryKeys } from "@/lib/queryKeys";
 import { usePlanningOrganizationId, useWishesMatrix } from "@/lib/queries/planning";
-import { useMediaQuery } from "@/lib/useMediaQuery";
 
 type PlanningShiftIntentKind = "wish" | "no_go";
 
@@ -239,6 +238,7 @@ export function MatrixEditor({
   teamMemberPortal = false,
   readOnly = false,
   dayFeedbackAlwaysVisible = false,
+  phoneLayout = false,
   onChanged
 }: {
   periodId?: string;
@@ -249,6 +249,7 @@ export function MatrixEditor({
   teamMemberPortal?: boolean;
   readOnly?: boolean;
   dayFeedbackAlwaysVisible?: boolean;
+  phoneLayout?: boolean;
   onChanged?: () => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -267,7 +268,7 @@ export function MatrixEditor({
   const [isMemberCommentModalOpen, setIsMemberCommentModalOpen] = useState(false);
   const [weekIndex, setWeekIndex] = useState(0);
   const [daySheet, setDaySheet] = useState<{ date: string; memberId: number } | null>(null);
-  const isNarrow = useMediaQuery("(max-width: 1023px)");
+  const isNarrow = phoneLayout;
 
   const groupQuery = useMemo(
     () => matrixApiQuery(shiftGroupId, teamMemberPortal),

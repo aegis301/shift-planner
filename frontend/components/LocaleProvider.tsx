@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AppShell } from "@/components/AppShell";
 import type { MeUser, SessionMe } from "@/lib/api/types";
 import { Locale } from "@/lib/i18n";
 import { queryKeys } from "@/lib/queryKeys";
@@ -36,9 +35,7 @@ export function LocaleShell({ children }: { children: React.ReactNode }) {
   return (
     <LocaleContext.Provider value={localeValue}>
       <SessionContext.Provider value={sessionValue}>
-        <AppShell locale={locale} setLocale={setLocale}>
-          {children}
-        </AppShell>
+        {children}
       </SessionContext.Provider>
     </LocaleContext.Provider>
   );
