@@ -129,11 +129,13 @@ test.describe("planner", () => {
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
     const cell = page.locator('button[aria-haspopup="listbox"]').first();
     await cell.click();
-    await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" }).or(page.getByRole("heading", { name: "Blockiert" }))).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Blockiert" })).toBeVisible();
     const url = new URL(page.url());
     expect(url.searchParams.get("slot")).toBeTruthy();
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" }).or(page.getByRole("heading", { name: "Blockiert" }))).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Blockiert" })).toBeVisible();
     await page.keyboard.press("Control+K");
     await expect(page.getByPlaceholder("Seite, Person oder Aktion suchen")).toBeVisible();
   });
