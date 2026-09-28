@@ -4,11 +4,9 @@ import {
   expect,
   memberAuth,
   phone,
-  pinDashboardSections,
   plannerAuth,
   planningPath,
   planningTarget,
-  shot,
   signOut,
   test
 } from "./fixtures";
@@ -21,7 +19,6 @@ test.describe("planner screenshots", () => {
     await page.goto(planningPath(target));
     await expect(page.getByRole("heading", { name: "Wünsche" })).toBeVisible();
     await expect(page.getByRole("table").first()).toBeVisible();
-    await shot(page, "planning-wishes");
   });
 
   test("shows the roster", async ({ page, request }) => {
@@ -30,7 +27,6 @@ test.describe("planner screenshots", () => {
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
     await expect(page.getByRole("heading", { name: "Finaler Dienstplan" })).toBeVisible();
     await expect(page.locator('button[aria-haspopup="listbox"]').first()).toBeVisible();
-    await shot(page, "planning-roster");
   });
 
   test("shows the analysis", async ({ page, request }) => {
@@ -40,7 +36,6 @@ test.describe("planner screenshots", () => {
     await expect(page.getByRole("heading", { name: "Analyse" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Fairness" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Teammitglieder" }).first()).toBeVisible();
-    await shot(page, "planning-analysis");
   });
 });
 
@@ -173,14 +168,12 @@ test.describe("admin", () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Schließen" }).click();
     await expect(dialog).toBeHidden();
-    await shot(page, "organization-team", [page.locator("span.font-mono")]);
   });
 
   test("shows the hours ledger", async ({ page }) => {
     await page.goto("/hours");
-    await expect(page.getByRole("heading", { name: "Stundenkonto" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Stundenkonto" })).toBeVisible();
     await expect(page.getByText("Anfangssaldo", { exact: true })).toBeVisible();
-    await shot(page, "hours");
   });
 });
 
@@ -199,7 +192,6 @@ test.describe("member", () => {
     await expect(page.getByRole("heading", { name: "Meine Schichten" })).toBeVisible();
     await page.getByRole("button", { name: "Wünsche" }).click();
     await expect(page.getByRole("heading", { name: "Wünsche" })).toBeVisible();
-    await shot(page, "my-planning");
   });
 
   test("shows the member dashboard", async ({ page, request }) => {
@@ -207,9 +199,6 @@ test.describe("member", () => {
     await page.goto(`/my?shiftGroup=${target.shiftGroupId}`);
     await expect(page.getByRole("heading", { name: "Mein Bereich" })).toBeVisible();
     await expect(page.getByText("Schichten (Jahr)", { exact: true })).toBeVisible();
-    const sections = await pinDashboardSections(page);
-    const yearSelect = page.getByRole("combobox", { name: "Jahr" });
-    await shot(page, "member-dashboard", [...sections, yearSelect]);
   });
 });
 

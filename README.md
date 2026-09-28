@@ -98,7 +98,7 @@ Planning screens read server state through TanStack Query (`frontend/lib/queryKe
 
 ### End-to-end tests
 
-Playwright smoke tests and golden screenshots live in `frontend/e2e`. They sign in as three users in the comfortable solver fixture for October 2026. Start Compose, seed those users, install Chromium once on this machine, then run the suite:
+Playwright smoke tests live in `frontend/e2e`. They sign in as three users in the comfortable solver fixture for October 2026 and check that the main flows render and respond. They do not compare full-page screenshots. Start Compose, seed those users, install Chromium once on this machine, then run the suite:
 
 ```bash
 docker compose up -d postgres backend frontend

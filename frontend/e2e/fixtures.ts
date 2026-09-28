@@ -1,4 +1,4 @@
-import { expect, test as base, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
 import { authFile } from "./global-setup";
 
 const fixedClock = `(() => {
@@ -77,42 +77,6 @@ export async function planningTarget(request: APIRequestContext): Promise<Planni
 
 export function planningPath(target: PlanningTarget, pathname = "/planning"): string {
   return `${pathname}?period=${target.periodId}&shiftGroup=${target.shiftGroupId}`;
-}
-
-export async function settle(page: Page): Promise<void> {
-  await page.evaluate(() => document.fonts.ready);
-}
-
-export async function shot(page: Page, name: string, mask: Locator[] = []): Promise<void> {
-  await settle(page);
-  await expect(page).toHaveScreenshot(`${name}.png`, { mask });
-}
-
-const dashboardSectionTitles = [
-  "Nächste Dienste",
-  "Vergangene Dienste",
-  "Schichten pro Monat (Dienstvorlagen)",
-  "Schichten nach Dienstvorlage",
-  "Tagesstatus (aktueller Monat)",
-  "Meine Planungsmonate"
-];
-
-export async function pinDashboardSections(page: Page): Promise<Locator[]> {
-  await page.evaluate((titles) => {
-    for (const heading of document.querySelectorAll("h2")) {
-      if (!titles.includes(heading.textContent?.trim() ?? "")) {
-        continue;
-      }
-      const section = heading.closest("section");
-      if (section instanceof HTMLElement) {
-        section.style.height = "96px";
-        section.style.overflow = "hidden";
-      }
-    }
-  }, dashboardSectionTitles);
-  return dashboardSectionTitles.map((title) =>
-    page.locator("section").filter({ has: page.getByRole("heading", { name: title, exact: true }) })
-  );
 }
 
 export async function signOut(page: Page): Promise<void> {
