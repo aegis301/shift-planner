@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Download, ListChecks, MessageSquarePlus, MessageSquareText, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
@@ -239,6 +240,8 @@ export function MatrixEditor({
   readOnly = false,
   dayFeedbackAlwaysVisible = false,
   phoneLayout = false,
+  embedMemberNotes = false,
+  onInspectMember,
   onChanged
 }: {
   periodId?: string;
@@ -250,6 +253,8 @@ export function MatrixEditor({
   readOnly?: boolean;
   dayFeedbackAlwaysVisible?: boolean;
   phoneLayout?: boolean;
+  embedMemberNotes?: boolean;
+  onInspectMember?: (memberId: number) => void;
   onChanged?: () => void | Promise<void>;
 } = {}) {
   const { locale } = useLocale();
@@ -704,7 +709,10 @@ export function MatrixEditor({
                   cellMap={cellMap}
                   onSave={saveCell}
                   locale={locale}
-                  onOpenNote={setNoteMember}
+                  onOpenNote={(member) => {
+                  onInspectMember?.(member.id);
+                  setNoteMember(member);
+                }}
                   onSaveIntent={saveIntent}
                   shiftGroupId={shiftGroupId}
                   editableMemberId={editableMemberId}
@@ -753,7 +761,10 @@ export function MatrixEditor({
                     cellMap={cellMap}
                     onSave={saveCell}
                     locale={locale}
-                    onOpenNote={setNoteMember}
+                    onOpenNote={(member) => {
+                  onInspectMember?.(member.id);
+                  setNoteMember(member);
+                }}
                     onSaveIntent={saveIntent}
                     shiftGroupId={shiftGroupId}
                     editableMemberId={editableMemberId}
@@ -778,7 +789,10 @@ export function MatrixEditor({
                   cellMap={cellMap}
                   onSave={saveCell}
                   locale={locale}
-                  onOpenNote={setNoteMember}
+                  onOpenNote={(member) => {
+                  onInspectMember?.(member.id);
+                  setNoteMember(member);
+                }}
                   onSaveIntent={saveIntent}
                   shiftGroupId={shiftGroupId}
                   editableMemberId={editableMemberId}
@@ -804,7 +818,10 @@ export function MatrixEditor({
                 cellMap={cellMap}
                 onSave={saveCell}
                 locale={locale}
-                onOpenNote={setNoteMember}
+                onOpenNote={(member) => {
+                  onInspectMember?.(member.id);
+                  setNoteMember(member);
+                }}
                 onSaveIntent={saveIntent}
                 shiftGroupId={shiftGroupId}
                 editableMemberId={editableMemberId}
@@ -826,7 +843,10 @@ export function MatrixEditor({
                 cellMap={cellMap}
                 onSave={saveCell}
                 locale={locale}
-                onOpenNote={setNoteMember}
+                onOpenNote={(member) => {
+                  onInspectMember?.(member.id);
+                  setNoteMember(member);
+                }}
                 onSaveIntent={saveIntent}
                 shiftGroupId={shiftGroupId}
                 editableMemberId={editableMemberId}
@@ -854,6 +874,7 @@ export function MatrixEditor({
             onClose={() => setNoteMember(null)}
             onSubmit={saveNote}
             locale={locale}
+            embedded={embedMemberNotes}
           />
           {editableMemberId != null && isMemberCommentModalOpen && matrix ? (
             <MonthlyCommentModal
@@ -1730,7 +1751,8 @@ function TeamMemberNoteModal({
   onSummaryChange,
   onClose,
   onSubmit,
-  locale
+  locale,
+  embedded = false
 }: {
   member: MatrixTeamMember | null;
   monthLabel: string;
@@ -1741,9 +1763,27 @@ function TeamMemberNoteModal({
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   locale: Locale;
+  embedded?: boolean;
 }) {
   if (!member) {
     return null;
+  }
+  if (embedded) {
+    const host = typeof document !== "undefined" ? document.getElementById("workbench-member-note") : null;
+    const form = (
+      <form className="grid gap-3" onSubmit={onSubmit}>
+        <Field label={t(locale, "planningPreferencesField")}>
+          <textarea className="min-h-24 rounded-lg border border-slate-200 p-2 text-sm" value={preferencesDraft} onChange={(event) => onPreferencesDraftChange(event.target.value)} />
+        </Field>
+        <Field label={t(locale, "monthlyComment")}>
+          <textarea className="min-h-20 rounded-lg border border-slate-200 p-2 text-sm" value={summary} onChange={(event) => onSummaryChange(event.target.value)} />
+        </Field>
+        <button className="inline-flex h-11 items-center justify-center rounded-lg bg-ink px-3 text-sm font-semibold text-white" type="submit">
+          {t(locale, "save")}
+        </button>
+      </form>
+    );
+    return host ? createPortal(form, host) : null;
   }
 
   const monthNoteLabel = monthLabel ? t(locale, "monthPlanningNoteForMatrix", { month: monthLabel }) : t(locale, "monthlyComment");

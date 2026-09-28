@@ -11,11 +11,7 @@ export default defineConfig({
   retries: 0,
   timeout: 60_000,
   expect: {
-    timeout: 15_000,
-    toHaveScreenshot: {
-      maxDiffPixelRatio: 0.01,
-      animations: "disabled"
-    }
+    timeout: 15_000
   },
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   use: {

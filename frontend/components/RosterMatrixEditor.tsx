@@ -254,6 +254,8 @@ export function RosterMatrixEditor({
   fairnessAccounts = null,
   highlightTeamMemberId,
   swapOffer,
+  onSelectSlot,
+  onInspectMember,
 }: {
   periodId?: string;
   compact?: boolean;
@@ -266,7 +268,11 @@ export function RosterMatrixEditor({
   fairnessAccounts?: FairnessAccountsRead | null;
   highlightTeamMemberId?: number;
   swapOffer?: SwapOfferContext;
+  onSelectSlot?: (slotId: number) => void;
+  onInspectMember?: (memberId: number) => void;
 } = {}) {
+  rosterSelectionHandlers.onSelectSlot = onSelectSlot;
+  rosterSelectionHandlers.onInspectMember = onInspectMember;
   const { locale } = useLocale();
   const queryClient = useQueryClient();
   const organizationId = usePlanningOrganizationId();
@@ -882,6 +888,11 @@ function SlotHeader({ slot, locale }: { slot: RosterSlot; locale: Locale }) {
   );
 }
 
+const rosterSelectionHandlers: {
+  onSelectSlot?: (slotId: number) => void;
+  onInspectMember?: (memberId: number) => void;
+} = {};
+
 function RosterCell({
   slot,
   members,
@@ -1067,6 +1078,7 @@ function RosterCell({
         aria-expanded={open}
         aria-haspopup="listbox"
         disabled={readOnly}
+        onMouseDown={() => rosterSelectionHandlers.onSelectSlot?.(slot.id)}
         className={`relative flex min-h-[2.25rem] w-full items-center justify-between gap-1.5 rounded-lg border bg-white px-1.5 py-1.5 pr-6.5 text-left text-xs font-medium disabled:cursor-default disabled:opacity-90 ${
           warnUnavailable ? "border-rose-300 text-rose-950" : duplicateSameDay ? "border-amber-400 text-amber-950" : "border-slate-200"
         }`}
@@ -1202,7 +1214,11 @@ function RosterCell({
                     event.preventDefault();
                     event.stopPropagation();
                     setOpen(false);
-                    setWorkloadModalMemberId(member.id);
+                    if (rosterSelectionHandlers.onInspectMember) {
+                      rosterSelectionHandlers.onInspectMember(member.id);
+                    } else {
+                      setWorkloadModalMemberId(member.id);
+                    }
                   }}
                 >
                   <BarChart3 className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />

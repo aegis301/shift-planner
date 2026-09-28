@@ -90,13 +90,15 @@ Shared controls live in `frontend/components/ui/` (Radix dialogs, menus, popover
 
 Planning screens read server state through TanStack Query (`frontend/lib/queryKeys.ts`, `frontend/lib/queries/`). The client is created in `frontend/app/ClientRoot.tsx` (30 second stale time, one retry, no retry on 401 or 403). React Query Devtools render in development, except under Playwright. Switching the active organization clears the cache.
 
-`/planning` is the desktop workbench. `/my` is the member home and `/my-planning` is the member companion. Route groups live under `frontend/app/(workbench)`, `frontend/app/(member)`, and `frontend/app/(shared)`; the URLs are unchanged.
+`/planning` is the desktop workbench: a context bar, the wishes/roster/analysis view, and an inspector for the selected duty, member, day, or finding. `Ctrl/Cmd+K` opens the command palette. `/hours` uses the same bar and shows the selected member's ledger in the inspector. `/my` is the member home and `/my-planning` is the member companion. Route groups live under `frontend/app/(workbench)`, `frontend/app/(member)`, and `frontend/app/(shared)`; the URLs are unchanged.
+
+`GET /api/v1/roster-matrix/{planning_period_id}/slots/{roster_slot_id}/candidates?shift_group_id=` lists every period-roster member for that slot with status `ok`, `warning`, `blocked`, or `ineligible`. `blocked` is the same refusal as assigning that member. The service builds `PlanState` once per request. MCP `get_slot_candidates_tool` returns the same payload.
 
 `npm run api:generate` writes `frontend/lib/api/openapi.json` and `frontend/lib/api/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails the frontend job if `frontend/lib/api/` drifts. Friendly names are in `frontend/lib/api/types.ts`. New code uses `apiClient` from `frontend/lib/api/client.ts` (`credentials: "include"`, same base URL as `apiFetch`). `ApiError` is shared.
 
 ### End-to-end tests
 
-Playwright smoke tests and golden screenshots live in `frontend/e2e`. They sign in as three users in the comfortable solver fixture for October 2026. Start Compose, seed those users, install Chromium once on this machine, then run the suite:
+Playwright smoke tests live in `frontend/e2e`. They sign in as three users in the comfortable solver fixture for October 2026 and check that the main flows render and respond. They do not compare full-page screenshots. Start Compose, seed those users, install Chromium once on this machine, then run the suite:
 
 ```bash
 docker compose up -d postgres backend frontend
@@ -108,7 +110,7 @@ E2E_SEED_PASSWORD=local-e2e-password npm run test:e2e
 
 `npm run test:e2e` does not download browsers. In the cloud dev container Chromium is already at `/opt/pw-browsers`; set `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers` there instead of running `playwright install`.
 
-Screenshot baselines are the linux/Chromium images committed next to the tests. CI runs the same browser inside `mcr.microsoft.com/playwright:v1.63.0-noble` (host network, so it reaches Compose on `localhost`). Generate or refresh baselines in that image against Compose, on a database that only contains the default organization and this seed. On a Mac the container reaches the published ports through `host.docker.internal`. The Next dev server only serves page scripts for hosts listed in `ALLOWED_DEV_ORIGINS`. The Compose default and `.env.example` include `localhost` and `host.docker.internal`; a local `.env` that sets `ALLOWED_DEV_ORIGINS` has to list `host.docker.internal` as well. `npx playwright test --update-snapshots` is only for a change you can justify in the pull request. A Mac run looks for darwin snapshots and is not the baseline.
+CI runs the same browser inside `mcr.microsoft.com/playwright:v1.63.0-noble` (host network, so it reaches Compose on `localhost`). On a Mac the container reaches the published ports through `host.docker.internal`. The Next dev server only serves page scripts for hosts listed in `ALLOWED_DEV_ORIGINS`. The Compose default and `.env.example` include `localhost` and `host.docker.internal`; a local `.env` that sets `ALLOWED_DEV_ORIGINS` has to list `host.docker.internal` as well. A failed run still uploads the page screenshot and the Playwright trace.
 
 The App Router root layout wraps the app in one **`LocaleShell`** (see `app/ClientRoot.tsx`) so locale and `/api/v1/auth/me` session state are not reset on every navigation. Individual pages do not nest another `LocaleShell`.
 

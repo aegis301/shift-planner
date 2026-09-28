@@ -115,6 +115,7 @@ from app.services.planning import (
     set_shift_group_planning_to_draft,
     set_shift_group_planning_to_preliminary,
 )
+from app.services.roster_candidates import list_slot_candidates
 from app.services.roster_matrix import (
     RosterSyncPublishedError,
     clear_roster_slot_assignment,
@@ -594,6 +595,21 @@ def replace_team_member_property_values_tool(
             allow_definition_ids=None,
         )
         return [row.model_dump(mode="json") for row in rows]
+
+
+@mcp.tool
+def get_slot_candidates_tool(planning_period_id: int, roster_slot_id: int, shift_group_id: int) -> dict[str, Any]:
+    """List who can take one roster slot, with eligibility, findings, wishes, and assignment history."""
+    with db_session() as db:
+        payload = list_slot_candidates(
+            db,
+            roster_slot_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        )
+        if payload.planning_period_id != planning_period_id:
+            raise ValueError("Roster slot not found")
+        return payload.model_dump(mode="json")
 
 
 @mcp.tool

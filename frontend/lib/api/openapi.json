@@ -7120,6 +7120,277 @@
         "title": "ShiftVariantUpdate",
         "type": "object"
       },
+      "SlotCandidateHistoryRead": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Member Id"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "actor",
+          "created_at"
+        ],
+        "title": "SlotCandidateHistoryRead",
+        "type": "object"
+      },
+      "SlotCandidateRead": {
+        "properties": {
+          "day_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Status"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "fairness_deviation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fairness Deviation"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationWarning"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "is_current_assignee": {
+            "default": false,
+            "title": "Is Current Assignee",
+            "type": "boolean"
+          },
+          "no_go": {
+            "default": false,
+            "title": "No Go",
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "warning",
+              "blocked",
+              "ineligible"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_member_id": {
+            "title": "Team Member Id",
+            "type": "integer"
+          },
+          "wish": {
+            "default": false,
+            "title": "Wish",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "team_member_id",
+          "display_name",
+          "status"
+        ],
+        "title": "SlotCandidateRead",
+        "type": "object"
+      },
+      "SlotCandidateSwapRead": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "offered_by_team_member_id": {
+            "title": "Offered By Team Member Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Team Member Id"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "offered_by_team_member_id"
+        ],
+        "title": "SlotCandidateSwapRead",
+        "type": "object"
+      },
+      "SlotCandidatesRead": {
+        "properties": {
+          "assignment_history": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateHistoryRead"
+            },
+            "title": "Assignment History",
+            "type": "array"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateRead"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "day_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Class"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "roster_slot_id": {
+            "title": "Roster Slot Id",
+            "type": "integer"
+          },
+          "shift_group_id": {
+            "title": "Shift Group Id",
+            "type": "integer"
+          },
+          "slot_date": {
+            "format": "date",
+            "title": "Slot Date",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "swap_requests": {
+            "items": {
+              "$ref": "#/components/schemas/SlotCandidateSwapRead"
+            },
+            "title": "Swap Requests",
+            "type": "array"
+          },
+          "template_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name"
+          },
+          "variant_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Label"
+          }
+        },
+        "required": [
+          "roster_slot_id",
+          "planning_period_id",
+          "shift_group_id",
+          "slot_date",
+          "candidates"
+        ],
+        "title": "SlotCandidatesRead",
+        "type": "object"
+      },
       "SolverConfigRead": {
         "properties": {
           "default_time_budget_seconds": {
@@ -18513,6 +18784,82 @@
           }
         },
         "summary": "Get Final Roster Matrix",
+        "tags": [
+          "roster-matrix"
+        ]
+      }
+    },
+    "/api/v1/roster-matrix/{planning_period_id}/slots/{roster_slot_id}/candidates": {
+      "get": {
+        "operationId": "roster_matrix_get_slot_candidates",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "roster_slot_id",
+            "required": true,
+            "schema": {
+              "title": "Roster Slot Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": true,
+            "schema": {
+              "title": "Shift Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlotCandidatesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Slot Candidates",
         "tags": [
           "roster-matrix"
         ]

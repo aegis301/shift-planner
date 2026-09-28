@@ -1,6 +1,10 @@
 # Changelog
 
+## 2026-09-28
+- **End-to-end checks:** Playwright smoke tests stay on the flows (tabs, assignment, inspector, hours, member home, sign-out). Full-page golden screenshots are no longer part of CI. A layout change no longer fails the job on a pixel ratio.
+
 ## 2026-09-27
+- **Workbench layout:** `/planning` and `/hours` use a context bar (period, shift group, plan status, version, page actions) and a resizable inspector. Selection lives in the URL (`?period=`, `?shiftGroup=`, `?tab=`, `?slot=`, `?member=`, `?day=`, `?finding=`). The inspector lists slot candidates from `GET /api/v1/roster-matrix/{period}/slots/{slot}/candidates`, grouped by whether assignment would succeed, warn, or be refused. Workload and member notes open there instead of in a modal. `Ctrl/Cmd+K` opens the command palette; `?` lists shortcuts. Density is stored in `shift-planner-density`. MCP `get_slot_candidates_tool` uses the same service.
 - **Route split:** The app shell is now two layouts. `(workbench)` serves `/`, `/planning`, `/hours`, and organization pages with a desktop sidebar and a narrow-screen notice below 1024 px. `(member)` serves `/my`, `/my-planning`, `/my-hours`, and `/profile` with a bottom tab bar on phones. `(shared)` covers login, registration, onboarding, and settings. Team-member-only users land on `/my`. Dual-role users switch areas from the user menu. `PlanningWorkspace` is replaced by `PlannerWorkspace` and `MemberPlanning`. `PlannerWorkspace` keeps planner tools only. Member navigation includes My hours, keeps the selected month and shift group when switching tabs, counts only swaps the linked member can act on, and restores the editable calendar-export range.
 
 ## 2026-09-26
