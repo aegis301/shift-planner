@@ -1554,6 +1554,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roster-matrix/change-sets/{change_set_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Revert Roster Change Set */
+        post: operations["roster_matrix_post_revert_roster_change_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/roster-matrix/{planning_period_id}": {
         parameters: {
             query?: never;
@@ -1565,6 +1582,24 @@ export interface paths {
         get: operations["roster_matrix_get_final_roster_matrix"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/roster-matrix/{planning_period_id}/change-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Roster Change Sets */
+        get: operations["roster_matrix_get_roster_change_sets"];
+        put?: never;
+        /** Post Roster Change Set */
+        post: operations["roster_matrix_post_roster_change_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2942,6 +2977,8 @@ export interface components {
         };
         /** DeletedFlagRead */
         DeletedFlagRead: {
+            /** Change Set Id */
+            change_set_id?: number | null;
             /** Deleted */
             deleted: boolean;
         };
@@ -4121,6 +4158,99 @@ export interface components {
              */
             weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
         };
+        /** RosterChangeSetCreate */
+        RosterChangeSetCreate: {
+            /** Items */
+            items: components["schemas"]["RosterChangeSetItemWrite"][];
+            /** Label */
+            label?: string | null;
+            /**
+             * Mode
+             * @default all_or_nothing
+             * @enum {string}
+             */
+            mode: "all_or_nothing" | "best_effort";
+        };
+        /** RosterChangeSetItemRead */
+        RosterChangeSetItemRead: {
+            /** After Comment */
+            after_comment?: string | null;
+            /** After Manual Override */
+            after_manual_override: boolean;
+            /** After Team Member Id */
+            after_team_member_id?: number | null;
+            /** Before Comment */
+            before_comment?: string | null;
+            /** Before Manual Override */
+            before_manual_override: boolean;
+            /** Before Team Member Id */
+            before_team_member_id?: number | null;
+            /** Findings */
+            findings?: components["schemas"]["ValidationWarning"][];
+            /** Id */
+            id: number;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "applied" | "refused" | "unchanged";
+            /** Refusal Code */
+            refusal_code?: string | null;
+            /** Roster Slot Id */
+            roster_slot_id: number;
+        };
+        /** RosterChangeSetItemWrite */
+        RosterChangeSetItemWrite: {
+            /** Comment */
+            comment?: string | null;
+            /**
+             * Manual Override
+             * @default false
+             */
+            manual_override: boolean;
+            /** Roster Slot Id */
+            roster_slot_id: number;
+            /** Team Member Id */
+            team_member_id?: number | null;
+        };
+        /** RosterChangeSetRead */
+        RosterChangeSetRead: {
+            /** Actor */
+            actor: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By User Id */
+            created_by_user_id?: number | null;
+            /** Id */
+            id: number;
+            /** Items */
+            items: components["schemas"]["RosterChangeSetItemRead"][];
+            /** Label */
+            label?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "all_or_nothing" | "best_effort";
+            /** Organization Id */
+            organization_id: number;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Reverts Change Set Id */
+            reverts_change_set_id?: number | null;
+            /** Shift Group Id */
+            shift_group_id?: number | null;
+            /** Source */
+            source: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "applied" | "refused" | "partially_applied" | "reverted";
+        };
         /** RosterMatrixRead */
         RosterMatrixRead: {
             /** Assignments */
@@ -4154,6 +4284,8 @@ export interface components {
         };
         /** RosterSlotAssignmentRead */
         RosterSlotAssignmentRead: {
+            /** Change Set Id */
+            change_set_id?: number | null;
             /** Comment */
             comment?: string | null;
             /**
@@ -4939,6 +5071,15 @@ export interface components {
             assignments: components["schemas"]["RosterSlotAssignmentRead"][];
             run: components["schemas"]["SolverRunRead"];
         };
+        /** SolverRunApplyRequest */
+        SolverRunApplyRequest: {
+            /**
+             * Mode
+             * @default best_effort
+             * @enum {string}
+             */
+            mode: "all_or_nothing" | "best_effort";
+        };
         /** SolverRunCreate */
         SolverRunCreate: {
             /** Num Search Workers */
@@ -4965,6 +5106,8 @@ export interface components {
              * @default false
              */
             cancel_requested: boolean;
+            /** Change Set Id */
+            change_set_id?: number | null;
             /**
              * Created At
              * Format: date-time
@@ -9616,7 +9759,11 @@ export interface operations {
                 shift_planner_session?: string | null;
             };
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SolverRunApplyRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -10171,6 +10318,39 @@ export interface operations {
             };
         };
     };
+    roster_matrix_post_revert_roster_change_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                change_set_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     roster_matrix_get_final_roster_matrix: {
         parameters: {
             query?: {
@@ -10194,6 +10374,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RosterMatrixRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    roster_matrix_get_roster_change_sets: {
+        parameters: {
+            query?: {
+                shift_group_id?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterChangeSetRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    roster_matrix_post_roster_change_set: {
+        parameters: {
+            query?: {
+                shift_group_id?: number | null;
+            };
+            header?: never;
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RosterChangeSetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

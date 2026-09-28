@@ -1759,6 +1759,7 @@ class RosterSlotAssignmentRead(RosterSlotAssignmentUpsert):
     source: str
     created_at: datetime
     updated_at: datetime
+    change_set_id: int | None = None
 
 
 class PlanningCellBase(BaseModel):
@@ -2267,6 +2268,7 @@ class SolverRunRead(BaseModel):
     finished_at: datetime | None = None
     applied_at: datetime | None = None
     duration_ms: int | None = None
+    change_set_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -2345,6 +2347,54 @@ class OkFlagRead(BaseModel):
 
 class DeletedFlagRead(BaseModel):
     deleted: bool
+    change_set_id: int | None = None
+
+
+class RosterChangeSetItemWrite(BaseModel):
+    roster_slot_id: int
+    team_member_id: int | None = None
+    manual_override: bool = False
+    comment: str | None = None
+
+
+class RosterChangeSetCreate(BaseModel):
+    mode: Literal["all_or_nothing", "best_effort"] = "all_or_nothing"
+    label: str | None = None
+    items: list[RosterChangeSetItemWrite]
+
+
+class RosterChangeSetItemRead(BaseModel):
+    id: int
+    roster_slot_id: int
+    before_team_member_id: int | None = None
+    after_team_member_id: int | None = None
+    before_manual_override: bool
+    after_manual_override: bool
+    before_comment: str | None = None
+    after_comment: str | None = None
+    outcome: Literal["applied", "refused", "unchanged"]
+    findings: list[ValidationWarning] = Field(default_factory=list)
+    refusal_code: str | None = None
+
+
+class RosterChangeSetRead(BaseModel):
+    id: int
+    organization_id: int
+    planning_period_id: int
+    shift_group_id: int | None = None
+    created_by_user_id: int | None = None
+    actor: str
+    source: str
+    mode: Literal["all_or_nothing", "best_effort"]
+    status: Literal["applied", "refused", "partially_applied", "reverted"]
+    reverts_change_set_id: int | None = None
+    label: str | None = None
+    created_at: datetime
+    items: list[RosterChangeSetItemRead]
+
+
+class SolverRunApplyRequest(BaseModel):
+    mode: Literal["all_or_nothing", "best_effort"] = "best_effort"
 
 
 class SuggestedPlanVersionRead(BaseModel):

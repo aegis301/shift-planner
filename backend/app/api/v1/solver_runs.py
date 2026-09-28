@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_planner
 from app.db.session import get_db
 from app.models import User
-from app.schemas import SolverRunApplyRead, SolverRunCreate, SolverRunRead
+from app.schemas import SolverRunApplyRead, SolverRunApplyRequest, SolverRunCreate, SolverRunRead
 from app.services.authz import assert_planning_shift_group_scope
 from app.services.solver_runs import (
     SolverRunConflictError,
@@ -135,6 +135,7 @@ def post_cancel_solver_run(
 def post_apply_solver_run(
     planning_period_id: int,
     run_id: int,
+    payload: SolverRunApplyRequest | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_planner),
 ) -> SolverRunApplyRead:
@@ -153,6 +154,7 @@ def post_apply_solver_run(
             organization_id=user.organization_id,
             actor=user.email,
             source="rest",
+            mode=payload.mode if payload is not None else "best_effort",
         )
     except SolverRunNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

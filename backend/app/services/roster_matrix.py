@@ -656,6 +656,7 @@ def clear_roster_slot_assignment(
     organization_id: int,
     actor: str,
     source: str,
+    commit: bool = True,
 ) -> bool:
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
@@ -678,14 +679,15 @@ def clear_roster_slot_assignment(
         details={"roster_slot_id": payload.roster_slot_id},
     )
     db.delete(assignment)
-    db.commit()
-    from app.services.time_entries import refresh_derived_window
+    if commit:
+        db.commit()
+        from app.services.time_entries import refresh_derived_window
 
-    refresh_derived_window(
-        db,
-        organization_id=organization_id,
-        member_ids=[member_id],
-        start_date=slot_date,
-        end_date=slot_date,
-    )
+        refresh_derived_window(
+            db,
+            organization_id=organization_id,
+            member_ids=[member_id],
+            start_date=slot_date,
+            end_date=slot_date,
+        )
     return True
