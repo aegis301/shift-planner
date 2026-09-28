@@ -19091,10 +19091,22 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
+              }
+            },
+            "description": "Change set refused"
           },
           "422": {
             "content": {
@@ -19345,10 +19357,22 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
+              }
+            },
+            "description": "Change set refused"
           },
           "422": {
             "content": {

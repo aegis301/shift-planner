@@ -1,6 +1,7 @@
 import pytest
-
 from mcp_app.server import apply_roster_change_set_tool, revert_roster_change_set_tool
+
+from app.services.roster_change_sets import RosterChangeSetError
 
 
 def test_roster_change_set_tools_require_token():
@@ -54,3 +55,24 @@ def test_apply_roster_change_set_tool_uses_service(monkeypatch):
     assert calls[0]["mode"] == "best_effort"
     assert calls[0]["items"][0].roster_slot_id == 9
     assert calls[0]["items"][0].team_member_id == 8
+
+
+def test_apply_tool_rejects_unknown_mode(monkeypatch):
+    class DbContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr("mcp_app.server.db_session", lambda: DbContext())
+    monkeypatch.setattr("mcp_app.server.require_token", lambda token: None)
+    with pytest.raises(RosterChangeSetError) as exc:
+        apply_roster_change_set_tool(
+            token="ok",
+            planning_period_id=1,
+            shift_group_id=1,
+            items=[],
+            mode="sideways",
+        )
+    assert exc.value.code == "INVALID_MODE"

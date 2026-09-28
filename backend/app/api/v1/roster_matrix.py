@@ -263,14 +263,18 @@ def _change_set_read(row: RosterChangeSet) -> RosterChangeSetRead:
     )
 
 
-def _change_set_response(row: RosterChangeSet):
-    body = jsonable_encoder(_change_set_read(row))
+def _change_set_response(row: RosterChangeSet) -> RosterChangeSetRead | JSONResponse:
+    body = _change_set_read(row)
     if row.status == "refused":
-        return JSONResponse(status_code=409, content=body)
+        return JSONResponse(status_code=409, content=jsonable_encoder(body))
     return body
 
 
-@router.post("/{planning_period_id}/change-sets")
+@router.post(
+    "/{planning_period_id}/change-sets",
+    response_model=RosterChangeSetRead,
+    responses={409: {"model": RosterChangeSetRead, "description": "Change set refused"}},
+)
 def post_roster_change_set(
     planning_period_id: int,
     payload: RosterChangeSetCreate,
@@ -335,7 +339,11 @@ def get_roster_change_sets(
     return [_change_set_read(by_id[row.id]) for row in rows if row.id in by_id]
 
 
-@router.post("/change-sets/{change_set_id}/revert")
+@router.post(
+    "/change-sets/{change_set_id}/revert",
+    response_model=RosterChangeSetRead,
+    responses={409: {"model": RosterChangeSetRead, "description": "Change set refused"}},
+)
 def post_revert_roster_change_set(
     change_set_id: int,
     db: Session = Depends(get_db),

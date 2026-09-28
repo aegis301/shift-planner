@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -9,6 +9,7 @@ from app.main import app
 from app.models import (
     AuditLog,
     Organization,
+    RosterChangeSet,
     RosterSlotAssignment,
     ShiftGroup,
     SolverRun,
@@ -16,7 +17,11 @@ from app.models import (
 )
 from app.models.base import Base
 from app.services import roster_change_sets
-from app.services.roster_change_sets import RosterChangeInput, apply_roster_change_set
+from app.services.roster_change_sets import (
+    RosterChangeInput,
+    RosterChangeSetError,
+    apply_roster_change_set,
+)
 from app.services.solver_fixture import seed_solver_fixture
 from app.services.solver_runs import apply_solver_run
 from app.tests.test_api import _seed_membership, login
@@ -319,4 +324,211 @@ def test_solver_best_effort_applies_the_legal_subset(client: TestClient):
         assert applied.change_set_id is not None
         assert {row.roster_slot_id for row in assignments} == {first}
     finally:
+        db.close()
+
+
+def test_planner_cannot_edit_a_slot_outside_the_authorized_group(client: TestClient):
+    login(client)
+    group_a = client.post("/api/v1/shift-groups", json={"code": "CGA", "name": "Group A", "display_order": 4}).json()
+    group_b = client.post("/api/v1/shift-groups", json={"code": "CGB", "name": "Group B", "display_order": 5}).json()
+    member = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Gus", "last_name": "Set", "email": "set-gus@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    client.put(
+        f"/api/v1/shift-groups/{group_b['id']}/memberships",
+        json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": None}]},
+    )
+    template = client.post("/api/v1/shift-templates", json={"code": "CGBS", "name": "Group B only", "category": "other"}).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={"label": "Day", "start_day_class": "any", "starts_at": "08:00:00", "ends_at": "12:00:00", "end_day_offset": 0, "required_count": 1},
+    )
+    client.put(f"/api/v1/shift-groups/{group_b['id']}/shift-templates", json={"shift_template_ids": [template["id"]]})
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={group_b['id']}").json()
+    slot_id = next(row["id"] for row in roster["slots"] if row["shift_template_id"] == template["id"])
+    db = _session()
+    try:
+        planner = _seed_membership(db, "planner-scope@example.com", "secret", 1, "planner")
+        db.flush()
+        db.add(UserShiftGroup(user_id=planner.id, shift_group_id=group_a["id"]))
+        db.commit()
+    finally:
+        db.close()
+    logged = client.post(
+        "/api/v1/auth/login",
+        json={"email": "planner-scope@example.com", "password": "secret", "organization_slug": "default"},
+    )
+    assert logged.status_code == 200
+    refused = client.post(
+        f"/api/v1/roster-matrix/{period_id}/change-sets?shift_group_id={group_a['id']}",
+        json={"mode": "all_or_nothing", "items": [{"roster_slot_id": slot_id, "team_member_id": member}]},
+    )
+    assert refused.status_code == 409
+    assert refused.json()["items"][0]["refusal_code"] == "SLOT_OUTSIDE_GROUP"
+    db = _session()
+    try:
+        assert db.scalar(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot_id)) is None
+    finally:
+        db.close()
+
+
+def test_clearing_or_reassigning_coupled_partner_is_refused(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Hex", "last_name": "Set", "email": "set-hex@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    other = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Ivy", "last_name": "Set", "email": "set-ivy@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post("/api/v1/shift-templates", json={"code": "CCPL", "name": "Couple", "category": "other"}).json()
+    early = client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={"label": "Early", "start_day_class": "any", "starts_at": "08:00:00", "ends_at": "12:00:00", "end_day_offset": 0, "required_count": 1},
+    ).json()
+    late = client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={"label": "Late", "start_day_class": "any", "starts_at": "18:00:00", "ends_at": "22:00:00", "end_day_offset": 0, "required_count": 1},
+    ).json()
+    assert (
+        client.patch(
+            f"/api/v1/shift-templates/variants/{early['id']}",
+            json={
+                "constraints": [
+                    {
+                        "type": "requires_coupled_shift",
+                        "severity": "error",
+                        "paired_shift_variant_id": late["id"],
+                        "partner_day_offset": 1,
+                    }
+                ]
+            },
+        ).status_code
+        == 200
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    source = next(row["id"] for row in roster["slots"] if row["slot_date"] == "2026-09-10" and row["shift_variant_id"] == early["id"])
+    partner = next(row["id"] for row in roster["slots"] if row["slot_date"] == "2026-09-11" and row["shift_variant_id"] == late["id"])
+    elsewhere = next(row["id"] for row in roster["slots"] if row["slot_date"] == "2026-09-20" and row["shift_variant_id"] == late["id"])
+    assert client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": partner, "team_member_id": member}).status_code == 200
+    assert client.put("/api/v1/roster-matrix/assignments", json={"roster_slot_id": source, "team_member_id": member}).status_code == 200
+    blocked = client.post(
+        f"/api/v1/roster-matrix/{period_id}/change-sets",
+        json={
+            "mode": "all_or_nothing",
+            "items": [
+                {"roster_slot_id": partner, "team_member_id": None},
+                {"roster_slot_id": elsewhere, "team_member_id": other},
+            ],
+        },
+    )
+    assert blocked.status_code == 409
+    by_slot = {item["roster_slot_id"]: item for item in blocked.json()["items"]}
+    assert by_slot[partner]["refusal_code"] == "RULE_ERROR"
+    assert any(finding["code"] == "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED" for finding in by_slot[partner]["findings"])
+    assert by_slot[elsewhere]["refusal_code"] == "SET_REFUSED"
+    kept = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    assignees = {row["roster_slot_id"]: row["team_member_id"] for row in kept["assignments"]}
+    assert assignees[source] == member
+    assert assignees[partner] == member
+    assert elsewhere not in assignees
+    partial = client.post(
+        f"/api/v1/roster-matrix/{period_id}/change-sets",
+        json={
+            "mode": "best_effort",
+            "items": [
+                {"roster_slot_id": partner, "team_member_id": None},
+                {"roster_slot_id": elsewhere, "team_member_id": other},
+            ],
+        },
+    )
+    assert partial.status_code == 200
+    partial_by_slot = {item["roster_slot_id"]: item["outcome"] for item in partial.json()["items"]}
+    assert partial_by_slot[partner] == "refused"
+    assert partial_by_slot[elsewhere] == "applied"
+    reassigned = client.post(
+        f"/api/v1/roster-matrix/{period_id}/change-sets",
+        json={"mode": "all_or_nothing", "items": [{"roster_slot_id": partner, "team_member_id": other}]},
+    )
+    assert reassigned.status_code == 409
+    assert reassigned.json()["items"][0]["refusal_code"] == "RULE_ERROR"
+    final = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    final_assignees = {row["roster_slot_id"]: row["team_member_id"] for row in final["assignments"]}
+    assert final_assignees[partner] == member
+    assert final_assignees[source] == member
+
+
+def test_revert_rechecks_the_assignment_under_the_slot_lock(client: TestClient, monkeypatch):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Joy", "last_name": "Set", "email": "set-joy@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    other = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Kim", "last_name": "Set", "email": "set-kim@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    template = client.post("/api/v1/shift-templates", json={"code": "CLCK", "name": "Lock", "category": "other"}).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={"label": "Day", "start_day_class": "any", "starts_at": "09:00:00", "ends_at": "17:00:00", "end_day_offset": 0, "required_count": 1},
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 11}).json()["id"]
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}").json()
+    slot_id = next(row["id"] for row in roster["slots"] if row["shift_template_id"] == template["id"])
+    created = client.post(
+        f"/api/v1/roster-matrix/{period_id}/change-sets",
+        json={"items": [{"roster_slot_id": slot_id, "team_member_id": member}]},
+    )
+    assert created.status_code == 200
+    real_lock = roster_change_sets.lock_roster_slots_for_assignment
+
+    def lock_and_replace(db, slot_ids):
+        real_lock(db, slot_ids)
+        if slot_id not in slot_ids:
+            return
+        assignment = db.scalar(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot_id))
+        if assignment is not None and assignment.team_member_id != other:
+            assignment.team_member_id = other
+            db.flush()
+
+    monkeypatch.setattr(roster_change_sets, "lock_roster_slots_for_assignment", lock_and_replace)
+    stale = client.post(f"/api/v1/roster-matrix/change-sets/{created.json()['id']}/revert")
+    assert stale.status_code == 409
+    assert any(item["refusal_code"] == "changed_since" for item in stale.json()["items"])
+    db = _session()
+    try:
+        kept = db.scalar(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot_id))
+        assert kept is not None
+        assert kept.team_member_id == other
+    finally:
+        db.close()
+
+
+def test_unknown_mode_is_rejected_before_a_row_is_stored(client: TestClient):
+    login(client)
+    rejected = client.post("/api/v1/roster-matrix/1/change-sets", json={"mode": "sideways", "items": []})
+    assert rejected.status_code == 422
+    db = _session()
+    try:
+        with pytest.raises(RosterChangeSetError) as exc:
+            apply_roster_change_set(
+                db,
+                organization_id=1,
+                planning_period_id=1,
+                shift_group_id=None,
+                items=[],
+                mode="sideways",
+                actor="test",
+                source="mcp",
+                created_by_user_id=None,
+            )
+        assert exc.value.code == "INVALID_MODE"
+        assert db.scalar(select(func.count()).select_from(RosterChangeSet)) == 0
+    finally:
+        db.rollback()
         db.close()

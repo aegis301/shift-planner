@@ -1,7 +1,9 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
@@ -19,6 +21,7 @@ from app.services.roster_matrix import (
     _team_member_has_template_no_go,
     _warning_targets_slot,
     clear_roster_slot_assignment,
+    lock_roster_slots_for_assignment,
     upsert_roster_slot_assignment,
 )
 from app.services.rules import build_plan_state, evaluate_plan_state
@@ -30,6 +33,7 @@ from app.services.shift_groups import shift_group_ids_for_template, team_member_
 from app.services.tenancy import require_planning_period_in_org
 
 MAX_CHANGE_SET_ITEMS = 500
+COUPLED_SHIFT_WINDOW = timedelta(days=7)
 SOURCE_UI = "ui"
 MODE_ALL_OR_NOTHING = "all_or_nothing"
 MODE_BEST_EFFORT = "best_effort"
@@ -57,6 +61,13 @@ class RosterChangeInput:
     comment: str | None = None
 
 
+@dataclass(frozen=True)
+class AssignmentSnapshot:
+    team_member_id: int | None
+    manual_override: bool
+    comment: str | None
+
+
 def apply_roster_change_set(
     db: Session,
     *,
@@ -72,7 +83,10 @@ def apply_roster_change_set(
     reverts_change_set_id: int | None = None,
     before_commit: Callable[[RosterChangeSet], None] | None = None,
     forced_refusals: dict[int, str] | None = None,
+    expected_current: dict[int, AssignmentSnapshot] | None = None,
 ) -> RosterChangeSet:
+    if mode not in (MODE_ALL_OR_NOTHING, MODE_BEST_EFFORT):
+        raise RosterChangeSetError("INVALID_MODE", "mode must be all_or_nothing or best_effort")
     if len(items) > MAX_CHANGE_SET_ITEMS:
         raise RosterChangeSetError("TOO_MANY_ITEMS", "A change set can contain at most 500 items")
     require_planning_period_in_org(db, planning_period_id, organization_id)
@@ -91,6 +105,7 @@ def apply_roster_change_set(
     db.add(change_set)
     db.flush()
     slot_ids = [item.roster_slot_id for item in items]
+    lock_roster_slots_for_assignment(db, slot_ids)
     slots = {
         row.id: row
         for row in db.scalars(
@@ -123,10 +138,13 @@ def apply_roster_change_set(
             refusal_code=None,
         )
         refusal = None
+        expected = expected_current.get(item.roster_slot_id) if expected_current else None
         if forced_refusals and item.roster_slot_id in forced_refusals:
             refusal = forced_refusals[item.roster_slot_id]
+        elif expected is not None and not _snapshot_matches(current, expected):
+            refusal = "changed_since"
         else:
-            refusal = _precheck(db, organization_id, planning_period_id, slot, item)
+            refusal = _precheck(db, organization_id, planning_period_id, shift_group_id, slot, item)
         if refusal is not None:
             row.outcome = OUTCOME_REFUSED
             row.refusal_code = refusal
@@ -147,6 +165,7 @@ def apply_roster_change_set(
         db.refresh(change_set)
         return change_set
     _evaluate_legal_subset(db, organization_id, rows, slots, mode)
+    _refuse_if_expected_changed(db, rows, expected_current)
     if mode == MODE_ALL_OR_NOTHING and any(row.outcome == OUTCOME_REFUSED for row in rows):
         for row in rows:
             if row.outcome != OUTCOME_REFUSED:
@@ -154,7 +173,16 @@ def apply_roster_change_set(
                 row.refusal_code = row.refusal_code or "SET_REFUSED"
         change_set.status = STATUS_REFUSED
     else:
-        _write_rows(db, organization_id, actor, source, rows, slots)
+        _write_rows(
+            db,
+            organization_id,
+            actor,
+            source,
+            rows,
+            slots,
+            mode=mode,
+            expected_current=expected_current,
+        )
         db.flush()
         applied = [row for row in rows if row.outcome == OUTCOME_APPLIED]
         refused = [row for row in rows if row.outcome == OUTCOME_REFUSED]
@@ -214,33 +242,16 @@ def revert_roster_change_set(
     original = db.get(RosterChangeSet, change_set_id)
     if original is None or original.organization_id != organization_id:
         raise RosterChangeSetError("NOT_FOUND", "Roster change set not found")
-    current = {
-        row.roster_slot_id: row
-        for row in db.scalars(
-            select(RosterSlotAssignment).where(
-                RosterSlotAssignment.roster_slot_id.in_([item.roster_slot_id for item in original.items] or [-1])
-            )
-        )
-    }
     restore: list[RosterChangeInput] = []
-    blocked: list[RosterChangeInput] = []
+    expected_current: dict[int, AssignmentSnapshot] = {}
     for item in original.items:
         if item.outcome != OUTCOME_APPLIED:
             continue
-        assignment = current.get(item.roster_slot_id)
-        assignee = assignment.team_member_id if assignment is not None else None
-        override = bool(assignment.manual_override) if assignment is not None else False
-        comment = assignment.comment if assignment is not None else None
-        if assignee != item.after_team_member_id or override != item.after_manual_override or comment != item.after_comment:
-            blocked.append(
-                RosterChangeInput(
-                    roster_slot_id=item.roster_slot_id,
-                    team_member_id=item.before_team_member_id,
-                    manual_override=item.before_manual_override,
-                    comment=item.before_comment,
-                )
-            )
-            continue
+        expected_current[item.roster_slot_id] = AssignmentSnapshot(
+            team_member_id=item.after_team_member_id,
+            manual_override=item.after_manual_override,
+            comment=item.after_comment,
+        )
         restore.append(
             RosterChangeInput(
                 roster_slot_id=item.roster_slot_id,
@@ -249,7 +260,7 @@ def revert_roster_change_set(
                 comment=item.before_comment,
             )
         )
-    if not restore and not blocked:
+    if not restore:
         raise RosterChangeSetError("NOTHING_TO_REVERT", "Roster change set has no applied items")
 
     def mark(change_set: RosterChangeSet) -> None:
@@ -261,7 +272,7 @@ def revert_roster_change_set(
         organization_id=organization_id,
         planning_period_id=original.planning_period_id,
         shift_group_id=original.shift_group_id,
-        items=[*restore, *blocked],
+        items=restore,
         mode=mode,
         actor=actor,
         source=source,
@@ -269,7 +280,7 @@ def revert_roster_change_set(
         label=f"Revert {original.id}",
         reverts_change_set_id=original.id,
         before_commit=mark,
-        forced_refusals={item.roster_slot_id: "changed_since" for item in blocked},
+        expected_current=expected_current,
     )
 
 
@@ -303,6 +314,7 @@ def legacy_refusal_message(row: RosterChangeSetItem) -> str:
         "TEMPLATE_NO_GO": "Team member marked this shift template as a no-go on that day",
         "SLOT_NOT_FOUND": "Roster slot not found",
         "SLOT_WRONG_PERIOD": "Roster slot not found",
+        "SLOT_OUTSIDE_GROUP": "Roster slot is not in the selected shift group",
     }
     if row.refusal_code in messages:
         return messages[row.refusal_code]
@@ -317,6 +329,7 @@ def _precheck(
     db: Session,
     organization_id: int,
     planning_period_id: int,
+    shift_group_id: int | None,
     slot: RosterSlot | None,
     item: RosterChangeInput,
 ) -> str | None:
@@ -326,6 +339,10 @@ def _precheck(
         period = slot.planning_period
         if period is None or period.organization_id != organization_id or slot.planning_period_id != planning_period_id:
             return "SLOT_WRONG_PERIOD"
+    if shift_group_id is not None and slot.shift_template_id is not None:
+        covered = shift_group_ids_for_template(db, slot.shift_template_id)
+        if covered and shift_group_id not in covered:
+            return "SLOT_OUTSIDE_GROUP"
     if item.team_member_id is None:
         return None
     if db.get(TeamMember, item.team_member_id) is None:
@@ -360,6 +377,65 @@ def _same_as_before(row: RosterChangeSetItem) -> bool:
         and row.before_manual_override == row.after_manual_override
         and row.before_comment == row.after_comment
     )
+
+
+def _snapshot_matches(current: RosterSlotAssignment | None, expected: AssignmentSnapshot) -> bool:
+    if expected.team_member_id is None:
+        return current is None
+    if current is None:
+        return False
+    return (
+        current.team_member_id == expected.team_member_id
+        and bool(current.manual_override) == expected.manual_override
+        and current.comment == expected.comment
+    )
+
+
+def _refuse_if_expected_changed(
+    db: Session,
+    rows: list[RosterChangeSetItem],
+    expected_current: dict[int, AssignmentSnapshot] | None,
+) -> None:
+    if not expected_current:
+        return
+    lock_roster_slots_for_assignment(db, list(expected_current))
+    fresh = {
+        row.roster_slot_id: row
+        for row in db.scalars(
+            select(RosterSlotAssignment)
+            .where(RosterSlotAssignment.roster_slot_id.in_(list(expected_current)))
+            .execution_options(populate_existing=True)
+        )
+    }
+    for row in rows:
+        if row.outcome != OUTCOME_APPLIED:
+            continue
+        expected = expected_current.get(row.roster_slot_id)
+        if expected is None or _snapshot_matches(fresh.get(row.roster_slot_id), expected):
+            continue
+        row.outcome = OUTCOME_REFUSED
+        row.refusal_code = "changed_since"
+        row.findings = []
+
+
+def _change_caused_error(warning: ValidationWarning, row: RosterChangeSetItem, slot: RosterSlot) -> bool:
+    if warning.severity != "error":
+        return False
+    if row.after_team_member_id is not None and _warning_targets_slot(
+        warning, slot_id=row.roster_slot_id, team_member_id=row.after_team_member_id
+    ):
+        return True
+    if warning.code != "ROSTER_CONSTRAINT_COUPLED_SHIFT_REQUIRED":
+        return False
+    if warning.team_member_id is None or row.before_team_member_id != warning.team_member_id:
+        return False
+    if row.after_team_member_id == row.before_team_member_id:
+        return False
+    details = warning.details or {}
+    partner_date = details.get("partner_date")
+    if not isinstance(partner_date, str) or slot.shift_variant_id != details.get("paired_shift_variant_id"):
+        return False
+    return slot.slot_date.isoformat() == partner_date
 
 
 def _any_target_group_published(
@@ -402,14 +478,8 @@ def _evaluate_legal_subset(
         warnings = evaluate_plan_state(state, db=db)
         blocked: list[RosterChangeSetItem] = []
         for row in active:
-            if row.after_team_member_id is None:
-                continue
-            matched = [
-                warning
-                for warning in warnings
-                if warning.severity == "error"
-                and _warning_targets_slot(warning, slot_id=row.roster_slot_id, team_member_id=row.after_team_member_id)
-            ]
+            slot = slots[row.roster_slot_id]
+            matched = [warning for warning in warnings if _change_caused_error(warning, row, slot)]
             if matched:
                 row.findings = [_finding_json(warning) for warning in matched]
                 row.outcome = OUTCOME_REFUSED
@@ -438,8 +508,8 @@ def _overlay_rows(
     state = build_plan_state(
         db,
         organization_id=organization_id,
-        start_date=min(dates),
-        end_date=max(dates),
+        start_date=min(dates) - COUPLED_SHIFT_WINDOW,
+        end_date=max(dates) + COUPLED_SHIFT_WINDOW,
     )
     for row in rows:
         slot = slots[row.roster_slot_id]
@@ -474,6 +544,101 @@ def _finding_json(warning: ValidationWarning) -> dict:
     return warning.model_dump(mode="json")
 
 
+def _expected_predicates(slot_id: int, expected: AssignmentSnapshot) -> list:
+    predicates = [
+        RosterSlotAssignment.roster_slot_id == slot_id,
+        RosterSlotAssignment.team_member_id == expected.team_member_id,
+        RosterSlotAssignment.manual_override == expected.manual_override,
+    ]
+    if expected.comment is None:
+        predicates.append(RosterSlotAssignment.comment.is_(None))
+    else:
+        predicates.append(RosterSlotAssignment.comment == expected.comment)
+    return predicates
+
+
+def _write_expected_row(
+    db: Session,
+    *,
+    organization_id: int,
+    actor: str,
+    source: str,
+    row: RosterChangeSetItem,
+    expected: AssignmentSnapshot,
+) -> bool:
+    slot_id = row.roster_slot_id
+    if expected.team_member_id is None:
+        existing = db.scalar(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot_id))
+        if existing is not None or row.after_team_member_id is None:
+            return existing is None and row.after_team_member_id is None
+        try:
+            with db.begin_nested():
+                upsert_roster_slot_assignment(
+                    db,
+                    RosterSlotAssignmentUpsert(
+                        roster_slot_id=slot_id,
+                        team_member_id=row.after_team_member_id,
+                        comment=row.after_comment,
+                        manual_override=row.after_manual_override,
+                    ),
+                    organization_id=organization_id,
+                    actor=actor,
+                    source=source,
+                    commit=False,
+                    enforce_preflight=False,
+                )
+        except IntegrityError:
+            return False
+        return True
+    predicates = _expected_predicates(slot_id, expected)
+    if row.after_team_member_id is None:
+        existing = db.scalar(select(RosterSlotAssignment).where(*predicates))
+        if existing is None:
+            return False
+        assignment_id = existing.id
+        result = db.execute(delete(RosterSlotAssignment).where(*predicates))
+        if result.rowcount != 1:
+            return False
+        record_audit(
+            db,
+            actor=actor,
+            source=source,
+            action="delete",
+            entity_type="roster_slot_assignment",
+            entity_id=assignment_id,
+            details={"roster_slot_id": slot_id},
+        )
+        return True
+    result = db.execute(
+        update(RosterSlotAssignment)
+        .where(*predicates)
+        .values(
+            team_member_id=row.after_team_member_id,
+            comment=row.after_comment,
+            manual_override=row.after_manual_override,
+            source=source,
+        )
+    )
+    if result.rowcount != 1:
+        return False
+    assignment = db.scalar(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot_id))
+    if assignment is None:
+        return False
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="update",
+        entity_type="roster_slot_assignment",
+        entity_id=assignment.id,
+        details={
+            "roster_slot_id": slot_id,
+            "team_member_id": row.after_team_member_id,
+        },
+    )
+    return True
+
+
 def _write_rows(
     db: Session,
     organization_id: int,
@@ -481,9 +646,26 @@ def _write_rows(
     source: str,
     rows: list[RosterChangeSetItem],
     slots: dict[int, RosterSlot],
+    *,
+    mode: str,
+    expected_current: dict[int, AssignmentSnapshot] | None,
 ) -> None:
+    nested = db.begin_nested() if expected_current else None
+    failed_slots: list[int] = []
     for row in rows:
         if row.outcome != OUTCOME_APPLIED or row.roster_slot_id not in slots:
+            continue
+        expected = expected_current.get(row.roster_slot_id) if expected_current else None
+        if expected is not None:
+            if not _write_expected_row(
+                db,
+                organization_id=organization_id,
+                actor=actor,
+                source=source,
+                row=row,
+                expected=expected,
+            ):
+                failed_slots.append(row.roster_slot_id)
             continue
         if row.after_team_member_id is None:
             clear_roster_slot_assignment(
@@ -509,3 +691,23 @@ def _write_rows(
                 commit=False,
                 enforce_preflight=False,
             )
+    if nested is None:
+        return
+    if failed_slots and mode == MODE_ALL_OR_NOTHING:
+        nested.rollback()
+        failed = set(failed_slots)
+        for row in rows:
+            if row.roster_slot_id in failed:
+                row.outcome = OUTCOME_REFUSED
+                row.refusal_code = "changed_since"
+                row.findings = []
+            elif row.outcome == OUTCOME_APPLIED:
+                row.outcome = OUTCOME_REFUSED
+                row.refusal_code = row.refusal_code or "SET_REFUSED"
+        return
+    nested.commit()
+    for row in rows:
+        if row.roster_slot_id in failed_slots:
+            row.outcome = OUTCOME_REFUSED
+            row.refusal_code = "changed_since"
+            row.findings = []

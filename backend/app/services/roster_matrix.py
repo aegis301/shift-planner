@@ -1,4 +1,5 @@
 import calendar
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -489,6 +490,24 @@ def _team_member_has_template_no_go(
     return False
 
 
+def lock_roster_slots_for_assignment(db: Session, slot_ids: Sequence[int]) -> None:
+    ordered = sorted({slot_id for slot_id in slot_ids})
+    if not ordered:
+        return
+    slot_stmt = select(RosterSlot.id).where(RosterSlot.id.in_(ordered)).order_by(RosterSlot.id)
+    assignment_stmt = (
+        select(RosterSlotAssignment.id)
+        .where(RosterSlotAssignment.roster_slot_id.in_(ordered))
+        .order_by(RosterSlotAssignment.roster_slot_id)
+    )
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name != "sqlite":
+        slot_stmt = slot_stmt.with_for_update()
+        assignment_stmt = assignment_stmt.with_for_update()
+    db.execute(slot_stmt).all()
+    db.execute(assignment_stmt).all()
+
+
 def _warning_targets_slot(warning: ValidationWarning, *, slot_id: int, team_member_id: int) -> bool:
     if warning.team_member_id != team_member_id:
         return False
@@ -547,6 +566,7 @@ def upsert_roster_slot_assignment(
     commit: bool = True,
     enforce_preflight: bool = True,
 ) -> RosterSlotAssignment:
+    lock_roster_slots_for_assignment(db, [payload.roster_slot_id])
     slot = db.scalars(
         select(RosterSlot)
         .where(RosterSlot.id == payload.roster_slot_id)
@@ -658,6 +678,7 @@ def clear_roster_slot_assignment(
     source: str,
     commit: bool = True,
 ) -> bool:
+    lock_roster_slots_for_assignment(db, [payload.roster_slot_id])
     assignment = db.scalar(
         select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == payload.roster_slot_id)
     )
