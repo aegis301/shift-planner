@@ -13,29 +13,39 @@ import {
   test
 } from "./fixtures";
 
-test.describe.configure({ mode: "serial" });
-
-test.describe("planner", () => {
+test.describe("planner screenshots", () => {
   test.use({ storageState: plannerAuth, viewport: desktop });
 
-  test("switches wishes, roster, and analysis", async ({ page, request }) => {
+  test("shows the wishes matrix", async ({ page, request }) => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));
     await expect(page.getByRole("heading", { name: "Wünsche" })).toBeVisible();
     await expect(page.getByRole("table").first()).toBeVisible();
     await shot(page, "planning-wishes");
+  });
 
+  test("shows the roster", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    await page.goto(planningPath(target));
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
     await expect(page.getByRole("heading", { name: "Finaler Dienstplan" })).toBeVisible();
     await expect(page.locator('button[aria-haspopup="listbox"]').first()).toBeVisible();
     await shot(page, "planning-roster");
+  });
 
+  test("shows the analysis", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    await page.goto(planningPath(target));
     await page.getByRole("button", { name: "Analyse" }).click();
     await expect(page.getByRole("heading", { name: "Analyse" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Fairness" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Teammitglieder" }).first()).toBeVisible();
     await shot(page, "planning-analysis");
   });
+});
+
+test.describe("planner", () => {
+  test.use({ storageState: plannerAuth, viewport: desktop });
 
   test("assigns a roster cell, reloads, and clears it", async ({ page, request }) => {
     const target = await planningTarget(request);
