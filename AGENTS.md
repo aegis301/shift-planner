@@ -149,7 +149,7 @@ Deleting a shift template is also destructive because it removes variants, gener
 
 When a schema changes in a way that makes old local data incompatible, prefer a clear forward migration and tell the developer exactly what data must be recreated instead of carrying long-term compatibility branches.
 
-Planner wishes live on the shared grid (`frontend/components/planning/WishesGrid.tsx`): one row per day, one column per period-roster member. Range edits, paste, and fill use `PUT /api/v1/matrix/{id}/cells/bulk` or `POST .../cells/clear` once. Undo and redo are client-side and send `expected_updated_at` (the `PlanningCell.updated_at` last seen, or null when the cell was absent); the service skips items that no longer match and returns `outcome: conflict`. Day comments, per-template wishes, and the month note are edited in the inspector. `MatrixEditor` and the note modals remain on `/my-planning` only.
+Planner wishes live on the shared grid (`frontend/components/planning/WishesGrid.tsx`): one row per day, one column per period-roster member. Range edits, paste, and fill use `PUT /api/v1/matrix/{id}/cells/bulk` or `POST .../cells/clear` once. Undo and redo are client-side and send `expected_updated_at` (the `PlanningCell.updated_at` last seen, or null when the cell was absent); the service updates or deletes the row only when `updated_at` still matches in that statement, and returns `outcome: conflict` otherwise. Day comments, per-template wishes, and the month note are edited in the inspector. `MatrixEditor` and the note modals remain on `/my-planning` only.
 
 ## Rule evaluation layer
 

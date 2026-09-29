@@ -1103,6 +1103,88 @@ def test_bulk_cell_precondition_skips_stale_and_keeps_the_newer_value(client: Te
     assert kept["cells"][0]["status"] == "forschung"
 
 
+def test_preconditioned_write_does_not_clobber_a_row_changed_after_it_was_read():
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    from app.models import PlanningCell
+    from app.schemas import PlanningCellUpsert
+    from app.services.matrix import (
+        _delete_cell_if_current,
+        _insert_cell_if_absent,
+        _update_cell_if_current,
+    )
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with Session() as db:
+        cell = PlanningCell(
+            planning_period_id=1,
+            shift_group_id=1,
+            team_member_id=1,
+            cell_date=date(2026, 8, 3),
+            status="frei",
+            comment=None,
+            source="test",
+        )
+        db.add(cell)
+        db.commit()
+        db.refresh(cell)
+        stale = cell.updated_at
+        assert stale is not None
+        db.execute(
+            update(PlanningCell)
+            .where(PlanningCell.id == cell.id)
+            .values(status="lehre", updated_at=datetime(2020, 1, 1, tzinfo=UTC)),
+            execution_options={"synchronize_session": False},
+        )
+        db.commit()
+        assert cell.updated_at == stale
+        applied = _update_cell_if_current(
+            db,
+            cell,
+            PlanningCellUpsert(
+                team_member_id=1,
+                cell_date=date(2026, 8, 3),
+                status="urlaub",
+                expected_updated_at=stale,
+            ),
+            actor="test",
+            source="test",
+            planning_period_id=1,
+        )
+        assert applied is False
+        removed = _delete_cell_if_current(
+            db,
+            cell,
+            actor="test",
+            source="test",
+            planning_period_id=1,
+        )
+        assert removed is False
+        db.expire_all()
+        kept = db.get(PlanningCell, cell.id)
+        assert kept is not None
+        assert kept.status == "lehre"
+        duplicate = _insert_cell_if_absent(
+            db,
+            1,
+            PlanningCellUpsert(team_member_id=1, cell_date=date(2026, 8, 3), status="urlaub"),
+            shift_group_id=1,
+            actor="test",
+            source="test",
+        )
+        assert duplicate is None
+        db.commit()
+        assert db.scalar(select(PlanningCell).where(PlanningCell.team_member_id == 1)).status == "lehre"
+
+
 def test_roster_matrix_assignment_validation_and_csv(client: TestClient):
     login(client)
     team_member_id = client.post(

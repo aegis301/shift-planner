@@ -1,7 +1,8 @@
 import calendar
 from datetime import UTC, date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, delete, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -326,15 +327,158 @@ def _find_planning_cell(
     shift_group_id: int,
     team_member_id: int,
     cell_date: date,
+    lock: bool = False,
 ) -> PlanningCell | None:
-    return db.scalar(
-        select(PlanningCell).where(
-            PlanningCell.planning_period_id == planning_period_id,
-            PlanningCell.shift_group_id == shift_group_id,
-            PlanningCell.team_member_id == team_member_id,
-            PlanningCell.cell_date == cell_date,
-        )
+    stmt = select(PlanningCell).where(
+        PlanningCell.planning_period_id == planning_period_id,
+        PlanningCell.shift_group_id == shift_group_id,
+        PlanningCell.team_member_id == team_member_id,
+        PlanningCell.cell_date == cell_date,
     )
+    bind = db.get_bind()
+    if lock and bind is not None and bind.dialect.name != "sqlite":
+        stmt = stmt.with_for_update()
+    return db.scalar(stmt)
+
+
+def _precondition_requested(payload: PlanningCellUpsert | PlanningCellClearItem) -> bool:
+    return "expected_updated_at" in payload.model_fields_set
+
+
+def _lock_preconditioned_cells(
+    db: Session,
+    payloads: list[PlanningCellUpsert] | list[PlanningCellClearItem],
+    *,
+    planning_period_id: int,
+    shift_group_id: int,
+) -> None:
+    keys = sorted(
+        {
+            (item.team_member_id, item.cell_date)
+            for item in payloads
+            if _precondition_requested(item)
+        }
+    )
+    for team_member_id, cell_date in keys:
+        _find_planning_cell(
+            db,
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            team_member_id=team_member_id,
+            cell_date=cell_date,
+            lock=True,
+        )
+
+
+def _updated_at_still(value: datetime):
+    moment = value.astimezone(UTC).replace(tzinfo=None) if value.tzinfo is not None else value
+    second_text = moment.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+    stored = cast(PlanningCell.updated_at, String)
+    return or_(
+        PlanningCell.updated_at == value,
+        stored == second_text,
+        stored == f"{second_text}.000000",
+    )
+
+
+def _update_cell_if_current(
+    db: Session,
+    cell: PlanningCell,
+    payload: PlanningCellUpsert,
+    *,
+    actor: str,
+    source: str,
+    planning_period_id: int,
+) -> bool:
+    result = db.execute(
+        update(PlanningCell)
+        .where(PlanningCell.id == cell.id, _updated_at_still(cell.updated_at))
+        .values(
+            status=payload.status.strip().lower(),
+            comment=payload.comment,
+            source=source,
+            updated_at=func.now(),
+        ),
+        execution_options={"synchronize_session": False},
+    )
+    if result.rowcount != 1:
+        return False
+    db.refresh(cell)
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="update",
+        entity_type="planning_cell",
+        entity_id=cell.id,
+        details={"planning_period_id": planning_period_id, "team_member_id": payload.team_member_id},
+    )
+    return True
+
+
+def _delete_cell_if_current(
+    db: Session,
+    cell: PlanningCell,
+    *,
+    actor: str,
+    source: str,
+    planning_period_id: int,
+) -> bool:
+    cell_id = cell.id
+    team_member_id = cell.team_member_id
+    result = db.execute(
+        delete(PlanningCell).where(PlanningCell.id == cell.id, _updated_at_still(cell.updated_at)),
+        execution_options={"synchronize_session": False},
+    )
+    if result.rowcount != 1:
+        return False
+    db.expunge(cell)
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="delete",
+        entity_type="planning_cell",
+        entity_id=cell_id,
+        details={"planning_period_id": planning_period_id, "team_member_id": team_member_id},
+    )
+    return True
+
+
+def _insert_cell_if_absent(
+    db: Session,
+    planning_period_id: int,
+    payload: PlanningCellUpsert,
+    *,
+    shift_group_id: int,
+    actor: str,
+    source: str,
+) -> PlanningCell | None:
+    cell = PlanningCell(
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        team_member_id=payload.team_member_id,
+        cell_date=payload.cell_date,
+        status=payload.status.strip().lower(),
+        comment=payload.comment,
+        source=source,
+    )
+    try:
+        with db.begin_nested():
+            db.add(cell)
+            db.flush()
+    except IntegrityError:
+        return None
+    record_audit(
+        db,
+        actor=actor,
+        source=source,
+        action="create",
+        entity_type="planning_cell",
+        entity_id=cell.id,
+        details={"planning_period_id": planning_period_id, "team_member_id": payload.team_member_id},
+    )
+    return cell
 
 
 def bulk_upsert_planning_cells(
@@ -361,16 +505,51 @@ def bulk_upsert_planning_cells(
         )
     cells: list[PlanningCell] = []
     conflicts: list[tuple[int, date]] = []
+    _lock_preconditioned_cells(
+        db,
+        payload.cells,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+    )
     for cell_payload in payload.cells:
+        precondition = _precondition_requested(cell_payload)
         existing = _find_planning_cell(
             db,
             planning_period_id=planning_period_id,
             shift_group_id=shift_group_id,
             team_member_id=cell_payload.team_member_id,
             cell_date=cell_payload.cell_date,
+            lock=precondition,
         )
         if _precondition_conflicts(existing, cell_payload):
             conflicts.append((cell_payload.team_member_id, cell_payload.cell_date))
+            continue
+        if precondition and existing is None:
+            inserted = _insert_cell_if_absent(
+                db,
+                planning_period_id,
+                cell_payload,
+                shift_group_id=shift_group_id,
+                actor=actor,
+                source=source,
+            )
+            if inserted is None:
+                conflicts.append((cell_payload.team_member_id, cell_payload.cell_date))
+                continue
+            cells.append(inserted)
+            continue
+        if precondition and existing is not None:
+            if not _update_cell_if_current(
+                db,
+                existing,
+                cell_payload,
+                actor=actor,
+                source=source,
+                planning_period_id=planning_period_id,
+            ):
+                conflicts.append((cell_payload.team_member_id, cell_payload.cell_date))
+                continue
+            cells.append(existing)
             continue
         cells.append(
             _upsert_planning_cell_no_commit(
@@ -471,18 +650,38 @@ def clear_planning_cell(
         items = [item]
     deleted = False
     conflicts: list[tuple[int, date]] = []
+    _lock_preconditioned_cells(
+        db,
+        items,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+    )
     for item in items:
+        precondition = _precondition_requested(item)
         cell = _find_planning_cell(
             db,
             planning_period_id=planning_period_id,
             shift_group_id=shift_group_id,
             team_member_id=item.team_member_id,
             cell_date=item.cell_date,
+            lock=precondition,
         )
         if _precondition_conflicts(cell, item):
             conflicts.append((item.team_member_id, item.cell_date))
             continue
         if cell is None:
+            continue
+        if precondition:
+            if not _delete_cell_if_current(
+                db,
+                cell,
+                actor=actor,
+                source=source,
+                planning_period_id=planning_period_id,
+            ):
+                conflicts.append((item.team_member_id, item.cell_date))
+                continue
+            deleted = True
             continue
         record_audit(
             db,

@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyWishesUndo,
+  overlayBefore,
   parseStatusTsv,
   parseWishesPaste,
   popWishesRedo,
   popWishesUndo,
   recordWishesEdit,
   resolveStatusToken,
+  retargetExpected,
   skipConflicts,
   stampCounterpart,
   toWishesInternal,
+  undoEntryForLanded,
   writesRestoring
 } from "@/lib/wishesUndo";
 
@@ -88,5 +91,48 @@ describe("wishes undo", () => {
     ]);
     const internal = toWishesInternal([[{ status: "frei", comment: "x" }]]);
     expect(parseWishesPaste(internal)).toEqual([[{ status: "frei", comment: "x", raw: false }]]);
+  });
+
+  it("keeps a queued edit's undo based on the write that landed, not the stale snapshot", () => {
+    const captured = [{ teamMemberId: 1, date: "2026-10-01", status: null, comment: null, updatedAt: null }];
+    const latest = new Map([
+      ["1:2026-10-01", { teamMemberId: 1, date: "2026-10-01", status: "urlaub", comment: null, updatedAt: "t1" }]
+    ]);
+    expect(overlayBefore(captured, latest)[0]?.status).toBe("urlaub");
+    const before = overlayBefore(captured, latest);
+    const writes = [
+      { teamMemberId: 1, date: "2026-10-01", status: "frei", comment: null, expectedUpdatedAt: null },
+      { teamMemberId: 1, date: "2026-10-02", status: null, comment: null, expectedUpdatedAt: "t0" }
+    ];
+    const entry = undoEntryForLanded(
+      [
+        ...before,
+        { teamMemberId: 1, date: "2026-10-02", status: "lehre", comment: null, updatedAt: "t0" }
+      ],
+      writes,
+      [],
+      new Map<string, string | null>([["1:2026-10-01", "t2"]])
+    );
+    expect(entry?.undo.map((row) => row.date)).toEqual(["2026-10-01"]);
+    expect(entry?.undo[0]).toMatchObject({ status: "urlaub", expectedUpdatedAt: "t2" });
+    expect(entry?.redo[0]).toMatchObject({ status: "frei", expectedUpdatedAt: "t2" });
+  });
+
+  it("points an older undo at the timestamp left by the newer one", () => {
+    const first = recordWishesEdit(emptyWishesUndo(), {
+      undo: [{ teamMemberId: 1, date: "2026-10-01", status: null, comment: null, expectedUpdatedAt: "t1" }],
+      redo: [{ teamMemberId: 1, date: "2026-10-01", status: "urlaub", comment: null, expectedUpdatedAt: "t1" }]
+    });
+    const undone = popWishesUndo(first);
+    const older = retargetExpected(undone!.stacks.undo, new Map([["1:2026-10-01", "t3"]]));
+    expect(older).toEqual([]);
+    const second = recordWishesEdit(first, {
+      undo: [{ teamMemberId: 1, date: "2026-10-01", status: "urlaub", comment: null, expectedUpdatedAt: "t2" }],
+      redo: [{ teamMemberId: 1, date: "2026-10-01", status: "frei", comment: null, expectedUpdatedAt: "t2" }]
+    });
+    const popped = popWishesUndo(second);
+    const retargeted = retargetExpected(popped!.stacks.undo, new Map([["1:2026-10-01", "t3"]]));
+    expect(retargeted[0]?.undo[0]?.expectedUpdatedAt).toBe("t3");
+    expect(retargeted[0]?.redo[0]?.expectedUpdatedAt).toBe("t3");
   });
 });

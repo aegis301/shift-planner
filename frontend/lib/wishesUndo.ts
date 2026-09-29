@@ -92,6 +92,54 @@ export function parseStatusTsv(text: string): string[][] {
   return body.split(/\r?\n/).map((line) => line.split("\t"));
 }
 
+export function overlayBefore(captured: WishesCellState[], latest: Map<string, WishesCellState>): WishesCellState[] {
+  return captured.map((state) => latest.get(cellKey(state.teamMemberId, state.date)) ?? state);
+}
+
+export function undoEntryForLanded(
+  before: WishesCellState[],
+  writes: WishesCellWrite[],
+  conflicts: { teamMemberId: number; date: string }[],
+  updatedAt: Map<string, string | null>
+): WishesUndoEntry | null {
+  const blocked = new Set(conflicts.map((row) => cellKey(row.teamMemberId, row.date)));
+  const landed = writes.filter((row) => {
+    const key = cellKey(row.teamMemberId, row.date);
+    return updatedAt.has(key) && !blocked.has(key);
+  });
+  if (landed.length === 0) {
+    return null;
+  }
+  const landedKeys = new Set(landed.map((row) => cellKey(row.teamMemberId, row.date)));
+  return {
+    undo: writesRestoring(
+      before.filter((row) => landedKeys.has(cellKey(row.teamMemberId, row.date))),
+      updatedAt
+    ),
+    redo: landed.map((row) => ({
+      ...row,
+      expectedUpdatedAt: updatedAt.get(cellKey(row.teamMemberId, row.date)) ?? null
+    }))
+  };
+}
+
+export function retargetExpected(entries: WishesUndoEntry[], updatedAt: Map<string, string | null>): WishesUndoEntry[] {
+  return entries.map((entry) => ({
+    undo: retargetWrites(entry.undo, updatedAt),
+    redo: retargetWrites(entry.redo, updatedAt)
+  }));
+}
+
+function retargetWrites(writes: WishesCellWrite[], updatedAt: Map<string, string | null>): WishesCellWrite[] {
+  return writes.map((write) => {
+    const key = cellKey(write.teamMemberId, write.date);
+    if (!updatedAt.has(key)) {
+      return write;
+    }
+    return { ...write, expectedUpdatedAt: updatedAt.get(key) ?? null };
+  });
+}
+
 export function stampCounterpart(
   counterpart: WishesCellWrite[],
   updatedAt: Map<string, string | null>,

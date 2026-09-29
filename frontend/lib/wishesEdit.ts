@@ -4,6 +4,7 @@ import { cellKey, type WishesCellWrite } from "@/lib/wishesUndo";
 export type WishesWriteResult = {
   conflicts: { teamMemberId: number; date: string }[];
   updatedAt: Map<string, string | null>;
+  error: unknown | null;
 };
 
 export async function applyWishesWrites(args: {
@@ -19,47 +20,55 @@ export async function applyWishesWrites(args: {
   const path = { planning_period_id: Number(args.periodId) };
   const query = { shift_group_id: Number(args.shiftGroupId) };
   if (sets.length > 0) {
-    const response = await apiClient.PUT("/api/v1/matrix/{planning_period_id}/cells/bulk", {
-      params: { path, query },
-      body: {
-        cells: sets.map((row) => ({
-          team_member_id: row.teamMemberId,
-          cell_date: row.date,
-          status: row.status ?? "",
-          comment: row.comment,
-          ...(args.precondition ? { expected_updated_at: row.expectedUpdatedAt } : {})
-        }))
+    try {
+      const response = await apiClient.PUT("/api/v1/matrix/{planning_period_id}/cells/bulk", {
+        params: { path, query },
+        body: {
+          cells: sets.map((row) => ({
+            team_member_id: row.teamMemberId,
+            cell_date: row.date,
+            status: row.status ?? "",
+            comment: row.comment,
+            ...(args.precondition ? { expected_updated_at: row.expectedUpdatedAt } : {})
+          }))
+        }
+      });
+      for (const cell of response.data?.cells ?? []) {
+        updatedAt.set(cellKey(cell.team_member_id, cell.cell_date), cell.updated_at);
       }
-    });
-    for (const cell of response.data?.cells ?? []) {
-      updatedAt.set(cellKey(cell.team_member_id, cell.cell_date), cell.updated_at);
-    }
-    for (const row of response.data?.conflicts ?? []) {
-      conflicts.push({ teamMemberId: row.team_member_id, date: row.cell_date });
+      for (const row of response.data?.conflicts ?? []) {
+        conflicts.push({ teamMemberId: row.team_member_id, date: row.cell_date });
+      }
+    } catch (error) {
+      return { conflicts, updatedAt, error };
     }
   }
   if (clears.length > 0) {
-    const response = await apiClient.POST("/api/v1/matrix/{planning_period_id}/cells/clear", {
-      params: { path, query },
-      body: {
-        cells: clears.map((row) => ({
-          team_member_id: row.teamMemberId,
-          cell_date: row.date,
-          ...(args.precondition ? { expected_updated_at: row.expectedUpdatedAt } : {})
-        }))
+    try {
+      const response = await apiClient.POST("/api/v1/matrix/{planning_period_id}/cells/clear", {
+        params: { path, query },
+        body: {
+          cells: clears.map((row) => ({
+            team_member_id: row.teamMemberId,
+            cell_date: row.date,
+            ...(args.precondition ? { expected_updated_at: row.expectedUpdatedAt } : {})
+          }))
+        }
+      });
+      for (const row of response.data?.conflicts ?? []) {
+        conflicts.push({ teamMemberId: row.team_member_id, date: row.cell_date });
       }
-    });
-    for (const row of response.data?.conflicts ?? []) {
-      conflicts.push({ teamMemberId: row.team_member_id, date: row.cell_date });
-    }
-    for (const row of clears) {
-      const key = cellKey(row.teamMemberId, row.date);
-      if (!conflicts.some((item) => cellKey(item.teamMemberId, item.date) === key)) {
-        updatedAt.set(key, null);
+      for (const row of clears) {
+        const key = cellKey(row.teamMemberId, row.date);
+        if (!conflicts.some((item) => cellKey(item.teamMemberId, item.date) === key)) {
+          updatedAt.set(key, null);
+        }
       }
+    } catch (error) {
+      return { conflicts, updatedAt, error };
     }
   }
-  return { conflicts, updatedAt };
+  return { conflicts, updatedAt, error: null };
 }
 
 export async function saveWishesIntent(args: {
