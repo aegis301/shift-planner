@@ -106,8 +106,8 @@ dependencies are in the ADR's **Work plan** table.
 | #113 | TanStack Query for server state | shipped |
 | #114 | Route split: workbench and member area | shipped |
 | #115 | Context bar, inspector, command palette | shipped |
-| #116 | Roster change sets (bulk writes, revert) | this change |
-| #117 | Grid primitive and roster matrix | open |
+| #116 | Roster change sets (bulk writes, revert) | shipped |
+| #117 | Grid primitive and roster matrix | this change |
 | #118 | Wishes matrix on the grid | open |
 | #119 | Bearer tokens and device sessions | open |
 | #120 | Member API `/api/v1/me` | open |
@@ -117,7 +117,7 @@ dependencies are in the ADR's **Work plan** table.
 | #124 | Member app: wishes, swaps, hours, calendar | open |
 | #125 | Push as a channel of #101's notifications (design: PR #127; needs #101 implemented) | open |
 
-#119 has no dependencies and can start in parallel. #109 through #115 have shipped. #116 (roster change sets) is this change and unblocks #117. #123 can use `Organization.timezone` for offline capture.
+#119 has no dependencies and can start in parallel. #109 through #116 have shipped. #117 (roster grid) is this change and unblocks #118. #123 can use `Organization.timezone` for offline capture.
 
 **Why #75 is split.** The spike showed that encoding all 18 rules at once is the way to get a
 model nobody can debug. Tier A is the set the TdL fixture actually exercises and that the spike

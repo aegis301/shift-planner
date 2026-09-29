@@ -12,6 +12,7 @@ import {
 } from "@/lib/fairness";
 import { workloadRowForMember } from "@/lib/rosterWorkload";
 import type { RosterMatrix } from "@/components/RosterMatrixEditor";
+import type { RosterChangeNotice } from "@/components/planning/RosterGrid";
 
 type Warning = {
   code: string;
@@ -34,6 +35,7 @@ export function PlanningInspector({
   fairness,
   timeZone,
   canAssign,
+  changeNotice = null,
   onAssign,
   onSelectMember,
   onSelectSlot
@@ -50,6 +52,7 @@ export function PlanningInspector({
   fairness: FairnessAccountsRead | null;
   timeZone: string;
   canAssign: boolean;
+  changeNotice?: RosterChangeNotice | null;
   onAssign: (memberId: number) => void;
   onSelectMember: (memberId: string) => void;
   onSelectSlot: (slotId: string) => void;
@@ -67,6 +70,7 @@ export function PlanningInspector({
       return response.data as SlotCandidatesRead;
     }
   });
+  const notice = changeNotice ? <ChangeSetNotice locale={locale} notice={changeNotice} /> : null;
   if (findingKey) {
     const [code, member, date] = findingKey.split("|");
     const warning = warnings.find((row) => row.code === code && String(row.team_member_id ?? "") === member && (row.date ?? "") === date);
@@ -107,6 +111,7 @@ export function PlanningInspector({
       : undefined;
     return (
       <div className="grid gap-4 text-sm">
+        {notice}
         <div>
           <h3 className="font-semibold text-ink">{candidates.data.template_name}</h3>
           <p className="text-slate-600">
@@ -178,7 +183,33 @@ export function PlanningInspector({
       </div>
     );
   }
+  if (notice) {
+    return notice;
+  }
   return <p className="text-sm text-slate-600">{t(locale, "inspectorEmpty")}</p>;
+}
+
+function ChangeSetNotice({ locale, notice }: { locale: Locale; notice: RosterChangeNotice }) {
+  const refused = notice.changeSet?.items.filter((item) => item.outcome === "refused") ?? [];
+  if (refused.length === 0 && notice.unresolvedNames.length === 0) {
+    return null;
+  }
+  return (
+    <section className="grid gap-2 rounded-token-md bg-severity-error p-2">
+      <h3 className="font-semibold text-ink">{t(locale, "changeSetRefusedTitle")}</h3>
+      {notice.unresolvedNames.length > 0 ? <p>{t(locale, "gridPasteUnresolved", { names: notice.unresolvedNames.join(", ") })}</p> : null}
+      {refused.map((item) => (
+        <p key={item.id} className="text-xs">
+          {item.roster_slot_id}: {item.refusal_code === "changed_since" ? t(locale, "changeSetChangedSince") : item.refusal_code ?? item.findings?.[0]?.message ?? ""}
+        </p>
+      ))}
+      {notice.applyLegal ? (
+        <button className="rounded-token-md bg-ink px-2 py-1 text-xs font-semibold text-white" type="button" onClick={notice.applyLegal}>
+          {t(locale, "changeSetApplyLegal")}
+        </button>
+      ) : null}
+    </section>
+  );
 }
 
 function CandidateGroup({

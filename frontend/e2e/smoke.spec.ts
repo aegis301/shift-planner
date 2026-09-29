@@ -68,7 +68,7 @@ test.describe("planner", () => {
     await page.reload();
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
     await expect(cells.first()).toBeVisible();
-    expect(await indexOfCellText(page, name)).toBe(-1);
+    await expect(cells.nth(assignedIndex)).toHaveText("—");
   });
 
   test("loads each planning resource once", async ({ page, request }) => {
@@ -79,7 +79,7 @@ test.describe("planner", () => {
         return;
       }
       const url = req.url();
-      if (/\/api\/v1\/roster-matrix\/\d+/.test(url)) {
+      if (/\/api\/v1\/roster-matrix\/\d+/.test(url) && !url.includes("/change-sets")) {
         counts.roster += 1;
       } else if (/\/api\/v1\/matrix\/\d+(\?|$)/.test(url)) {
         counts.wishes += 1;
@@ -121,7 +121,7 @@ test.describe("planner", () => {
     const cell = page.locator('button[aria-haspopup="listbox"]', { hasText: "—" }).first();
     await cell.scrollIntoViewIfNeeded();
     await cell.click();
-    const option = page.getByRole("listbox").locator("button:has(span.font-medium)").first();
+    const option = page.getByRole("listbox").getByRole("option").first();
     await option.click();
     await expect(page.getByText("No-Go")).toBeVisible();
     await expect(cell).toHaveText("—");
@@ -305,7 +305,7 @@ async function assignFirstOpenCell(page: import("@playwright/test").Page): Promi
     await cell.click();
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
-    const options = listbox.locator("button:has(span.font-medium)");
+    const options = listbox.getByRole("option");
     const optionCount = Math.min(await options.count(), 6);
     for (let optionIndex = 0; optionIndex < optionCount; optionIndex += 1) {
       const option = options.nth(optionIndex);

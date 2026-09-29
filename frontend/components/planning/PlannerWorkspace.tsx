@@ -38,7 +38,8 @@ import { PlanningDayIntervalBar } from "@/components/PlanningDayIntervalBar";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
-import { RosterMatrixEditor, type RosterMatrix } from "@/components/RosterMatrixEditor";
+import type { RosterMatrix } from "@/components/RosterMatrixEditor";
+import { RosterGrid, type RosterChangeNotice } from "@/components/planning/RosterGrid";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
@@ -169,6 +170,7 @@ function PlannerWorkspaceContent() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [changeNotice, setChangeNotice] = useState<RosterChangeNotice | null>(null);
   const pendingGo = useRef(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -575,18 +577,16 @@ function PlannerWorkspaceContent() {
       {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
-        <RosterMatrixEditor
+        <RosterGrid
           periodId={periodId}
-          compact
           readOnly={!plannerPlanningEditable || viewingVersionId != null}
-          teamMemberPortal={false}
           shiftGroupId={shiftGroupId || undefined}
-          versionId={viewingVersionId ?? undefined}
-          duplicateMemberDayKeys={duplicateMemberDayKeys}
+          versionId={viewingVersionId}
           validationWarnings={warnings}
+          duplicateMemberDayKeys={duplicateMemberDayKeys}
           fairnessAccounts={fairnessAccounts}
+          onNotice={setChangeNotice}
           onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
-          onInspectMember={(memberId) => patchSelection({ member: String(memberId), slot: null, finding: null })}
         />
       )}
     </section>
@@ -1274,6 +1274,7 @@ function PlannerWorkspaceContent() {
           fairness={fairnessAccounts}
           timeZone={userMe?.organization_timezone ?? "Europe/Berlin"}
           canAssign={plannerPlanningEditable && viewingVersionId == null}
+          changeNotice={changeNotice}
           onAssign={(memberId) => {
             if (!plannerPlanningEditable || viewingVersionId != null || !selection.slot) {
               return;

@@ -243,8 +243,10 @@ type), and design new planner features desktop-first already.
   `?shiftGroup=`, `?tab=`, `?slot=`, `?member=`, `?day=`). Every workbench view is linkable.
 - Every primary action is reachable from the keyboard and from the command palette
   (`Ctrl/Cmd+K`). Density is `localStorage` key `shift-planner-density` on `data-density`.
-- Matrices use the shared grid primitive: arrow-key navigation, range selection, copy and paste,
-  undo and redo, virtualization. Do not add another hand-built matrix table. *(target, #117)*
+- The roster matrix uses the shared grid in `frontend/components/grid/` (TanStack Table and
+  Virtual): one column per template position, arrow-key navigation, range selection, copy and
+  paste, undo and redo. Bulk roster writes go through roster change sets. The wishes matrix
+  moves onto the same grid in #118. Do not add another hand-built roster table.
 
 **Member companion: mobile-first.** `/my-planning`, `/my-hours`, `/profile` and the member
 dashboard tab.

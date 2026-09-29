@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-29
+- **Roster grid:** The planner roster is a virtualized grid with one column per template position. Arrow keys, ranges, copy, paste, fill, and undo go through roster change sets. A refused paste lists each row in the inspector and can apply the legal subset. Wish text uses a darker info color so it meets the contrast minimum on white.
+
 ## 2026-09-28
 - **End-to-end checks:** Playwright smoke tests stay on the flows (tabs, assignment, inspector, hours, member home, sign-out). Full-page golden screenshots are no longer part of CI. A layout change no longer fails the job on a pixel ratio.
 

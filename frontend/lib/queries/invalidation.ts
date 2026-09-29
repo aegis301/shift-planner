@@ -5,7 +5,8 @@ export function rosterAssignmentKeys(scope: PlanningScope): QueryKey[] {
   return [
     queryKeys.rosterMatrix(scope.organizationId, scope.periodId, scope.shiftGroupId, scope.teamMemberPortal),
     queryKeys.validation(scope.organizationId, scope.periodId, scope.shiftGroupId),
-    queryKeys.fairness(scope.organizationId, scope.periodId, scope.shiftGroupId)
+    queryKeys.fairness(scope.organizationId, scope.periodId, scope.shiftGroupId),
+    queryKeys.rosterChangeSets(scope.organizationId, scope.periodId, scope.shiftGroupId)
   ];
 }
 
