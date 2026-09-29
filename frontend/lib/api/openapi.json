@@ -1526,6 +1526,17 @@
       },
       "DeletedFlagRead": {
         "properties": {
+          "change_set_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Set Id"
+          },
           "deleted": {
             "title": "Deleted",
             "type": "boolean"
@@ -4972,6 +4983,293 @@
         "title": "RegularWeekPatternDay",
         "type": "object"
       },
+      "RosterChangeSetCreate": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RosterChangeSetItemWrite"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "mode": {
+            "default": "all_or_nothing",
+            "enum": [
+              "all_or_nothing",
+              "best_effort"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RosterChangeSetCreate",
+        "type": "object"
+      },
+      "RosterChangeSetItemRead": {
+        "properties": {
+          "after_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Comment"
+          },
+          "after_manual_override": {
+            "title": "After Manual Override",
+            "type": "boolean"
+          },
+          "after_team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Team Member Id"
+          },
+          "before_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Comment"
+          },
+          "before_manual_override": {
+            "title": "Before Manual Override",
+            "type": "boolean"
+          },
+          "before_team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Team Member Id"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationWarning"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "applied",
+              "refused",
+              "unchanged"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "refusal_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refusal Code"
+          },
+          "roster_slot_id": {
+            "title": "Roster Slot Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "roster_slot_id",
+          "before_manual_override",
+          "after_manual_override",
+          "outcome"
+        ],
+        "title": "RosterChangeSetItemRead",
+        "type": "object"
+      },
+      "RosterChangeSetItemWrite": {
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "manual_override": {
+            "default": false,
+            "title": "Manual Override",
+            "type": "boolean"
+          },
+          "roster_slot_id": {
+            "title": "Roster Slot Id",
+            "type": "integer"
+          },
+          "team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Member Id"
+          }
+        },
+        "required": [
+          "roster_slot_id"
+        ],
+        "title": "RosterChangeSetItemWrite",
+        "type": "object"
+      },
+      "RosterChangeSetRead": {
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RosterChangeSetItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "mode": {
+            "enum": [
+              "all_or_nothing",
+              "best_effort"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "integer"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "reverts_change_set_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reverts Change Set Id"
+          },
+          "shift_group_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift Group Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "applied",
+              "refused",
+              "partially_applied",
+              "reverted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "planning_period_id",
+          "actor",
+          "source",
+          "mode",
+          "status",
+          "created_at",
+          "items"
+        ],
+        "title": "RosterChangeSetRead",
+        "type": "object"
+      },
       "RosterMatrixRead": {
         "properties": {
           "assignments": {
@@ -5086,6 +5384,17 @@
       },
       "RosterSlotAssignmentRead": {
         "properties": {
+          "change_set_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Set Id"
+          },
           "comment": {
             "anyOf": [
               {
@@ -7481,6 +7790,21 @@
         "title": "SolverRunApplyRead",
         "type": "object"
       },
+      "SolverRunApplyRequest": {
+        "properties": {
+          "mode": {
+            "default": "best_effort",
+            "enum": [
+              "all_or_nothing",
+              "best_effort"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "title": "SolverRunApplyRequest",
+        "type": "object"
+      },
       "SolverRunCreate": {
         "properties": {
           "num_search_workers": {
@@ -7562,6 +7886,17 @@
             "default": false,
             "title": "Cancel Requested",
             "type": "boolean"
+          },
+          "change_set_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Set Id"
           },
           "created_at": {
             "format": "date-time",
@@ -17584,6 +17919,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SolverRunApplyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -18705,6 +19057,74 @@
         ]
       }
     },
+    "/api/v1/roster-matrix/change-sets/{change_set_id}/revert": {
+      "post": {
+        "operationId": "roster_matrix_post_revert_roster_change_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "change_set_id",
+            "required": true,
+            "schema": {
+              "title": "Change Set Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
+              }
+            },
+            "description": "Change set refused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Revert Roster Change Set",
+        "tags": [
+          "roster-matrix"
+        ]
+      }
+    },
     "/api/v1/roster-matrix/{planning_period_id}": {
       "get": {
         "operationId": "roster_matrix_get_final_roster_matrix",
@@ -18784,6 +19204,188 @@
           }
         },
         "summary": "Get Final Roster Matrix",
+        "tags": [
+          "roster-matrix"
+        ]
+      }
+    },
+    "/api/v1/roster-matrix/{planning_period_id}/change-sets": {
+      "get": {
+        "operationId": "roster_matrix_get_roster_change_sets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RosterChangeSetRead"
+                  },
+                  "title": "Response Roster Matrix Get Roster Change Sets",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Roster Change Sets",
+        "tags": [
+          "roster-matrix"
+        ]
+      },
+      "post": {
+        "operationId": "roster_matrix_post_roster_change_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RosterChangeSetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterChangeSetRead"
+                }
+              }
+            },
+            "description": "Change set refused"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Roster Change Set",
         "tags": [
           "roster-matrix"
         ]

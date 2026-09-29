@@ -10,14 +10,12 @@ from sqlalchemy.orm import Session
 from app.models import Organization, RosterSlotAssignment, SolverRun
 from app.schemas import (
     RosterSlotAssignmentRead,
-    RosterSlotAssignmentUpsert,
     SolverConfigRead,
     SolverRunCreate,
     SolverRunRead,
 )
 from app.services.audit import record_audit
 from app.services.planning import can_edit_planning_data, get_shift_group_planning_status
-from app.services.roster_matrix import upsert_roster_slot_assignment
 from app.services.shift_groups import require_shift_group
 from app.services.solver.result import SolverSolveResult
 from app.services.solver.weights import read_solver_objective_weights
@@ -269,6 +267,7 @@ def apply_solver_run(
     organization_id: int,
     actor: str,
     source: str,
+    mode: str = "best_effort",
 ) -> tuple[SolverRun, list[RosterSlotAssignment]]:
     run = get_solver_run(db, planning_period_id, run_id, organization_id=organization_id)
     if run.status != SOLVER_RUN_STATUS_SUCCEEDED:
@@ -295,25 +294,53 @@ def apply_solver_run(
                 )
             )
         )
-    written: list[RosterSlotAssignment] = []
-    for row in run.proposed_assignments:
-        slot_id = int(row["roster_slot_id"])
-        if slot_id in existing_slot_ids:
-            continue
-        assignment = upsert_roster_slot_assignment(
-            db,
-            RosterSlotAssignmentUpsert(
-                roster_slot_id=slot_id,
-                team_member_id=int(row["team_member_id"]),
-                comment=row.get("comment"),
-                manual_override=bool(row.get("manual_override", False)),
-            ),
-            organization_id=organization_id,
-            actor=actor,
-            source=SOLVER_ASSIGNMENT_SOURCE,
+    from app.services.roster_change_sets import (
+        STATUS_APPLIED,
+        STATUS_PARTIAL,
+        RosterChangeInput,
+        apply_roster_change_set,
+    )
+
+    proposed = [
+        RosterChangeInput(
+            roster_slot_id=int(row["roster_slot_id"]),
+            team_member_id=int(row["team_member_id"]),
+            manual_override=bool(row.get("manual_override", False)),
+            comment=row.get("comment"),
         )
-        written.append(assignment)
-    run.applied_at = datetime.now(UTC)
+        for row in run.proposed_assignments
+        if int(row["roster_slot_id"]) not in existing_slot_ids
+    ]
+
+    def mark(change_set) -> None:
+        if change_set.status in {STATUS_APPLIED, STATUS_PARTIAL}:
+            run.applied_at = datetime.now(UTC)
+            run.change_set_id = change_set.id
+
+    change_set = apply_roster_change_set(
+        db,
+        organization_id=organization_id,
+        planning_period_id=planning_period_id,
+        shift_group_id=run.shift_group_id,
+        items=proposed,
+        mode=mode,
+        actor=actor,
+        source="solver",
+        created_by_user_id=run.created_by_user_id,
+        label=f"Solver run {run.id}",
+        before_commit=mark,
+    )
+    if run.applied_at is None:
+        raise SolverRunConflictError("SOLVER_RUN_NOT_APPLIED", "No proposed assignment could be applied")
+    written = list(
+        db.scalars(
+            select(RosterSlotAssignment).where(
+                RosterSlotAssignment.roster_slot_id.in_(
+                    [row.roster_slot_id for row in change_set.items if row.outcome == "applied"] or [-1]
+                )
+            )
+        )
+    )
     record_audit(
         db,
         actor=actor,
@@ -321,7 +348,7 @@ def apply_solver_run(
         action="apply",
         entity_type="solver_run",
         entity_id=run.id,
-        details={"assignment_count": len(written)},
+        details={"assignment_count": len(written), "change_set_id": change_set.id},
     )
     db.commit()
     db.refresh(run)

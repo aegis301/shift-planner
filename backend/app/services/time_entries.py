@@ -245,6 +245,7 @@ def derive_entries(
     start_date: date,
     end_date: date,
     member_ids: list[int] | None = None,
+    commit: bool = True,
 ) -> list[TimeEntry]:
     if end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
@@ -336,7 +337,8 @@ def derive_entries(
         if _match_key(row) not in desired_keys:
             db.delete(row)
 
-    db.commit()
+    if commit:
+        db.commit()
     return []
 
 
@@ -347,6 +349,7 @@ def refresh_derived_window(
     member_ids: list[int],
     start_date: date,
     end_date: date,
+    commit: bool = True,
 ) -> None:
     if not member_ids:
         return
@@ -356,6 +359,7 @@ def refresh_derived_window(
         start_date=start_date,
         end_date=end_date,
         member_ids=member_ids,
+        commit=commit,
     )
 
 

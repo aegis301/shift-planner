@@ -956,10 +956,63 @@ class SolverRun(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    change_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("roster_change_sets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     organization: Mapped["Organization"] = relationship()
     planning_period: Mapped["PlanningPeriod"] = relationship()
     shift_group: Mapped["ShiftGroup"] = relationship()
     created_by: Mapped["User | None"] = relationship()
+
+
+class RosterChangeSet(Base):
+    __tablename__ = "roster_change_sets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    planning_period_id: Mapped[int] = mapped_column(ForeignKey("planning_periods.id", ondelete="CASCADE"), index=True)
+    shift_group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("shift_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor: Mapped[str] = mapped_column(String(255))
+    source: Mapped[str] = mapped_column(String(50))
+    mode: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    reverts_change_set_id: Mapped[int | None] = mapped_column(
+        ForeignKey("roster_change_sets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    items: Mapped[list["RosterChangeSetItem"]] = relationship(
+        back_populates="change_set",
+        cascade="all, delete-orphan",
+    )
+
+
+class RosterChangeSetItem(Base):
+    __tablename__ = "roster_change_set_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    change_set_id: Mapped[int] = mapped_column(ForeignKey("roster_change_sets.id", ondelete="CASCADE"), index=True)
+    roster_slot_id: Mapped[int] = mapped_column(ForeignKey("roster_slots.id", ondelete="CASCADE"), index=True)
+    before_team_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    after_team_member_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    before_manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    after_manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
+    before_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(32))
+    findings: Mapped[list] = mapped_column(JSON, default=list)
+    refusal_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    change_set: Mapped[RosterChangeSet] = relationship(back_populates="items")
 
 
 class ShiftSwapRequest(Base):

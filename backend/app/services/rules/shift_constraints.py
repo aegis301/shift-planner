@@ -315,6 +315,21 @@ def overlay_candidate_assignment(
     )
 
 
+def overlay_clear_assignment(state: PlanState, *, roster_slot_id: int) -> PlanState:
+    existing = state.assignments_by_slot_id.get(roster_slot_id)
+    if existing is None:
+        return state
+    assignments = {row.id: row for row in state.assignments_by_id.values()}
+    assignments.pop(existing.id, None)
+    assignment_list = list(assignments.values())
+    return replace(
+        state,
+        assignments_by_id=frozen_mapping(assignments),
+        assignments_by_slot_id=frozen_mapping({item.roster_slot_id: item for item in assignment_list}),
+        assignments_by_member_id=index_assignments_by_member(assignment_list),
+    )
+
+
 def evaluate_shift_constraints_for_slot(
     *,
     db: Session,

@@ -116,6 +116,12 @@ from app.services.planning import (
     set_shift_group_planning_to_preliminary,
 )
 from app.services.roster_candidates import list_slot_candidates
+from app.services.roster_change_sets import (
+    RosterChangeInput,
+    apply_roster_change_set,
+    list_roster_change_sets,
+    revert_roster_change_set,
+)
 from app.services.roster_matrix import (
     RosterSyncPublishedError,
     clear_roster_slot_assignment,
@@ -595,6 +601,96 @@ def replace_team_member_property_values_tool(
             allow_definition_ids=None,
         )
         return [row.model_dump(mode="json") for row in rows]
+
+
+def _change_set_payload(row) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "organization_id": row.organization_id,
+        "planning_period_id": row.planning_period_id,
+        "shift_group_id": row.shift_group_id,
+        "status": row.status,
+        "mode": row.mode,
+        "source": row.source,
+        "label": row.label,
+        "reverts_change_set_id": row.reverts_change_set_id,
+        "items": [
+            {
+                "id": item.id,
+                "roster_slot_id": item.roster_slot_id,
+                "before_team_member_id": item.before_team_member_id,
+                "after_team_member_id": item.after_team_member_id,
+                "outcome": item.outcome,
+                "refusal_code": item.refusal_code,
+                "findings": item.findings,
+            }
+            for item in row.items
+        ],
+    }
+
+
+@mcp.resource("shift-planner://roster-change-sets/{planning_period_id}/shift-group/{shift_group_id}")
+def roster_change_sets_resource(planning_period_id: int, shift_group_id: int) -> list[dict[str, Any]]:
+    """List recent roster change sets for one planning period and shift group."""
+    with db_session() as db:
+        rows = list_roster_change_sets(
+            db,
+            planning_period_id,
+            shift_group_id,
+            organization_id=mcp_organization_id(),
+        )
+        return [_change_set_payload(row) for row in rows]
+
+
+@mcp.tool
+def apply_roster_change_set_tool(
+    token: str,
+    planning_period_id: int,
+    shift_group_id: int,
+    items: list[dict[str, Any]],
+    mode: str = "all_or_nothing",
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Apply a roster change set. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        change_set = apply_roster_change_set(
+            db,
+            organization_id=mcp_organization_id(),
+            planning_period_id=planning_period_id,
+            shift_group_id=shift_group_id,
+            items=[
+                RosterChangeInput(
+                    roster_slot_id=int(item["roster_slot_id"]),
+                    team_member_id=item.get("team_member_id"),
+                    manual_override=bool(item.get("manual_override", False)),
+                    comment=item.get("comment"),
+                )
+                for item in items
+            ],
+            mode=mode,
+            actor="mcp",
+            source="mcp",
+            created_by_user_id=None,
+            label=label,
+        )
+        return _change_set_payload(change_set)
+
+
+@mcp.tool
+def revert_roster_change_set_tool(token: str, change_set_id: int) -> dict[str, Any]:
+    """Revert a roster change set. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        change_set = revert_roster_change_set(
+            db,
+            change_set_id,
+            organization_id=mcp_organization_id(),
+            actor="mcp",
+            source="revert",
+            created_by_user_id=None,
+        )
+        return _change_set_payload(change_set)
 
 
 @mcp.tool
