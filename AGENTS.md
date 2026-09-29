@@ -149,7 +149,7 @@ Deleting a shift template is also destructive because it removes variants, gener
 
 When a schema changes in a way that makes old local data incompatible, prefer a clear forward migration and tell the developer exactly what data must be recreated instead of carrying long-term compatibility branches.
 
-Team member month notes belong in the wishes matrix header as per-column modal actions, not as a separate full-width form below the matrix.
+Planner wishes live on the shared grid (`frontend/components/planning/WishesGrid.tsx`): one row per day, one column per period-roster member. Range edits, paste, and fill use `PUT /api/v1/matrix/{id}/cells/bulk` or `POST .../cells/clear` once. Undo and redo are client-side and send `expected_updated_at` (the `PlanningCell.updated_at` last seen, or null when the cell was absent); the service updates or deletes the row only when `updated_at` still matches in that statement, and returns `outcome: conflict` otherwise. Day comments, per-template wishes, and the month note are edited in the inspector. `MatrixEditor` and the note modals remain on `/my-planning` only.
 
 ## Rule evaluation layer
 
@@ -246,7 +246,8 @@ type), and design new planner features desktop-first already.
 - The roster matrix uses the shared grid in `frontend/components/grid/` (TanStack Table and
   Virtual): one column per template position, arrow-key navigation, range selection, copy and
   paste, undo and redo. Bulk roster writes go through roster change sets. The wishes matrix
-  moves onto the same grid in #118. Do not add another hand-built roster table.
+  uses the same grid: day rows, member columns, and client-side undo with
+  `expected_updated_at`. Do not add another hand-built roster or wishes table.
 
 **Member companion: mobile-first.** `/my-planning`, `/my-hours`, `/profile` and the member
 dashboard tab.

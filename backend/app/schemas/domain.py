@@ -1775,15 +1775,30 @@ class PlanningCellUpsert(BaseModel):
     cell_date: date_type
     status: str = Field(min_length=1, max_length=32)
     comment: str | None = None
+    expected_updated_at: datetime | None = None
 
 
 class PlanningCellBulkUpsert(BaseModel):
     cells: list[PlanningCellUpsert]
 
 
-class PlanningCellClear(BaseModel):
+class PlanningCellClearItem(BaseModel):
     team_member_id: int
     cell_date: date_type
+    expected_updated_at: datetime | None = None
+
+
+class PlanningCellClear(BaseModel):
+    team_member_id: int | None = None
+    cell_date: date_type | None = None
+    expected_updated_at: datetime | None = None
+    cells: list[PlanningCellClearItem] | None = None
+
+
+class PlanningCellConflict(BaseModel):
+    team_member_id: int
+    cell_date: date_type
+    outcome: Literal["conflict"] = "conflict"
 
 
 class PlanningCellRead(PlanningCellBase):
@@ -1794,6 +1809,11 @@ class PlanningCellRead(PlanningCellBase):
     shift_group_id: int
     created_at: datetime
     updated_at: datetime
+
+
+class PlanningCellBulkResult(BaseModel):
+    cells: list[PlanningCellRead]
+    conflicts: list[PlanningCellConflict] = Field(default_factory=list)
 
 
 class MatrixTemplateSlotDay(BaseModel):
@@ -2348,6 +2368,7 @@ class OkFlagRead(BaseModel):
 class DeletedFlagRead(BaseModel):
     deleted: bool
     change_set_id: int | None = None
+    conflicts: list[PlanningCellConflict] = Field(default_factory=list)
 
 
 class RosterChangeSetItemWrite(BaseModel):

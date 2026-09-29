@@ -1020,7 +1020,8 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
         },
     )
     assert response.status_code == 200
-    assert len(response.json()) == 2
+    assert len(response.json()["cells"]) == 2
+    assert response.json()["conflicts"] == []
 
     clear_response = client.post(
         f"/api/v1/matrix/{period_id}/cells/clear?shift_group_id=1",
@@ -1032,6 +1033,156 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
     matrix = client.get(f"/api/v1/matrix/{period_id}").json()
     assert len(matrix["cells"]) == 1
     assert matrix["cells"][0]["status"] == "lehre"
+
+
+def test_bulk_cell_precondition_skips_stale_and_keeps_the_newer_value(client: TestClient):
+    login(client)
+    team_member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Stale", "last_name": "Cell", "email": "stale-cell@example.com", "employment_percentage": 100, "shift_group_ids": [1]},
+    ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=team_member_id)
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    created = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={"cells": [{"team_member_id": team_member_id, "cell_date": "2026-08-03", "status": "frei"}]},
+    )
+    assert created.status_code == 200
+    newer = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={"cells": [{"team_member_id": team_member_id, "cell_date": "2026-08-03", "status": "lehre"}]},
+    )
+    assert newer.status_code == 200
+    stale = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={
+            "cells": [
+                {
+                    "team_member_id": team_member_id,
+                    "cell_date": "2026-08-03",
+                    "status": "urlaub",
+                    "expected_updated_at": "2000-01-01T00:00:00Z",
+                }
+            ]
+        },
+    )
+    assert stale.status_code == 200
+    assert stale.json()["cells"] == []
+    assert stale.json()["conflicts"][0]["outcome"] == "conflict"
+    matrix = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert matrix["cells"][0]["status"] == "lehre"
+    matched = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={
+            "cells": [
+                {
+                    "team_member_id": team_member_id,
+                    "cell_date": "2026-08-03",
+                    "status": "forschung",
+                    "expected_updated_at": newer.json()["cells"][0]["updated_at"],
+                }
+            ]
+        },
+    )
+    assert matched.status_code == 200
+    assert matched.json()["conflicts"] == []
+    assert matched.json()["cells"][0]["status"] == "forschung"
+    absent = client.post(
+        f"/api/v1/matrix/{period_id}/cells/clear?shift_group_id=1",
+        json={
+            "cells": [
+                {"team_member_id": team_member_id, "cell_date": "2026-08-04", "expected_updated_at": None},
+                {"team_member_id": team_member_id, "cell_date": "2026-08-03", "expected_updated_at": "2000-01-01T00:00:00Z"},
+            ]
+        },
+    )
+    assert absent.status_code == 200
+    assert absent.json()["deleted"] is False
+    assert {row["cell_date"] for row in absent.json()["conflicts"]} == {"2026-08-03"}
+    kept = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert kept["cells"][0]["status"] == "forschung"
+
+
+def test_preconditioned_write_does_not_clobber_a_row_changed_after_it_was_read():
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    from app.models import PlanningCell
+    from app.schemas import PlanningCellUpsert
+    from app.services.matrix import (
+        _delete_cell_if_current,
+        _insert_cell_if_absent,
+        _update_cell_if_current,
+    )
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with Session() as db:
+        cell = PlanningCell(
+            planning_period_id=1,
+            shift_group_id=1,
+            team_member_id=1,
+            cell_date=date(2026, 8, 3),
+            status="frei",
+            comment=None,
+            source="test",
+        )
+        db.add(cell)
+        db.commit()
+        db.refresh(cell)
+        stale = cell.updated_at
+        assert stale is not None
+        db.execute(
+            update(PlanningCell)
+            .where(PlanningCell.id == cell.id)
+            .values(status="lehre", updated_at=datetime(2020, 1, 1, tzinfo=UTC)),
+            execution_options={"synchronize_session": False},
+        )
+        db.commit()
+        assert cell.updated_at == stale
+        applied = _update_cell_if_current(
+            db,
+            cell,
+            PlanningCellUpsert(
+                team_member_id=1,
+                cell_date=date(2026, 8, 3),
+                status="urlaub",
+                expected_updated_at=stale,
+            ),
+            actor="test",
+            source="test",
+            planning_period_id=1,
+        )
+        assert applied is False
+        removed = _delete_cell_if_current(
+            db,
+            cell,
+            actor="test",
+            source="test",
+            planning_period_id=1,
+        )
+        assert removed is False
+        db.expire_all()
+        kept = db.get(PlanningCell, cell.id)
+        assert kept is not None
+        assert kept.status == "lehre"
+        duplicate = _insert_cell_if_absent(
+            db,
+            1,
+            PlanningCellUpsert(team_member_id=1, cell_date=date(2026, 8, 3), status="urlaub"),
+            shift_group_id=1,
+            actor="test",
+            source="test",
+        )
+        assert duplicate is None
+        db.commit()
+        assert db.scalar(select(PlanningCell).where(PlanningCell.team_member_id == 1)).status == "lehre"
 
 
 def test_roster_matrix_assignment_validation_and_csv(client: TestClient):

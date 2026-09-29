@@ -2979,6 +2979,8 @@ export interface components {
         DeletedFlagRead: {
             /** Change Set Id */
             change_set_id?: number | null;
+            /** Conflicts */
+            conflicts?: components["schemas"]["PlanningCellConflict"][];
             /** Deleted */
             deleted: boolean;
         };
@@ -3831,6 +3833,13 @@ export interface components {
             /** Year */
             year: number;
         };
+        /** PlanningCellBulkResult */
+        PlanningCellBulkResult: {
+            /** Cells */
+            cells: components["schemas"]["PlanningCellRead"][];
+            /** Conflicts */
+            conflicts?: components["schemas"]["PlanningCellConflict"][];
+        };
         /** PlanningCellBulkUpsert */
         PlanningCellBulkUpsert: {
             /** Cells */
@@ -3838,11 +3847,40 @@ export interface components {
         };
         /** PlanningCellClear */
         PlanningCellClear: {
+            /** Cell Date */
+            cell_date?: string | null;
+            /** Cells */
+            cells?: components["schemas"]["PlanningCellClearItem"][] | null;
+            /** Expected Updated At */
+            expected_updated_at?: string | null;
+            /** Team Member Id */
+            team_member_id?: number | null;
+        };
+        /** PlanningCellClearItem */
+        PlanningCellClearItem: {
             /**
              * Cell Date
              * Format: date
              */
             cell_date: string;
+            /** Expected Updated At */
+            expected_updated_at?: string | null;
+            /** Team Member Id */
+            team_member_id: number;
+        };
+        /** PlanningCellConflict */
+        PlanningCellConflict: {
+            /**
+             * Cell Date
+             * Format: date
+             */
+            cell_date: string;
+            /**
+             * Outcome
+             * @default conflict
+             * @constant
+             */
+            outcome: "conflict";
             /** Team Member Id */
             team_member_id: number;
         };
@@ -3890,6 +3928,8 @@ export interface components {
             cell_date: string;
             /** Comment */
             comment?: string | null;
+            /** Expected Updated At */
+            expected_updated_at?: string | null;
             /** Status */
             status: string;
             /** Team Member Id */
@@ -8293,7 +8333,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlanningCellRead"][];
+                    "application/json": components["schemas"]["PlanningCellBulkResult"];
                 };
             };
             /** @description Validation Error */

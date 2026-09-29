@@ -1182,8 +1182,8 @@ def bulk_upsert_planning_cells_tool(
     planning_period_id: int,
     shift_group_id: int,
     cells: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Set multiple matrix cells atomically for a shift group. Requires MCP admin token."""
+) -> dict[str, Any]:
+    """Set multiple matrix cells atomically for a shift group. Requires MCP admin token. Optional expected_updated_at skips a cell that changed."""
     require_token(token)
     payload = PlanningCellBulkUpsert(
         cells=[
@@ -1192,23 +1192,32 @@ def bulk_upsert_planning_cells_tool(
                 cell_date=date.fromisoformat(str(cell["cell_date"])),
                 status=str(cell["status"]),  # type: ignore[arg-type]
                 comment=cell.get("comment"),
+                **(
+                    {"expected_updated_at": cell.get("expected_updated_at")}
+                    if "expected_updated_at" in cell
+                    else {}
+                ),
             )
             for cell in cells
         ]
     )
     with db_session() as db:
-        return [
-            serialize_model(cell)
-            for cell in bulk_upsert_planning_cells(
-                db,
-                planning_period_id,
-                payload,
-                organization_id=mcp_organization_id(),
-                shift_group_id=shift_group_id,
-                actor="mcp",
-                source="mcp",
-            )
-        ]
+        written, conflicts = bulk_upsert_planning_cells(
+            db,
+            planning_period_id,
+            payload,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+            actor="mcp",
+            source="mcp",
+        )
+        return {
+            "cells": [serialize_model(cell) for cell in written],
+            "conflicts": [
+                {"team_member_id": member_id, "cell_date": cell_date.isoformat(), "outcome": "conflict"}
+                for member_id, cell_date in conflicts
+            ],
+        }
 
 
 @mcp.tool
