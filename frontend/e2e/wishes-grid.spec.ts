@@ -51,7 +51,7 @@ test.describe("wishes grid", () => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));
     const grid = page.getByRole("grid", { name: "Wünsche" });
-    const cell = grid.getByRole("gridcell").nth(4);
+    const cell = grid.getByRole("gridcell").first();
     await cell.focus();
     const cleared = page.waitForResponse(
       (response) => response.url().includes("/cells/clear") && response.request().method() === "POST"
@@ -67,6 +67,7 @@ test.describe("wishes grid", () => {
     await page.keyboard.press("r");
     await page.keyboard.press("Enter");
     expect((await saved).ok()).toBeTruthy();
+    await expect(cell).toContainText("Urlaub");
     await cell.focus();
     const undone = page.waitForResponse((response) => wishesWrite(response));
     await page.keyboard.press("Control+z");
@@ -78,7 +79,11 @@ test.describe("wishes grid", () => {
       (response) => response.url().includes("/cells/bulk") && response.request().method() === "PUT"
     );
     await page.keyboard.press("Control+y");
-    expect((await redone).ok()).toBeTruthy();
+    const redoResponse = await redone;
+    expect(redoResponse.ok()).toBeTruthy();
+    const redoJson = (await redoResponse.json()) as { cells?: { status?: string }[]; conflicts?: unknown[] };
+    expect(redoJson.conflicts ?? []).toEqual([]);
+    expect(redoJson.cells?.[0]?.status).toBe("urlaub");
     await expect(cell).toContainText("Urlaub");
   });
 
@@ -142,7 +147,7 @@ test.describe("wishes grid", () => {
     });
     await page.goto(planningPath(target));
     const reason = "Die Wünsche sind schreibgeschützt, weil diese Dienstgruppe veröffentlicht ist.";
-    await expect(page.getByText(reason)).toBeVisible();
+    await expect(page.getByRole("status", { name: reason })).toBeVisible();
     const grid = page.getByRole("grid", { name: "Wünsche" });
     await grid.getByRole("gridcell").first().focus();
     let writes = 0;
