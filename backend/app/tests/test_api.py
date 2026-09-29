@@ -4001,3 +4001,239 @@ def test_period_roster_refresh_adds_joiners_and_confirms_leavers_with_wishes(cli
     )
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "PERIOD_ROSTER_PUBLISHED"
+
+
+def _any_day_template(client: TestClient, code: str, name: str) -> int:
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": code, "name": name, "category": "other"},
+    ).json()
+    created = client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={
+            "label": "Tag",
+            "start_day_class": "any",
+            "starts_at": "08:00:00",
+            "ends_at": "16:00:00",
+            "end_day_offset": 0,
+            "required_count": 1,
+        },
+    )
+    assert created.status_code == 200
+    return template["id"]
+
+
+def _shift_group(client: TestClient, code: str, name: str) -> int:
+    created = client.post(
+        "/api/v1/shift-groups",
+        json={"code": code, "name": name, "display_order": 0},
+    )
+    assert created.status_code == 200
+    return created.json()["id"]
+
+
+def _link_templates(client: TestClient, shift_group_id: int, template_ids: list[int]) -> None:
+    response = client.put(
+        f"/api/v1/shift-groups/{shift_group_id}/shift-templates",
+        json={"shift_template_ids": template_ids},
+    )
+    assert response.status_code == 200
+
+
+def _first_slot(client: TestClient, period_id: int, shift_group_id: int, template_id: int) -> dict:
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={shift_group_id}").json()
+    return next(slot for slot in roster["slots"] if slot["shift_template_id"] == template_id)
+
+
+def _assign(client: TestClient, roster_slot_id: int, team_member_id: int) -> None:
+    response = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": roster_slot_id, "team_member_id": team_member_id},
+    )
+    assert response.status_code == 200
+
+
+def _month_entries(client: TestClient, team_member_id: int, start: str, end: str) -> list[dict]:
+    response = client.get(
+        "/api/v1/time-entries",
+        params={"team_member_id": team_member_id, "start_date": start, "end_date": end},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_period_roster_refresh_keeps_assignments_covered_by_another_group(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Shared",
+            "last_name": "Cover",
+            "email": "shared-cover@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    shared_template = _any_day_template(client, "SHR", "Shared duty")
+    exclusive_template = _any_day_template(client, "EXC", "Exclusive duty")
+    group_a = _shift_group(client, "LVA", "Leave A")
+    group_b = _shift_group(client, "KPB", "Keep B")
+    _link_templates(client, group_a, [shared_template, exclusive_template])
+    _link_templates(client, group_b, [shared_template])
+    for group_id in (group_a, group_b):
+        client.put(
+            f"/api/v1/shift-groups/{group_id}/memberships",
+            json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": None}]},
+        )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 10}).json()["id"]
+    shared_slot = _first_slot(client, period_id, group_a, shared_template)
+    exclusive_slot = _first_slot(client, period_id, group_a, exclusive_template)
+    _assign(client, shared_slot["id"], member)
+    _assign(client, exclusive_slot["id"], member)
+    used_dates = {shared_slot["slot_date"], exclusive_slot["slot_date"]}
+    wish_date = next(day for day in ("2026-10-02", "2026-10-03", "2026-10-04") if day not in used_dates)
+    wish = client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id={group_a}",
+        json={"team_member_id": member, "cell_date": wish_date, "status": "urlaub"},
+    )
+    assert wish.status_code == 200
+    before = _month_entries(client, member, "2026-10-01", "2026-10-31")
+    assert {row["roster_slot_id"] for row in before if row["source"] == "roster"} == {
+        shared_slot["id"],
+        exclusive_slot["id"],
+    }
+    assert any(row["source"] == "day_status" and row["planning_day_status_code"] == "urlaub" for row in before)
+    client.put(
+        f"/api/v1/shift-groups/{group_a}/memberships",
+        json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": "2026-09-30"}]},
+    )
+    preview = client.get(f"/api/v1/planning-periods/{period_id}/period-roster/preview?shift_group_id={group_a}")
+    assert preview.status_code == 200
+    removal = preview.json()["removed"][0]
+    assert removal["team_member_id"] == member
+    assert removal["assignments"] == 1
+    assert removal["wishes"] == 1
+    confirmed = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id={group_a}",
+        json={"confirm_removals": True},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["removed_count"] == 1
+    left = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={group_a}").json()
+    assert member not in {row["id"] for row in left["team_members"]}
+    assert left["cells"] == []
+    kept = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={group_b}").json()
+    assert any(
+        row["roster_slot_id"] == shared_slot["id"] and row["team_member_id"] == member for row in kept["assignments"]
+    )
+    assert all(row["roster_slot_id"] != exclusive_slot["id"] for row in kept["assignments"])
+    still_on_b = client.get(f"/api/v1/matrix/{period_id}?shift_group_id={group_b}").json()
+    assert member in {row["id"] for row in still_on_b["team_members"]}
+    after = _month_entries(client, member, "2026-10-01", "2026-10-31")
+    assert [row["roster_slot_id"] for row in after if row["source"] == "roster"] == [shared_slot["id"]]
+    assert all(row["source"] != "day_status" for row in after)
+
+
+def test_period_roster_refresh_leaves_published_covering_group_unchanged(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Pub",
+            "last_name": "Cover",
+            "email": "pub-cover@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    template_id = _any_day_template(client, "PUB", "Published duty")
+    group_a = _shift_group(client, "DRA", "Draft leave")
+    group_b = _shift_group(client, "PUBG", "Published keep")
+    _link_templates(client, group_a, [template_id])
+    _link_templates(client, group_b, [template_id])
+    client.put(
+        f"/api/v1/shift-groups/{group_a}/memberships",
+        json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": None}]},
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 11}).json()["id"]
+    slot = _first_slot(client, period_id, group_a, template_id)
+    _assign(client, slot["id"], member)
+    assert client.post(f"/api/v1/planning-periods/{period_id}/preliminary?shift_group_id={group_b}").status_code == 200
+    published = client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id={group_b}")
+    assert published.status_code == 200
+    client.put(
+        f"/api/v1/shift-groups/{group_a}/memberships",
+        json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": "2026-10-31"}]},
+    )
+    preview = client.get(f"/api/v1/planning-periods/{period_id}/period-roster/preview?shift_group_id={group_a}")
+    assert preview.status_code == 200
+    assert preview.json()["removed"][0]["assignments"] == 0
+    applied = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id={group_a}",
+        json={"confirm_removals": False},
+    )
+    assert applied.status_code == 200
+    roster_b = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={group_b}").json()
+    assert any(
+        row["roster_slot_id"] == slot["id"] and row["team_member_id"] == member for row in roster_b["assignments"]
+    )
+    statuses = client.get("/api/v1/planning-periods").json()
+    period = next(row for row in statuses if row["id"] == period_id)
+    published_status = next(row for row in period["shift_group_statuses"] if row["shift_group_id"] == group_b)
+    assert published_status["status"] == "published"
+    entries = _month_entries(client, member, "2026-11-01", "2026-11-30")
+    assert any(row["source"] == "roster" and row["roster_slot_id"] == slot["id"] for row in entries)
+
+
+def test_period_roster_refresh_reconciles_derived_entries_for_a_leaver(client: TestClient):
+    login(client)
+    member = client.post(
+        "/api/v1/team-members",
+        json={
+            "first_name": "Left",
+            "last_name": "Hours",
+            "email": "left-hours@example.com",
+            "employment_percentage": 100,
+        },
+    ).json()["id"]
+    template_id = _any_day_template(client, "LEA", "Leaver duty")
+    group_a = _shift_group(client, "LEA", "Leaver group")
+    group_b = _shift_group(client, "LEB", "Other draft")
+    _link_templates(client, group_a, [template_id])
+    _link_templates(client, group_b, [template_id])
+    client.put(
+        f"/api/v1/shift-groups/{group_a}/memberships",
+        json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": None}]},
+    )
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 12}).json()["id"]
+    slot = _first_slot(client, period_id, group_a, template_id)
+    _assign(client, slot["id"], member)
+    wish_date = "2026-12-02" if slot["slot_date"] != "2026-12-02" else "2026-12-03"
+    wish = client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id={group_a}",
+        json={"team_member_id": member, "cell_date": wish_date, "status": "urlaub"},
+    )
+    assert wish.status_code == 200
+    manual = client.post(
+        "/api/v1/time-entries",
+        json={"team_member_id": member, "entry_date": "2026-12-20", "kind": "work", "duration_minutes": 30},
+    )
+    assert manual.status_code == 200
+    before = _month_entries(client, member, "2026-12-01", "2026-12-31")
+    assert any(row["source"] == "roster" and row["roster_slot_id"] == slot["id"] for row in before)
+    assert any(row["source"] == "day_status" for row in before)
+    assert any(row["source"] == "manual" for row in before)
+    client.put(
+        f"/api/v1/shift-groups/{group_a}/memberships",
+        json={"memberships": [{"team_member_id": member, "start_date": "2026-01-01", "end_date": "2026-11-30"}]},
+    )
+    preview = client.get(f"/api/v1/planning-periods/{period_id}/period-roster/preview?shift_group_id={group_a}")
+    assert preview.json()["removed"][0]["assignments"] == 1
+    confirmed = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id={group_a}",
+        json={"confirm_removals": True},
+    )
+    assert confirmed.status_code == 200
+    roster = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id={group_b}").json()
+    assert all(row["roster_slot_id"] != slot["id"] for row in roster["assignments"])
+    after = _month_entries(client, member, "2026-12-01", "2026-12-31")
+    assert all(row["source"] == "manual" for row in after)
+    assert len(after) == 1

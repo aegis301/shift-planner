@@ -117,7 +117,7 @@ dependencies are in the ADR's **Work plan** table.
 | #124 | Member app: wishes, swaps, hours, calendar | open |
 | #125 | Push as a channel of #101's notifications (design: PR #127; needs #101 implemented) | open |
 
-#119 has no dependencies and can start in parallel. #109 through #118 have shipped. #123 can use `Organization.timezone` for offline capture. The selected month's period roster can be refreshed from current shift-group membership, and the roster grid shows each variant on a weekend or holiday as its own column.
+#119 has no dependencies and can start in parallel. #109 through #118 have shipped. #123 can use `Organization.timezone` for offline capture. The selected month's period roster can be refreshed from current shift-group membership. Assignments that another covering group still needs, including a published group, stay, and derived hours for a removed member are reconciled in that transaction. MCP can preview and apply the refresh. The roster grid shows each variant on a weekend or holiday as its own column.
 
 **Why #75 is split.** The spike showed that encoding all 18 rules at once is the way to get a
 model nobody can debug. Tier A is the set the TdL fixture actually exercises and that the spike

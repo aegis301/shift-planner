@@ -17,6 +17,8 @@ from mcp_app.server import (
     replace_team_member_planning_patterns_tool,
     require_token,
     sync_planning_period_roster_tool,
+    refresh_period_roster_tool,
+    period_roster_refresh_preview_resource,
     upsert_planning_cell_tool,
     upsert_roster_slot_assignment_tool,
     upsert_time_entry_tool,
@@ -320,6 +322,8 @@ def test_destructive_planning_tools_reject_invalid_token_before_db_access():
     with pytest.raises(PermissionError):
         sync_planning_period_roster_tool(token="wrong-token", planning_period_id=1)
     with pytest.raises(PermissionError):
+        refresh_period_roster_tool(token="wrong-token", planning_period_id=1, shift_group_id=1)
+    with pytest.raises(PermissionError):
         delete_planning_period_tool(token="wrong-token", planning_period_id=1)
     with pytest.raises(PermissionError):
         delete_shift_template_tool(token="wrong-token", shift_template_id=1)
@@ -552,3 +556,116 @@ def test_shift_swap_tools_require_token():
         reject_shift_swap_tool(token="wrong-token", request_id=1)
     with pytest.raises(PermissionError):
         apply_shift_swap_tool(token="wrong-token", request_id=1)
+
+
+class _DbContext:
+    def __enter__(self):
+        return object()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+
+def test_period_roster_preview_resource_uses_service(monkeypatch):
+    from app.services.planning_period_rosters import (
+        PeriodRosterRefreshMember,
+        PeriodRosterRefreshPreview,
+        PeriodRosterRefreshRemoval,
+    )
+
+    calls = []
+
+    def fake_preview(db, **kwargs):
+        calls.append(kwargs)
+        return PeriodRosterRefreshPreview(
+            added=[PeriodRosterRefreshMember(team_member_id=4, display_name="Neu")],
+            removed=[
+                PeriodRosterRefreshRemoval(
+                    team_member_id=5,
+                    display_name="Alt",
+                    wishes=1,
+                    intents=0,
+                    notes=0,
+                    assignments=0,
+                )
+            ],
+        )
+
+    monkeypatch.setattr(server, "db_session", lambda: _DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 23)
+    monkeypatch.setattr(server, "preview_period_roster_refresh", fake_preview)
+    result = period_roster_refresh_preview_resource(8, 3)
+    assert calls == [
+        {"planning_period_id": 8, "organization_id": 23, "shift_group_id": 3}
+    ]
+    assert result["requires_confirmation"] is True
+    assert result["added"][0]["team_member_id"] == 4
+    assert result["removed"][0]["assignments"] == 0
+    assert period_roster_refresh_preview_resource.__name__ == "period_roster_refresh_preview_resource"
+
+
+def test_refresh_period_roster_tool_uses_service(monkeypatch):
+    from app.services.planning_period_rosters import (
+        PeriodRosterRefreshConfirmationRequired,
+        PeriodRosterRefreshPreview,
+        PeriodRosterRefreshPublishedError,
+        PeriodRosterRefreshRemoval,
+        PeriodRosterRefreshResult,
+    )
+
+    calls = []
+
+    def fake_refresh(db, **kwargs):
+        calls.append(kwargs)
+        return PeriodRosterRefreshResult(added_count=2, removed_count=1)
+
+    monkeypatch.setattr(server, "db_session", lambda: _DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: 23)
+    monkeypatch.setattr(server, "refresh_period_shift_group_roster", fake_refresh)
+    result = refresh_period_roster_tool(
+        token="change-me-mcp-token",
+        planning_period_id=8,
+        shift_group_id=3,
+        confirm_removals=True,
+    )
+    assert result == {"added_count": 2, "removed_count": 1}
+    assert calls == [
+        {
+            "planning_period_id": 8,
+            "organization_id": 23,
+            "shift_group_id": 3,
+            "confirm_removals": True,
+        }
+    ]
+
+    def refuse_published(db, **kwargs):
+        raise PeriodRosterRefreshPublishedError("Cannot refresh the period roster for a published shift group")
+
+    monkeypatch.setattr(server, "refresh_period_shift_group_roster", refuse_published)
+    with pytest.raises(ValueError, match="published"):
+        refresh_period_roster_tool(
+            token="change-me-mcp-token", planning_period_id=8, shift_group_id=3
+        )
+
+    def refuse_confirmation(db, **kwargs):
+        raise PeriodRosterRefreshConfirmationRequired(
+            PeriodRosterRefreshPreview(
+                added=[],
+                removed=[
+                    PeriodRosterRefreshRemoval(
+                        team_member_id=5,
+                        display_name="Alt",
+                        wishes=1,
+                        intents=0,
+                        notes=0,
+                        assignments=2,
+                    )
+                ],
+            )
+        )
+
+    monkeypatch.setattr(server, "refresh_period_shift_group_roster", refuse_confirmation)
+    with pytest.raises(ValueError, match="PERIOD_ROSTER_CONFIRM_REMOVALS"):
+        refresh_period_roster_tool(
+            token="change-me-mcp-token", planning_period_id=8, shift_group_id=3
+        )
