@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-29
+- **Wishes grid:** The planner wishes matrix uses the shared grid. Rows are days and columns are team members. Typing opens a day-status combobox; a range, a paste, or a fill is one bulk write. Undo and redo send `expected_updated_at`, and the server skips a cell whose `updated_at` no longer matches. `PUT /api/v1/matrix/{id}/cells/bulk` now returns `{cells, conflicts}` instead of a bare list. A clear can do the same for several cells and lists conflicts next to `deleted`. Day comments, wishes, and month notes are edited in the inspector. A published group stays read-only, with the reason in the context bar. The member wishes page still uses the previous matrix.
 - **Roster grid:** The planner roster is a virtualized grid with one column per template position. Arrow keys, ranges, copy, paste, fill, and undo go through roster change sets. A refused paste lists each row in the inspector and can apply the legal subset. Wish text uses a darker info color so it meets the contrast minimum on white.
 
 ## 2026-09-28

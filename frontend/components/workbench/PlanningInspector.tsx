@@ -13,6 +13,8 @@ import {
 import { workloadRowForMember } from "@/lib/rosterWorkload";
 import type { RosterMatrix } from "@/components/RosterMatrixEditor";
 import type { RosterChangeNotice } from "@/components/planning/RosterGrid";
+import { WishesCellPanel, WishesMemberNotes } from "@/components/planning/WishesInspectorPanels";
+import type { WishesBundle } from "@/lib/queries/planning";
 
 type Warning = {
   code: string;
@@ -36,6 +38,10 @@ export function PlanningInspector({
   timeZone,
   canAssign,
   changeNotice = null,
+  wishes = null,
+  wishesNotes = [],
+  wishesReadOnly = true,
+  onWishesChanged,
   onAssign,
   onSelectMember,
   onSelectSlot
@@ -53,6 +59,10 @@ export function PlanningInspector({
   timeZone: string;
   canAssign: boolean;
   changeNotice?: RosterChangeNotice | null;
+  wishes?: WishesBundle["matrix"] | null;
+  wishesNotes?: WishesBundle["notes"];
+  wishesReadOnly?: boolean;
+  onWishesChanged?: () => void;
   onAssign: (memberId: number) => void;
   onSelectMember: (memberId: string) => void;
   onSelectSlot: (slotId: string) => void;
@@ -148,6 +158,24 @@ export function PlanningInspector({
       </div>
     );
   }
+  if (memberId && day && wishes && onWishesChanged) {
+    return (
+      <div className="grid gap-4">
+        {notice}
+        <WishesCellPanel
+          day={day}
+          locale={locale}
+          matrix={wishes}
+          memberId={memberId}
+          notes={wishesNotes}
+          periodId={periodId}
+          readOnly={wishesReadOnly}
+          shiftGroupId={shiftGroupId}
+          onChanged={onWishesChanged}
+        />
+      </div>
+    );
+  }
   if (memberId && roster) {
     const id = Number(memberId);
     const row = workloadRowForMember(roster, warnings, id);
@@ -163,7 +191,18 @@ export function PlanningInspector({
             <dd className="text-right tabular-nums">{row.total}</dd>
           </dl>
         ) : null}
-        <div id="workbench-member-note" />
+        {wishes && onWishesChanged ? (
+          <WishesMemberNotes
+            locale={locale}
+            matrix={wishes}
+            memberId={Number(memberId)}
+            notes={wishesNotes}
+            periodId={periodId}
+            readOnly={wishesReadOnly}
+            shiftGroupId={shiftGroupId}
+            onChanged={onWishesChanged}
+          />
+        ) : null}
       </div>
     );
   }

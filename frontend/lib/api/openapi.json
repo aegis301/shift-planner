@@ -1537,6 +1537,13 @@
             ],
             "title": "Change Set Id"
           },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningCellConflict"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
           "deleted": {
             "title": "Deleted",
             "type": "boolean"
@@ -4145,6 +4152,29 @@
         "title": "PlannerDashboardRead",
         "type": "object"
       },
+      "PlanningCellBulkResult": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningCellRead"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningCellConflict"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cells"
+        ],
+        "title": "PlanningCellBulkResult",
+        "type": "object"
+      },
       "PlanningCellBulkUpsert": {
         "properties": {
           "cells": {
@@ -4164,8 +4194,100 @@
       "PlanningCellClear": {
         "properties": {
           "cell_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Date"
+          },
+          "cells": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PlanningCellClearItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cells"
+          },
+          "expected_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Updated At"
+          },
+          "team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Member Id"
+          }
+        },
+        "title": "PlanningCellClear",
+        "type": "object"
+      },
+      "PlanningCellClearItem": {
+        "properties": {
+          "cell_date": {
             "format": "date",
             "title": "Cell Date",
+            "type": "string"
+          },
+          "expected_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Updated At"
+          },
+          "team_member_id": {
+            "title": "Team Member Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team_member_id",
+          "cell_date"
+        ],
+        "title": "PlanningCellClearItem",
+        "type": "object"
+      },
+      "PlanningCellConflict": {
+        "properties": {
+          "cell_date": {
+            "format": "date",
+            "title": "Cell Date",
+            "type": "string"
+          },
+          "outcome": {
+            "const": "conflict",
+            "default": "conflict",
+            "title": "Outcome",
             "type": "string"
           },
           "team_member_id": {
@@ -4177,7 +4299,7 @@
           "team_member_id",
           "cell_date"
         ],
-        "title": "PlanningCellClear",
+        "title": "PlanningCellConflict",
         "type": "object"
       },
       "PlanningCellRead": {
@@ -4266,6 +4388,18 @@
               }
             ],
             "title": "Comment"
+          },
+          "expected_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Updated At"
           },
           "status": {
             "maxLength": 32,
@@ -15229,11 +15363,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PlanningCellRead"
-                  },
-                  "title": "Response Matrix Put Cells Bulk",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PlanningCellBulkResult"
                 }
               }
             },

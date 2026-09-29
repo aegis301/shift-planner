@@ -18,6 +18,7 @@ export function ContextBar({
   statusDisabled = false,
   onStatus,
   versionLabel = null,
+  statusReason = null,
   actions
 }: {
   locale: Locale;
@@ -32,6 +33,7 @@ export function ContextBar({
   statusDisabled?: boolean;
   onStatus?: (action: PlanningPeriodStatusAction) => void;
   versionLabel?: string | null;
+  statusReason?: string | null;
   actions?: ReactNode;
 }) {
   return (
@@ -71,6 +73,7 @@ export function ContextBar({
         </div>
       ) : null}
       {versionLabel ? <p className="mb-2 text-sm font-medium text-slate-700">{versionLabel}</p> : null}
+      {statusReason ? <p className="mb-2 text-sm font-medium text-amber-900">{statusReason}</p> : null}
       <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div>
     </div>
   );

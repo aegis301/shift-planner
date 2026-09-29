@@ -33,13 +33,13 @@ import { Inspector } from "@/components/workbench/Inspector";
 import { PlanningInspector } from "@/components/workbench/PlanningInspector";
 import { ShortcutHelp } from "@/components/workbench/ShortcutHelp";
 import { Card, Field, inputClass } from "@/components/Card";
-import { MatrixEditor } from "@/components/MatrixEditor";
-import { PlanningDayIntervalBar } from "@/components/PlanningDayIntervalBar";
 import { PlanningDayStatusLegend } from "@/components/PlanningDayStatusLegend";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { isUserSession } from "@/lib/membershipRouting";
 import type { RosterMatrix } from "@/components/RosterMatrixEditor";
 import { RosterGrid, type RosterChangeNotice } from "@/components/planning/RosterGrid";
+import { WishesGrid } from "@/components/planning/WishesGrid";
+import { WishesHistoryProvider } from "@/components/planning/WishesHistory";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
@@ -330,6 +330,13 @@ function PlannerWorkspaceContent() {
     !viewingVersionId &&
     (groupPlanningStatus?.status === "draft" || groupPlanningStatus?.status === "preliminary");
   const wishesEditable = plannerPlanningEditable;
+  const wishesReadOnly = !wishesEditable || viewingVersionId != null;
+  const wishesReadOnlyReason =
+    viewingVersionId != null
+      ? t(locale, "wishesVersionReadOnly")
+      : groupPlanningStatus?.status === "published"
+        ? t(locale, "wishesPublishedReadOnly")
+        : "";
   const regenerateRosterDisabled = !periodId || groupPlanningStatus?.status === "published";
   const generateRosterDisabled =
     !periodId ||
@@ -508,10 +515,6 @@ function PlannerWorkspaceContent() {
     }
   }
 
-  async function handleDayIntervalApplied() {
-    await handleWishesChanged();
-  }
-
   async function handleSolverApplied(applied: SolverRunRead) {
     setSolverDialogOpen(false);
     if (planningScope) {
@@ -548,16 +551,15 @@ function PlannerWorkspaceContent() {
       {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
-        <MatrixEditor
+        <WishesGrid
           periodId={periodId}
-          compact
+          readOnly={wishesReadOnly}
+          readOnlyReason={wishesReadOnlyReason}
           shiftGroupId={shiftGroupId || undefined}
-          versionId={viewingVersionId ?? undefined}
-          teamMemberPortal={false}
-          readOnly={!wishesEditable || viewingVersionId != null}
-          embedMemberNotes
-          onInspectMember={(memberId) => patchSelection({ member: String(memberId), slot: null, finding: null })}
-          onChanged={handleWishesChanged}
+          versionId={viewingVersionId}
+          onSelectCell={(date, memberId) =>
+            patchSelection({ day: date, member: String(memberId), slot: null, finding: null, tab: "wishes" })
+          }
         />
       )}
     </section>
@@ -736,6 +738,7 @@ function PlannerWorkspaceContent() {
   });
 
   return (
+    <WishesHistoryProvider periodId={periodId} readOnly={wishesReadOnly} shiftGroupId={shiftGroupId}>
     <div className="flex min-w-0 items-start gap-4">
     <div className="grid min-w-0 flex-1 gap-6">
       <ContextBar
@@ -758,6 +761,7 @@ function PlannerWorkspaceContent() {
             ? `${groupPlanningStatus.working_major_version}.${groupPlanningStatus.working_minor_version ?? 0}`
             : null
         }
+        statusReason={wishesReadOnlyReason || null}
       />
       <Card>
         <div className="grid gap-3">
@@ -912,16 +916,6 @@ function PlannerWorkspaceContent() {
             <div className="grid gap-3 border-t border-slate-200 px-3 py-3">
               {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
               <PlanningDayStatusLegend locale={locale} definitions={dayStatusDefinitions} />
-              {periodId && shiftGroupId ? (
-                <PlanningDayIntervalBar
-                  periodId={periodId}
-                  shiftGroupId={shiftGroupId}
-                  readOnly={!wishesEditable}
-                  teamMemberPortal={false}
-                  dayStatusDefinitions={dayStatusDefinitions}
-                  onApplied={handleDayIntervalApplied}
-                />
-              ) : null}
             </div>
           </details>
         </div>
@@ -1281,6 +1275,10 @@ function PlannerWorkspaceContent() {
             }
             void assignSlot.mutateAsync({ rosterSlotId: Number(selection.slot), teamMemberId: memberId, manualOverride: false });
           }}
+          wishes={wishesQuery.data?.matrix ?? null}
+          wishesNotes={wishesQuery.data?.notes ?? []}
+          wishesReadOnly={wishesReadOnly}
+          onWishesChanged={() => void handleWishesChanged()}
           onSelectMember={(memberId) => patchSelection({ member: memberId, slot: null, finding: null })}
           onSelectSlot={(slotId) => patchSelection({ slot: slotId, tab: "roster", member: null, day: null, finding: null })}
         />
@@ -1288,6 +1286,7 @@ function PlannerWorkspaceContent() {
       <CommandPalette locale={locale} open={paletteOpen} commands={palette} onOpenChange={setPaletteOpen} />
       <ShortcutHelp locale={locale} open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
+    </WishesHistoryProvider>
   );
 }
 

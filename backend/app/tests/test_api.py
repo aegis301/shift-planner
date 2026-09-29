@@ -1020,7 +1020,8 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
         },
     )
     assert response.status_code == 200
-    assert len(response.json()) == 2
+    assert len(response.json()["cells"]) == 2
+    assert response.json()["conflicts"] == []
 
     clear_response = client.post(
         f"/api/v1/matrix/{period_id}/cells/clear?shift_group_id=1",
@@ -1032,6 +1033,74 @@ def test_matrix_bulk_upsert_and_clear(client: TestClient):
     matrix = client.get(f"/api/v1/matrix/{period_id}").json()
     assert len(matrix["cells"]) == 1
     assert matrix["cells"][0]["status"] == "lehre"
+
+
+def test_bulk_cell_precondition_skips_stale_and_keeps_the_newer_value(client: TestClient):
+    login(client)
+    team_member_id = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Stale", "last_name": "Cell", "email": "stale-cell@example.com", "employment_percentage": 100, "shift_group_ids": [1]},
+    ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=team_member_id)
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    created = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={"cells": [{"team_member_id": team_member_id, "cell_date": "2026-08-03", "status": "frei"}]},
+    )
+    assert created.status_code == 200
+    newer = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={"cells": [{"team_member_id": team_member_id, "cell_date": "2026-08-03", "status": "lehre"}]},
+    )
+    assert newer.status_code == 200
+    stale = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={
+            "cells": [
+                {
+                    "team_member_id": team_member_id,
+                    "cell_date": "2026-08-03",
+                    "status": "urlaub",
+                    "expected_updated_at": "2000-01-01T00:00:00Z",
+                }
+            ]
+        },
+    )
+    assert stale.status_code == 200
+    assert stale.json()["cells"] == []
+    assert stale.json()["conflicts"][0]["outcome"] == "conflict"
+    matrix = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert matrix["cells"][0]["status"] == "lehre"
+    matched = client.put(
+        f"/api/v1/matrix/{period_id}/cells/bulk?shift_group_id=1",
+        json={
+            "cells": [
+                {
+                    "team_member_id": team_member_id,
+                    "cell_date": "2026-08-03",
+                    "status": "forschung",
+                    "expected_updated_at": newer.json()["cells"][0]["updated_at"],
+                }
+            ]
+        },
+    )
+    assert matched.status_code == 200
+    assert matched.json()["conflicts"] == []
+    assert matched.json()["cells"][0]["status"] == "forschung"
+    absent = client.post(
+        f"/api/v1/matrix/{period_id}/cells/clear?shift_group_id=1",
+        json={
+            "cells": [
+                {"team_member_id": team_member_id, "cell_date": "2026-08-04", "expected_updated_at": None},
+                {"team_member_id": team_member_id, "cell_date": "2026-08-03", "expected_updated_at": "2000-01-01T00:00:00Z"},
+            ]
+        },
+    )
+    assert absent.status_code == 200
+    assert absent.json()["deleted"] is False
+    assert {row["cell_date"] for row in absent.json()["conflicts"]} == {"2026-08-03"}
+    kept = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert kept["cells"][0]["status"] == "forschung"
 
 
 def test_roster_matrix_assignment_validation_and_csv(client: TestClient):

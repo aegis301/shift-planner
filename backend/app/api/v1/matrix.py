@@ -6,8 +6,10 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas import (
     DeletedFlagRead,
+    PlanningCellBulkResult,
     PlanningCellBulkUpsert,
     PlanningCellClear,
+    PlanningCellConflict,
     PlanningCellRead,
     PlanningCellUpsert,
     PlanningMatrixRead,
@@ -204,7 +206,7 @@ def put_cell(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.put("/{planning_period_id}/cells/bulk", response_model=list[PlanningCellRead])
+@router.put("/{planning_period_id}/cells/bulk", response_model=PlanningCellBulkResult)
 def put_cells_bulk(
     planning_period_id: int,
     payload: PlanningCellBulkUpsert,
@@ -221,7 +223,7 @@ def put_cells_bulk(
             db, user, cell.team_member_id, team_member_portal=team_member_portal
         )
     try:
-        return bulk_upsert_planning_cells(
+        cells, conflicts = bulk_upsert_planning_cells(
             db,
             planning_period_id,
             payload,
@@ -232,6 +234,12 @@ def put_cells_bulk(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return PlanningCellBulkResult(
+        cells=cells,
+        conflicts=[
+            PlanningCellConflict(team_member_id=member_id, cell_date=cell_date) for member_id, cell_date in conflicts
+        ],
+    )
 
 
 @router.put("/{planning_period_id}/shift-intents/bulk", response_model=list[PlanningShiftIntentRead])
@@ -278,19 +286,31 @@ def clear_cell(
     group_id = _team_member_feedback_access(
         db, user, planning_period_id, shift_group_id, team_member_portal=team_member_portal
     )
-    _assert_portal_self_write(
-        db, user, payload.team_member_id, team_member_portal=team_member_portal
+    member_ids = [item.team_member_id for item in payload.cells] if payload.cells else []
+    if payload.team_member_id is not None and payload.team_member_id not in member_ids:
+        member_ids.append(payload.team_member_id)
+    for member_id in member_ids:
+        _assert_portal_self_write(
+            db, user, member_id, team_member_portal=team_member_portal
+        )
+    try:
+        deleted, conflicts = clear_planning_cell(
+            db,
+            planning_period_id,
+            payload,
+            organization_id=user.organization_id,
+            shift_group_id=group_id,
+            actor=user.email,
+            source="rest",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return DeletedFlagRead(
+        deleted=deleted,
+        conflicts=[
+            PlanningCellConflict(team_member_id=member_id, cell_date=cell_date) for member_id, cell_date in conflicts
+        ],
     )
-    deleted = clear_planning_cell(
-        db,
-        planning_period_id,
-        payload,
-        organization_id=user.organization_id,
-        shift_group_id=group_id,
-        actor=user.email,
-        source="rest",
-    )
-    return DeletedFlagRead(deleted=deleted)
 
 
 @router.get("/{planning_period_id}/notes", response_model=list[TeamMemberPeriodNoteRead])
