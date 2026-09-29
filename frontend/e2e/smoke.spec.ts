@@ -305,7 +305,7 @@ async function assignFirstOpenCell(page: import("@playwright/test").Page): Promi
     await cell.click();
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
-    const options = listbox.locator("button:has(span.font-medium)");
+    const options = listbox.getByRole("option");
     const optionCount = Math.min(await options.count(), 6);
     for (let optionIndex = 0; optionIndex < optionCount; optionIndex += 1) {
       const option = options.nth(optionIndex);

@@ -18,6 +18,8 @@ export const queryKeys = {
     ["roster-matrix", organizationId, periodId, shiftGroupId, teamMemberPortal] as const,
   rosterMatrixVersion: (organizationId: number, periodId: string, versionId: number) =>
     ["roster-matrix-version", organizationId, periodId, versionId] as const,
+  rosterChangeSets: (organizationId: number, periodId: string, shiftGroupId: string) =>
+    ["roster-change-sets", organizationId, periodId, shiftGroupId] as const,
   validation: (organizationId: number, periodId: string, shiftGroupId: string) =>
     ["validation", organizationId, periodId, shiftGroupId] as const,
   fairness: (organizationId: number, periodId: string, shiftGroupId: string) =>

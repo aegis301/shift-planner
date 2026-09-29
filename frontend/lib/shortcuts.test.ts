@@ -12,7 +12,20 @@ describe("workbench shortcuts", () => {
       "tab-roster",
       "tab-analysis",
       "inspector",
-      "clear"
+      "clear",
+      "grid-arrows",
+      "grid-extend",
+      "grid-row",
+      "grid-column",
+      "grid-all",
+      "grid-edit",
+      "grid-clear",
+      "grid-fill-down",
+      "grid-fill-right",
+      "grid-copy",
+      "grid-paste",
+      "undo",
+      "redo"
     ]);
   });
 
