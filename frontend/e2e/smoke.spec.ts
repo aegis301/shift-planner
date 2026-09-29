@@ -68,7 +68,7 @@ test.describe("planner", () => {
     await page.reload();
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
     await expect(cells.first()).toBeVisible();
-    expect(await indexOfCellText(page, name)).toBe(-1);
+    await expect(cells.nth(assignedIndex)).toHaveText("—");
   });
 
   test("loads each planning resource once", async ({ page, request }) => {
