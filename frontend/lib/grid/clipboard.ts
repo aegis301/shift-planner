@@ -34,13 +34,15 @@ export function toInternalClipboard(rows: InternalCell[][]): string {
 }
 
 export function parseClipboard(text: string): ParsedClipboard | null {
-  const trimmed = text.replace(/^\uFEFF/, "").trim();
-  if (!trimmed) {
-    return { format: "tsv", rows: [[""]] };
+  let body = text.replace(/^\uFEFF/, "");
+  if (body.endsWith("\r\n")) {
+    body = body.slice(0, -2);
+  } else if (body.endsWith("\n")) {
+    body = body.slice(0, -1);
   }
-  if (trimmed.startsWith("{")) {
+  if (body.trim().startsWith("{")) {
     try {
-      const parsed = JSON.parse(trimmed) as { kind?: string; rows?: InternalCell[][] };
+      const parsed = JSON.parse(body.trim()) as { kind?: string; rows?: InternalCell[][] };
       if (parsed.kind === INTERNAL_KIND && Array.isArray(parsed.rows)) {
         return { format: "json", rows: parsed.rows };
       }
@@ -48,8 +50,10 @@ export function parseClipboard(text: string): ParsedClipboard | null {
       return null;
     }
   }
-  const lines = trimmed.split(/\r?\n/);
-  return { format: "tsv", rows: lines.map((line) => line.split("\t")) };
+  if (body === "") {
+    return { format: "tsv", rows: [[""]] };
+  }
+  return { format: "tsv", rows: body.split(/\r?\n/).map((line) => line.split("\t")) };
 }
 
 export function resolvePasteCell(value: InternalCell | string, members: ClipboardMember[]): ResolvedPasteCell {

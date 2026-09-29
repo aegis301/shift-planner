@@ -18,6 +18,16 @@ import { parseClipboard, resolvePasteCell, toInternalClipboard, toTsv, type Clip
 import { rangeOf, selectionAt, type GridSelection } from "@/lib/grid/selection";
 import { emptyUndoStacks, pushCreatedSet, pushRedoResult, pushUndoResult, rebuildUndoStacks, type UndoStacks } from "@/lib/grid/undoStack";
 import { t, type Locale } from "@/lib/i18n";
+import {
+  fairnessDeviationChipClass,
+  fairnessDimensionLabel,
+  fairnessValueForMember,
+  formatFairnessDeviation,
+  formatFairnessWindowRange,
+  indexFairnessMembers,
+  relevantFairnessDimension,
+  type FairnessAccountsRead
+} from "@/lib/fairness";
 import { sessionTimeZone } from "@/lib/orgTime";
 import {
   planningDayStatusBadgeClass,
@@ -61,6 +71,7 @@ export function RosterGrid({
   readOnly = false,
   validationWarnings = [],
   duplicateMemberDayKeys,
+  fairnessAccounts = null,
   onSelectSlot,
   onNotice
 }: {
@@ -70,6 +81,7 @@ export function RosterGrid({
   readOnly?: boolean;
   validationWarnings?: WarningHint[];
   duplicateMemberDayKeys?: ReadonlySet<string>;
+  fairnessAccounts?: FairnessAccountsRead | null;
   onSelectSlot?: (slotId: number) => void;
   onNotice?: (notice: RosterChangeNotice | null) => void;
 }) {
@@ -103,6 +115,10 @@ export function RosterGrid({
   const days = matrix?.days ?? [];
   const userId = me && "id" in me ? me.id : null;
   const userEmail = me && "email" in me ? me.email : null;
+
+  useEffect(() => {
+    setStacks(null);
+  }, [periodId, shiftGroupId]);
 
   useEffect(() => {
     if (stacks !== null || !history.data || userId == null || userEmail == null) {
@@ -397,11 +413,13 @@ export function RosterGrid({
       />
       {editor && activeSlot ? (
         <MemberPicker
+          fairnessAccounts={fairnessAccounts}
           filter={editor.filter}
           locale={locale}
           manualOverride={editor.manualOverride}
           matrix={matrix}
           slotId={activeSlot.id}
+          timeZone={timeZone}
           onManualOverride={(manualOverride) => setEditor((current) => (current ? { ...current, manualOverride } : current))}
           onOpenChange={(open) => {
             if (!open) {
@@ -506,6 +524,8 @@ function MemberPicker({
   locale,
   filter,
   manualOverride,
+  fairnessAccounts,
+  timeZone,
   onManualOverride,
   onSelect,
   onOpenChange
@@ -515,6 +535,8 @@ function MemberPicker({
   locale: Locale;
   filter: string;
   manualOverride: boolean;
+  fairnessAccounts: FairnessAccountsRead | null;
+  timeZone: string;
   onManualOverride: (value: boolean) => void;
   onSelect: (memberId: number | "") => void;
   onOpenChange: (open: boolean) => void;
@@ -535,7 +557,24 @@ function MemberPicker({
     anchor.style.height = `${box.height}px`;
   }, []);
   const needle = query.trim().toLowerCase();
-  const members = matrix.team_members.filter((member) => {
+  const slot = matrix.slots.find((row) => row.id === slotId);
+  const fairnessIndex = indexFairnessMembers(fairnessAccounts);
+  const dimension =
+    slot && fairnessAccounts
+      ? relevantFairnessDimension(
+          {
+            slot_date: slot.slot_date,
+            starts_at: slot.starts_at,
+            ends_at: slot.ends_at,
+            day_class: slot.day_class,
+            category: slot.category
+          },
+          fairnessAccounts.dimensions ?? [],
+          timeZone
+        )
+      : undefined;
+  const windowLabel = fairnessAccounts ? formatFairnessWindowRange(fairnessAccounts.window) : "";
+  const matched = matrix.team_members.filter((member) => {
     if (!needle) {
       return true;
     }
@@ -546,6 +585,16 @@ function MemberPicker({
       member.last_name.toLowerCase().includes(needle)
     );
   });
+  const members = dimension
+    ? [...matched].sort((left, right) => {
+        const leftDeviation = fairnessValueForMember(fairnessIndex, left.id, dimension.id)?.deviation_absolute ?? 0;
+        const rightDeviation = fairnessValueForMember(fairnessIndex, right.id, dimension.id)?.deviation_absolute ?? 0;
+        if (leftDeviation !== rightDeviation) {
+          return leftDeviation - rightDeviation;
+        }
+        return teamMemberPlanningDisplayName(left).localeCompare(teamMemberPlanningDisplayName(right), undefined, { sensitivity: "base" });
+      })
+    : matched;
   return (
     <Combobox open onOpenChange={onOpenChange}>
       <ComboboxAnchor ref={anchorRef} className="pointer-events-none" />
@@ -565,11 +614,27 @@ function MemberPicker({
           <button className="w-full px-3 py-2 text-left text-xs text-muted" type="button" onClick={() => onSelect("")}>
             {t(locale, "emptyValue")}
           </button>
-          {members.map((member) => (
-            <ComboboxItem key={member.id} value={String(member.id)} onSelect={() => onSelect(member.id)}>
-              <span className="font-medium text-ink">{teamMemberPlanningDisplayName(member)}</span>
-            </ComboboxItem>
-          ))}
+          {members.map((member) => {
+            const value = dimension ? fairnessValueForMember(fairnessIndex, member.id, dimension.id) : undefined;
+            const deviation = value && dimension ? formatFairnessDeviation(value.deviation_absolute, dimension.metric, locale) : null;
+            return (
+              <ComboboxItem key={member.id} value={String(member.id)} onSelect={() => onSelect(member.id)}>
+                <span className="min-w-0 flex-1 truncate font-medium text-ink">{teamMemberPlanningDisplayName(member)}</span>
+                {value && dimension && deviation ? (
+                  <span
+                    className={`shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[0.65rem] font-semibold tabular-nums ring-1 ${fairnessDeviationChipClass(value.deviation_absolute)}`}
+                    title={t(locale, "fairnessPickerDeviationTitle", {
+                      dimension: fairnessDimensionLabel(locale, dimension),
+                      window: windowLabel,
+                      value: deviation
+                    })}
+                  >
+                    {`Δ ${deviation}`}
+                  </span>
+                ) : null}
+              </ComboboxItem>
+            );
+          })}
         </ComboboxList>
         <label className="flex items-center gap-2 border-t border-default px-3 py-2 text-xs text-muted">
           <input checked={manualOverride} type="checkbox" onChange={(event) => onManualOverride(event.target.checked)} />

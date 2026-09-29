@@ -37,4 +37,21 @@ describe("grid clipboard", () => {
       ]
     });
   });
+
+  it("keeps a blank first cell and a trailing empty cell", () => {
+    expect(parseClipboard("\tAda\n\tBea")).toEqual({
+      format: "tsv",
+      rows: [
+        ["", "Ada"],
+        ["", "Bea"]
+      ]
+    });
+    expect(parseClipboard("Ada\t\nBea\t")).toEqual({
+      format: "tsv",
+      rows: [
+        ["Ada", ""],
+        ["Bea", ""]
+      ]
+    });
+  });
 });

@@ -584,6 +584,7 @@ function PlannerWorkspaceContent() {
           versionId={viewingVersionId}
           validationWarnings={warnings}
           duplicateMemberDayKeys={duplicateMemberDayKeys}
+          fairnessAccounts={fairnessAccounts}
           onNotice={setChangeNotice}
           onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
         />

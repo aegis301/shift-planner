@@ -194,7 +194,7 @@ export function Grid({
                       key={header.id}
                       className="absolute flex items-end truncate px-[var(--space-cell-x)] text-xs font-semibold text-ink"
                       role="columnheader"
-                      style={{ left: DAY_WIDTH + header.column.getStart(), width: size, height: "100%" }}
+                      style={{ left: header.getStart(), width: size, height: "100%" }}
                     >
                       {header.isPlaceholder ? null : String(header.column.columnDef.header)}
                     </div>

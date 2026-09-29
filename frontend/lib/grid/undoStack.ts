@@ -22,7 +22,7 @@ export function pushCreatedSet(stacks: UndoStacks, changeSetId: number): UndoSta
 export function pushUndoResult(stacks: UndoStacks, revertedId: number, revertSetId: number): UndoStacks {
   return {
     undo: stacks.undo.filter((id) => id !== revertedId),
-    redo: [revertSetId]
+    redo: [...stacks.redo, revertSetId]
   };
 }
 
@@ -69,7 +69,7 @@ export function rebuildUndoStacks(sets: HistoryChangeSet[], user: { id: number; 
       continue;
     }
     undo = undo.filter((id) => id !== set.reverts_change_set_id);
-    redo = [set.id];
+    redo = [...redo, set.id];
   }
   return { undo, redo };
 }

@@ -20,6 +20,26 @@ describe("undo stacks", () => {
     expect(pushRedoResult(undone, 9, 12)).toEqual({ undo: [12], redo: [] });
   });
 
+  it("keeps the earlier revert when two sets are undone", () => {
+    const first = pushCreatedSet({ undo: [], redo: [] }, 1);
+    const second = pushCreatedSet(first, 2);
+    const undoneLatest = pushUndoResult(second, 2, 3);
+    const undoneBoth = pushUndoResult(undoneLatest, 1, 4);
+    expect(undoneBoth).toEqual({ undo: [], redo: [3, 4] });
+    expect(pushRedoResult(undoneBoth, 4, 5)).toEqual({ undo: [5], redo: [3] });
+    expect(
+      rebuildUndoStacks(
+        [
+          set({ id: 1, status: "reverted" }),
+          set({ id: 2, status: "reverted" }),
+          set({ id: 3, status: "applied", reverts_change_set_id: 2 }),
+          set({ id: 4, status: "applied", reverts_change_set_id: 1 })
+        ],
+        user
+      )
+    ).toEqual({ undo: [], redo: [3, 4] });
+  });
+
   it("rebuilds the stack from history after a reload", () => {
     const history = [
       set({ id: 4, status: "reverted" }),
