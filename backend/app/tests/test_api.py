@@ -3917,3 +3917,87 @@ def test_team_member_property_values_admin_only_field(team_member_client: TestCl
     )
     assert ok.status_code == 200
     assert ok.json()[0]["value"] == "admin ok"
+
+
+def test_period_roster_refresh_adds_joiners_and_confirms_leavers_with_wishes(client: TestClient):
+    login(client)
+    stayer = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Stay", "last_name": "Roster", "email": "stay-roster@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    joiner = client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Join", "last_name": "Later", "email": "join-later@example.com", "employment_percentage": 100},
+    ).json()["id"]
+    set_shift_group_membership(client, shift_group_id=1, team_member_id=stayer)
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 8}).json()["id"]
+    set_shift_group_membership(
+        client,
+        shift_group_id=1,
+        team_member_id=stayer,
+    )
+    client.put(
+        "/api/v1/shift-groups/1/memberships",
+        json={
+            "memberships": [
+                {"team_member_id": stayer, "start_date": "2026-01-01", "end_date": None},
+                {"team_member_id": joiner, "start_date": "2026-01-01", "end_date": None},
+            ]
+        },
+    )
+    preview = client.get(f"/api/v1/planning-periods/{period_id}/period-roster/preview?shift_group_id=1")
+    assert preview.status_code == 200
+    assert [row["team_member_id"] for row in preview.json()["added"]] == [joiner]
+    assert preview.json()["removed"] == []
+    applied = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id=1",
+        json={"confirm_removals": False},
+    )
+    assert applied.status_code == 200
+    assert applied.json() == {"added_count": 1, "removed_count": 0}
+    members = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()["team_members"]
+    assert {row["id"] for row in members} == {stayer, joiner}
+    client.put(
+        "/api/v1/shift-groups/1/memberships",
+        json={
+            "memberships": [
+                {"team_member_id": stayer, "start_date": "2026-01-01", "end_date": "2026-07-31"},
+                {"team_member_id": joiner, "start_date": "2026-01-01", "end_date": None},
+            ]
+        },
+    )
+    wish = client.put(
+        f"/api/v1/matrix/{period_id}/cells?shift_group_id=1",
+        json={"team_member_id": stayer, "cell_date": "2026-08-03", "status": "frei"},
+    )
+    assert wish.status_code == 200
+    refused = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id=1",
+        json={"confirm_removals": False},
+    )
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "PERIOD_ROSTER_CONFIRM_REMOVALS"
+    removal = refused.json()["detail"]["preview"]["removed"][0]
+    assert removal["team_member_id"] == stayer
+    assert removal["wishes"] == 1
+    still = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert stayer in {row["id"] for row in still["team_members"]}
+    assert still["cells"][0]["status"] == "frei"
+    confirmed = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id=1",
+        json={"confirm_removals": True},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["removed_count"] == 1
+    after = client.get(f"/api/v1/matrix/{period_id}?shift_group_id=1").json()
+    assert {row["id"] for row in after["team_members"]} == {joiner}
+    assert after["cells"] == []
+    client.post(f"/api/v1/planning-periods/{period_id}/preliminary?shift_group_id=1")
+    published = client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id=1")
+    assert published.status_code == 200
+    blocked = client.post(
+        f"/api/v1/planning-periods/{period_id}/period-roster/refresh?shift_group_id=1",
+        json={"confirm_removals": True},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "PERIOD_ROSTER_PUBLISHED"

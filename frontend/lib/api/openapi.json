@@ -3836,6 +3836,120 @@
         "title": "OrganizationUserRolePatch",
         "type": "object"
       },
+      "PeriodRosterRefreshMember": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "team_member_id": {
+            "title": "Team Member Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team_member_id",
+          "display_name"
+        ],
+        "title": "PeriodRosterRefreshMember",
+        "type": "object"
+      },
+      "PeriodRosterRefreshPreview": {
+        "properties": {
+          "added": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodRosterRefreshMember"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "removed": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodRosterRefreshRemoval"
+            },
+            "title": "Removed",
+            "type": "array"
+          },
+          "requires_confirmation": {
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "added",
+          "removed",
+          "requires_confirmation"
+        ],
+        "title": "PeriodRosterRefreshPreview",
+        "type": "object"
+      },
+      "PeriodRosterRefreshRemoval": {
+        "properties": {
+          "assignments": {
+            "title": "Assignments",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "intents": {
+            "title": "Intents",
+            "type": "integer"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "integer"
+          },
+          "team_member_id": {
+            "title": "Team Member Id",
+            "type": "integer"
+          },
+          "wishes": {
+            "title": "Wishes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team_member_id",
+          "display_name",
+          "wishes",
+          "intents",
+          "notes",
+          "assignments"
+        ],
+        "title": "PeriodRosterRefreshRemoval",
+        "type": "object"
+      },
+      "PeriodRosterRefreshRequest": {
+        "properties": {
+          "confirm_removals": {
+            "default": false,
+            "title": "Confirm Removals",
+            "type": "boolean"
+          }
+        },
+        "title": "PeriodRosterRefreshRequest",
+        "type": "object"
+      },
+      "PeriodRosterRefreshResult": {
+        "properties": {
+          "added_count": {
+            "title": "Added Count",
+            "type": "integer"
+          },
+          "removed_count": {
+            "title": "Removed Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added_count",
+          "removed_count"
+        ],
+        "title": "PeriodRosterRefreshResult",
+        "type": "object"
+      },
       "PlanVersionListRead": {
         "properties": {
           "versions": {
@@ -17559,6 +17673,164 @@
           }
         },
         "summary": "Post Set Planning Period Draft",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/v1/planning-periods/{planning_period_id}/period-roster/preview": {
+      "get": {
+        "operationId": "planning_get_period_roster_refresh_preview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodRosterRefreshPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Period Roster Refresh Preview",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/v1/planning-periods/{planning_period_id}/period-roster/refresh": {
+      "post": {
+        "operationId": "planning_post_period_roster_refresh",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeriodRosterRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodRosterRefreshResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Period Roster Refresh",
         "tags": [
           "planning"
         ]

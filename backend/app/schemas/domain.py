@@ -1901,6 +1901,35 @@ class RosterMatrixSyncRead(BaseModel):
     sync: RosterSlotSyncSummary
 
 
+class PeriodRosterRefreshMember(BaseModel):
+    team_member_id: int
+    display_name: str
+
+
+class PeriodRosterRefreshRemoval(BaseModel):
+    team_member_id: int
+    display_name: str
+    wishes: int
+    intents: int
+    notes: int
+    assignments: int
+
+
+class PeriodRosterRefreshPreview(BaseModel):
+    added: list[PeriodRosterRefreshMember]
+    removed: list[PeriodRosterRefreshRemoval]
+    requires_confirmation: bool
+
+
+class PeriodRosterRefreshRequest(BaseModel):
+    confirm_removals: bool = False
+
+
+class PeriodRosterRefreshResult(BaseModel):
+    added_count: int
+    removed_count: int
+
+
 class TeamMemberPeriodNoteUpsert(BaseModel):
     team_member_id: int
     summary: str | None = None

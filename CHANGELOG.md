@@ -1,6 +1,10 @@
 # Changelog
 
 ## 2026-09-29
+- **Period roster refresh:** Admins and planners can update the selected month's shift-group roster from current membership. People who joined are added. People who left are removed, and if they already have wishes or duties the dialog names what will be deleted. Published groups stay read-only.
+- **Weekend and holiday slots:** The roster grid keeps one column per shift variant and position, so a day shift and a night shift on the same date are both visible and editable.
+
+## 2026-09-29
 - **Wishes grid:** The planner wishes matrix uses the shared grid. Rows are days and columns are team members. Typing opens a day-status combobox; a range, a paste, or a fill is one bulk write. Undo and redo send `expected_updated_at`, and the server skips a cell whose `updated_at` no longer matches. `PUT /api/v1/matrix/{id}/cells/bulk` now returns `{cells, conflicts}` instead of a bare list. A clear can do the same for several cells and lists conflicts next to `deleted`. A preconditioned write is a conditional update, so a second undo that still has the old timestamp does not overwrite the first. Edits typed while a save is in flight are queued, and a mixed paste that only half-succeeds can still be undone. Day comments, wishes, and month notes are edited in the inspector. A published group stays read-only, with the reason in the context bar. The member wishes page still uses the previous matrix.
 - **Roster grid:** The planner roster is a virtualized grid with one column per template position. Arrow keys, ranges, copy, paste, fill, and undo go through roster change sets. A refused paste lists each row in the inspector and can apply the legal subset. Wish text uses a darker info color so it meets the contrast minimum on white.
 
