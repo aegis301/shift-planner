@@ -137,11 +137,14 @@ export function RosterGrid({
     return ids;
   }, [swaps.data]);
 
-  async function remember(changeSetId: number | null | undefined) {
-    if (changeSetId == null) {
+  async function remember(changeSet: { id: number; status: string; items?: { outcome: string }[] } | null | undefined) {
+    if (!changeSet || changeSet.status === "refused") {
       return;
     }
-    setStacks((current) => pushCreatedSet(current ?? emptyUndoStacks(), changeSetId));
+    if (changeSet.items && !changeSet.items.some((item) => item.outcome === "applied")) {
+      return;
+    }
+    setStacks((current) => pushCreatedSet(current ?? emptyUndoStacks(), changeSet.id));
   }
 
   async function applyItems(items: RosterChangeWrite[], mode: "all_or_nothing" | "best_effort", label: string, unresolvedNames: string[] = []) {
@@ -153,7 +156,7 @@ export function RosterGrid({
     }
     const result = await applySet.mutateAsync({ mode, label, items });
     if (result.applied && result.changeSet) {
-      await remember(result.changeSet.id);
+      await remember(result.changeSet);
       onNotice?.(unresolvedNames.length > 0 ? { changeSet: null, unresolvedNames, applyLegal: null } : null);
       setMessage(t(locale, "autosaved"));
       return;
@@ -181,7 +184,9 @@ export function RosterGrid({
         manualOverride: memberId === "" ? false : manualOverride
       });
       const changeSetId = saved && "change_set_id" in saved ? saved.change_set_id : null;
-      await remember(changeSetId);
+      if (changeSetId != null) {
+        await remember({ id: changeSetId, status: "applied", items: [{ outcome: "applied" }] });
+      }
       setMessage(t(locale, "autosaved"));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : t(locale, "warnings"));

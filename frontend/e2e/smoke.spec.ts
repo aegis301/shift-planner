@@ -79,7 +79,7 @@ test.describe("planner", () => {
         return;
       }
       const url = req.url();
-      if (/\/api\/v1\/roster-matrix\/\d+/.test(url)) {
+      if (/\/api\/v1\/roster-matrix\/\d+/.test(url) && !url.includes("/change-sets")) {
         counts.roster += 1;
       } else if (/\/api\/v1\/matrix\/\d+(\?|$)/.test(url)) {
         counts.wishes += 1;
@@ -121,7 +121,7 @@ test.describe("planner", () => {
     const cell = page.locator('button[aria-haspopup="listbox"]', { hasText: "—" }).first();
     await cell.scrollIntoViewIfNeeded();
     await cell.click();
-    const option = page.getByRole("listbox").locator("button:has(span.font-medium)").first();
+    const option = page.getByRole("listbox").getByRole("option").first();
     await option.click();
     await expect(page.getByText("No-Go")).toBeVisible();
     await expect(cell).toHaveText("—");

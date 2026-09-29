@@ -50,6 +50,21 @@ describe("undo stacks", () => {
     expect(rebuildUndoStacks(history, user)).toEqual({ undo: [5], redo: [9] });
   });
 
+  it("ignores a set that did not apply any assignment", () => {
+    expect(
+      rebuildUndoStacks(
+        [
+          set({
+            id: 2,
+            status: "applied",
+            items: [{ outcome: "unchanged" }, { outcome: "unchanged" }]
+          })
+        ],
+        user
+      )
+    ).toEqual({ undo: [], redo: [] });
+  });
+
   it("treats reverting a revert as redo", () => {
     const history = [
       set({ id: 4, status: "reverted" }),

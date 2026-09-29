@@ -4,6 +4,7 @@ export type HistoryChangeSet = {
   created_by_user_id?: number | null;
   actor: string;
   reverts_change_set_id?: number | null;
+  items?: { outcome: string }[];
 };
 
 export type UndoStacks = {
@@ -41,13 +42,20 @@ function isLive(status: HistoryChangeSet["status"]): boolean {
   return status === "applied" || status === "partially_applied";
 }
 
+function wroteAssignment(set: HistoryChangeSet): boolean {
+  if (!set.items) {
+    return true;
+  }
+  return set.items.some((item) => item.outcome === "applied");
+}
+
 export function rebuildUndoStacks(sets: HistoryChangeSet[], user: { id: number; email: string }): UndoStacks {
   const ordered = sets.filter((set) => ownedBy(set, user) && set.status !== "refused").slice().sort((left, right) => left.id - right.id);
   let undo: number[] = [];
   let redo: number[] = [];
   for (const set of ordered) {
     if (set.reverts_change_set_id == null) {
-      if (isLive(set.status)) {
+      if (isLive(set.status) && wroteAssignment(set)) {
         undo = [...undo, set.id];
         redo = [];
       } else if (set.status === "reverted") {
@@ -55,7 +63,7 @@ export function rebuildUndoStacks(sets: HistoryChangeSet[], user: { id: number; 
       }
       continue;
     }
-    if (!isLive(set.status)) {
+    if (!isLive(set.status) || !wroteAssignment(set)) {
       if (set.status === "reverted") {
         redo = redo.filter((id) => id !== set.id);
         undo = undo.filter((id) => id !== set.id);
