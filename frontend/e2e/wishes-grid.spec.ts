@@ -147,7 +147,7 @@ test.describe("wishes grid", () => {
     });
     await page.goto(planningPath(target));
     const reason = "Die Wünsche sind schreibgeschützt, weil diese Dienstgruppe veröffentlicht ist.";
-    await expect(page.getByRole("status", { name: reason })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: reason })).toBeVisible();
     const grid = page.getByRole("grid", { name: "Wünsche" });
     await grid.getByRole("gridcell").first().focus();
     let writes = 0;
