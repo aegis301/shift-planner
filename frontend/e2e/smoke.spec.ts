@@ -18,7 +18,7 @@ test.describe("planner screenshots", () => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));
     await expect(page.getByRole("heading", { name: "Wünsche" })).toBeVisible();
-    await expect(page.getByRole("table").first()).toBeVisible();
+    await expect(page.getByRole("grid", { name: "Wünsche" })).toBeVisible();
   });
 
   test("shows the roster", async ({ page, request }) => {
