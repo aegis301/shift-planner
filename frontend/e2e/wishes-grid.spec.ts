@@ -124,41 +124,40 @@ test.describe("wishes grid", () => {
 
   test("keeps a published group read-only", async ({ page, request }) => {
     const target = await planningTarget(request);
-    await page.route("**/api/v1/matrix/**", async (route) => {
-      if (route.request().method() !== "GET" || route.request().url().includes("/notes")) {
-        await route.continue();
-        return;
+    const groupQuery = `shift_group_id=${target.shiftGroupId}`;
+    const periodPath = `/api/v1/planning-periods/${target.periodId}`;
+    const matrix = await request.get(`/api/v1/matrix/${target.periodId}?${groupQuery}`);
+    expect(matrix.ok()).toBeTruthy();
+    const before = ((await matrix.json()) as { shift_group_planning_status?: { status?: string } | null }).shift_group_planning_status
+      ?.status;
+    if (before === "draft") {
+      expect((await request.post(`${periodPath}/preliminary?${groupQuery}`)).ok()).toBeTruthy();
+    }
+    if (before !== "published") {
+      expect((await request.post(`${periodPath}/publish?${groupQuery}`)).ok()).toBeTruthy();
+    }
+    try {
+      await page.goto(planningPath(target));
+      const reason = "Die Wünsche sind schreibgeschützt, weil diese Dienstgruppe veröffentlicht ist.";
+      await expect(page.getByRole("status").filter({ hasText: reason })).toBeVisible();
+      const grid = page.getByRole("grid", { name: "Wünsche" });
+      await grid.getByRole("gridcell").first().focus();
+      let writes = 0;
+      page.on("request", (req) => {
+        if (req.method() === "PUT" && req.url().includes("/cells/bulk")) {
+          writes += 1;
+        }
+      });
+      await page.keyboard.press("u");
+      await expect(page.getByRole("listbox")).toHaveCount(0);
+      expect(writes).toBe(0);
+    } finally {
+      if (before === "draft") {
+        await request.post(`${periodPath}/draft?${groupQuery}`);
+      } else if (before === "preliminary") {
+        await request.post(`${periodPath}/preliminary?${groupQuery}`);
       }
-      const response = await route.fetch();
-      const json = (await response.json()) as { shift_group_planning_status?: { status?: string } | null };
-      json.shift_group_planning_status = { ...(json.shift_group_planning_status ?? {}), status: "published" };
-      await route.fulfill({ response, json });
-    });
-    await page.route("**/api/v1/roster-matrix/**", async (route) => {
-      const url = route.request().url();
-      if (route.request().method() !== "GET" || url.includes("/change-sets") || url.includes("/candidates")) {
-        await route.continue();
-        return;
-      }
-      const response = await route.fetch();
-      const json = (await response.json()) as { shift_group_planning_status?: { status?: string } | null };
-      json.shift_group_planning_status = { ...(json.shift_group_planning_status ?? {}), status: "published" };
-      await route.fulfill({ response, json });
-    });
-    await page.goto(planningPath(target));
-    const reason = "Die Wünsche sind schreibgeschützt, weil diese Dienstgruppe veröffentlicht ist.";
-    await expect(page.getByRole("status").filter({ hasText: reason })).toBeVisible();
-    const grid = page.getByRole("grid", { name: "Wünsche" });
-    await grid.getByRole("gridcell").first().focus();
-    let writes = 0;
-    page.on("request", (req) => {
-      if (req.method() === "PUT" && req.url().includes("/cells/bulk")) {
-        writes += 1;
-      }
-    });
-    await page.keyboard.press("u");
-    await expect(page.getByRole("listbox")).toHaveCount(0);
-    expect(writes).toBe(0);
+    }
   });
 });
 
