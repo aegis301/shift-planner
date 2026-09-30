@@ -1212,6 +1212,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/planning-periods/{planning_period_id}/period-roster/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Period Roster Refresh Preview */
+        get: operations["planning_get_period_roster_refresh_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/planning-periods/{planning_period_id}/period-roster/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Period Roster Refresh */
+        post: operations["planning_post_period_roster_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/planning-periods/{planning_period_id}/preliminary": {
         parameters: {
             query?: never;
@@ -3736,6 +3770,52 @@ export interface components {
              * @enum {string}
              */
             role: "admin" | "planner" | "team_member";
+        };
+        /** PeriodRosterRefreshMember */
+        PeriodRosterRefreshMember: {
+            /** Display Name */
+            display_name: string;
+            /** Team Member Id */
+            team_member_id: number;
+        };
+        /** PeriodRosterRefreshPreview */
+        PeriodRosterRefreshPreview: {
+            /** Added */
+            added: components["schemas"]["PeriodRosterRefreshMember"][];
+            /** Removed */
+            removed: components["schemas"]["PeriodRosterRefreshRemoval"][];
+            /** Requires Confirmation */
+            requires_confirmation: boolean;
+        };
+        /** PeriodRosterRefreshRemoval */
+        PeriodRosterRefreshRemoval: {
+            /** Assignments */
+            assignments: number;
+            /** Display Name */
+            display_name: string;
+            /** Intents */
+            intents: number;
+            /** Notes */
+            notes: number;
+            /** Team Member Id */
+            team_member_id: number;
+            /** Wishes */
+            wishes: number;
+        };
+        /** PeriodRosterRefreshRequest */
+        PeriodRosterRefreshRequest: {
+            /**
+             * Confirm Removals
+             * @default false
+             */
+            confirm_removals: boolean;
+        };
+        /** PeriodRosterRefreshResult */
+        PeriodRosterRefreshResult: {
+            /** Added Count */
+            added_count: number;
+            /** Removed Count */
+            removed_count: number;
         };
         /** PlanVersionListRead */
         PlanVersionListRead: {
@@ -9555,6 +9635,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShiftGroupPlanningStatusRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    planning_get_period_roster_refresh_preview: {
+        parameters: {
+            query?: {
+                shift_group_id?: number | null;
+            };
+            header?: never;
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeriodRosterRefreshPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    planning_post_period_roster_refresh: {
+        parameters: {
+            query?: {
+                shift_group_id?: number | null;
+            };
+            header?: never;
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PeriodRosterRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeriodRosterRefreshResult"];
                 };
             };
             /** @description Validation Error */

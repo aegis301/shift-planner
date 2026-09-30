@@ -14,7 +14,7 @@ export type GridCommand =
   | { type: "select-row" }
   | { type: "select-column" }
   | { type: "select-all" }
-  | { type: "edit"; filter: string }
+  | { type: "edit"; filter: string; row?: number; col?: number }
   | { type: "cancel" }
   | { type: "clear" }
   | { type: "fill-down" }

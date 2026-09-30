@@ -12,6 +12,9 @@ from app.db.session import get_db
 from app.models import User
 from app.schemas import (
     DeletedFlagRead,
+    PeriodRosterRefreshPreview,
+    PeriodRosterRefreshRequest,
+    PeriodRosterRefreshResult,
     PlanningMatrixRead,
     PlanningPeriodCreate,
     PlanningPeriodRead,
@@ -57,6 +60,12 @@ from app.services.planning import (
     set_planning_period_to_draft,
     set_planning_period_to_preliminary,
     unpublish_planning_period,
+)
+from app.services.planning_period_rosters import (
+    PeriodRosterRefreshConfirmationRequired,
+    PeriodRosterRefreshPublishedError,
+    preview_period_roster_refresh,
+    refresh_period_shift_group_roster,
 )
 from app.services.roster_matrix import (
     RosterRegeneratePublishedError,
@@ -301,6 +310,97 @@ def sync_planning_period_roster(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _period_roster_preview_read(preview) -> PeriodRosterRefreshPreview:
+    return PeriodRosterRefreshPreview(
+        added=[
+            {"team_member_id": row.team_member_id, "display_name": row.display_name} for row in preview.added
+        ],
+        removed=[
+            {
+                "team_member_id": row.team_member_id,
+                "display_name": row.display_name,
+                "wishes": row.wishes,
+                "intents": row.intents,
+                "notes": row.notes,
+                "assignments": row.assignments,
+            }
+            for row in preview.removed
+        ],
+        requires_confirmation=preview.requires_confirmation,
+    )
+
+
+def _require_period_roster_group(db: Session, user: User, shift_group_id: int | None) -> int:
+    if shift_group_id is None:
+        raise HTTPException(status_code=400, detail="shift_group_id is required")
+    try:
+        assert_planning_shift_group_scope(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return shift_group_id
+
+
+@router.get(
+    "/planning-periods/{planning_period_id}/period-roster/preview",
+    response_model=PeriodRosterRefreshPreview,
+)
+def get_period_roster_refresh_preview(
+    planning_period_id: int,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+) -> PeriodRosterRefreshPreview:
+    group_id = _require_period_roster_group(db, user, shift_group_id)
+    try:
+        preview = preview_period_roster_refresh(
+            db,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+            shift_group_id=group_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _period_roster_preview_read(preview)
+
+
+@router.post(
+    "/planning-periods/{planning_period_id}/period-roster/refresh",
+    response_model=PeriodRosterRefreshResult,
+)
+def post_period_roster_refresh(
+    planning_period_id: int,
+    payload: PeriodRosterRefreshRequest,
+    shift_group_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_planner),
+) -> PeriodRosterRefreshResult:
+    group_id = _require_period_roster_group(db, user, shift_group_id)
+    try:
+        result = refresh_period_shift_group_roster(
+            db,
+            planning_period_id=planning_period_id,
+            organization_id=user.organization_id,
+            shift_group_id=group_id,
+            confirm_removals=payload.confirm_removals,
+        )
+    except PeriodRosterRefreshPublishedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "PERIOD_ROSTER_PUBLISHED", "message": str(exc)},
+        ) from exc
+    except PeriodRosterRefreshConfirmationRequired as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PERIOD_ROSTER_CONFIRM_REMOVALS",
+                "preview": _period_roster_preview_read(exc.preview).model_dump(),
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return PeriodRosterRefreshResult(added_count=result.added_count, removed_count=result.removed_count)
 
 
 @router.get("/validation/{planning_period_id}", response_model=list[ValidationWarning])

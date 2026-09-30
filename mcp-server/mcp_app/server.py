@@ -1,3 +1,4 @@
+import json
 import os
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, time
@@ -114,6 +115,13 @@ from app.services.planning import (
     publish_shift_group_planning,
     set_shift_group_planning_to_draft,
     set_shift_group_planning_to_preliminary,
+)
+from app.services.planning_period_rosters import (
+    PeriodRosterRefreshConfirmationRequired,
+    PeriodRosterRefreshPublishedError,
+    period_roster_refresh_preview_payload,
+    preview_period_roster_refresh,
+    refresh_period_shift_group_roster,
 )
 from app.services.roster_candidates import list_slot_candidates
 from app.services.roster_change_sets import (
@@ -407,6 +415,19 @@ def roster_matrix_filtered_resource(planning_period_id: int, shift_group_id: int
         return get_roster_matrix(
             db, planning_period_id, organization_id=mcp_organization_id(), shift_group_id=shift_group_id
         ).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://period-roster/{planning_period_id}/shift-group/{shift_group_id}")
+def period_roster_refresh_preview_resource(planning_period_id: int, shift_group_id: int) -> dict[str, Any]:
+    """Preview who would be added or removed by refreshing this month's shift-group roster from current membership."""
+    with db_session() as db:
+        preview = preview_period_roster_refresh(
+            db,
+            planning_period_id=planning_period_id,
+            organization_id=mcp_organization_id(),
+            shift_group_id=shift_group_id,
+        )
+        return period_roster_refresh_preview_payload(preview)
 
 
 @mcp.resource("shift-planner://team-member-period-notes/{planning_period_id}")
@@ -1132,6 +1153,29 @@ def sync_planning_period_roster_tool(
             },
             "matrix": matrix.model_dump(mode="json"),
         }
+
+
+@mcp.tool
+def refresh_period_roster_tool(
+    token: str, planning_period_id: int, shift_group_id: int, confirm_removals: bool = False
+) -> dict[str, int]:
+    """Refresh one month's shift-group roster from current membership. Adds joiners and removes leavers. Requires MCP admin token. Set confirm_removals when the preview lists wishes or assignments that will be deleted."""
+    require_token(token)
+    with db_session() as db:
+        try:
+            result = refresh_period_shift_group_roster(
+                db,
+                planning_period_id=planning_period_id,
+                organization_id=mcp_organization_id(),
+                shift_group_id=shift_group_id,
+                confirm_removals=confirm_removals,
+            )
+        except PeriodRosterRefreshPublishedError as exc:
+            raise ValueError(str(exc)) from exc
+        except PeriodRosterRefreshConfirmationRequired as exc:
+            preview = json.dumps(period_roster_refresh_preview_payload(exc.preview))
+            raise ValueError(f"PERIOD_ROSTER_CONFIRM_REMOVALS {preview}") from exc
+    return {"added_count": result.added_count, "removed_count": result.removed_count}
 
 
 @mcp.tool

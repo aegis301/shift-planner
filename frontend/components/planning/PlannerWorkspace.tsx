@@ -17,6 +17,7 @@ import {
   Plus,
   RotateCw,
   RefreshCw,
+  Users,
   ChevronDown,
   Save,
   Sparkles,
@@ -69,6 +70,7 @@ import { type FairnessAccountsRead } from "@/lib/fairness";
 import { type SolverRunRead } from "@/lib/solver";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { labelForPlanningDayStatusCode, type PlanningDayStatusDefinition } from "@/lib/planningDayStatus";
+import type { components } from "@/lib/api/schema";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
 
 type ShiftGroupPlanningStatus = {
@@ -176,6 +178,7 @@ function PlannerWorkspaceContent() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [destructiveAction, setDestructiveAction] = useState<DestructiveAction | null>(null);
   const [syncRosterConfirmOpen, setSyncRosterConfirmOpen] = useState(false);
+  const [periodRosterPreview, setPeriodRosterPreview] = useState<components["schemas"]["PeriodRosterRefreshPreview"] | null>(null);
   const [solverDialogOpen, setSolverDialogOpen] = useState(false);
   const [shiftGroupId, setShiftGroupId] = useState("");
   const [viewingVersionId, setViewingVersionId] = useState<number | null>(null);
@@ -509,6 +512,39 @@ function PlannerWorkspaceContent() {
     setSyncRosterConfirmOpen(false);
   }
 
+  async function openPeriodRosterRefresh() {
+    if (!periodId || !shiftGroupId) {
+      return;
+    }
+    try {
+      const preview = await apiFetch<components["schemas"]["PeriodRosterRefreshPreview"]>(
+        `/api/v1/planning-periods/${periodId}/period-roster/preview${shiftGroupQuery}`
+      );
+      setPeriodRosterPreview(preview);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t(locale, "warnings"));
+    }
+  }
+
+  async function confirmPeriodRosterRefresh() {
+    if (!periodId || !shiftGroupId || !planningScope) {
+      return;
+    }
+    try {
+      const result = await apiFetch<components["schemas"]["PeriodRosterRefreshResult"]>(
+        `/api/v1/planning-periods/${periodId}/period-roster/refresh${shiftGroupQuery}`,
+        { method: "POST", body: JSON.stringify({ confirm_removals: true }) }
+      );
+      await invalidateQueryKeys(queryClient, [...wishesEditKeys(planningScope), ...rosterAssignmentKeys(planningScope)]);
+      setMessage(
+        t(locale, "periodRosterRefreshResult", { added: String(result.added_count), removed: String(result.removed_count) })
+      );
+      setPeriodRosterPreview(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t(locale, "warnings"));
+    }
+  }
+
   async function handleWishesChanged() {
     if (planningScope) {
       await invalidateQueryKeys(queryClient, wishesEditKeys(planningScope));
@@ -818,6 +854,20 @@ function PlannerWorkspaceContent() {
                     <RefreshCw size={18} />
                   </button>
                   <button
+                    aria-label={t(locale, "periodRosterRefresh")}
+                    className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!periodId || !shiftGroupId || groupPlanningStatus?.status === "published"}
+                    onClick={() => void openPeriodRosterRefresh()}
+                    title={
+                      groupPlanningStatus?.status === "published"
+                        ? t(locale, "refreshRosterPublishedBlocked")
+                        : t(locale, "periodRosterRefresh")
+                    }
+                    type="button"
+                  >
+                    <Users size={18} />
+                  </button>
+                  <button
                     aria-label={t(locale, "regenerateRoster")}
                     className="mt-5 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                     disabled={regenerateRosterDisabled}
@@ -1014,6 +1064,61 @@ function PlannerWorkspaceContent() {
                 <p className="text-xs text-slate-500">{t(locale, "exportRosterFileReadyHint")}</p>
               ) : null}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={periodRosterPreview != null} onOpenChange={(next) => { if (!next) setPeriodRosterPreview(null); }}>
+        <DialogContent className="max-w-lg" aria-labelledby="period-roster-title">
+          <DialogTitle id="period-roster-title">{t(locale, "periodRosterRefreshTitle")}</DialogTitle>
+          <p className="mt-2 text-sm text-slate-600">{t(locale, "periodRosterRefreshHelp")}</p>
+          {periodRosterPreview && periodRosterPreview.added.length === 0 && periodRosterPreview.removed.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-600">{t(locale, "periodRosterRefreshEmpty")}</p>
+          ) : null}
+          {periodRosterPreview && periodRosterPreview.added.length > 0 ? (
+            <div className="mt-3">
+              <h3 className="text-sm font-semibold text-ink">{t(locale, "periodRosterRefreshAdded")}</h3>
+              <ul className="mt-1 text-sm text-slate-700">
+                {periodRosterPreview.added.map((row) => (
+                  <li key={row.team_member_id}>{row.display_name}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {periodRosterPreview && periodRosterPreview.removed.length > 0 ? (
+            <div className="mt-3">
+              <h3 className="text-sm font-semibold text-ink">{t(locale, "periodRosterRefreshRemoved")}</h3>
+              <ul className="mt-1 grid gap-2 text-sm text-slate-700">
+                {periodRosterPreview.removed.map((row) => (
+                  <li key={row.team_member_id}>
+                    <span className="font-medium">{row.display_name}</span>
+                    {row.wishes + row.intents + row.notes + row.assignments > 0 ? (
+                      <span className="mt-0.5 block text-amber-900">
+                        {t(locale, "periodRosterRefreshDrops", {
+                          wishes: String(row.wishes),
+                          intents: String(row.intents),
+                          notes: String(row.notes),
+                          assignments: String(row.assignments)
+                        })}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="h-10 rounded-lg border border-slate-200 px-3 text-sm" type="button" onClick={() => setPeriodRosterPreview(null)}>
+              {t(locale, "close")}
+            </button>
+            <button
+              className="h-10 rounded-lg bg-ink px-3 text-sm font-semibold text-white disabled:opacity-40"
+              disabled={!periodRosterPreview || (periodRosterPreview.added.length === 0 && periodRosterPreview.removed.length === 0)}
+              type="button"
+              onClick={() => void confirmPeriodRosterRefresh()}
+            >
+              {t(locale, "confirm")}
+            </button>
           </div>
         </DialogContent>
       </Dialog>
