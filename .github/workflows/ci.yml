@@ -66,7 +66,7 @@ jobs:
           path: packages/api-client
       - name: Check generated API types
         run: |
-          node --input-type=module -e "import { execFileSync } from 'node:child_process'; import { stampSchema } from './packages/api-client/scripts/stamp-schema.mjs'; execFileSync('npx', ['--workspace', '@shift-planner/api-client', 'openapi-typescript', 'packages/api-client/openapi.json', '-o', 'packages/api-client/schema.d.ts'], { stdio: 'inherit' }); stampSchema('packages/api-client/schema.d.ts');"
+          node --input-type=module -e "import { execFileSync } from 'node:child_process'; import { stampSchema } from './packages/api-client/scripts/stamp-schema.mjs'; execFileSync('npx', ['openapi-typescript', 'packages/api-client/openapi.json', '-o', 'packages/api-client/schema.d.ts'], { stdio: 'inherit' }); stampSchema('packages/api-client/schema.d.ts');"
           git diff --exit-code -- packages/api-client/openapi.json packages/api-client/schema.d.ts
       - name: Lint
         run: npm run lint
@@ -162,8 +162,8 @@ jobs:
           E2E_SEED_PASSWORD: ci-e2e-password
         run: |
           docker run --rm --network host \
-            -v "${GITHUB_WORKSPACE}/frontend:/work" \
-            -w /work \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work/frontend \
             -e E2E_BASE_URL=http://localhost:18130 \
             -e E2E_API_URL=http://localhost:18180 \
             -e E2E_SEED_PASSWORD \
