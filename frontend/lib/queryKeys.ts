@@ -33,6 +33,10 @@ export const queryKeys = {
     ["plan-versions", organizationId, periodId, shiftGroupId] as const,
   memberDashboard: (organizationId: number, year: number, shiftGroupId: string) =>
     ["member-dashboard", organizationId, year, shiftGroupId] as const,
+  memberHome: (organizationId: number) => ["member-home", organizationId] as const,
+  memberDuties: (organizationId: number, from: string, to: string) =>
+    ["member-duties", organizationId, from, to] as const,
+  memberSwaps: (organizationId: number, status: string) => ["member-swaps", organizationId, status] as const,
   complianceReport: (organizationId: number, periodId: string, shiftGroupId: string) =>
     ["compliance-report", organizationId, periodId, shiftGroupId] as const,
   dutyUtilization: (organizationId: number, rosterSlotId: number) =>

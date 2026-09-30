@@ -114,12 +114,17 @@ const FINDING_LABELS: Record<string, TranslationKey> = {
   WORKTIME_DOCUMENTATION_GAP: "shiftSwapFindingWorktimeDocumentationGap"
 };
 
-export function shiftSwapStatusLabel(locale: Locale, status: ShiftSwapStatus): string {
-  return t(locale, STATUS_LABELS[status] ?? "shiftSwapStatusOpen");
+export function shiftSwapStatusLabel(locale: Locale, status: string): string {
+  return t(locale, STATUS_LABELS[status as ShiftSwapStatus] ?? "shiftSwapStatusOpen");
 }
 
-export function shiftSwapKindLabel(locale: Locale, kind: ShiftSwapKind): string {
-  return t(locale, KIND_LABELS[kind] ?? "shiftSwapKindGiveaway");
+export function shiftSwapKindLabel(locale: Locale, kind: string): string {
+  return t(locale, KIND_LABELS[kind as ShiftSwapKind] ?? "shiftSwapKindGiveaway");
+}
+
+export function shiftSwapReasonLabel(locale: Locale, code: string): string {
+  const key = CONFLICT_LABELS[code];
+  return key ? t(locale, key) : code;
 }
 
 export function utcTodayIso(): string {

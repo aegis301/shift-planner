@@ -75,7 +75,6 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
   const { me, loading } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const portal = variant === "member";
   const [periods, setPeriods] = useState<PlanningPeriod[]>([]);
   const [periodId, setPeriodId] = useState(searchParams.get("period") ?? "");
   const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
@@ -185,14 +184,15 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
       setLedger(null);
       return;
     }
-    const params = new URLSearchParams({
-      team_member_id: String(resolvedMemberId),
-      start_date: bounds.min,
-      end_date: bounds.max
-    });
-    if (portal) {
-      params.set("team_member_portal", "true");
-    }
+    const params = new URLSearchParams(
+      variant === "member"
+        ? { from: bounds.min, to: bounds.max }
+        : {
+            team_member_id: String(resolvedMemberId),
+            start_date: bounds.min,
+            end_date: bounds.max
+          }
+    );
     if (variant === "planner" && shiftGroupId) {
       params.set("shift_group_id", shiftGroupId);
     }
@@ -201,13 +201,14 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
     }
     setLoadError(false);
     try {
-      const next = await apiFetch<HoursLedger>(`/api/v1/time-entries/ledger?${params.toString()}`);
+      const ledgerPath = variant === "member" ? "/api/v1/me/hours" : "/api/v1/time-entries/ledger";
+      const next = await apiFetch<HoursLedger>(`${ledgerPath}?${params.toString()}`);
       setLedger(next);
     } catch {
       setLedger(null);
       setLoadError(true);
     }
-  }, [bounds.max, bounds.min, canLoadPlanner, portal, resolvedMemberId, shiftGroupId, variant]);
+  }, [bounds.max, bounds.min, canLoadPlanner, resolvedMemberId, shiftGroupId, variant]);
 
   useEffect(() => {
     void loadLedger();
@@ -235,8 +236,7 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
     }
     setBusy(true);
     try {
-      const params = portal ? "?team_member_portal=true" : "";
-      await apiFetch(`/api/v1/time-entries/${entryId}${params}`, {
+      await apiFetch(`/api/v1/time-entries/${entryId}`, {
         method: "PATCH",
         body: JSON.stringify({
           statutory_minutes: Number(draft.statutory_minutes),
@@ -260,8 +260,7 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
     }
     setBusy(true);
     try {
-      const params = portal ? "?team_member_portal=true" : "";
-      await apiFetch(`/api/v1/time-entries${params}`, {
+      await apiFetch("/api/v1/time-entries", {
         method: "POST",
         body: JSON.stringify({
           team_member_id: resolvedMemberId,

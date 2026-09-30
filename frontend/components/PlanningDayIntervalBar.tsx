@@ -115,11 +115,8 @@ export function PlanningDayIntervalBar({
   const groupQuery = useMemo(() => {
     const params = new URLSearchParams();
     params.set("shift_group_id", shiftGroupId);
-    if (teamMemberPortal) {
-      params.set("team_member_portal", "true");
-    }
     return `?${params.toString()}`;
-  }, [shiftGroupId, teamMemberPortal]);
+  }, [shiftGroupId]);
 
   const monthBounds = useMemo(() => {
     if (!matrixMeta?.days.length) {
@@ -207,7 +204,7 @@ export function PlanningDayIntervalBar({
     setSaving(true);
     setError("");
     try {
-      await apiFetch(`/api/v1/matrix/${periodId}/cells/bulk${groupQuery}`, {
+      await apiFetch(teamMemberPortal ? `/api/v1/me/wishes/${periodId}/cells${groupQuery}` : `/api/v1/matrix/${periodId}/cells/bulk${groupQuery}`, {
         method: "PUT",
         body: JSON.stringify({ cells: payload.cells })
       });

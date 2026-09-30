@@ -2485,3 +2485,70 @@ class SuggestedPlanVersionRead(BaseModel):
     major_version: int
     minor_version: int
     label: str
+
+
+class MemberDutyRead(BaseModel):
+    roster_slot_id: int
+    slot_date: date_type
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    template_code: str | None = None
+    template_name: str | None = None
+    variant_label: str | None = None
+    category: str | None = None
+    shift_group_id: int | None = None
+    shift_group_name: str | None = None
+    plan_status: str | None = None
+    planning_period_id: int
+    open_swap_request_id: int | None = None
+    can_offer: bool
+    can_offer_reason: str | None = None
+    can_record_duty_activity: bool
+    duty_activity_running: bool
+
+
+class MemberSwapActionRead(BaseModel):
+    id: int
+    kind: str
+    status: str
+    shift_group_id: int
+    planning_period_id: int
+    offered_slot_id: int
+    allowed_actions: list[str]
+    disabled_reasons: dict[str, str]
+
+
+class MemberDraftWishesRead(BaseModel):
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int
+    wishes_deadline: date_type | None = None
+
+
+class MemberHomeRead(BaseModel):
+    duties: list[MemberDutyRead]
+    swap_actions: list[MemberSwapActionRead]
+    draft_wishes: MemberDraftWishesRead | None = None
+
+
+class MemberSwapListItemRead(MemberSwapActionRead):
+    offered_by_team_member_id: int
+    target_team_member_id: int | None = None
+
+
+class MemberWishesRead(BaseModel):
+    planning_period_id: int
+    shift_group_id: int
+    editable: bool
+    read_only_reason: str | None = None
+    day_status_definitions: list[PlanningDayStatusDefinitionRead]
+    shift_templates: list[ShiftTemplateRead]
+    cells: list[PlanningCellRead]
+    intents: list[PlanningShiftIntentRead]
+    note: TeamMemberPeriodNoteRead | None = None
+    matrix: PlanningMatrixRead
+
+
+class MemberCalendarTokenRead(BaseModel):
+    calendar_token: str

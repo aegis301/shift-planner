@@ -3021,6 +3021,459 @@
         "title": "MatrixTemplateSlotDay",
         "type": "object"
       },
+      "MemberCalendarTokenRead": {
+        "properties": {
+          "calendar_token": {
+            "title": "Calendar Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "calendar_token"
+        ],
+        "title": "MemberCalendarTokenRead",
+        "type": "object"
+      },
+      "MemberDraftWishesRead": {
+        "properties": {
+          "month": {
+            "title": "Month",
+            "type": "integer"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "shift_group_id": {
+            "title": "Shift Group Id",
+            "type": "integer"
+          },
+          "wishes_deadline": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wishes Deadline"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "planning_period_id",
+          "year",
+          "month",
+          "shift_group_id"
+        ],
+        "title": "MemberDraftWishesRead",
+        "type": "object"
+      },
+      "MemberDutyRead": {
+        "properties": {
+          "can_offer": {
+            "title": "Can Offer",
+            "type": "boolean"
+          },
+          "can_offer_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Offer Reason"
+          },
+          "can_record_duty_activity": {
+            "title": "Can Record Duty Activity",
+            "type": "boolean"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "duty_activity_running": {
+            "title": "Duty Activity Running",
+            "type": "boolean"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "open_swap_request_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Swap Request Id"
+          },
+          "plan_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Status"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "roster_slot_id": {
+            "title": "Roster Slot Id",
+            "type": "integer"
+          },
+          "shift_group_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift Group Id"
+          },
+          "shift_group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shift Group Name"
+          },
+          "slot_date": {
+            "format": "date",
+            "title": "Slot Date",
+            "type": "string"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "template_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Code"
+          },
+          "template_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name"
+          },
+          "variant_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant Label"
+          }
+        },
+        "required": [
+          "roster_slot_id",
+          "slot_date",
+          "planning_period_id",
+          "can_offer",
+          "can_record_duty_activity",
+          "duty_activity_running"
+        ],
+        "title": "MemberDutyRead",
+        "type": "object"
+      },
+      "MemberHomeRead": {
+        "properties": {
+          "draft_wishes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberDraftWishesRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "duties": {
+            "items": {
+              "$ref": "#/components/schemas/MemberDutyRead"
+            },
+            "title": "Duties",
+            "type": "array"
+          },
+          "swap_actions": {
+            "items": {
+              "$ref": "#/components/schemas/MemberSwapActionRead"
+            },
+            "title": "Swap Actions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "duties",
+          "swap_actions"
+        ],
+        "title": "MemberHomeRead",
+        "type": "object"
+      },
+      "MemberSwapActionRead": {
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "disabled_reasons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Disabled Reasons",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "offered_slot_id": {
+            "title": "Offered Slot Id",
+            "type": "integer"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "shift_group_id": {
+            "title": "Shift Group Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "shift_group_id",
+          "planning_period_id",
+          "offered_slot_id",
+          "allowed_actions",
+          "disabled_reasons"
+        ],
+        "title": "MemberSwapActionRead",
+        "type": "object"
+      },
+      "MemberSwapListItemRead": {
+        "properties": {
+          "allowed_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Allowed Actions",
+            "type": "array"
+          },
+          "disabled_reasons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Disabled Reasons",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "offered_by_team_member_id": {
+            "title": "Offered By Team Member Id",
+            "type": "integer"
+          },
+          "offered_slot_id": {
+            "title": "Offered Slot Id",
+            "type": "integer"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "shift_group_id": {
+            "title": "Shift Group Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Team Member Id"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "shift_group_id",
+          "planning_period_id",
+          "offered_slot_id",
+          "allowed_actions",
+          "disabled_reasons",
+          "offered_by_team_member_id"
+        ],
+        "title": "MemberSwapListItemRead",
+        "type": "object"
+      },
+      "MemberWishesRead": {
+        "properties": {
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningCellRead"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "day_status_definitions": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningDayStatusDefinitionRead"
+            },
+            "title": "Day Status Definitions",
+            "type": "array"
+          },
+          "editable": {
+            "title": "Editable",
+            "type": "boolean"
+          },
+          "intents": {
+            "items": {
+              "$ref": "#/components/schemas/PlanningShiftIntentRead"
+            },
+            "title": "Intents",
+            "type": "array"
+          },
+          "matrix": {
+            "$ref": "#/components/schemas/PlanningMatrixRead"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TeamMemberPeriodNoteRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "read_only_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Only Reason"
+          },
+          "shift_group_id": {
+            "title": "Shift Group Id",
+            "type": "integer"
+          },
+          "shift_templates": {
+            "items": {
+              "$ref": "#/components/schemas/ShiftTemplateRead"
+            },
+            "title": "Shift Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "planning_period_id",
+          "shift_group_id",
+          "editable",
+          "day_status_definitions",
+          "shift_templates",
+          "cells",
+          "intents",
+          "matrix"
+        ],
+        "title": "MemberWishesRead",
+        "type": "object"
+      },
       "MembershipSummary": {
         "properties": {
           "membership_id": {
@@ -17198,6 +17651,953 @@
         "summary": "Put Shift Intents Bulk",
         "tags": [
           "matrix"
+        ]
+      }
+    },
+    "/api/v1/me/calendar-token": {
+      "delete": {
+        "operationId": "me_delete_calendar_token",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Calendar Token",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "operationId": "me_post_calendar_token",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberCalendarTokenRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Calendar Token",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/calendar.ics": {
+      "get": {
+        "operationId": "me_get_calendar_ics",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "iCalendar download"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Calendar Ics",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/duties": {
+      "get": {
+        "operationId": "me_get_duties",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberDutyRead"
+                  },
+                  "title": "Response Me Get Duties",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Duties",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/home": {
+      "get": {
+        "operationId": "me_get_home",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberHomeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Home",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/hours": {
+      "get": {
+        "operationId": "me_get_hours",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "From",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoursLedgerRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Hours",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/swaps": {
+      "get": {
+        "operationId": "me_get_swaps",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberSwapListItemRead"
+                  },
+                  "title": "Response Me Get Swaps",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Swaps",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/wishes/{planning_period_id}": {
+      "get": {
+        "operationId": "me_get_wishes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": true,
+            "schema": {
+              "title": "Shift Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberWishesRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Wishes",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/wishes/{planning_period_id}/cells": {
+      "put": {
+        "operationId": "me_put_wishes_cells",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": true,
+            "schema": {
+              "title": "Shift Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningCellBulkUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningCellBulkResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Wishes Cells",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/wishes/{planning_period_id}/cells/clear": {
+      "post": {
+        "operationId": "me_post_wishes_cells_clear",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": true,
+            "schema": {
+              "title": "Shift Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningCellClear"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedFlagRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Wishes Cells Clear",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/wishes/{planning_period_id}/intents": {
+      "put": {
+        "operationId": "me_put_wishes_intents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": true,
+            "schema": {
+              "title": "Shift Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningShiftIntentBulkUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanningShiftIntentRead"
+                  },
+                  "title": "Response Me Put Wishes Intents",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Wishes Intents",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/v1/me/wishes/{planning_period_id}/note": {
+      "put": {
+        "operationId": "me_put_wishes_note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "planning_period_id",
+            "required": true,
+            "schema": {
+              "title": "Planning Period Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "shift_group_id",
+            "required": true,
+            "schema": {
+              "title": "Shift Group Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamMemberPeriodNoteUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamMemberPeriodNoteRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Wishes Note",
+        "tags": [
+          "me"
         ]
       }
     },

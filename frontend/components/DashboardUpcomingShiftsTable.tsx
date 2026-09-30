@@ -2,7 +2,6 @@
 
 import { Calendar } from "lucide-react";
 import { categoryLabel } from "@/components/dashboardCharts";
-import type { TeamMemberDashboard } from "@/lib/dashboard";
 import { API_BASE_URL } from "@/lib/api";
 import { useSession } from "@/components/LocaleProvider";
 import { sessionTimeZone } from "@/lib/orgTime";
@@ -11,7 +10,17 @@ import type { Locale, TranslationKey } from "@/lib/i18n";
 import { t } from "@/lib/i18n";
 import { swapAvailability, swapAvailabilityMessageKey, swapOfferControl, type SwapOfferContext } from "@/lib/shiftSwaps";
 
-type UpcomingSlot = TeamMemberDashboard["upcoming_slots"][number];
+type UpcomingSlot = {
+  roster_slot_id: number;
+  slot_date: string;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  template_code?: string | null;
+  template_name?: string | null;
+  variant_label?: string | null;
+  category?: string | null;
+  day_class?: string | null;
+};
 
 function dayClassLabel(locale: Locale, dayClass: string): string {
   const map: Record<string, TranslationKey> = {
@@ -74,7 +83,7 @@ export function DashboardUpcomingShiftsTable({
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
           {slots.map((slot, index) => {
-            const timeRange = formatShiftTimeRange(slot.starts_at, slot.ends_at, timeZone);
+            const timeRange = formatShiftTimeRange(slot.starts_at ?? null, slot.ends_at ?? null, timeZone);
             return (
               <tr key={`${slot.slot_date}-${slot.template_code ?? index}-${index}`}>
                 <td className="whitespace-nowrap px-3 py-2.5 font-medium text-ink">

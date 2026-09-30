@@ -15,13 +15,14 @@ import { RosterMatrixEditor } from "@/components/RosterMatrixEditor";
 import { ShiftSwapMarketplace } from "@/components/ShiftSwapMarketplace";
 import { ShiftSwapOfferDialog } from "@/components/ShiftSwapOfferDialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { API_BASE_URL } from "@/lib/api";
-import { monthDateBounds } from "@/lib/planningDates";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
+import type { MemberCalendarTokenRead } from "@/lib/api/types";
 import { t } from "@/lib/i18n";
 import { isUserSession } from "@/lib/membershipRouting";
+import { useMemberDuties } from "@/lib/queries/member";
+import { utcTodayIso } from "@/lib/shiftSwaps";
 import {
   useDayStatusDefinitions,
-  useMemberDashboard,
   usePlanningPeriods,
   useRosterMatrix,
   useWishesMatrix
@@ -48,8 +49,7 @@ export function MemberPlanning() {
   const [message, setMessage] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [offerSlotId, setOfferSlotId] = useState<number | null>(null);
-  const [icsStart, setIcsStart] = useState("");
-  const [icsEnd, setIcsEnd] = useState("");
+  const [calendarToken, setCalendarToken] = useState("");
   const tab = (searchParams.get("tab") as MemberTab | null) ?? "wishes";
   const activeTab: MemberTab = tab === "roster" || tab === "shifts" ? tab : "wishes";
 
@@ -87,10 +87,11 @@ export function MemberPlanning() {
     enabled: Boolean(periodId && shiftGroupId && rosterVisible)
   });
   const activePeriod = periods.find((period) => String(period.id) === periodId);
-  const memberDashboard = useMemberDashboard({
-    year: activePeriod?.year ?? new Date().getFullYear(),
-    shiftGroupId,
-    enabled: Boolean(shiftGroupId)
+  const dutyYear = activePeriod?.year ?? new Date().getFullYear();
+  const dutiesQuery = useMemberDuties({
+    from: `${dutyYear}-01-01`,
+    to: `${dutyYear}-12-31`,
+    enabled: Boolean(userMe && shiftGroupId)
   });
 
   useEffect(() => {
@@ -122,11 +123,26 @@ export function MemberPlanning() {
   }, [router, searchParams, shiftGroupId, userMe]);
 
   useEffect(() => {
-    const now = new Date();
-    const bounds = activePeriod ? monthDateBounds(activePeriod.year, activePeriod.month) : monthDateBounds(now.getFullYear(), now.getMonth() + 1);
-    setIcsStart(bounds.min);
-    setIcsEnd(bounds.max);
-  }, [activePeriod]);
+    if (!exportOpen) {
+      return;
+    }
+    let cancelled = false;
+    setCalendarToken("");
+    void apiFetch<MemberCalendarTokenRead>("/api/v1/me/calendar-token", { method: "POST" })
+      .then((row) => {
+        if (!cancelled) {
+          setCalendarToken(row.calendar_token);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCalendarToken("");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [exportOpen]);
 
   useEffect(() => {
     if (shiftGroupId && status && status !== "preliminary" && status !== "published") {
@@ -175,18 +191,15 @@ export function MemberPlanning() {
     await invalidateQueryKeys(queryClient, rosterAssignmentKeys(scope));
   }
 
-  const icsQuery = shiftGroupId ? `?shift_group_id=${encodeURIComponent(shiftGroupId)}` : "";
-  const rangeQuery = new URLSearchParams();
-  if (shiftGroupId) {
-    rangeQuery.set("shift_group_id", shiftGroupId);
-  }
-  if (icsStart) {
-    rangeQuery.set("start_date", icsStart);
-  }
-  if (icsEnd) {
-    rangeQuery.set("end_date", icsEnd);
-  }
-  const icsRangeReady = Boolean(shiftGroupId) && Boolean(icsStart) && Boolean(icsEnd) && icsStart <= icsEnd;
+  const today = utcTodayIso();
+  const visibleDuties = (dutiesQuery.data ?? []).filter(
+    (duty) => !shiftGroupId || String(duty.shift_group_id ?? "") === shiftGroupId
+  );
+  const upcomingDuties = visibleDuties.filter((duty) => duty.slot_date >= today);
+  const pastDuties = visibleDuties.filter((duty) => duty.slot_date < today);
+  const calendarHref = calendarToken
+    ? `${API_BASE_URL}/api/v1/me/calendar.ics?token=${encodeURIComponent(calendarToken)}`
+    : "";
 
   return (
     <div className="grid min-w-0 gap-5">
@@ -242,7 +255,7 @@ export function MemberPlanning() {
           ) : null}
         </div>
       </Card>
-      {memberDashboard.data ? <DutyActivityLiveBanner slots={[...memberDashboard.data.upcoming_slots, ...memberDashboard.data.past_slots]} /> : null}
+      {visibleDuties.length > 0 ? <DutyActivityLiveBanner slots={visibleDuties} /> : null}
       <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1">
         {(["wishes", "roster", "shifts"] as const).map((item) => (
           <button
@@ -299,16 +312,15 @@ export function MemberPlanning() {
       {activeTab === "shifts" ? (
         <section className="grid gap-4">
           <h2 className="text-xl font-semibold text-ink">{t(locale, "myPlanningShiftsSection")}</h2>
-          {memberDashboard.data ? (
+          {dutiesQuery.data ? (
             <>
-              <DashboardUpcomingShiftsTable locale={locale} slots={memberDashboard.data.upcoming_slots} showIcsExport swapOffer={swapOffer} />
+              <DashboardUpcomingShiftsTable locale={locale} slots={upcomingDuties} swapOffer={swapOffer} />
               <DashboardUpcomingShiftsTable
                 locale={locale}
-                slots={memberDashboard.data.past_slots}
+                slots={pastDuties}
                 emptyLabelKey="dashboardPastShiftsEmpty"
-                showIcsExport
               />
-              <DutyActivityShiftList slots={[...memberDashboard.data.upcoming_slots, ...memberDashboard.data.past_slots]} />
+              <DutyActivityShiftList slots={visibleDuties} />
             </>
           ) : (
             <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
@@ -333,29 +345,16 @@ export function MemberPlanning() {
               <X size={17} />
             </button>
           </div>
-          <a className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-semibold" href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics${icsQuery}`}>
+          <p className="text-sm text-slate-600">{t(locale, "memberCalendarLinkHelp")}</p>
+          <a
+            className={`mt-3 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-semibold ${
+              calendarHref ? "" : "pointer-events-none opacity-40"
+            }`}
+            href={calendarHref || undefined}
+          >
             <Download size={17} />
             {t(locale, "myShiftsIcsExport")}
           </a>
-          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label={t(locale, "planningDayIntervalFrom")}>
-                <input className={`${inputClass} min-w-0`} onChange={(event) => setIcsStart(event.target.value)} type="date" value={icsStart} />
-              </Field>
-              <Field label={t(locale, "planningDayIntervalTo")}>
-                <input className={`${inputClass} min-w-0`} onChange={(event) => setIcsEnd(event.target.value)} type="date" value={icsEnd} />
-              </Field>
-            </div>
-            <a
-              className={`mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold ${
-                icsRangeReady ? "" : "pointer-events-none opacity-40"
-              }`}
-              href={`${API_BASE_URL}/api/v1/exports/my-shifts.ics?${rangeQuery.toString()}`}
-            >
-              <Download size={17} />
-              {t(locale, "myShiftsRangeIcsExport")}
-            </a>
-          </div>
         </DialogContent>
       </Dialog>
       {periodId && shiftGroupId && offerSlotId != null ? (

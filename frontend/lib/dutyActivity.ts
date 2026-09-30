@@ -9,8 +9,8 @@ export type DutyActivityKind = "call_out" | "in_duty_activity";
 export type DutyActivitySlotRef = {
   roster_slot_id: number;
   slot_date: string;
-  starts_at: string | null;
-  ends_at: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
   category?: string | null;
   template_name?: string | null;
   template_code?: string | null;

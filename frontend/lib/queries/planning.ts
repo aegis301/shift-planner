@@ -97,10 +97,18 @@ export function useWishesMatrix(args: {
         );
         return { matrix, notes: [] };
       }
-      const query = {
-        ...shiftGroupQuery(args.shiftGroupId),
-        ...(args.teamMemberPortal ? { team_member_portal: true } : {})
-      };
+      if (args.teamMemberPortal) {
+        const wishes = await readData(
+          await apiClient.GET("/api/v1/me/wishes/{planning_period_id}", {
+            params: {
+              path: { planning_period_id: periodId },
+              query: { shift_group_id: Number(args.shiftGroupId) }
+            }
+          })
+        );
+        return { matrix: wishes.matrix, notes: wishes.note ? [wishes.note] : [] };
+      }
+      const query = shiftGroupQuery(args.shiftGroupId);
       const [matrix, notes] = await Promise.all([
         readData(
           await apiClient.GET("/api/v1/matrix/{planning_period_id}", {

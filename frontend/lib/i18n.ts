@@ -1080,6 +1080,8 @@ export const dictionaries = {
     memberTabProfile: "Profil",
     memberOpenSwaps: "Offene Tausche",
     memberWishesDeadline: "Wünsche sind noch offen für {{period}}.",
+    memberCalendarLinkHelp:
+      "Dieser Link gilt nur für Ihre Dienste. Beim Öffnen entsteht ein neuer Link, und ältere Links funktionieren danach nicht mehr.",
     orgStaffUnlinkLogin: "Login lösen",
     orgStaffRemoveUser: "Benutzer entfernen",
     orgStaffRemoveLinkedUser: "Verkn. Login entfernen",
@@ -2358,6 +2360,8 @@ export const dictionaries = {
     memberTabProfile: "Profile",
     memberOpenSwaps: "Open swaps",
     memberWishesDeadline: "Wishes are still open for {{period}}.",
+    memberCalendarLinkHelp:
+      "This link lists only your duties. Opening this export creates a new link, and older links stop working.",
     orgStaffUnlinkLogin: "Unlink login",
     orgStaffRemoveUser: "Remove user",
     orgStaffRemoveLinkedUser: "Remove linked login",

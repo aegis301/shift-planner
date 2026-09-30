@@ -913,6 +913,194 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/calendar-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Calendar Token */
+        post: operations["me_post_calendar_token"];
+        /** Delete Calendar Token */
+        delete: operations["me_delete_calendar_token"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/calendar.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Calendar Ics */
+        get: operations["me_get_calendar_ics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/duties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Duties */
+        get: operations["me_get_duties"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/home": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Home */
+        get: operations["me_get_home"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/hours": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hours */
+        get: operations["me_get_hours"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/swaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Swaps */
+        get: operations["me_get_swaps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/wishes/{planning_period_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Wishes */
+        get: operations["me_get_wishes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/wishes/{planning_period_id}/cells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Wishes Cells */
+        put: operations["me_put_wishes_cells"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/wishes/{planning_period_id}/cells/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Wishes Cells Clear */
+        post: operations["me_post_wishes_cells_clear"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/wishes/{planning_period_id}/intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Wishes Intents */
+        put: operations["me_put_wishes_intents"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/wishes/{planning_period_id}/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Wishes Note */
+        put: operations["me_put_wishes_note"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/organization": {
         parameters: {
             query?: never;
@@ -3620,6 +3808,139 @@ export interface components {
             shift_group_id?: number | null;
             /** Shift Template Id */
             shift_template_id: number;
+        };
+        /** MemberCalendarTokenRead */
+        MemberCalendarTokenRead: {
+            /** Calendar Token */
+            calendar_token: string;
+        };
+        /** MemberDraftWishesRead */
+        MemberDraftWishesRead: {
+            /** Month */
+            month: number;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Shift Group Id */
+            shift_group_id: number;
+            /** Wishes Deadline */
+            wishes_deadline?: string | null;
+            /** Year */
+            year: number;
+        };
+        /** MemberDutyRead */
+        MemberDutyRead: {
+            /** Can Offer */
+            can_offer: boolean;
+            /** Can Offer Reason */
+            can_offer_reason?: string | null;
+            /** Can Record Duty Activity */
+            can_record_duty_activity: boolean;
+            /** Category */
+            category?: string | null;
+            /** Duty Activity Running */
+            duty_activity_running: boolean;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Open Swap Request Id */
+            open_swap_request_id?: number | null;
+            /** Plan Status */
+            plan_status?: string | null;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Roster Slot Id */
+            roster_slot_id: number;
+            /** Shift Group Id */
+            shift_group_id?: number | null;
+            /** Shift Group Name */
+            shift_group_name?: string | null;
+            /**
+             * Slot Date
+             * Format: date
+             */
+            slot_date: string;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Template Code */
+            template_code?: string | null;
+            /** Template Name */
+            template_name?: string | null;
+            /** Variant Label */
+            variant_label?: string | null;
+        };
+        /** MemberHomeRead */
+        MemberHomeRead: {
+            draft_wishes?: components["schemas"]["MemberDraftWishesRead"] | null;
+            /** Duties */
+            duties: components["schemas"]["MemberDutyRead"][];
+            /** Swap Actions */
+            swap_actions: components["schemas"]["MemberSwapActionRead"][];
+        };
+        /** MemberSwapActionRead */
+        MemberSwapActionRead: {
+            /** Allowed Actions */
+            allowed_actions: string[];
+            /** Disabled Reasons */
+            disabled_reasons: {
+                [key: string]: string;
+            };
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Offered Slot Id */
+            offered_slot_id: number;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Shift Group Id */
+            shift_group_id: number;
+            /** Status */
+            status: string;
+        };
+        /** MemberSwapListItemRead */
+        MemberSwapListItemRead: {
+            /** Allowed Actions */
+            allowed_actions: string[];
+            /** Disabled Reasons */
+            disabled_reasons: {
+                [key: string]: string;
+            };
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Offered By Team Member Id */
+            offered_by_team_member_id: number;
+            /** Offered Slot Id */
+            offered_slot_id: number;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Shift Group Id */
+            shift_group_id: number;
+            /** Status */
+            status: string;
+            /** Target Team Member Id */
+            target_team_member_id?: number | null;
+        };
+        /** MemberWishesRead */
+        MemberWishesRead: {
+            /** Cells */
+            cells: components["schemas"]["PlanningCellRead"][];
+            /** Day Status Definitions */
+            day_status_definitions: components["schemas"]["PlanningDayStatusDefinitionRead"][];
+            /** Editable */
+            editable: boolean;
+            /** Intents */
+            intents: components["schemas"]["PlanningShiftIntentRead"][];
+            matrix: components["schemas"]["PlanningMatrixRead"];
+            note?: components["schemas"]["TeamMemberPeriodNoteRead"] | null;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Read Only Reason */
+            read_only_reason?: string | null;
+            /** Shift Group Id */
+            shift_group_id: number;
+            /** Shift Templates */
+            shift_templates: components["schemas"]["ShiftTemplateRead"][];
         };
         /** MembershipSummary */
         MembershipSummary: {
@@ -9028,6 +9349,442 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlanningShiftIntentRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_post_calendar_token: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberCalendarTokenRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_delete_calendar_token: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_get_calendar_ics: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description iCalendar download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/calendar": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_get_duties: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberDutyRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_get_home: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberHomeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_get_hours: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HoursLedgerRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_get_swaps: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberSwapListItemRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_get_wishes: {
+        parameters: {
+            query: {
+                shift_group_id: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberWishesRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_put_wishes_cells: {
+        parameters: {
+            query: {
+                shift_group_id: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanningCellBulkUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanningCellBulkResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_post_wishes_cells_clear: {
+        parameters: {
+            query: {
+                shift_group_id: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanningCellClear"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedFlagRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_put_wishes_intents: {
+        parameters: {
+            query: {
+                shift_group_id: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanningShiftIntentBulkUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanningShiftIntentRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_put_wishes_note: {
+        parameters: {
+            query: {
+                shift_group_id: number;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                planning_period_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamMemberPeriodNoteUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMemberPeriodNoteRead"];
                 };
             };
             /** @description Validation Error */

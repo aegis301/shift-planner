@@ -9,6 +9,7 @@ from app.api.v1 import (
     employment_periods,
     fairness,
     matrix,
+    me,
     organization_admin,
     organizations_public,
     planning,
@@ -49,5 +50,6 @@ api_router.include_router(solver_runs.router)
 api_router.include_router(shift_swaps.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(matrix.router)
+api_router.include_router(me.router)
 api_router.include_router(roster_matrix.router)
 api_router.include_router(roster_matrix.export_router)
