@@ -141,6 +141,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/me/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Me Devices */
+        get: operations["auth_get_me_devices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me/devices/{device_session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Me Device */
+        delete: operations["auth_delete_me_device"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/me/join-request": {
         parameters: {
             query?: never;
@@ -307,6 +341,57 @@ export interface paths {
         put?: never;
         /** Post Register Join Organization */
         post: operations["auth_post_register_join_organization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Token */
+        post: operations["auth_post_token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/token/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Token Refresh */
+        post: operations["auth_post_token_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/token/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post Token Revoke */
+        post: operations["auth_post_token_revoke"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3017,6 +3102,37 @@ export interface components {
             conflicts?: components["schemas"]["PlanningCellConflict"][];
             /** Deleted */
             deleted: boolean;
+        };
+        /** DeviceSessionRead */
+        DeviceSessionRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current */
+            current: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Id */
+            id: number;
+            /**
+             * Last Used At
+             * Format: date-time
+             */
+            last_used_at: string;
+            /** Name */
+            name: string;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "ios" | "android" | "web" | "other";
+            /** Revoked At */
+            revoked_at?: string | null;
         };
         /** DutyActivityAccessPolicy */
         DutyActivityAccessPolicy: {
@@ -5998,6 +6114,45 @@ export interface components {
             /** Statutory Minutes */
             statutory_minutes?: number | null;
         };
+        /** TokenIssueInput */
+        TokenIssueInput: {
+            /** Device Name */
+            device_name: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "ios" | "android" | "web" | "other";
+        };
+        /** TokenPairRead */
+        TokenPairRead: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /** Refresh Token */
+            refresh_token: string;
+            /** Session */
+            session: components["schemas"]["UserRead"] | components["schemas"]["AccountSessionRead"];
+            /**
+             * Token Type
+             * @default bearer
+             * @constant
+             */
+            token_type: "bearer";
+        };
+        /** TokenRefreshInput */
+        TokenRefreshInput: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
         /** UserCapabilities */
         UserCapabilities: {
             /** Admin */
@@ -6012,6 +6167,47 @@ export interface components {
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
+             */
+            auth_kind: "user";
+            capabilities: components["schemas"]["UserCapabilities"];
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Id */
+            id: number;
+            /** Locale */
+            locale: string;
+            /** Memberships */
+            memberships?: components["schemas"]["MembershipSummary"][];
+            organization: components["schemas"]["OrganizationBrief"];
+            /** Organization Id */
+            organization_id: number;
+            /** Organization Shift Groups */
+            organization_shift_groups?: components["schemas"]["UserShiftGroupBrief"][];
+            /**
+             * Organization Timezone
+             * @default Europe/Berlin
+             */
+            organization_timezone: string;
+            /** Planner Shift Groups */
+            planner_shift_groups?: components["schemas"]["UserShiftGroupBrief"][];
+            /** Role */
+            role: string;
+            /** Shift Groups */
+            shift_groups?: components["schemas"]["UserShiftGroupBrief"][];
+            /** Team Member Id */
+            team_member_id?: number | null;
+        };
+        /** UserReadWithAccessToken */
+        UserReadWithAccessToken: {
+            /** Access Token */
+            access_token?: string | null;
+            /**
+             * Auth Kind
+             * @default user
+             * @constant
              */
             auth_kind: "user";
             capabilities: components["schemas"]["UserCapabilities"];
@@ -6696,7 +6892,9 @@ export interface operations {
     auth_post_delete_account: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6782,7 +6980,9 @@ export interface operations {
     auth_me: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6813,7 +7013,9 @@ export interface operations {
     auth_post_active_organization: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6831,7 +7033,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserRead"];
+                    "application/json": components["schemas"]["UserReadWithAccessToken"];
                 };
             };
             /** @description Validation Error */
@@ -6848,7 +7050,9 @@ export interface operations {
     auth_post_add_organization_membership: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6866,7 +7070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserRead"];
+                    "application/json": components["schemas"]["UserReadWithAccessToken"];
                 };
             };
             /** @description Validation Error */
@@ -6883,7 +7087,9 @@ export interface operations {
     auth_post_change_password: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6916,7 +7122,9 @@ export interface operations {
     auth_post_create_organization_membership: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6934,8 +7142,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserRead"];
+                    "application/json": components["schemas"]["UserReadWithAccessToken"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_get_me_devices: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSessionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_delete_me_device: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                device_session_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -6951,7 +7225,9 @@ export interface operations {
     auth_get_me_join_request: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -6982,7 +7258,9 @@ export interface operations {
     auth_post_me_join_request: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7017,7 +7295,9 @@ export interface operations {
     auth_post_onboarding_create_organization: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7035,7 +7315,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserRead"];
+                    "application/json": components["schemas"]["UserReadWithAccessToken"];
                 };
             };
             /** @description Validation Error */
@@ -7052,7 +7332,9 @@ export interface operations {
     auth_post_onboarding_join_organization: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7070,7 +7352,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserRead"];
+                    "application/json": components["schemas"]["UserReadWithAccessToken"];
                 };
             };
             /** @description Validation Error */
@@ -7087,7 +7369,9 @@ export interface operations {
     auth_get_me_organization_invites: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7118,7 +7402,9 @@ export interface operations {
     auth_post_me_accept_organization_invite: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 invite_id: number;
             };
@@ -7138,7 +7424,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserRead"];
+                    "application/json": components["schemas"]["UserReadWithAccessToken"];
                 };
             };
             /** @description Validation Error */
@@ -7155,7 +7441,9 @@ export interface operations {
     auth_post_me_decline_organization_invite: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 invite_id: number;
             };
@@ -7186,7 +7474,9 @@ export interface operations {
     auth_get_me_team_member: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7217,7 +7507,9 @@ export interface operations {
     auth_patch_me_team_member: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7348,12 +7640,111 @@ export interface operations {
             };
         };
     };
+    auth_post_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenIssueInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_post_token_refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRefreshInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_post_token_revoke: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     compliance_report_get_compliance_report: {
         parameters: {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -7388,7 +7779,9 @@ export interface operations {
             query?: {
                 active_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7419,7 +7812,9 @@ export interface operations {
     contract_groups_post_contract_group: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7454,7 +7849,9 @@ export interface operations {
     contract_groups_delete_contract_group_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 contract_group_id: number;
             };
@@ -7487,7 +7884,9 @@ export interface operations {
     contract_groups_patch_contract_group: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 contract_group_id: number;
             };
@@ -7527,7 +7926,9 @@ export interface operations {
                 year?: number | null;
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7561,7 +7962,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 year?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7595,7 +7998,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 year?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7629,7 +8034,9 @@ export interface operations {
                 team_member_id?: number | null;
                 roster_slot_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7660,7 +8067,9 @@ export interface operations {
     duty_activity_post_own_duty_activity: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7695,7 +8104,9 @@ export interface operations {
     duty_activity_get_duty_activity_purpose: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7726,7 +8137,9 @@ export interface operations {
     duty_activity_post_duty_activity_purpose_acknowledge: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -7757,7 +8170,9 @@ export interface operations {
     duty_activity_get_own_slot_duty_utilization: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 roster_slot_id: number;
             };
@@ -7793,7 +8208,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 shift_template_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -7826,7 +8243,9 @@ export interface operations {
     duty_activity_delete_own_duty_activity: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 entry_id: number;
             };
@@ -7859,7 +8278,9 @@ export interface operations {
     duty_activity_patch_own_duty_activity: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 entry_id: number;
             };
@@ -7898,7 +8319,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -7933,7 +8356,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -7966,7 +8391,9 @@ export interface operations {
     roster_matrix_get_works_council_duty_pdf: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -7999,7 +8426,9 @@ export interface operations {
     roster_matrix_get_works_council_duty_xlsx: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8034,7 +8463,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8072,7 +8503,9 @@ export interface operations {
                 start_date?: string | null;
                 end_date?: string | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8105,7 +8538,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8140,7 +8575,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8177,7 +8614,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8213,7 +8652,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8246,7 +8687,9 @@ export interface operations {
     roster_matrix_get_roster_slot_ics: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 roster_slot_id: number;
             };
@@ -8281,7 +8724,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8317,7 +8762,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8353,7 +8800,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8393,7 +8842,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8433,7 +8884,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8473,7 +8926,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8509,7 +8964,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8548,7 +9005,9 @@ export interface operations {
             query?: {
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -8585,7 +9044,9 @@ export interface operations {
     organization_get_organization_settings: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8616,7 +9077,9 @@ export interface operations {
     organization_delete_organization_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8649,7 +9112,9 @@ export interface operations {
     organization_patch_organization_settings: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8684,7 +9149,9 @@ export interface operations {
     organization_get_duty_activity_access_policy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8715,7 +9182,9 @@ export interface operations {
     organization_patch_duty_activity_access_policy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8750,7 +9219,9 @@ export interface operations {
     organization_get_fairness_policy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8781,7 +9252,9 @@ export interface operations {
     organization_patch_fairness_policy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8816,7 +9289,9 @@ export interface operations {
     organization_get_organization_invites: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8847,7 +9322,9 @@ export interface operations {
     organization_post_organization_invite: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8882,7 +9359,9 @@ export interface operations {
     organization_delete_organization_invite: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 invite_id: number;
             };
@@ -8915,7 +9394,9 @@ export interface operations {
             query?: {
                 status?: string | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -8946,7 +9427,9 @@ export interface operations {
     organization_post_approve_join_create_team_member: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -8983,7 +9466,9 @@ export interface operations {
     organization_post_approve_join_link_team_member: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -9020,7 +9505,9 @@ export interface operations {
     organization_post_cancel_own_join_request: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -9053,7 +9540,9 @@ export interface operations {
             query?: {
                 reason?: string | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -9086,7 +9575,9 @@ export interface operations {
     organization_get_member_pattern_policy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9117,7 +9608,9 @@ export interface operations {
     organization_patch_member_pattern_policy: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9152,7 +9645,9 @@ export interface operations {
     organization_get_solver_config: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9183,7 +9678,9 @@ export interface operations {
     organization_get_organization_staff_directory: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9214,7 +9711,9 @@ export interface operations {
     organization_get_organization_users: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9245,7 +9744,9 @@ export interface operations {
     organization_delete_organization_user: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 target_user_id: number;
             };
@@ -9276,7 +9777,9 @@ export interface operations {
     organization_patch_organization_user_role: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 target_user_id: number;
             };
@@ -9313,7 +9816,9 @@ export interface operations {
     organization_post_organization_user_reset_password: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 target_user_id: number;
             };
@@ -9381,7 +9886,9 @@ export interface operations {
             query?: {
                 active_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9412,7 +9919,9 @@ export interface operations {
     planning_day_status_definitions_post_planning_day_status_definition: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9447,7 +9956,9 @@ export interface operations {
     planning_day_status_definitions_delete_planning_day_status_definition_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 definition_id: number;
             };
@@ -9480,7 +9991,9 @@ export interface operations {
     planning_day_status_definitions_patch_planning_day_status_definition: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 definition_id: number;
             };
@@ -9517,7 +10030,9 @@ export interface operations {
     planning_get_planning_periods: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9548,7 +10063,9 @@ export interface operations {
     planning_post_planning_period: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -9583,7 +10100,9 @@ export interface operations {
     planning_delete_planning_period_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9618,7 +10137,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9653,7 +10174,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9688,7 +10211,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9727,7 +10252,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9766,7 +10293,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9805,7 +10334,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9840,7 +10371,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9873,7 +10406,9 @@ export interface operations {
     solver_runs_post_solver_run: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -9910,7 +10445,9 @@ export interface operations {
     solver_runs_get_solver_run_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 run_id: number;
@@ -9944,7 +10481,9 @@ export interface operations {
     solver_runs_post_apply_solver_run: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 run_id: number;
@@ -9982,7 +10521,9 @@ export interface operations {
     solver_runs_post_cancel_solver_run: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 run_id: number;
@@ -10018,7 +10559,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10053,7 +10596,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10092,7 +10637,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10127,7 +10674,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10168,7 +10717,9 @@ export interface operations {
                 trigger: string;
                 is_major_update?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10201,7 +10752,9 @@ export interface operations {
     planning_get_plan_version_detail: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10235,7 +10788,9 @@ export interface operations {
     planning_get_plan_version_matrix_csv: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10270,7 +10825,9 @@ export interface operations {
     planning_get_plan_version_roster_csv: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10305,7 +10862,9 @@ export interface operations {
     planning_get_plan_version_roster_pdf: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10339,7 +10898,9 @@ export interface operations {
     planning_get_plan_version_roster_xlsx: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10373,7 +10934,9 @@ export interface operations {
     planning_get_plan_version_matrix_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10407,7 +10970,9 @@ export interface operations {
     planning_get_plan_version_roster_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 version_id: number;
@@ -10443,7 +11008,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -10480,7 +11047,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -10515,7 +11084,9 @@ export interface operations {
     roster_matrix_post_revert_roster_change_set: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 change_set_id: number;
             };
@@ -10560,7 +11131,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10596,7 +11169,9 @@ export interface operations {
                 shift_group_id?: number | null;
                 limit?: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10631,7 +11206,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -10679,7 +11256,9 @@ export interface operations {
             query: {
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
                 roster_slot_id: number;
@@ -10715,7 +11294,9 @@ export interface operations {
             query?: {
                 active_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -10746,7 +11327,9 @@ export interface operations {
     shift_groups_post_shift_group: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -10781,7 +11364,9 @@ export interface operations {
     shift_groups_delete_shift_group_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 shift_group_id: number;
             };
@@ -10814,7 +11399,9 @@ export interface operations {
     shift_groups_patch_shift_group: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 shift_group_id: number;
             };
@@ -10851,7 +11438,9 @@ export interface operations {
     shift_groups_put_shift_group_memberships: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 shift_group_id: number;
             };
@@ -10888,7 +11477,9 @@ export interface operations {
     shift_groups_put_shift_group_templates: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 shift_group_id: number;
             };
@@ -10925,7 +11516,9 @@ export interface operations {
     shift_groups_put_shift_group_team_members: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 shift_group_id: number;
             };
@@ -10968,7 +11561,9 @@ export interface operations {
                 statuses?: string[] | null;
                 kind?: string | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -10999,7 +11594,9 @@ export interface operations {
     shift_swaps_post_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11037,7 +11634,9 @@ export interface operations {
                 roster_slot_id: number;
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11071,7 +11670,9 @@ export interface operations {
                 planning_period_id: number;
                 shift_group_id: number;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11102,7 +11703,9 @@ export interface operations {
     shift_swaps_get_shift_swap_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11135,7 +11738,9 @@ export interface operations {
     shift_swaps_post_accept_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11168,7 +11773,9 @@ export interface operations {
     shift_swaps_post_apply_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11201,7 +11808,9 @@ export interface operations {
     shift_swaps_post_approve_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11234,7 +11843,9 @@ export interface operations {
     shift_swaps_post_claim_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11267,7 +11878,9 @@ export interface operations {
     shift_swaps_post_decline_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11300,7 +11913,9 @@ export interface operations {
     shift_swaps_post_open_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11333,7 +11948,9 @@ export interface operations {
     shift_swaps_post_reject_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11366,7 +11983,9 @@ export interface operations {
     shift_swaps_post_withdraw_shift_swap: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 request_id: number;
             };
@@ -11401,7 +12020,9 @@ export interface operations {
             query?: {
                 active_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11432,7 +12053,9 @@ export interface operations {
     shift_templates_post_shift_template: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11467,7 +12090,9 @@ export interface operations {
     shift_templates_post_shift_template_preview: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11502,7 +12127,9 @@ export interface operations {
     shift_templates_delete_shift_variant_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 variant_id: number;
             };
@@ -11535,7 +12162,9 @@ export interface operations {
     shift_templates_patch_shift_variant: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 variant_id: number;
             };
@@ -11572,7 +12201,9 @@ export interface operations {
     shift_templates_delete_shift_template_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 template_id: number;
             };
@@ -11605,7 +12236,9 @@ export interface operations {
     shift_templates_patch_shift_template: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 template_id: number;
             };
@@ -11642,7 +12275,9 @@ export interface operations {
     shift_templates_post_shift_variant: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 template_id: number;
             };
@@ -11681,7 +12316,9 @@ export interface operations {
             query?: {
                 active_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11712,7 +12349,9 @@ export interface operations {
     team_member_property_definitions_post_team_member_property_definition: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11747,7 +12386,9 @@ export interface operations {
     team_member_property_definitions_delete_team_member_property_definition_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 definition_id: number;
             };
@@ -11780,7 +12421,9 @@ export interface operations {
     team_member_property_definitions_patch_team_member_property_definition: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 definition_id: number;
             };
@@ -11820,7 +12463,9 @@ export interface operations {
                 active_members_only?: boolean;
                 active_definitions_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11851,7 +12496,9 @@ export interface operations {
     team_member_property_matrix_search_property_matrix: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11888,7 +12535,9 @@ export interface operations {
             query?: {
                 active_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11919,7 +12568,9 @@ export interface operations {
     team_members_post_team_member: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -11954,7 +12605,9 @@ export interface operations {
     team_members_delete_team_member_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -11987,7 +12640,9 @@ export interface operations {
     team_members_patch_team_member: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12024,7 +12679,9 @@ export interface operations {
     employment_periods_get_employment_periods: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12057,7 +12714,9 @@ export interface operations {
     employment_periods_put_employment_periods: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12094,7 +12753,9 @@ export interface operations {
     team_members_get_team_member_planning_patterns: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12127,7 +12788,9 @@ export interface operations {
     team_members_put_team_member_planning_patterns: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12166,7 +12829,9 @@ export interface operations {
             query?: {
                 active_definitions_only?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12199,7 +12864,9 @@ export interface operations {
     team_members_put_team_member_property_values: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12236,7 +12903,9 @@ export interface operations {
     employment_periods_get_opening: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12269,7 +12938,9 @@ export interface operations {
     employment_periods_put_opening: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12306,7 +12977,9 @@ export interface operations {
     work_time_consents_get_work_time_consents: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12339,7 +13012,9 @@ export interface operations {
     work_time_consents_post_work_time_consent: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
             };
@@ -12376,7 +13051,9 @@ export interface operations {
     work_time_consents_post_revoke_work_time_consent: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 team_member_id: number;
                 consent_id: number;
@@ -12419,7 +13096,9 @@ export interface operations {
                 end_date: string;
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12452,7 +13131,9 @@ export interface operations {
             query?: {
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12487,7 +13168,9 @@ export interface operations {
     time_entries_post_derive: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12529,7 +13212,9 @@ export interface operations {
                 team_member_portal?: boolean;
                 include_reconciliation?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12564,7 +13249,9 @@ export interface operations {
                 start_date: string;
                 end_date: string;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12597,7 +13284,9 @@ export interface operations {
             query?: {
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 entry_id: number;
             };
@@ -12632,7 +13321,9 @@ export interface operations {
             query?: {
                 team_member_portal?: boolean;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 entry_id: number;
             };
@@ -12671,7 +13362,9 @@ export interface operations {
             query?: {
                 shift_group_id?: number | null;
             };
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 planning_period_id: number;
             };
@@ -12704,7 +13397,9 @@ export interface operations {
     work_time_rule_sets_get_work_time_rule_sets: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12735,7 +13430,9 @@ export interface operations {
     work_time_rule_sets_post_work_time_rule_set: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12770,7 +13467,9 @@ export interface operations {
     work_time_rule_sets_get_work_time_rule_set_presets: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path?: never;
             cookie?: {
                 shift_planner_session?: string | null;
@@ -12801,7 +13500,9 @@ export interface operations {
     work_time_rule_sets_post_adopt_work_time_rule_set_preset: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 code: string;
             };
@@ -12838,7 +13539,9 @@ export interface operations {
     work_time_rule_sets_get_work_time_rule_set_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 rule_set_id: number;
             };
@@ -12871,7 +13574,9 @@ export interface operations {
     work_time_rule_sets_delete_work_time_rule_set_endpoint: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 rule_set_id: number;
             };
@@ -12904,7 +13609,9 @@ export interface operations {
     work_time_rule_sets_patch_work_time_rule_set: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                authorization?: string | null;
+            };
             path: {
                 rule_set_id: number;
             };

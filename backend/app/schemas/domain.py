@@ -100,6 +100,40 @@ class LoginInput(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class TokenIssueInput(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=256)
+    device_name: str = Field(min_length=1, max_length=128)
+    platform: Literal["ios", "android", "web", "other"]
+
+
+class TokenRefreshInput(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=512)
+
+
+class TokenPairRead(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: Literal["bearer"] = "bearer"
+    expires_in: int
+    session: Annotated[UserRead | AccountSessionRead, Field(discriminator="auth_kind")]
+
+
+class UserReadWithAccessToken(UserRead):
+    access_token: str | None = None
+
+
+class DeviceSessionRead(BaseModel):
+    id: int
+    name: str
+    platform: Literal["ios", "android", "web", "other"]
+    created_at: datetime
+    last_used_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    current: bool
+
+
 class RegisterAccountInput(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=256)

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import (
+    current_bearer_device_session_id,
     get_current_account_session,
     get_current_session_holder,
     get_current_user,
@@ -23,6 +25,7 @@ from app.schemas import (
     ChangePasswordInput,
     CreateOrganizationMembershipInput,
     DeleteAccountInput,
+    DeviceSessionRead,
     JoinRequestRead,
     JoinRequestResubmitInput,
     LoginInput,
@@ -36,9 +39,25 @@ from app.schemas import (
     RegisterJoinOrganizationInput,
     TeamMemberRead,
     TeamMemberSelfUpdate,
+    TokenIssueInput,
+    TokenPairRead,
+    TokenRefreshInput,
     UserRead,
+    UserReadWithAccessToken,
 )
 from app.services.authz import get_linked_team_member
+from app.services.device_sessions import (
+    REASON_CLIENT,
+    REASON_USER,
+    BearerRejected,
+    RefreshRejected,
+    authenticate_bearer,
+    issue_device_session,
+    list_device_sessions,
+    refresh_device_session,
+    reissue_access_token,
+    revoke_device_session,
+)
 from app.services.join_requests import (
     create_join_request_for_applicant,
     get_pending_join_request_for_user,
@@ -101,6 +120,29 @@ def _set_account_session_cookie(response: Response, account_id: int) -> None:
     )
 
 
+def _user_json(read: UserRead, user_id: int, access_token: str | None = None) -> JSONResponse:
+    payload = read.model_dump(mode="json")
+    if access_token is not None:
+        payload["access_token"] = access_token
+    out = JSONResponse(content=payload)
+    out.set_cookie(
+        "shift_planner_session",
+        create_user_session_token(user_id),
+        max_age=SESSION_MAX_AGE_SECONDS,
+        **_session_cookie_kwargs(),
+    )
+    return out
+
+
+def _bearer_access_for_user(db: Session, user: User, device_session_id: int | None) -> str | None:
+    if device_session_id is None:
+        return None
+    try:
+        return reissue_access_token(db, device_session_id=device_session_id, user=user)
+    except BearerRejected as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session") from exc
+
+
 def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
         "shift_planner_session",
@@ -129,27 +171,114 @@ def login(payload: LoginInput, response: Response, db: Session = Depends(get_db)
     return build_user_read(db, user)
 
 
-@router.post("/me/active-organization", response_model=UserRead)
+@router.post("/token", response_model=TokenPairRead)
+def post_token(payload: TokenIssueInput, db: Session = Depends(get_db)) -> TokenPairRead:
+    auth = authenticate_login(db, email=str(payload.email), password=payload.password)
+    if auth == "invalid":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if auth[0] == "account":
+        account = auth[1]
+        issued = issue_device_session(
+            db, account=account, user=None, device_name=payload.device_name, platform=payload.platform
+        )
+        session = build_account_session_read(account)
+    else:
+        user = auth[1]
+        issued = issue_device_session(
+            db,
+            account=user.account,
+            user=user,
+            device_name=payload.device_name,
+            platform=payload.platform,
+        )
+        session = build_user_read(db, user)
+    return TokenPairRead(
+        access_token=issued.access_token,
+        refresh_token=issued.refresh_token,
+        expires_in=issued.expires_in,
+        session=session,
+    )
+
+
+@router.post("/token/refresh", response_model=TokenPairRead)
+def post_token_refresh(payload: TokenRefreshInput, db: Session = Depends(get_db)) -> TokenPairRead:
+    try:
+        issued = refresh_device_session(db, payload.refresh_token)
+    except RefreshRejected as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
+    holder, _device_session_id = authenticate_bearer(db, issued.access_token)
+    if isinstance(holder, Account):
+        session = build_account_session_read(holder)
+    else:
+        session = build_user_read(db, holder)
+    return TokenPairRead(
+        access_token=issued.access_token,
+        refresh_token=issued.refresh_token,
+        expires_in=issued.expires_in,
+        session=session,
+    )
+
+
+@router.post("/token/revoke", status_code=status.HTTP_204_NO_CONTENT)
+def post_token_revoke(
+    db: Session = Depends(get_db),
+    holder: User | Account = Depends(get_current_session_holder),
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> None:
+    if device_session_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required")
+    account_id = holder.id if isinstance(holder, Account) else holder.account_id
+    revoke_device_session(db, device_session_id=device_session_id, account_id=account_id, reason=REASON_CLIENT)
+
+
+@router.get("/me/devices", response_model=list[DeviceSessionRead])
+def get_me_devices(
+    db: Session = Depends(get_db),
+    holder: User | Account = Depends(get_current_session_holder),
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> list[DeviceSessionRead]:
+    account_id = holder.id if isinstance(holder, Account) else holder.account_id
+    rows = list_device_sessions(
+        db, account_id=account_id, current_device_session_id=device_session_id
+    )
+    return [DeviceSessionRead.model_validate(row, from_attributes=True) for row in rows]
+
+
+@router.delete("/me/devices/{device_session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me_device(
+    device_session_id: int,
+    db: Session = Depends(get_db),
+    holder: User | Account = Depends(get_current_session_holder),
+) -> None:
+    account_id = holder.id if isinstance(holder, Account) else holder.account_id
+    found = revoke_device_session(
+        db, device_session_id=device_session_id, account_id=account_id, reason=REASON_USER
+    )
+    if not found:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device session not found")
+
+
+@router.post("/me/active-organization", response_model=UserReadWithAccessToken)
 def post_active_organization(
     payload: ActiveOrganizationInput,
-    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> UserRead:
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> JSONResponse:
     nxt = switch_membership_by_organization_slug(db, current=user, organization_slug=payload.organization_slug)
     if nxt is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found or no access")
-    _set_user_session_cookie(response, nxt.id)
-    return build_user_read(db, nxt)
+    access_token = _bearer_access_for_user(db, nxt, device_session_id)
+    return _user_json(build_user_read(db, nxt), nxt.id, access_token)
 
 
-@router.post("/me/add-organization-membership", response_model=UserRead)
+@router.post("/me/add-organization-membership", response_model=UserReadWithAccessToken)
 def post_add_organization_membership(
     payload: AddOrganizationMembershipInput,
-    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> UserRead:
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> JSONResponse:
     try:
         new_membership = request_join_additional_organization(
             db,
@@ -162,17 +291,17 @@ def post_add_organization_membership(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    _set_user_session_cookie(response, new_membership.id)
-    return build_user_read(db, new_membership)
+    access_token = _bearer_access_for_user(db, new_membership, device_session_id)
+    return _user_json(build_user_read(db, new_membership), new_membership.id, access_token)
 
 
-@router.post("/me/create-organization-membership", response_model=UserRead)
+@router.post("/me/create-organization-membership", response_model=UserReadWithAccessToken)
 def post_create_organization_membership(
     payload: CreateOrganizationMembershipInput,
-    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> UserRead:
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> JSONResponse:
     try:
         new_membership, _org = create_additional_organization_membership(
             db,
@@ -182,8 +311,8 @@ def post_create_organization_membership(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    _set_user_session_cookie(response, new_membership.id)
-    return build_user_read(db, new_membership)
+    access_token = _bearer_access_for_user(db, new_membership, device_session_id)
+    return _user_json(build_user_read(db, new_membership), new_membership.id, access_token)
 
 
 @router.post("/register", response_model=AccountSessionRead)
@@ -205,13 +334,13 @@ def post_register_account(
     return build_account_session_read(acc)
 
 
-@router.post("/me/onboarding/create-organization", response_model=UserRead)
+@router.post("/me/onboarding/create-organization", response_model=UserReadWithAccessToken)
 def post_onboarding_create_organization(
     payload: OnboardingCreateOrganizationInput,
-    response: Response,
     db: Session = Depends(get_db),
     account: Account = Depends(get_current_account_session),
-) -> UserRead:
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> JSONResponse:
     try:
         user, _org = onboarding_create_organization(
             db,
@@ -221,17 +350,17 @@ def post_onboarding_create_organization(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    _set_user_session_cookie(response, user.id)
-    return build_user_read(db, user)
+    access_token = _bearer_access_for_user(db, user, device_session_id)
+    return _user_json(build_user_read(db, user), user.id, access_token)
 
 
-@router.post("/me/onboarding/join-organization", response_model=UserRead)
+@router.post("/me/onboarding/join-organization", response_model=UserReadWithAccessToken)
 def post_onboarding_join_organization(
     payload: OnboardingJoinOrganizationInput,
-    response: Response,
     db: Session = Depends(get_db),
     account: Account = Depends(get_current_account_session),
-) -> UserRead:
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> JSONResponse:
     try:
         user, _org = onboarding_join_organization(
             db,
@@ -243,8 +372,8 @@ def post_onboarding_join_organization(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    _set_user_session_cookie(response, user.id)
-    return build_user_read(db, user)
+    access_token = _bearer_access_for_user(db, user, device_session_id)
+    return _user_json(build_user_read(db, user), user.id, access_token)
 
 
 @router.post("/register/create-organization", response_model=UserRead)
@@ -345,20 +474,20 @@ def get_me_organization_invites(
     return [invite_pending_to_read(db, r) for r in rows]
 
 
-@router.post("/me/organization-invites/{invite_id}/accept", response_model=UserRead)
+@router.post("/me/organization-invites/{invite_id}/accept", response_model=UserReadWithAccessToken)
 def post_me_accept_organization_invite(
     invite_id: int,
-    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     body: OrganizationInviteAcceptInput | None = Body(default=None),
-) -> UserRead:
+    device_session_id: int | None = Depends(current_bearer_device_session_id),
+) -> JSONResponse:
     try:
         new_user = accept_membership_invite(db, user=user, invite_id=invite_id, accept=body)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    _set_user_session_cookie(response, new_user.id)
-    return build_user_read(db, new_user)
+    access_token = _bearer_access_for_user(db, new_user, device_session_id)
+    return _user_json(build_user_read(db, new_user), new_user.id, access_token)
 
 
 @router.post("/me/organization-invites/{invite_id}/decline", status_code=status.HTTP_204_NO_CONTENT)

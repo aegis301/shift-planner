@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-09-30
+- **Bearer device sessions:** `POST /api/v1/auth/token` issues a 15-minute access token and a rotating refresh token for a named device. Refresh-token reuse revokes that device. Password changes, admin resets, account deletion, and membership removal revoke the affected device sessions immediately. The web cookie is unchanged. Settings lists signed-in devices. Alembic `202609300001`.
+
 ## 2026-09-29
 - **Period roster refresh:** Admins and planners can update the selected month's shift-group roster from current membership. People who joined are added. People who left are removed, and if they already have wishes or duties the dialog names what will be deleted. An assignment on a template shared with another group stays when that person is still on the other group's period roster, and a published covering group is left unchanged. Derived roster and day-status time entries for the removed people are reconciled in the same transaction. MCP: `shift-planner://period-roster/{planning_period_id}/shift-group/{shift_group_id}` and token-gated `refresh_period_roster_tool`. Published groups stay read-only.
 - **Weekend and holiday slots:** The roster grid keeps one column per shift variant and position, so a day shift and a night shift on the same date are both visible and editable.

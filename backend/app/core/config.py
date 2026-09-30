@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     backend_cors_origins: str = "http://localhost:18130"
     session_cookie_secure: bool = False
     session_cookie_domain: str | None = None
+    access_token_ttl_seconds: int = 15 * 60
+    refresh_token_ttl_days: int = 60
 
     @property
     def cors_origins(self) -> list[str]:

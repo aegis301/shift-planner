@@ -1555,6 +1555,70 @@
         "title": "DeletedFlagRead",
         "type": "object"
       },
+      "DeviceSessionRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_used_at": {
+            "format": "date-time",
+            "title": "Last Used At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "platform": {
+            "enum": [
+              "ios",
+              "android",
+              "web",
+              "other"
+            ],
+            "title": "Platform",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "platform",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+          "current"
+        ],
+        "title": "DeviceSessionRead",
+        "type": "object"
+      },
       "DutyActivityAccessPolicy": {
         "properties": {
           "individual_read_roles": {
@@ -10414,6 +10478,108 @@
         "title": "TimeEntryUpdate",
         "type": "object"
       },
+      "TokenIssueInput": {
+        "properties": {
+          "device_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Device Name",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "platform": {
+            "enum": [
+              "ios",
+              "android",
+              "web",
+              "other"
+            ],
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "device_name",
+          "platform"
+        ],
+        "title": "TokenIssueInput",
+        "type": "object"
+      },
+      "TokenPairRead": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "session": {
+            "discriminator": {
+              "mapping": {
+                "account": "#/components/schemas/AccountSessionRead",
+                "user": "#/components/schemas/UserRead"
+              },
+              "propertyName": "auth_kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UserRead"
+              },
+              {
+                "$ref": "#/components/schemas/AccountSessionRead"
+              }
+            ],
+            "title": "Session"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in",
+          "session"
+        ],
+        "title": "TokenPairRead",
+        "type": "object"
+      },
+      "TokenRefreshInput": {
+        "properties": {
+          "refresh_token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "TokenRefreshInput",
+        "type": "object"
+      },
       "UserCapabilities": {
         "properties": {
           "admin": {
@@ -10527,6 +10693,109 @@
           "capabilities"
         ],
         "title": "UserRead",
+        "type": "object"
+      },
+      "UserReadWithAccessToken": {
+        "properties": {
+          "access_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "auth_kind": {
+            "const": "user",
+            "default": "user",
+            "title": "Auth Kind",
+            "type": "string"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/UserCapabilities"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "memberships": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipSummary"
+            },
+            "title": "Memberships",
+            "type": "array"
+          },
+          "organization": {
+            "$ref": "#/components/schemas/OrganizationBrief"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "integer"
+          },
+          "organization_shift_groups": {
+            "items": {
+              "$ref": "#/components/schemas/UserShiftGroupBrief"
+            },
+            "title": "Organization Shift Groups",
+            "type": "array"
+          },
+          "organization_timezone": {
+            "default": "Europe/Berlin",
+            "title": "Organization Timezone",
+            "type": "string"
+          },
+          "planner_shift_groups": {
+            "items": {
+              "$ref": "#/components/schemas/UserShiftGroupBrief"
+            },
+            "title": "Planner Shift Groups",
+            "type": "array"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "shift_groups": {
+            "items": {
+              "$ref": "#/components/schemas/UserShiftGroupBrief"
+            },
+            "title": "Shift Groups",
+            "type": "array"
+          },
+          "team_member_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Member Id"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "locale",
+          "organization_id",
+          "organization",
+          "capabilities"
+        ],
+        "title": "UserReadWithAccessToken",
         "type": "object"
       },
       "UserShiftGroupBrief": {
@@ -12206,6 +12475,22 @@
         "operationId": "auth_post_delete_account",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -12335,6 +12620,22 @@
         "operationId": "auth_me",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -12399,6 +12700,22 @@
         "operationId": "auth_post_active_organization",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -12430,7 +12747,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserRead"
+                  "$ref": "#/components/schemas/UserReadWithAccessToken"
                 }
               }
             },
@@ -12457,6 +12774,22 @@
       "post": {
         "operationId": "auth_post_add_organization_membership",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -12489,7 +12822,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserRead"
+                  "$ref": "#/components/schemas/UserReadWithAccessToken"
                 }
               }
             },
@@ -12516,6 +12849,22 @@
       "post": {
         "operationId": "auth_post_change_password",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -12569,6 +12918,22 @@
         "operationId": "auth_post_create_organization_membership",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -12600,7 +12965,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserRead"
+                  "$ref": "#/components/schemas/UserReadWithAccessToken"
                 }
               }
             },
@@ -12623,10 +12988,162 @@
         ]
       }
     },
+    "/api/v1/auth/me/devices": {
+      "get": {
+        "operationId": "auth_get_me_devices",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceSessionRead"
+                  },
+                  "title": "Response Auth Get Me Devices",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Me Devices",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me/devices/{device_session_id}": {
+      "delete": {
+        "operationId": "auth_delete_me_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_session_id",
+            "required": true,
+            "schema": {
+              "title": "Device Session Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Me Device",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/me/join-request": {
       "get": {
         "operationId": "auth_get_me_join_request",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -12682,6 +13199,22 @@
       "post": {
         "operationId": "auth_post_me_join_request",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -12742,6 +13275,22 @@
         "operationId": "auth_post_onboarding_create_organization",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -12773,7 +13322,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserRead"
+                  "$ref": "#/components/schemas/UserReadWithAccessToken"
                 }
               }
             },
@@ -12800,6 +13349,22 @@
       "post": {
         "operationId": "auth_post_onboarding_join_organization",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -12832,7 +13397,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserRead"
+                  "$ref": "#/components/schemas/UserReadWithAccessToken"
                 }
               }
             },
@@ -12859,6 +13424,22 @@
       "get": {
         "operationId": "auth_get_me_organization_invites",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -12922,6 +13503,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -12960,7 +13557,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserRead"
+                  "$ref": "#/components/schemas/UserReadWithAccessToken"
                 }
               }
             },
@@ -12994,6 +13591,22 @@
             "schema": {
               "title": "Invite Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13038,6 +13651,22 @@
       "get": {
         "operationId": "auth_get_me_team_member",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -13085,6 +13714,22 @@
       "patch": {
         "operationId": "auth_patch_me_team_member",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -13263,6 +13908,146 @@
         ]
       }
     },
+    "/api/v1/auth/token": {
+      "post": {
+        "operationId": "auth_post_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenIssueInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/token/refresh": {
+      "post": {
+        "operationId": "auth_post_token_refresh",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRefreshInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Token Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/token/revoke": {
+      "post": {
+        "operationId": "auth_post_token_revoke",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "shift_planner_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shift Planner Session"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Token Revoke",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/compliance-report/{planning_period_id}": {
       "get": {
         "operationId": "compliance_report_get_compliance_report",
@@ -13290,6 +14075,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13352,6 +14153,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -13402,6 +14219,22 @@
       "post": {
         "operationId": "contract_groups_post_contract_group",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -13471,6 +14304,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -13524,6 +14373,22 @@
             "schema": {
               "title": "Contract Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13618,6 +14483,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -13696,6 +14577,22 @@
                 }
               ],
               "title": "Year"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -13780,6 +14677,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -13861,6 +14774,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -13911,6 +14840,22 @@
       "post": {
         "operationId": "duty_activity_post_own_duty_activity",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -13971,6 +14916,22 @@
         "operationId": "duty_activity_get_duty_activity_purpose",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14019,6 +14980,22 @@
       "post": {
         "operationId": "duty_activity_post_duty_activity_purpose_acknowledge",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -14075,6 +15052,22 @@
             "schema": {
               "title": "Roster Slot Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -14168,6 +15161,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14226,6 +15235,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14279,6 +15304,22 @@
             "schema": {
               "title": "Entry Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -14366,6 +15407,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14441,6 +15498,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14500,6 +15573,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14556,6 +15645,22 @@
             "schema": {
               "title": "Planning Period Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -14631,6 +15736,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -14732,6 +15853,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -14797,6 +15934,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -14872,6 +16025,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -14965,6 +16134,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15050,6 +16235,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15106,6 +16307,22 @@
             "schema": {
               "title": "Roster Slot Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -15181,6 +16398,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -15268,6 +16501,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15349,6 +16598,22 @@
               "default": false,
               "title": "Team Member Portal",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -15446,6 +16711,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15537,6 +16818,22 @@
               "default": false,
               "title": "Team Member Portal",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -15634,6 +16931,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15720,6 +17033,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15798,6 +17127,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15861,6 +17206,22 @@
         "operationId": "organization_delete_organization_endpoint",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15911,6 +17272,22 @@
         "operationId": "organization_get_organization_settings",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -15957,6 +17334,22 @@
       "patch": {
         "operationId": "organization_patch_organization_settings",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16017,6 +17410,22 @@
         "operationId": "organization_get_duty_activity_access_policy",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16063,6 +17472,22 @@
       "patch": {
         "operationId": "organization_patch_duty_activity_access_policy",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16123,6 +17548,22 @@
         "operationId": "organization_get_fairness_policy",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16169,6 +17610,22 @@
       "patch": {
         "operationId": "organization_patch_fairness_policy",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16229,6 +17686,22 @@
         "operationId": "organization_get_organization_invites",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16279,6 +17752,22 @@
       "post": {
         "operationId": "organization_post_organization_invite",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16348,6 +17837,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16403,6 +17908,22 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -16465,6 +17986,22 @@
             "schema": {
               "title": "Request Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -16536,6 +18073,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16601,6 +18154,22 @@
             "schema": {
               "title": "Request Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -16672,6 +18241,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16721,6 +18306,22 @@
         "operationId": "organization_get_member_pattern_policy",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16767,6 +18368,22 @@
       "patch": {
         "operationId": "organization_patch_member_pattern_policy",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16827,6 +18444,22 @@
         "operationId": "organization_get_solver_config",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -16875,6 +18508,22 @@
       "get": {
         "operationId": "organization_get_organization_staff_directory",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16928,6 +18577,22 @@
       "get": {
         "operationId": "organization_get_organization_users",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -16991,6 +18656,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -17037,6 +18718,22 @@
             "schema": {
               "title": "Target User Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -17105,6 +18802,22 @@
             "schema": {
               "title": "Target User Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -17214,6 +18927,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -17264,6 +18993,22 @@
       "post": {
         "operationId": "planning_day_status_definitions_post_planning_day_status_definition",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -17333,6 +19078,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -17386,6 +19147,22 @@
             "schema": {
               "title": "Definition Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -17448,6 +19225,22 @@
         "operationId": "planning_get_planning_periods",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -17498,6 +19291,22 @@
       "post": {
         "operationId": "planning_post_planning_period",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -17567,6 +19376,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -17631,6 +19456,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -17708,6 +19549,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -17779,6 +19636,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -17856,6 +19729,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -17940,6 +19829,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -18034,6 +19939,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18101,6 +20022,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18158,6 +20095,22 @@
             "schema": {
               "title": "Planning Period Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -18238,6 +20191,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18302,6 +20271,22 @@
             "schema": {
               "title": "Run Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -18389,6 +20374,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18463,6 +20464,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18527,6 +20544,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -18614,6 +20647,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18676,6 +20725,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -18782,6 +20847,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18849,6 +20930,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -18913,6 +21010,22 @@
             "schema": {
               "title": "Version Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -18989,6 +21102,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19062,6 +21191,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19127,6 +21272,22 @@
             "schema": {
               "title": "Version Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -19198,6 +21359,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19265,6 +21442,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19327,6 +21520,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -19405,6 +21614,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19470,6 +21695,22 @@
             "schema": {
               "title": "Change Set Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -19567,6 +21808,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19653,6 +21910,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19726,6 +21999,22 @@
                 }
               ],
               "title": "Shift Group Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -19825,6 +22114,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19884,6 +22189,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -19934,6 +22255,22 @@
       "post": {
         "operationId": "shift_groups_post_shift_group",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -20003,6 +22340,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20056,6 +22409,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -20127,6 +22496,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20195,6 +22580,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20260,6 +22661,22 @@
             "schema": {
               "title": "Shift Group Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -20398,6 +22815,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20448,6 +22881,22 @@
       "post": {
         "operationId": "shift_swaps_post_shift_swap",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -20533,6 +22982,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20604,6 +23069,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20666,6 +23147,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20721,6 +23218,22 @@
             "schema": {
               "title": "Request Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -20782,6 +23295,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20837,6 +23366,22 @@
             "schema": {
               "title": "Request Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -20898,6 +23443,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -20953,6 +23514,22 @@
             "schema": {
               "title": "Request Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -21014,6 +23591,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21072,6 +23665,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21127,6 +23736,22 @@
             "schema": {
               "title": "Request Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -21189,6 +23814,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21239,6 +23880,22 @@
       "post": {
         "operationId": "shift_templates_post_shift_template",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -21298,6 +23955,22 @@
       "post": {
         "operationId": "shift_templates_post_shift_template_preview",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -21371,6 +24044,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21424,6 +24113,22 @@
             "schema": {
               "title": "Variant Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -21495,6 +24200,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21548,6 +24269,22 @@
             "schema": {
               "title": "Template Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -21616,6 +24353,22 @@
             "schema": {
               "title": "Template Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -21688,6 +24441,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21738,6 +24507,22 @@
       "post": {
         "operationId": "team_member_property_definitions_post_team_member_property_definition",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -21807,6 +24592,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21860,6 +24661,22 @@
             "schema": {
               "title": "Definition Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -21942,6 +24759,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -21990,6 +24823,22 @@
       "post": {
         "operationId": "team_member_property_matrix_search_property_matrix",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -22060,6 +24909,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22110,6 +24975,22 @@
       "post": {
         "operationId": "team_members_post_team_member",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -22179,6 +25060,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22232,6 +25129,22 @@
             "schema": {
               "title": "Team Member Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -22303,6 +25216,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22360,6 +25289,22 @@
             "schema": {
               "title": "Team Member Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -22435,6 +25380,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22492,6 +25453,22 @@
             "schema": {
               "title": "Team Member Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -22577,6 +25554,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22634,6 +25627,22 @@
             "schema": {
               "title": "Team Member Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -22709,6 +25718,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22770,6 +25795,22 @@
             "schema": {
               "title": "Team Member Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -22841,6 +25882,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -22898,6 +25955,22 @@
             "schema": {
               "title": "Team Member Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -22975,6 +26048,22 @@
             "schema": {
               "title": "Consent Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -23076,6 +26165,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23137,6 +26242,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23195,6 +26316,22 @@
       "post": {
         "operationId": "time_entries_post_derive",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -23320,6 +26457,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23398,6 +26551,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23470,6 +26639,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23533,6 +26718,22 @@
               "default": false,
               "title": "Team Member Portal",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -23620,6 +26821,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23673,6 +26890,22 @@
         "operationId": "work_time_rule_sets_get_work_time_rule_sets",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23723,6 +26956,22 @@
       "post": {
         "operationId": "work_time_rule_sets_post_work_time_rule_set",
         "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
           {
             "in": "cookie",
             "name": "shift_planner_session",
@@ -23783,6 +27032,22 @@
         "operationId": "work_time_rule_sets_get_work_time_rule_set_presets",
         "parameters": [
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23842,6 +27107,22 @@
             "schema": {
               "title": "Code",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {
@@ -23913,6 +27194,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -23969,6 +27266,22 @@
             }
           },
           {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
             "in": "cookie",
             "name": "shift_planner_session",
             "required": false,
@@ -24022,6 +27335,22 @@
             "schema": {
               "title": "Rule Set Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           },
           {

@@ -1072,6 +1072,42 @@ class ShiftSwapRequest(Base):
     applied_plan_version: Mapped["PlanningPlanVersion | None"] = relationship()
 
 
+class AuthDeviceSession(Base):
+    __tablename__ = "auth_device_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    platform: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class AuthRefreshToken(Base):
+    __tablename__ = "auth_refresh_tokens"
+    __table_args__ = (
+        Index(
+            "uq_auth_refresh_tokens_one_current",
+            "device_session_id",
+            unique=True,
+            sqlite_where=text("rotated_at IS NULL"),
+            postgresql_where=text("rotated_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_session_id: Mapped[int] = mapped_column(
+        ForeignKey("auth_device_sessions.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

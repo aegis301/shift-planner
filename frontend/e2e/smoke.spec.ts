@@ -170,6 +170,12 @@ test.describe("admin", () => {
     await expect(dialog).toBeHidden();
   });
 
+  test("shows signed-in devices on settings", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { name: "Angemeldete Geräte" })).toBeVisible();
+    await expect(page.getByText("Keine angemeldeten Geräte.")).toBeVisible();
+  });
+
   test("shows the hours ledger", async ({ page }) => {
     await page.goto("/hours");
     await expect(page.getByRole("heading", { level: 1, name: "Stundenkonto" })).toBeVisible();

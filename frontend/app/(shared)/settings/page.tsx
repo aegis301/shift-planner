@@ -7,6 +7,7 @@ import { Bot, Building2, KeyRound, Languages, Trash2 } from "lucide-react";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { Card, Field, inputClass } from "@/components/Card";
 import { OrganizationPendingInvitesCard } from "@/components/OrganizationPendingInvitesCard";
+import { SignedInDevicesCard } from "@/components/SignedInDevicesCard";
 import { ApiError, apiFetch } from "@/lib/api";
 import {
   isUserSession,
@@ -379,6 +380,11 @@ function SettingsContent() {
               </div>
             </div>
           </Card>
+        </div>
+      ) : null}
+      {me ? (
+        <div className="md:col-span-2">
+          <SignedInDevicesCard locale={locale} />
         </div>
       ) : null}
       {me ? (
