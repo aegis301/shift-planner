@@ -3333,6 +3333,17 @@
             "title": "Allowed Actions",
             "type": "array"
           },
+          "counterparty_slot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Slot Id"
+          },
           "disabled_reasons": {
             "additionalProperties": {
               "type": "string"

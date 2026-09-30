@@ -1,5 +1,6 @@
 import secrets
 from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -28,7 +29,11 @@ from app.schemas import (
     TeamMemberPeriodNoteRead,
     TeamMemberPeriodNoteUpsert,
 )
-from app.services.authz import get_linked_team_member, team_member_shift_group_ids
+from app.services.authz import (
+    assert_team_member_shift_group_access,
+    get_linked_team_member,
+    team_member_shift_group_ids,
+)
 from app.services.duty_activity import DUTY_ACTIVITY_KINDS
 from app.services.hours_ledger import get_hours_ledger
 from app.services.ics_export import (
@@ -50,11 +55,13 @@ from app.services.planning import (
     is_team_member_roster_visible,
     list_planning_periods,
 )
+from app.services.planning_period_rosters import assert_member_on_period_roster
 from app.services.shift_swaps import (
     ACTIVE_STATUSES,
     SWAP_KIND_GIVEAWAY,
     SWAP_STATUS_OPEN,
     SWAP_STATUS_TARGETED,
+    eligible_member_ids_for_request,
     member_swap_actions,
 )
 from app.services.tenancy import require_planning_period_in_org
@@ -82,8 +89,16 @@ def require_linked_member(db: Session, user: User) -> TeamMember:
     return member
 
 
-def _today() -> date:
-    return datetime.now(UTC).date()
+def _today(db: Session, organization_id: int) -> date:
+    return datetime.now(ZoneInfo(organization_timezone(db, organization_id))).date()
+
+
+def _can_claim(db: Session, row: ShiftSwapRequest, team_member_id: int) -> bool:
+    if row.kind != SWAP_KIND_GIVEAWAY or row.status != SWAP_STATUS_OPEN:
+        return False
+    if row.offered_by_team_member_id == team_member_id:
+        return False
+    return team_member_id in set(eligible_member_ids_for_request(db, row))
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -194,12 +209,12 @@ def _choose_group(covered: set[int], statuses: dict[tuple[int, int], str], perio
     return min(covered)
 
 
-def _offer_reason(status: str | None, slot_date: date, has_group: bool) -> str | None:
+def _offer_reason(status: str | None, slot_date: date, has_group: bool, *, today: date) -> str | None:
     if not has_group:
         return OFFER_NO_SHIFT_GROUP
     if status not in {"preliminary", "published"}:
         return OFFER_PLAN_NOT_OPEN
-    if slot_date < _today():
+    if slot_date < today:
         return OFFER_SLOT_IN_PAST
     return None
 
@@ -215,6 +230,7 @@ def list_member_duties(
     if end < start:
         raise ValueError("end must be on or after start")
     member = require_linked_member(db, user)
+    today = _today(db, user.organization_id)
     assignments = _member_assignments(
         db,
         organization_id=user.organization_id,
@@ -223,7 +239,7 @@ def list_member_duties(
         end=end,
     )
     if limit is not None:
-        upcoming = [row for row in assignments if row.roster_slot.slot_date >= _today()]
+        upcoming = [row for row in assignments if row.roster_slot.slot_date >= today]
         assignments = upcoming[:limit]
     member_groups = team_member_shift_group_ids(db, member.id)
     template_ids = {
@@ -247,7 +263,7 @@ def list_member_duties(
         groups = covered.get(slot.shift_template_id or -1, set())
         group_id = _choose_group(groups, statuses, slot.planning_period_id)
         status = statuses.get((slot.planning_period_id, group_id)) if group_id is not None else None
-        reason = _offer_reason(status, slot.slot_date, group_id is not None)
+        reason = _offer_reason(status, slot.slot_date, group_id is not None, today=today)
         swap = swaps.get(slot.id)
         duties.append(
             {
@@ -273,7 +289,7 @@ def list_member_duties(
     return duties
 
 
-def _next_draft_period(db: Session, *, organization_id: int, member_groups: set[int]) -> dict | None:
+def _next_draft_period(db: Session, *, organization_id: int, member_groups: set[int], today: date) -> dict | None:
     if not member_groups:
         return None
     periods = list_planning_periods(db, organization_id=organization_id)
@@ -286,7 +302,6 @@ def _next_draft_period(db: Session, *, organization_id: int, member_groups: set[
     ]
     if not drafts:
         return None
-    today = _today()
     drafts.sort(key=lambda period: (period.year, period.month))
     upcoming = [period for period in drafts if date(period.year, period.month, 1) >= date(today.year, today.month, 1)]
     chosen = upcoming[0] if upcoming else drafts[-1]
@@ -322,10 +337,13 @@ def _home_swaps(db: Session, *, organization_id: int, team_member_id: int, membe
             row.kind != SWAP_KIND_GIVEAWAY or row.offered_by_team_member_id == team_member_id
         ):
             continue
+        eligible = _can_claim(db, row, team_member_id)
+        if row.status == SWAP_STATUS_OPEN and not eligible:
+            continue
         allowed, disabled = member_swap_actions(
             row,
             team_member_id=team_member_id,
-            eligible_to_claim=row.offered_by_team_member_id != team_member_id,
+            eligible_to_claim=eligible,
         )
         if not allowed and not disabled:
             continue
@@ -346,15 +364,18 @@ def _home_swaps(db: Session, *, organization_id: int, team_member_id: int, membe
 
 def get_member_home(db: Session, *, user: User) -> dict:
     member = require_linked_member(db, user)
-    horizon = _today() + timedelta(days=370)
-    duties = list_member_duties(db, user=user, start=_today(), end=horizon, limit=5)
+    today = _today(db, user.organization_id)
+    horizon = today + timedelta(days=370)
+    duties = list_member_duties(db, user=user, start=today, end=horizon, limit=5)
     groups = team_member_shift_group_ids(db, member.id)
     return {
         "duties": duties,
         "swap_actions": _home_swaps(
             db, organization_id=user.organization_id, team_member_id=member.id, member_groups=groups
         ),
-        "draft_wishes": _next_draft_period(db, organization_id=user.organization_id, member_groups=groups),
+        "draft_wishes": _next_draft_period(
+            db, organization_id=user.organization_id, member_groups=groups, today=today
+        ),
     }
 
 
@@ -367,6 +388,10 @@ def get_member_wishes(
 ) -> dict:
     member = require_linked_member(db, user)
     require_planning_period_in_org(db, planning_period_id, user.organization_id)
+    try:
+        assert_team_member_shift_group_access(db, user, shift_group_id)
+    except PermissionError as exc:
+        raise MemberWishesForbidden("not_in_shift_group") from exc
     matrix = get_planning_matrix(
         db,
         planning_period_id,
@@ -465,6 +490,12 @@ def clear_member_wishes_cells(
         raise MemberWishesForbidden("not_self")
     if payload.team_member_id is None and not payload.cells:
         payload = payload.model_copy(update={"team_member_id": member.id})
+    assert_member_on_period_roster(
+        db,
+        planning_period_id=planning_period_id,
+        shift_group_id=shift_group_id,
+        team_member_id=member.id,
+    )
     deleted, conflicts = clear_planning_cell(
         db,
         planning_period_id,
@@ -553,7 +584,7 @@ def list_member_swaps(db: Session, *, user: User, status: str | None) -> list[di
         allowed, disabled = member_swap_actions(
             row,
             team_member_id=member.id,
-            eligible_to_claim=row.offered_by_team_member_id != member.id,
+            eligible_to_claim=_can_claim(db, row, member.id),
         )
         items.append(
             {
@@ -565,6 +596,7 @@ def list_member_swaps(db: Session, *, user: User, status: str | None) -> list[di
                 "offered_by_team_member_id": row.offered_by_team_member_id,
                 "target_team_member_id": row.target_team_member_id,
                 "offered_slot_id": row.offered_slot_id,
+                "counterparty_slot_id": row.counterparty_slot_id,
                 "allowed_actions": allowed,
                 "disabled_reasons": disabled,
             }
@@ -604,8 +636,9 @@ def member_calendar_ics(db: Session, *, token: str) -> bytes:
     if member is None:
         raise ValueError("Invalid calendar token")
     groups = team_member_shift_group_ids(db, member.id)
-    start = _today() - timedelta(days=31)
-    end = _today() + timedelta(days=370)
+    today = _today(db, member.organization_id)
+    start = today - timedelta(days=31)
+    end = today + timedelta(days=370)
     assignments = _member_assignments(
         db,
         organization_id=member.organization_id,

@@ -2535,6 +2535,7 @@ class MemberHomeRead(BaseModel):
 class MemberSwapListItemRead(MemberSwapActionRead):
     offered_by_team_member_id: int
     target_team_member_id: int | None = None
+    counterparty_slot_id: int | None = None
 
 
 class MemberWishesRead(BaseModel):

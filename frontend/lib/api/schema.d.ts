@@ -3900,6 +3900,8 @@ export interface components {
         MemberSwapListItemRead: {
             /** Allowed Actions */
             allowed_actions: string[];
+            /** Counterparty Slot Id */
+            counterparty_slot_id?: number | null;
             /** Disabled Reasons */
             disabled_reasons: {
                 [key: string]: string;

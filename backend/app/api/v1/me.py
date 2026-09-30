@@ -83,6 +83,8 @@ def get_wishes(
         ))
     except NoLinkedTeamMember as exc:
         raise _no_member(exc) from exc
+    except MemberWishesForbidden as exc:
+        raise HTTPException(status_code=403, detail={"code": exc.reason}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

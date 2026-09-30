@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +9,17 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.core.security import hash_password
 from app.main import app
-from app.models import Account, Organization, ShiftGroup, TeamMember, User
+from app.models import (
+    Account,
+    Organization,
+    PlanningPeriodShiftGroupMember,
+    RosterSlot,
+    RosterSlotAssignment,
+    ShiftGroup,
+    TeamMember,
+    TeamMemberShiftGroup,
+    User,
+)
 from app.models.base import Base
 from app.services.shift_swaps import (
     SWAP_KIND_DIRECT,
@@ -238,6 +248,217 @@ def test_member_swaps_list_only_the_callers_requests(client):
     assert bob_rows[0]["offered_by_team_member_id"] == ada_id
     assert "claim" in bob_rows[0]["allowed_actions"]
     assert bob_rows[0]["target_team_member_id"] is None
+
+
+def test_direct_swap_includes_counterparty_slot(client):
+    test_client, SessionLocal, _engine = client
+    period_id, ada_id, offered_slot_id = _prepare_month(test_client, SessionLocal)
+    _, bob_id = _member_ids(SessionLocal)
+    roster = test_client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()
+    counterparty_slot_id = next(row["id"] for row in roster["slots"] if row["id"] != offered_slot_id)
+    assigned = test_client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": counterparty_slot_id, "team_member_id": bob_id},
+    )
+    assert assigned.status_code == 200, assigned.text
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        db.add(
+            ShiftSwapRequest(
+                organization_id=1,
+                planning_period_id=period_id,
+                shift_group_id=1,
+                kind=SWAP_KIND_DIRECT,
+                status=SWAP_STATUS_TARGETED,
+                offered_by_team_member_id=ada_id,
+                target_team_member_id=bob_id,
+                offered_slot_id=offered_slot_id,
+                counterparty_slot_id=counterparty_slot_id,
+                warning_findings=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+    _login(test_client, "bob@example.com", "bob-secret")
+    rows = test_client.get("/api/v1/me/swaps")
+    assert rows.status_code == 200, rows.text
+    match = next(row for row in rows.json() if row["kind"] == SWAP_KIND_DIRECT)
+    assert match["offered_slot_id"] == offered_slot_id
+    assert match["counterparty_slot_id"] == counterparty_slot_id
+
+
+def test_ineligible_member_does_not_get_an_enabled_claim(client):
+    test_client, SessionLocal, _engine = client
+    period_id, ada_id, slot_id = _prepare_month(test_client, SessionLocal)
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        cara_user = _user(db, "cara@example.com", "cara-secret", "team_member")
+        cara = TeamMember(
+            organization_id=1,
+            first_name="Cara",
+            last_name="Ineligible",
+            email="cara@example.com",
+            user_id=cara_user.id,
+        )
+        db.add(cara)
+        db.flush()
+        db.add(
+            TeamMemberShiftGroup(
+                team_member_id=cara.id,
+                shift_group_id=1,
+                start_date=date(2026, 1, 1),
+                end_date=None,
+            )
+        )
+        db.add(
+            ShiftSwapRequest(
+                organization_id=1,
+                planning_period_id=period_id,
+                shift_group_id=1,
+                kind=SWAP_KIND_GIVEAWAY,
+                status=SWAP_STATUS_OPEN,
+                offered_by_team_member_id=ada_id,
+                offered_slot_id=slot_id,
+                warning_findings=[],
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+    _login(test_client, "cara@example.com", "cara-secret")
+    rows = test_client.get("/api/v1/me/swaps")
+    assert rows.status_code == 200, rows.text
+    assert len(rows.json()) == 1
+    row = rows.json()[0]
+    assert "claim" not in row["allowed_actions"]
+    assert row["disabled_reasons"]["claim"] == "SHIFT_SWAP_INELIGIBLE"
+
+
+def test_wishes_require_active_shift_group_and_period_roster(client):
+    test_client, SessionLocal, _engine = client
+    period_id, ada_id, _slot_id = _prepare_month(test_client, SessionLocal)
+    other = test_client.post("/api/v1/shift-groups", json={"code": "OTHER", "name": "Other", "display_order": 2})
+    assert other.status_code == 200, other.text
+    _login(test_client, "ada@example.com", "ada-secret")
+    saved = test_client.put(
+        f"/api/v1/me/wishes/{period_id}/cells?shift_group_id=1",
+        json={"cells": [{"team_member_id": ada_id, "cell_date": "2026-10-06", "status": "frei"}]},
+    )
+    assert saved.status_code == 200, saved.text
+    foreign = test_client.get(f"/api/v1/me/wishes/{period_id}?shift_group_id={other.json()['id']}")
+    assert foreign.status_code == 403
+    assert foreign.json()["detail"]["code"] == "not_in_shift_group"
+    with SessionLocal() as db:
+        stint = db.scalar(
+            select(TeamMemberShiftGroup).where(
+                TeamMemberShiftGroup.team_member_id == ada_id,
+                TeamMemberShiftGroup.shift_group_id == 1,
+            )
+        )
+        assert stint is not None
+        stint.end_date = date(2026, 9, 1)
+        db.commit()
+    ended = test_client.get(f"/api/v1/me/wishes/{period_id}?shift_group_id=1")
+    assert ended.status_code == 403
+    assert ended.json()["detail"]["code"] == "not_in_shift_group"
+    refused = test_client.put(
+        f"/api/v1/me/wishes/{period_id}/cells?shift_group_id=1",
+        json={"cells": [{"team_member_id": ada_id, "cell_date": "2026-10-07", "status": "frei"}]},
+    )
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == "not_in_shift_group"
+    cleared = test_client.post(
+        f"/api/v1/me/wishes/{period_id}/cells/clear?shift_group_id=1",
+        json={"team_member_id": ada_id, "cell_date": "2026-10-06"},
+    )
+    assert cleared.status_code == 403
+    assert cleared.json()["detail"]["code"] == "not_in_shift_group"
+    with SessionLocal() as db:
+        stint = db.scalar(
+            select(TeamMemberShiftGroup).where(
+                TeamMemberShiftGroup.team_member_id == ada_id,
+                TeamMemberShiftGroup.shift_group_id == 1,
+            )
+        )
+        assert stint is not None
+        stint.end_date = None
+        roster_row = db.scalar(
+            select(PlanningPeriodShiftGroupMember).where(
+                PlanningPeriodShiftGroupMember.planning_period_id == period_id,
+                PlanningPeriodShiftGroupMember.shift_group_id == 1,
+                PlanningPeriodShiftGroupMember.team_member_id == ada_id,
+            )
+        )
+        assert roster_row is not None
+        db.delete(roster_row)
+        db.commit()
+    off_roster = test_client.post(
+        f"/api/v1/me/wishes/{period_id}/cells/clear?shift_group_id=1",
+        json={"team_member_id": ada_id, "cell_date": "2026-10-06"},
+    )
+    assert off_roster.status_code == 400
+
+
+def test_member_today_follows_organization_timezone(client, monkeypatch):
+    test_client, SessionLocal, _engine = client
+    period_id, ada_id, _slot_id = _prepare_month(test_client, SessionLocal)
+    published = test_client.post(f"/api/v1/planning-periods/{period_id}/preliminary?shift_group_id=1")
+    assert published.status_code == 200, published.text
+    with SessionLocal() as db:
+        org = db.get(Organization, 1)
+        assert org is not None
+        org.timezone = "America/Los_Angeles"
+        template_id = db.get(RosterSlot, _slot_id).shift_template_id
+        local_today = RosterSlot(
+            planning_period_id=period_id,
+            slot_date=date(2026, 9, 30),
+            position=97,
+            shift_template_id=template_id,
+            starts_at=datetime(2026, 9, 30, 15, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 9, 30, 23, 0, tzinfo=UTC),
+            source="test",
+        )
+        horizon = RosterSlot(
+            planning_period_id=period_id,
+            slot_date=date(2026, 8, 30),
+            position=98,
+            shift_template_id=template_id,
+            starts_at=datetime(2026, 8, 30, 15, 0, tzinfo=UTC),
+            ends_at=datetime(2026, 8, 30, 23, 0, tzinfo=UTC),
+            source="test",
+        )
+        db.add(local_today)
+        db.add(horizon)
+        db.flush()
+        db.add(RosterSlotAssignment(roster_slot_id=local_today.id, team_member_id=ada_id, source="test"))
+        db.add(RosterSlotAssignment(roster_slot_id=horizon.id, team_member_id=ada_id, source="test"))
+        db.commit()
+        local_today_id = local_today.id
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = datetime(2026, 10, 1, 6, 0, tzinfo=UTC)
+            if tz is None:
+                return fixed.replace(tzinfo=None)
+            return fixed.astimezone(tz)
+
+    monkeypatch.setattr("app.services.member_portal.datetime", FrozenDateTime)
+    _login(test_client, "ada@example.com", "ada-secret")
+    duties = test_client.get("/api/v1/me/duties?from=2026-08-01&to=2026-10-31")
+    assert duties.status_code == 200, duties.text
+    today_duty = next(row for row in duties.json() if row["roster_slot_id"] == local_today_id)
+    assert today_duty["can_offer_reason"] != "slot_in_past"
+    assert today_duty["can_offer"] is True
+    home = test_client.get("/api/v1/me/home")
+    assert home.status_code == 200, home.text
+    assert local_today_id in {row["roster_slot_id"] for row in home.json()["duties"]}
+    token = test_client.post("/api/v1/me/calendar-token").json()["calendar_token"]
+    test_client.cookies.clear()
+    ics = test_client.get(f"/api/v1/me/calendar.ics?token={token}")
+    assert ics.status_code == 200, ics.text
+    assert "20260830" in ics.text
 
 
 def test_published_wishes_are_read_only(client):

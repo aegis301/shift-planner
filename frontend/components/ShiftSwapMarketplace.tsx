@@ -220,6 +220,7 @@ function SwapRequestSummary({
   const { me } = useSession();
   const timeZone = sessionTimeZone(me);
   const offered = swapSlotById(roster, row.offered_slot_id);
+  const counterparty = swapSlotById(roster, row.counterparty_slot_id);
   return (
     <div className="grid gap-1.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -237,6 +238,11 @@ function SwapRequestSummary({
           ? ` · ${t(locale, "shiftSwapTarget")}: ${swapMemberName(roster, row.target_team_member_id)}`
           : ""}
       </p>
+      {counterparty ? (
+        <p className="text-sm text-slate-600">
+          {t(locale, "shiftSwapChangeCounterparty")}: {swapSlotSummary(locale, counterparty, timeZone)}
+        </p>
+      ) : null}
     </div>
   );
 }
