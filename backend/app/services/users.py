@@ -326,6 +326,12 @@ def admin_reset_account_password(
             "account_id": account.id,
         },
     )
+    from app.services.device_sessions import (
+        REASON_ADMIN_PASSWORD_RESET,
+        revoke_account_device_sessions,
+    )
+
+    revoke_account_device_sessions(db, account.id, REASON_ADMIN_PASSWORD_RESET)
     db.commit()
 
 
@@ -346,6 +352,9 @@ def change_own_account_password(
         entity_id=str(account.id),
         details={},
     )
+    from app.services.device_sessions import REASON_PASSWORD_CHANGE, revoke_account_device_sessions
+
+    revoke_account_device_sessions(db, account.id, REASON_PASSWORD_CHANGE)
     db.commit()
 
 
@@ -377,6 +386,12 @@ def admin_delete_organization_user(db: Session, *, actor: User, target_user_id: 
         details={"organization_id": target.organization_id, "target_email": target.email},
     )
     account_id = target.account_id
+    from app.services.device_sessions import (
+        REASON_MEMBERSHIP_REMOVED,
+        revoke_membership_device_sessions,
+    )
+
+    revoke_membership_device_sessions(db, target.id, REASON_MEMBERSHIP_REMOVED)
     db.delete(target)
     db.flush()
     remaining = db.scalar(select(func.count()).select_from(User).where(User.account_id == account_id))
@@ -410,6 +425,9 @@ def delete_own_account(db: Session, account: Account, *, password: str) -> None:
         entity_id=str(account.id),
         details={"membership_ids": [m.id for m in memberships]},
     )
+    from app.services.device_sessions import REASON_ACCOUNT_DELETED, revoke_account_device_sessions
+
+    revoke_account_device_sessions(db, account.id, REASON_ACCOUNT_DELETED)
     db.delete(account)
     db.commit()
 

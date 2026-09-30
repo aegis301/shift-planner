@@ -1,6 +1,8 @@
 from app.models.entities import (
     Account,
     AuditLog,
+    AuthDeviceSession,
+    AuthRefreshToken,
     ContractGroup,
     EmploymentPeriod,
     Organization,
@@ -47,6 +49,8 @@ from app.models.entities import (
 __all__ = [
     "Account",
     "AuditLog",
+    "AuthDeviceSession",
+    "AuthRefreshToken",
     "ContractGroup",
     "EmploymentPeriod",
     "Organization",

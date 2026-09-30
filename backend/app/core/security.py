@@ -1,3 +1,6 @@
+import hashlib
+import secrets
+from base64 import urlsafe_b64encode
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -8,11 +11,13 @@ from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 serializer = URLSafeTimedSerializer(settings.session_secret, salt="shift-planner-session")
+access_serializer = URLSafeTimedSerializer(settings.session_secret, salt="shift-planner-access")
 SESSION_MAX_AGE_SECONDS = int(timedelta(days=7).total_seconds())
 
 SESSION_PAYLOAD_VERSION = 2
 SESSION_KIND_USER = "user"
 SESSION_KIND_ACCOUNT = "account"
+ACCESS_TOKEN_TYP = "access"
 
 
 @dataclass(frozen=True)
@@ -80,3 +85,56 @@ def verify_session_token(token: str) -> int | None:
     if subj is None or subj.kind != SESSION_KIND_USER:
         return None
     return subj.id
+
+
+@dataclass(frozen=True)
+class AccessTokenSubject:
+    device_session_id: int
+    kind: str
+    subject_id: int
+
+
+def create_access_token(*, device_session_id: int, kind: str, subject_id: int) -> str:
+    return access_serializer.dumps(
+        {
+            "typ": ACCESS_TOKEN_TYP,
+            "sid": device_session_id,
+            "kind": kind,
+            "sub": subject_id,
+            "iat": datetime.now(UTC).isoformat(),
+        }
+    )
+
+
+def verify_access_token(token: str) -> AccessTokenSubject | None:
+    try:
+        payload = access_serializer.loads(token, max_age=settings.access_token_ttl_seconds)
+    except BadSignature:
+        return None
+    if not isinstance(payload, dict) or payload.get("typ") != ACCESS_TOKEN_TYP:
+        return None
+    sid = payload.get("sid")
+    kind = payload.get("kind")
+    sub = payload.get("sub")
+    if sid is None or sub is None or kind not in {SESSION_KIND_USER, SESSION_KIND_ACCOUNT}:
+        return None
+    return AccessTokenSubject(device_session_id=int(sid), kind=str(kind), subject_id=int(sub))
+
+
+def new_refresh_secret() -> str:
+    return urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
+
+
+def compose_refresh_token(device_session_id: int, secret: str) -> str:
+    return f"{device_session_id}.{secret}"
+
+
+def parse_refresh_token(token: str) -> tuple[int, str] | None:
+    session_id, separator, secret = token.partition(".")
+    if separator != "." or not session_id.isdigit() or secret == "":
+        return None
+    return int(session_id), secret
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()

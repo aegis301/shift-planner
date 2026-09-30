@@ -7,6 +7,7 @@ export type PlanningScope = {
 
 export const queryKeys = {
   session: () => ["session"] as const,
+  deviceSessions: () => ["device-sessions"] as const,
   planningPeriods: (organizationId: number) => ["planning-periods", organizationId] as const,
   shiftGroups: (organizationId: number) => ["shift-groups", organizationId] as const,
   dayStatuses: (organizationId: number) => ["day-statuses", organizationId] as const,
