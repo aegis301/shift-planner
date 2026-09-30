@@ -341,10 +341,12 @@ export function RosterGrid({
         selection={selection}
         onCommand={(command) => {
           if (command.type === "edit") {
-            if (readOnly || !slotAt(matrix, columns, days, selection.active.row, selection.active.col)) {
+            const row = command.row ?? selection.active.row;
+            const col = command.col ?? selection.active.col;
+            if (readOnly || !slotAt(matrix, columns, days, row, col)) {
               return;
             }
-            const assignment = assignmentFor(matrix, selection, columns, days);
+            const assignment = assignmentFor(matrix, { active: { row, col }, anchor: { row, col } }, columns, days);
             setEditor({ filter: command.filter, manualOverride: assignment?.manual_override === true });
             return;
           }
@@ -501,6 +503,7 @@ function RosterGridCell({
   return (
     <span
       className={`flex min-w-0 items-center gap-1 ${tone === "error" ? "bg-severity-error" : tone === "warning" ? "bg-severity-warning" : tone === "info" ? "bg-severity-info" : ""}`}
+      data-roster-slot={slot.id}
       title={formatShiftTimeRange(slot.starts_at ?? null, slot.ends_at ?? null, timeZone)}
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${statusRow ? planningDayStatusSolidClass(statusRow.color_preset) : "bg-slate-300"}`} />

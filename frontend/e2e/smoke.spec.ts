@@ -50,7 +50,7 @@ test.describe("planner", () => {
     const name = await assignFirstOpenCell(page);
     await page.reload();
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
-    const cells = page.locator('button[aria-haspopup="listbox"]');
+    const cells = page.locator('button[aria-haspopup="listbox"]').filter({ has: page.locator("[data-roster-slot]") });
     await expect(cells.first()).toBeVisible();
     const assignedIndex = await indexOfCellText(page, name);
     expect(assignedIndex).toBeGreaterThanOrEqual(0);
@@ -118,7 +118,7 @@ test.describe("planner", () => {
     });
     await page.goto(planningPath(target));
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
-    const cell = page.locator('button[aria-haspopup="listbox"]', { hasText: "—" }).first();
+    const cell = page.locator("[data-roster-slot]", { hasText: "—" }).first();
     await cell.scrollIntoViewIfNeeded();
     await cell.click();
     const option = page.getByRole("listbox").getByRole("option").first();
@@ -132,7 +132,7 @@ test.describe("planner", () => {
     await page.goto(planningPath(target));
     await expect(page.locator("[data-slot='workbench-context-bar']")).toBeVisible();
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
-    const cell = page.locator('button[aria-haspopup="listbox"]').first();
+    const cell = page.locator("[data-roster-slot]").first();
     await cell.click();
     await expect(page.getByRole("heading", { name: "Kann den Dienst übernehmen" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Blockiert" })).toBeVisible();
@@ -278,8 +278,12 @@ test.describe("member signs out", () => {
   });
 });
 
+async function rosterSlotCells(page: import("@playwright/test").Page) {
+  return page.locator('button[aria-haspopup="listbox"]').filter({ has: page.locator("[data-roster-slot]") });
+}
+
 async function indexOfCellText(page: import("@playwright/test").Page, text: string): Promise<number> {
-  const cells = page.locator('button[aria-haspopup="listbox"]');
+  const cells = await rosterSlotCells(page);
   const count = await cells.count();
   for (let index = 0; index < count; index += 1) {
     const current = (await cells.nth(index).innerText()).replace(/\s+/g, " ").trim();
@@ -291,7 +295,7 @@ async function indexOfCellText(page: import("@playwright/test").Page, text: stri
 }
 
 async function assignFirstOpenCell(page: import("@playwright/test").Page): Promise<string> {
-  const cells = page.locator('button[aria-haspopup="listbox"]');
+  const cells = await rosterSlotCells(page);
   const count = await cells.count();
   let attempts = 0;
   for (let index = 0; index < count && attempts < 4; index += 1) {

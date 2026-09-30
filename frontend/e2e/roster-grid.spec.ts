@@ -36,12 +36,12 @@ test.describe("roster grid", () => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
-    const cell = page.getByRole("grid", { name: "Dienstplan" }).getByRole("gridcell").nth(1);
+    const cell = page.getByRole("grid", { name: "Dienstplan" }).locator("[data-roster-slot]").nth(1);
     await cell.click();
     await page.keyboard.press("Escape");
     await cell.focus();
     await page.keyboard.press("Control+c");
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
     const posts: string[] = [];
     page.on("request", (req) => {
       if (req.method() === "POST" && req.url().includes("/change-sets") && !req.url().includes("/revert")) {
@@ -147,7 +147,7 @@ test.describe("roster grid", () => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
-    const cell = page.getByRole("grid", { name: "Dienstplan" }).getByRole("gridcell").first();
+    const cell = page.getByRole("grid", { name: "Dienstplan" }).locator("[data-roster-slot]").first();
     await cell.click();
     await page.keyboard.press("Escape");
     await cell.focus();

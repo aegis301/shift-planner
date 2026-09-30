@@ -246,7 +246,7 @@ export function Grid({
                       }
                       onSelectionChange(selectionAt(coord, bounds));
                       if (editable) {
-                        onCommand({ type: "edit", filter: "" });
+                        onCommand({ type: "edit", filter: "", row: coord.row, col: coord.col });
                       }
                     }}
                   >
