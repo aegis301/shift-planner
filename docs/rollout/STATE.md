@@ -15,7 +15,7 @@ Companion documents:
   prompt. `created-issues.json` maps file prefix to GitHub issue number.
 - `docs/rollout/solver-spike-findings.md` — the CP-SAT spike. Issue #75 is built on it.
 
-Last updated: 2026-09-26.
+Last updated: 2026-09-30.
 
 ## What this rollout is
 
@@ -110,14 +110,14 @@ dependencies are in the ADR's **Work plan** table.
 | #117 | Grid primitive and roster matrix | shipped |
 | #118 | Wishes matrix on the grid | shipped |
 | #119 | Bearer tokens and device sessions | shipped |
-| #120 | Member API `/api/v1/me` | open |
+| #120 | Member API `/api/v1/me` | shipped |
 | #121 | npm workspace and shared packages | open |
 | #122 | Expo member app scaffold | open |
 | #123 | Offline duty activity capture | open |
 | #124 | Member app: wishes, swaps, hours, calendar | open |
 | #125 | Push as a channel of #101's notifications (design: PR #127; needs #101 implemented) | open |
 
-#109 through #119 have shipped. #120 is next for the member API. #123 can use `Organization.timezone` for offline capture. The selected month's period roster can be refreshed from current shift-group membership. Assignments that another covering group still needs, including a published group, stay, and derived hours for a removed member are reconciled in that transaction. MCP can preview and apply the refresh. The roster grid shows each variant on a weekend or holiday as its own column.
+#109 through #120 have shipped. #121 is next (npm workspace and shared packages). #123 can use `Organization.timezone` for offline capture. `/api/v1/me` is the member API for the web member area and the native app. It has no MCP tools, because MCP has no person. The selected month's period roster can be refreshed from current shift-group membership. Assignments that another covering group still needs, including a published group, stay, and derived hours for a removed member are reconciled in that transaction. MCP can preview and apply the refresh. The roster grid shows each variant on a weekend or holiday as its own column.
 
 **Why #75 is split.** The spike showed that encoding all 18 rules at once is the way to get a
 model nobody can debug. Tier A is the set the TdL fixture actually exercises and that the spike

@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-09-30
+- **Member API:** `/api/v1/me` returns only the signed-in member's home, duties, wishes, swaps, and hours. Direct swaps include the counterparty slot. Claim is offered only to members the eligibility service accepts. Wishes stay inside the caller's active shift group, and clearing a wish requires the period roster. Home, offer eligibility, and the calendar window use the organization's time zone. Wishes writes refuse another member (`not_self`) and a published group (`published`). `POST /me/calendar-token` rotates `team_members.calendar_token`; `GET /me/calendar.ics?token=` is the calendar subscription and lists only that member's duties. The web member area uses these routes. The colleague roster on `/my-planning` still uses `team_member_portal=true` on the planner roster route. There is no MCP surface for `/me`, because MCP has no person. Alembic `202609300002`.
 - **Bearer device sessions:** `POST /api/v1/auth/token` issues a 15-minute access token and a rotating refresh token for a named device. Refresh-token reuse revokes that device. Password changes, admin resets, account deletion, and membership removal revoke the affected device sessions immediately. The web cookie is unchanged. Settings lists signed-in devices. Alembic `202609300001`.
 
 ## 2026-09-29

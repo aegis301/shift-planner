@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
-import { useShiftSwapList } from "@/lib/queries/activity";
+import type { MemberSwapListItemRead } from "@/lib/api/types";
+import { useMemberSwaps } from "@/lib/queries/member";
 import { usePlanningOrganizationId } from "@/lib/queries/planning";
 import { sessionTimeZone } from "@/lib/orgTime";
 import { t } from "@/lib/i18n";
@@ -13,9 +14,8 @@ import {
   claimShiftSwap,
   declineShiftSwap,
   shiftSwapErrorText,
-  readSwapFinding,
-  shiftSwapFindingText,
   shiftSwapKindLabel,
+  shiftSwapReasonLabel,
   shiftSwapStatusLabel,
   swapAvailability,
   swapAvailabilityMessageKey,
@@ -23,7 +23,6 @@ import {
   swapSlotById,
   swapSlotSummary,
   withdrawShiftSwap,
-  type ShiftSwapRequestRead,
   type SwapPortalVariant,
   type SwapRosterSlice
 } from "@/lib/shiftSwaps";
@@ -52,13 +51,10 @@ export function ShiftSwapMarketplace({
   const queryClient = useQueryClient();
   const organizationId = usePlanningOrganizationId();
   const timeZone = sessionTimeZone(me);
-  const swapsQuery = useShiftSwapList({
-    periodId,
-    shiftGroupId,
-    scope: "marketplace",
-    enabled: Boolean(periodId && shiftGroupId)
-  });
-  const rows = swapsQuery.data ?? [];
+  const swapsQuery = useMemberSwaps(Boolean(periodId && shiftGroupId));
+  const rows = (swapsQuery.data ?? []).filter(
+    (row) => String(row.planning_period_id) === periodId && String(row.shift_group_id) === shiftGroupId
+  );
   const loadError = swapsQuery.isError ? t(locale, "shiftSwapLoadError") : "";
   const [actionError, setActionError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -76,7 +72,8 @@ export function ShiftSwapMarketplace({
     if (organizationId == null) {
       return;
     }
-    await queryClient.invalidateQueries({ queryKey: ["shift-swaps", organizationId, periodId, shiftGroupId] });
+    await queryClient.invalidateQueries({ queryKey: ["member-swaps", organizationId] });
+    await queryClient.invalidateQueries({ queryKey: ["member-home", organizationId] });
   }
 
   async function runAction(requestId: number, action: () => Promise<unknown>) {
@@ -125,14 +122,7 @@ export function ShiftSwapMarketplace({
                 {giveaways.map((row) => (
                   <Card key={row.id}>
                     <SwapRequestSummary roster={roster} row={row} />
-                    <button
-                      className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
-                      disabled={busyId === row.id}
-                      onClick={() => void runAction(row.id, () => claimShiftSwap(row.id))}
-                      type="button"
-                    >
-                      {t(locale, "shiftSwapClaim")}
-                    </button>
+                    <SwapActionButtons busy={busyId === row.id} onRun={(action) => void runAction(row.id, action)} row={row} />
                   </Card>
                 ))}
               </div>
@@ -144,50 +134,12 @@ export function ShiftSwapMarketplace({
               <p className="text-sm text-slate-500">{t(locale, "shiftSwapOwnRequestsEmpty")}</p>
             ) : (
               <div className="grid gap-3">
-                {own.map((row) => {
-                  const isOfferer = row.offered_by_team_member_id === teamMemberId;
-                  const isTarget = row.target_team_member_id === teamMemberId;
-                  const canWithdraw =
-                    isOfferer && !["applied", "withdrawn", "rejected", "expired"].includes(row.status);
-                  const canAccept = isTarget && row.status === "targeted";
-                  return (
-                    <Card key={row.id}>
-                      <SwapRequestSummary roster={roster} row={row} />
-                      <div className="mt-3 grid gap-2">
-                        {canAccept ? (
-                          <button
-                            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
-                            disabled={busyId === row.id}
-                            onClick={() => void runAction(row.id, () => acceptShiftSwap(row.id))}
-                            type="button"
-                          >
-                            {t(locale, "shiftSwapAccept")}
-                          </button>
-                        ) : null}
-                        {canAccept ? (
-                          <button
-                            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
-                            disabled={busyId === row.id}
-                            onClick={() => void runAction(row.id, () => declineShiftSwap(row.id))}
-                            type="button"
-                          >
-                            {t(locale, "shiftSwapDecline")}
-                          </button>
-                        ) : null}
-                        {canWithdraw ? (
-                          <button
-                            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
-                            disabled={busyId === row.id}
-                            onClick={() => void runAction(row.id, () => withdrawShiftSwap(row.id))}
-                            type="button"
-                          >
-                            {t(locale, "shiftSwapWithdraw")}
-                          </button>
-                        ) : null}
-                      </div>
-                    </Card>
-                  );
-                })}
+                {own.map((row) => (
+                  <Card key={row.id}>
+                    <SwapRequestSummary roster={roster} row={row} />
+                    <SwapActionButtons busy={busyId === row.id} onRun={(action) => void runAction(row.id, action)} row={row} />
+                  </Card>
+                ))}
               </div>
             )}
           </div>
@@ -197,11 +149,71 @@ export function ShiftSwapMarketplace({
   );
 }
 
+const SWAP_ACTION_LABEL = {
+  claim: "shiftSwapClaim",
+  accept: "shiftSwapAccept",
+  decline: "shiftSwapDecline",
+  withdraw: "shiftSwapWithdraw"
+} as const;
+
+const SWAP_ACTION_RUN = {
+  claim: claimShiftSwap,
+  accept: acceptShiftSwap,
+  decline: declineShiftSwap,
+  withdraw: withdrawShiftSwap
+} as const;
+
+function SwapActionButtons({
+  row,
+  busy,
+  onRun
+}: {
+  row: MemberSwapListItemRead;
+  busy: boolean;
+  onRun: (action: () => Promise<unknown>) => void;
+}) {
+  const { locale } = useLocale();
+  const order = ["claim", "accept", "decline", "withdraw"] as const;
+  const visible = order.filter((action) => row.allowed_actions.includes(action) || action in row.disabled_reasons);
+  if (visible.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mt-3 grid gap-2">
+      {visible.map((action) => {
+        const allowed = row.allowed_actions.includes(action);
+        const reason = row.disabled_reasons[action];
+        const primary = action === "claim" || action === "accept";
+        return (
+          <button
+            key={action}
+            className={
+              primary
+                ? "inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                : "inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
+            }
+            disabled={busy || !allowed}
+            onClick={() => {
+              if (allowed) {
+                onRun(() => SWAP_ACTION_RUN[action](row.id));
+              }
+            }}
+            title={reason ? shiftSwapReasonLabel(locale, reason) : undefined}
+            type="button"
+          >
+            {t(locale, SWAP_ACTION_LABEL[action])}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SwapRequestSummary({
   row,
   roster
 }: {
-  row: ShiftSwapRequestRead;
+  row: MemberSwapListItemRead;
   roster: SwapRosterSlice | null;
 }) {
   const { locale } = useLocale();
@@ -230,15 +242,6 @@ function SwapRequestSummary({
         <p className="text-sm text-slate-600">
           {t(locale, "shiftSwapChangeCounterparty")}: {swapSlotSummary(locale, counterparty, timeZone)}
         </p>
-      ) : null}
-      {(row.warning_findings ?? []).length > 0 ? (
-        <ul className="grid gap-1">
-          {(row.warning_findings ?? []).map((finding, index) => (
-            <li className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950 ring-1 ring-amber-200" key={`${readSwapFinding(finding).code}-${index}`}>
-              {shiftSwapFindingText(locale, finding)}
-            </li>
-          ))}
-        </ul>
       ) : null}
     </div>
   );

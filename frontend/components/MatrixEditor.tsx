@@ -218,16 +218,18 @@ function teamMemberLabel(member: MatrixTeamMember): string {
   return teamMemberPlanningDisplayName(member);
 }
 
-function matrixApiQuery(shiftGroupId?: string, teamMemberPortal?: boolean) {
+function matrixApiQuery(shiftGroupId?: string) {
   const params = new URLSearchParams();
   if (shiftGroupId) {
     params.set("shift_group_id", shiftGroupId);
   }
-  if (teamMemberPortal) {
-    params.set("team_member_portal", "true");
-  }
   const qs = params.toString();
   return qs ? `?${qs}` : "";
+}
+
+function memberWishesPath(periodId: string, suffix: string, shiftGroupId?: string) {
+  const query = matrixApiQuery(shiftGroupId);
+  return `/api/v1/me/wishes/${periodId}/${suffix}${query}`;
 }
 
 export function MatrixEditor({
@@ -275,10 +277,7 @@ export function MatrixEditor({
   const [daySheet, setDaySheet] = useState<{ date: string; memberId: number } | null>(null);
   const isNarrow = phoneLayout;
 
-  const groupQuery = useMemo(
-    () => matrixApiQuery(shiftGroupId, teamMemberPortal),
-    [shiftGroupId, teamMemberPortal]
-  );
+  const groupQuery = useMemo(() => matrixApiQuery(shiftGroupId), [shiftGroupId]);
   const activePeriodId = controlledPeriodId ?? periodId;
   const wishesQuery = useWishesMatrix({
     periodId: activePeriodId,
@@ -459,21 +458,31 @@ export function MatrixEditor({
     });
     try {
       if (!status) {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/cells/clear${groupQuery}`, {
+        const clearUrl = teamMemberPortal
+          ? memberWishesPath(activePeriodId, "cells/clear", shiftGroupId)
+          : `/api/v1/matrix/${activePeriodId}/cells/clear${groupQuery}`;
+        await apiFetch(clearUrl, {
           method: "POST",
           body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate })
         });
       } else {
-        const saved = await apiFetch<PlanningCell>(`/api/v1/matrix/${activePeriodId}/cells${groupQuery}`, {
+        const cellUrl = teamMemberPortal
+          ? memberWishesPath(activePeriodId, "cells", shiftGroupId)
+          : `/api/v1/matrix/${activePeriodId}/cells${groupQuery}`;
+        const cellBody = teamMemberPortal
+          ? { cells: [{ team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null }] }
+          : { team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null };
+        const saved = await apiFetch<PlanningCell | { cells: PlanningCell[] }>(cellUrl, {
           method: "PUT",
-          body: JSON.stringify({ team_member_id: memberId, cell_date: cellDate, status, comment: comment ?? null })
+          body: JSON.stringify(cellBody)
         });
+        const savedCell = "cells" in saved ? saved.cells[0] : saved;
         setMatrix((prev) => {
           if (!prev) {
             return prev;
           }
           const cells = prev.cells.filter((cell) => !(cell.team_member_id === memberId && cell.cell_date === cellDate));
-          return { ...prev, cells: [...cells, saved] };
+          return { ...prev, cells: [...cells, savedCell] };
         });
       }
       setMessage(t(locale, "autosaved"));
@@ -502,7 +511,7 @@ export function MatrixEditor({
         }
         setSavingCells((count) => count + 1);
         try {
-          await apiFetch(`/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
+          await apiFetch(teamMemberPortal ? memberWishesPath(activePeriodId, "intents", shiftGroupId) : `/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
             method: "PUT",
             body: JSON.stringify({
               intents: intentRows.map((row) => ({
@@ -528,7 +537,7 @@ export function MatrixEditor({
       }
       setSavingCells((count) => count + 1);
       try {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
+        await apiFetch(teamMemberPortal ? memberWishesPath(activePeriodId, "intents", shiftGroupId) : `/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
           method: "PUT",
           body: JSON.stringify({
             intents: [
@@ -549,7 +558,7 @@ export function MatrixEditor({
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, groupQuery, loadMatrix, locale, matrix, onChanged, shiftGroupId]
+    [activePeriodId, groupQuery, loadMatrix, locale, matrix, onChanged, shiftGroupId, teamMemberPortal]
   );
 
   async function persistNote(memberId: number, monthlyCommentOnly = false) {
@@ -567,11 +576,19 @@ export function MatrixEditor({
     if (!shiftGroupId) {
       return;
     }
-    await apiFetch(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`, {
-      method: "PUT",
-      body: JSON.stringify(body)
-    });
-    setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
+    if (teamMemberPortal) {
+      const saved = await apiFetch<TeamMemberPeriodNote>(memberWishesPath(activePeriodId, "note", shiftGroupId), {
+        method: "PUT",
+        body: JSON.stringify(body)
+      });
+      setNotes([saved]);
+    } else {
+      await apiFetch(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`, {
+        method: "PUT",
+        body: JSON.stringify(body)
+      });
+      setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
+    }
     if (!monthlyCommentOnly) {
       setMatrix((prev) => {
         if (!prev) {
@@ -594,22 +611,31 @@ export function MatrixEditor({
       const next = !(prev?.wishes_response_received ?? false);
       setSavingCells((count) => count + 1);
       try {
-        await apiFetch(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            team_member_id: memberId,
-            summary: prev?.summary ?? null,
-            wishes_response_received: next
-          })
-        });
-        setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
+        const noteBody = {
+          team_member_id: memberId,
+          summary: prev?.summary ?? null,
+          wishes_response_received: next
+        };
+        if (teamMemberPortal) {
+          const saved = await apiFetch<TeamMemberPeriodNote>(memberWishesPath(activePeriodId, "note", shiftGroupId), {
+            method: "PUT",
+            body: JSON.stringify(noteBody)
+          });
+          setNotes([saved]);
+        } else {
+          await apiFetch(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`, {
+            method: "PUT",
+            body: JSON.stringify(noteBody)
+          });
+          setNotes(await apiFetch<TeamMemberPeriodNote[]>(`/api/v1/matrix/${activePeriodId}/notes${groupQuery}`));
+        }
         setMessage(t(locale, "saved"));
         await onChanged?.();
       } finally {
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, groupQuery, locale, notes, onChanged, setNotes]
+    [activePeriodId, groupQuery, locale, notes, onChanged, setNotes, shiftGroupId, teamMemberPortal]
   );
 
   async function saveNote(event: FormEvent<HTMLFormElement>) {

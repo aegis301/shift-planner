@@ -4,14 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card } from "@/components/Card";
-import { DashboardMemberPanel } from "@/components/DashboardMemberPanel";
+import { DashboardUpcomingShiftsTable } from "@/components/DashboardUpcomingShiftsTable";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { t } from "@/lib/i18n";
 import { memberAreaHref } from "@/lib/memberAreaHref";
-import { isActionableMemberSwap } from "@/lib/memberSwapActions";
 import { isUserSession } from "@/lib/membershipRouting";
-import { useMemberDashboard } from "@/lib/queries/planning";
-import { useShiftSwapList } from "@/lib/queries/activity";
+import { useMemberHome } from "@/lib/queries/member";
 
 export function MemberHome() {
   const { locale } = useLocale();
@@ -27,21 +25,17 @@ export function MemberHome() {
     }
   }, [groups, shiftGroupId]);
 
-  const dashboard = useMemberDashboard({
-    year: new Date().getFullYear(),
-    shiftGroupId,
-    enabled: Boolean(user?.capabilities.team_member_portal && shiftGroupId)
-  });
-  const swaps = useShiftSwapList({
-    periodId: dashboard.data?.current_period ? String(dashboard.data.current_period.period_id) : "",
-    shiftGroupId,
-    scope: "member-home",
-    enabled: Boolean(shiftGroupId && dashboard.data?.current_period)
-  });
-  const draft = dashboard.data?.periods.find((period) => period.status === "draft");
-  const teamMemberId = user?.team_member_id ?? null;
-  const openSwaps = (swaps.data ?? []).filter((row) => isActionableMemberSwap(row, teamMemberId));
-  const swapsPeriodId = dashboard.data?.current_period?.period_id;
+  const home = useMemberHome(Boolean(user?.capabilities.team_member_portal));
+  const draft = home.data?.draft_wishes ?? null;
+  const duties = (home.data?.duties ?? []).filter(
+    (duty) => !shiftGroupId || String(duty.shift_group_id ?? "") === shiftGroupId
+  );
+  const openSwaps = (home.data?.swap_actions ?? []).filter(
+    (row) => !shiftGroupId || String(row.shift_group_id) === shiftGroupId
+  );
+  const swapsPeriodId = openSwaps[0]?.planning_period_id;
+  const wishesGroupId = draft ? String(draft.shift_group_id) : shiftGroupId;
+  const wishesPeriod = draft ? `${draft.year}-${String(draft.month).padStart(2, "0")}` : "";
 
   if (loading) {
     return <p className="text-sm text-slate-600">{t(locale, "planningSessionLoading")}</p>;
@@ -69,8 +63,11 @@ export function MemberHome() {
       ) : null}
       {draft ? (
         <Card>
-          <p className="text-sm text-slate-800">{t(locale, "memberWishesDeadline", { period: `${draft.year}-${String(draft.month).padStart(2, "0")}` })}</p>
-          <Link href={`/my-planning?period=${draft.period_id}&shiftGroup=${shiftGroupId}`} className="mt-2 inline-flex min-h-11 items-center font-semibold text-ink">
+          <p className="text-sm text-slate-800">{t(locale, "memberWishesDeadline", { period: wishesPeriod })}</p>
+          <Link
+            href={`/my-planning?period=${draft.planning_period_id}&shiftGroup=${wishesGroupId}`}
+            className="mt-2 inline-flex min-h-11 items-center font-semibold text-ink"
+          >
             {t(locale, "memberTabWishes")}
           </Link>
         </Card>
@@ -88,10 +85,16 @@ export function MemberHome() {
           </Link>
         </Card>
       ) : null}
-      <Link href={memberAreaHref("/my-hours", new URLSearchParams(shiftGroupId ? { shiftGroup: shiftGroupId } : undefined))} className="inline-flex min-h-11 items-center text-sm font-semibold text-ink">
+      <section className="grid gap-2">
+        <h2 className="text-lg font-semibold text-ink">{t(locale, "dashboardUpcomingShifts")}</h2>
+        <DashboardUpcomingShiftsTable locale={locale} slots={duties} />
+      </section>
+      <Link
+        href={memberAreaHref("/my-hours", new URLSearchParams(shiftGroupId ? { shiftGroup: shiftGroupId } : undefined))}
+        className="inline-flex min-h-11 items-center text-sm font-semibold text-ink"
+      >
         {t(locale, "myHoursNav")}
       </Link>
-      {dashboard.data ? <DashboardMemberPanel locale={locale} data={dashboard.data} shiftGroupId={shiftGroupId} /> : null}
     </div>
   );
 }

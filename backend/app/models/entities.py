@@ -245,6 +245,7 @@ class TeamMember(Base):
     planning_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), unique=True, index=True)
+    calendar_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     duty_activity_purpose_acknowledged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

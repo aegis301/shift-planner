@@ -102,6 +102,50 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
 
 SWAP_ASSIGNMENT_SOURCE = "shift_swap"
 
+_MEMBER_ACTION_STATUS = {
+    "withdraw": SWAP_STATUS_WITHDRAWN,
+    "claim": SWAP_STATUS_CLAIMED,
+    "accept": SWAP_STATUS_ACCEPTED,
+    "decline": SWAP_STATUS_REJECTED,
+}
+
+
+def member_swap_actions(
+    row: ShiftSwapRequest,
+    *,
+    team_member_id: int,
+    eligible_to_claim: bool,
+) -> tuple[list[str], dict[str, str]]:
+    transitions = ALLOWED_TRANSITIONS.get(row.status, frozenset())
+    is_offerer = row.offered_by_team_member_id == team_member_id
+    is_target = row.target_team_member_id == team_member_id
+    allowed: list[str] = []
+    disabled: dict[str, str] = {}
+    for action, target in _MEMBER_ACTION_STATUS.items():
+        if target not in transitions:
+            continue
+        if action == "withdraw":
+            if is_offerer:
+                allowed.append(action)
+            else:
+                disabled[action] = "SHIFT_SWAP_NOT_OWNER"
+        elif action == "claim":
+            if row.kind == SWAP_KIND_GIVEAWAY and not is_offerer and eligible_to_claim:
+                allowed.append(action)
+            else:
+                disabled[action] = "SHIFT_SWAP_INELIGIBLE"
+        elif action == "accept":
+            if row.kind == SWAP_KIND_DIRECT and row.status == SWAP_STATUS_TARGETED and is_target:
+                allowed.append(action)
+            else:
+                disabled[action] = "SHIFT_SWAP_NOT_OWNER"
+        elif action == "decline":
+            if row.kind == SWAP_KIND_DIRECT and row.status == SWAP_STATUS_TARGETED and is_target:
+                allowed.append(action)
+            else:
+                disabled[action] = "SHIFT_SWAP_INVALID_TRANSITION"
+    return allowed, disabled
+
 
 class ShiftSwapNotFoundError(Exception):
     pass

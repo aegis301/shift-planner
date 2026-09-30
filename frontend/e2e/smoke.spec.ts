@@ -204,7 +204,7 @@ test.describe("member", () => {
     const target = await planningTarget(request);
     await page.goto(`/my?shiftGroup=${target.shiftGroupId}`);
     await expect(page.getByRole("heading", { name: "Mein Bereich" })).toBeVisible();
-    await expect(page.getByText("Schichten (Jahr)", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Nächste Dienste" })).toBeVisible();
   });
 });
 
