@@ -47,9 +47,6 @@ jobs:
   frontend:
     needs: backend
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v5
         with:
@@ -60,17 +57,17 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install
         run: npm ci
       - uses: actions/download-artifact@v4
         with:
           name: openapi-schema
-          path: frontend/lib/api
+          path: packages/api-client
       - name: Check generated API types
         run: |
-          node --input-type=module -e "import { execFileSync } from 'node:child_process'; import { stampSchema } from './scripts/stamp-schema.mjs'; execFileSync('npx', ['openapi-typescript', 'lib/api/openapi.json', '-o', 'lib/api/schema.d.ts'], { stdio: 'inherit' }); stampSchema('lib/api/schema.d.ts');"
-          git diff --exit-code -- lib/api/openapi.json lib/api/schema.d.ts
+          node --input-type=module -e "import { execFileSync } from 'node:child_process'; import { stampSchema } from './packages/api-client/scripts/stamp-schema.mjs'; execFileSync('npx', ['--workspace', '@shift-planner/api-client', 'openapi-typescript', 'packages/api-client/openapi.json', '-o', 'packages/api-client/schema.d.ts'], { stdio: 'inherit' }); stampSchema('packages/api-client/schema.d.ts');"
+          git diff --exit-code -- packages/api-client/openapi.json packages/api-client/schema.d.ts
       - name: Lint
         run: npm run lint
       - name: Typecheck
@@ -135,9 +132,8 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend
+          cache-dependency-path: package-lock.json
+      - name: Install workspace dependencies
         run: npm ci
       - name: Start Compose
         env:

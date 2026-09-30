@@ -7,6 +7,7 @@ const allowedDevOrigins = (process.env.ALLOWED_DEV_ORIGINS ?? "localhost,host.do
 
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@shift-planner/api-client", "@shift-planner/i18n", "@shift-planner/domain"],
   allowedDevOrigins,
   async rewrites() {
     if (!apiProxy) {

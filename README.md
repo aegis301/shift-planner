@@ -73,18 +73,20 @@ If your machine already runs Postgres on port `5432`, keep `POSTGRES_HOST_PORT=5
 
 ## Frontend Development
 
+The JavaScript app is an npm workspace. Install from the repository root. `frontend/` stays the Next.js app. Shared code lives in `packages/api-client`, `packages/i18n`, and `packages/domain`.
+
 ```bash
-cd frontend
-npm install
-npm run dev
+npm ci
+npm run dev --workspace frontend
 npm run lint
 npm run typecheck
 npm run test
+npm run build
 npm run api:generate
 npm run api:check
 ```
 
-`npm run test` runs Vitest once. `npm run test:watch` keeps it running.
+`npm ci` uses the root `package-lock.json`. `npm run test` runs Vitest in the frontend and in each package. `npm run test:watch` in `frontend/` keeps the web tests running. Regenerating the lockfile needs npm 11; npm 10 can `npm ci` that lockfile but its installer crashes while resolving Vitest peers.
 
 Shared controls live in `frontend/components/ui/` (Radix dialogs, menus, popovers, a `cmdk` combobox, and form controls). Tokens are CSS variables in `frontend/app/globals.css`, mapped in `tailwind.config.ts` (`bg-surface`, `text-muted`, `border-default`, `rounded-token-md`). `<html data-density="comfortable">` is the default; `compact` changes the cell spacing tokens. The inventory is `frontend/components/ui/README.md`.
 
@@ -94,7 +96,7 @@ Planning screens read server state through TanStack Query (`frontend/lib/queryKe
 
 `GET /api/v1/roster-matrix/{planning_period_id}/slots/{roster_slot_id}/candidates?shift_group_id=` lists every period-roster member for that slot with status `ok`, `warning`, `blocked`, or `ineligible`. `blocked` is the same refusal as assigning that member. The service builds `PlanState` once per request. MCP `get_slot_candidates_tool` returns the same payload.
 
-`npm run api:generate` writes `frontend/lib/api/openapi.json` and `frontend/lib/api/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails the frontend job if `frontend/lib/api/` drifts. Friendly names are in `frontend/lib/api/types.ts`. New code uses `apiClient` from `frontend/lib/api/client.ts` (`credentials: "include"`, same base URL as `apiFetch`). `ApiError` is shared.
+`npm run api:generate` writes `packages/api-client/openapi.json` and `packages/api-client/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails if `packages/api-client/` drifts. Friendly names are in `packages/api-client/src/types.ts`, re-exported from `frontend/lib/api/types.ts`. The web `apiClient` uses cookie auth. `createApiClient` in `@shift-planner/api-client` also accepts a bearer auth strategy. `ApiError` is shared.
 
 ### End-to-end tests
 
@@ -103,8 +105,8 @@ Playwright smoke tests live in `frontend/e2e`. They sign in as three users in th
 ```bash
 docker compose up -d postgres backend frontend
 docker compose exec -e E2E_SEED_PASSWORD=local-e2e-password backend python -m app.scripts.seed_e2e
+npx playwright install chromium --prefix frontend
 cd frontend
-npx playwright install chromium
 E2E_SEED_PASSWORD=local-e2e-password npm run test:e2e
 ```
 

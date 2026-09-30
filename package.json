@@ -1,0 +1,16 @@
+{
+  "name": "shift-planner",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspace frontend && npm run lint --workspace @shift-planner/domain",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspace frontend",
+    "api:generate": "npm run api:generate --workspace @shift-planner/api-client",
+    "api:check": "npm run api:check --workspace @shift-planner/api-client"
+  }
+}

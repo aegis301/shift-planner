@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inferEndDayOffset, overlapCalendarDaysForSlot } from "@/lib/shiftOverlap";
+import { inferEndDayOffset, overlapCalendarDaysForSlot } from "./shiftOverlap";
 
 describe("inferEndDayOffset", () => {
   it("stays on the same day when the end is later", () => {
