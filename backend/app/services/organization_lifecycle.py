@@ -17,6 +17,10 @@ from app.models import (
 )
 from app.services.audit import record_audit
 from app.services.authz import is_admin
+from app.services.device_sessions import (
+    REASON_MEMBERSHIP_REMOVED,
+    revoke_membership_device_sessions,
+)
 from app.services.planning import delete_planning_period
 from app.services.shift_groups import delete_shift_group
 from app.services.shift_templates import delete_shift_template
@@ -53,6 +57,7 @@ def delete_organization(db: Session, *, actor: User, confirm_organization_name: 
     users = list(db.scalars(select(User).where(User.organization_id == org_id)))
     for u in users:
         acc_id = u.account_id
+        revoke_membership_device_sessions(db, u.id, REASON_MEMBERSHIP_REMOVED)
         db.delete(u)
         db.flush()
         leftover = db.scalar(select(func.count()).select_from(User).where(User.account_id == acc_id)) or 0

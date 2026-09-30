@@ -1,3 +1,4 @@
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -318,6 +319,138 @@ def test_onboarding_with_account_bearer_returns_a_user_access_token(client):
     me = test_client.get("/api/v1/auth/me", headers=_auth(body["access_token"]))
     assert me.status_code == 200
     assert me.json()["role"] == "admin"
+
+
+def test_concurrent_refresh_of_one_token_revokes_the_loser_as_reuse(tmp_path, monkeypatch):
+    engine = create_engine(
+        f"sqlite:///{tmp_path}/refresh-race.db",
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+    with SessionLocal() as db:
+        db.add(Organization(id=1, name="Alpha", slug="alpha", plan_tier="team"))
+        db.flush()
+        user = _seed_membership(db, "racer@example.com", "race-secret", 1, "admin")
+        db.commit()
+        account = user.account
+    with SessionLocal() as db:
+        account = db.get(Account, account.id)
+        user = db.get(User, user.id)
+        from app.services.device_sessions import issue_device_session
+
+        issued = issue_device_session(
+            db, account=account, user=user, device_name="Pixel", platform="android"
+        )
+        raw = issued.refresh_token
+        device_id = issued.device_session_id
+    barrier = threading.Barrier(2)
+    seen = {"n": 0}
+    real_hash = hash_refresh_token
+
+    def hashing(token: str) -> str:
+        digest = real_hash(token)
+        if token == raw:
+            seen["n"] += 1
+            if seen["n"] <= 2:
+                barrier.wait(timeout=5)
+        return digest
+
+    monkeypatch.setattr("app.services.device_sessions.hash_refresh_token", hashing)
+    outcomes: list[tuple[str, ...]] = []
+    lock = threading.Lock()
+
+    def worker() -> None:
+        from app.services.device_sessions import RefreshRejected, refresh_device_session
+
+        db = SessionLocal()
+        try:
+            try:
+                refresh_device_session(db, raw)
+            except RefreshRejected as exc:
+                with lock:
+                    outcomes.append((exc.reason,))
+            except Exception as exc:
+                with lock:
+                    outcomes.append((type(exc).__name__,))
+            else:
+                with lock:
+                    outcomes.append(("ok",))
+        finally:
+            db.close()
+
+    threads = [threading.Thread(target=worker), threading.Thread(target=worker)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert sorted(outcomes) == [("ok",), ("reused",)]
+    with SessionLocal() as db:
+        device = db.get(AuthDeviceSession, device_id)
+        assert device is not None
+        assert device.revoked_reason == "refresh_reuse"
+        current = db.scalar(
+            select(AuthRefreshToken).where(
+                AuthRefreshToken.device_session_id == device_id,
+                AuthRefreshToken.rotated_at.is_(None),
+            )
+        )
+        assert current is not None
+    with SessionLocal() as db:
+        from app.services.device_sessions import RefreshRejected, refresh_device_session
+
+        fresh = db.scalar(
+            select(AuthRefreshToken).where(
+                AuthRefreshToken.device_session_id == device_id,
+                AuthRefreshToken.rotated_at.is_(None),
+            )
+        )
+        assert fresh is not None
+        try:
+            refresh_device_session(db, raw)
+            raise AssertionError("original token was accepted after the race")
+        except RefreshRejected as exc:
+            assert exc.reason in {"reused", "revoked"}
+
+
+def test_deleting_an_organization_revokes_that_memberships_device_session(client):
+    test_client, SessionLocal = client
+    with SessionLocal() as db:
+        multi = Account(email="multi-org@example.com", hashed_password=hash_password("multi-secret"))
+        db.add(multi)
+        db.flush()
+        db.add(User(account_id=multi.id, organization_id=1, role="planner", locale="de"))
+        db.add(User(account_id=multi.id, organization_id=2, role="planner", locale="de"))
+        db.commit()
+    home = _issue(test_client, "multi-org@example.com", "multi-secret", name="Home")
+    travel_issue = _issue(test_client, "multi-org@example.com", "multi-secret", name="Travel")
+    switched = test_client.post(
+        "/api/v1/auth/me/active-organization",
+        headers=_auth(travel_issue["access_token"]),
+        json={"organization_slug": "beta"},
+    )
+    assert switched.status_code == 200
+    assert switched.json()["organization_id"] == 2
+    login = test_client.post("/api/v1/auth/login", json={"email": "other@example.com", "password": "other-secret"})
+    assert login.status_code == 200
+    deleted = test_client.request(
+        "DELETE",
+        "/api/v1/organization",
+        json={"confirm_organization_name": "Beta"},
+    )
+    assert deleted.status_code == 204, deleted.text
+    refreshed = test_client.post(
+        "/api/v1/auth/token/refresh",
+        json={"refresh_token": travel_issue["refresh_token"]},
+    )
+    assert refreshed.status_code == 401
+    assert refreshed.json()["detail"] != "account"
+    device_id = int(travel_issue["refresh_token"].split(".", 1)[0])
+    assert _device(SessionLocal, device_id).revoked_reason == "membership_removed"
+    still = test_client.get("/api/v1/auth/me", headers=_auth(home["access_token"]))
+    assert still.status_code == 200
+    assert still.json()["organization_id"] == 1
+    assert still.json()["auth_kind"] == "user"
 
 
 def test_login_rejects_bad_token_credentials(client):

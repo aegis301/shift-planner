@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -143,6 +143,23 @@ def issue_device_session(
     return _issued(row, raw)
 
 
+def _claim_current_refresh_token(db: Session, row: AuthRefreshToken, now: datetime) -> bool:
+    result = db.execute(
+        update(AuthRefreshToken)
+        .where(AuthRefreshToken.id == row.id, AuthRefreshToken.rotated_at.is_(None))
+        .values(rotated_at=now)
+        .execution_options(synchronize_session="fetch")
+    )
+    return result.rowcount == 1
+
+
+def _revoke_for_reuse(db: Session, device: AuthDeviceSession, now: datetime) -> None:
+    if device.revoked_at is None:
+        device.revoked_at = now
+        device.revoked_reason = REASON_REFRESH_REUSE
+    db.commit()
+
+
 def refresh_device_session(db: Session, raw_token: str) -> IssuedTokens:
     parsed = parse_refresh_token(raw_token)
     if parsed is None:
@@ -157,16 +174,16 @@ def refresh_device_session(db: Session, raw_token: str) -> IssuedTokens:
         raise RefreshRejected("unknown")
     now = _utcnow()
     if row.rotated_at is not None:
-        if device.revoked_at is None:
-            device.revoked_at = now
-            device.revoked_reason = REASON_REFRESH_REUSE
-        db.commit()
+        _revoke_for_reuse(db, device, now)
         raise RefreshRejected("reused")
     if device.revoked_at is not None:
         raise RefreshRejected("revoked")
     if _as_utc(device.expires_at) <= now:
         raise RefreshRejected("expired")
-    row.rotated_at = now
+    if not _claim_current_refresh_token(db, row, now):
+        db.expire(row)
+        _revoke_for_reuse(db, device, now)
+        raise RefreshRejected("reused")
     raw = _issue_refresh_row(db, device.id, now)
     device.last_used_at = now
     device.expires_at = now + _refresh_lifetime()
