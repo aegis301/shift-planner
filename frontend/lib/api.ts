@@ -1,3 +1,7 @@
+import { apiErrorFromResponse } from "@shift-planner/api-client";
+
+export { ApiError, apiErrorFromResponse, messageFromDetail } from "@shift-planner/api-client";
+
 function normalizeApiBase(): string {
   const raw = process.env.NEXT_PUBLIC_API_BASE_URL;
   if (raw === "") {
@@ -8,45 +12,6 @@ function normalizeApiBase(): string {
 }
 
 const API_BASE_URL = normalizeApiBase();
-
-export class ApiError extends Error {
-  readonly status: number;
-  readonly detail: unknown;
-
-  constructor(status: number, message: string, detail: unknown) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.detail = detail;
-  }
-}
-
-export function messageFromDetail(detail: unknown, status: number): string {
-  if (typeof detail === "string") {
-    return detail;
-  }
-  if (Array.isArray(detail) && detail.length > 0) {
-    const first = detail[0] as { msg?: unknown };
-    if (first && typeof first === "object" && "msg" in first && first.msg != null) {
-      return String(first.msg);
-    }
-  }
-  return `API request failed: ${status}`;
-}
-
-export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    body = undefined;
-  }
-  const detail =
-    body && typeof body === "object" && body !== null && "detail" in body
-      ? (body as { detail: unknown }).detail
-      : body;
-  return new ApiError(response.status, messageFromDetail(detail, response.status), detail);
-}
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -71,4 +36,3 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 export { API_BASE_URL };
-

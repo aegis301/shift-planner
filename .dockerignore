@@ -1,0 +1,9 @@
+.git
+backend
+mcp-server
+mobile
+**/node_modules
+**/.next
+**/out
+**/*.log
+**/*.tsbuildinfo

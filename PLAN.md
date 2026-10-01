@@ -9,7 +9,7 @@ Refine the unified `/planning` workflow with shared month state, wishes, final r
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 5. The planner roster uses the shared grid (`frontend/components/grid/`) with one column per shift variant and position, so two shifts on the same weekend or holiday stay separate. The selected month's period roster can be refreshed from current shift-group membership. The wishes matrix uses the same grid (#118).
-6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 through #120 have landed. #121 is the npm workspace. #123 can use `Organization.timezone`. Bearer device sessions and `/api/v1/me` are the basis for the native app (#122).
+6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 through #121 have landed. #122 is the Expo member app. #123 can use `Organization.timezone`. Bearer device sessions, `/api/v1/me`, and the shared `@shift-planner/*` packages are the basis for the native app.
 
 ## Roadmap
 - Team member self-service for wishes/no-gos.

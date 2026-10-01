@@ -1,0 +1,368 @@
+import { ApiError } from "@shift-planner/api-client";
+import type { Locale, TranslationKey } from "@shift-planner/i18n";
+import { t } from "@shift-planner/i18n";
+import { formatPlanningDate, formatShiftTimeRange } from "./shiftDisplay";
+import { teamMemberPlanningDisplayName } from "./teamMemberDisplay";
+
+type ShiftSwapKind = "giveaway" | "direct";
+type ShiftSwapStatus =
+  | "draft"
+  | "open"
+  | "claimed"
+  | "targeted"
+  | "accepted"
+  | "approved"
+  | "applied"
+  | "withdrawn"
+  | "rejected"
+  | "expired";
+
+export type ShiftSwapFindingView = {
+  code: string;
+  severity: string;
+  message: string;
+  date: string | null;
+};
+
+export function readSwapFinding(value: unknown): ShiftSwapFindingView {
+  if (!value || typeof value !== "object") {
+    return { code: "", severity: "info", message: "", date: null };
+  }
+  const row = value as Record<string, unknown>;
+  return {
+    code: typeof row.code === "string" ? row.code : "",
+    severity: typeof row.severity === "string" ? row.severity : "info",
+    message: typeof row.message === "string" ? row.message : "",
+    date: typeof row.date === "string" ? row.date : null
+  };
+}
+
+export const SWAP_APPROVAL_QUEUE_STATUSES = ["claimed", "accepted", "approved"] as const;
+
+export type SwapDutyUrgency = "overdue" | "soon" | "week" | "later";
+
+export type SwapRosterMember = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  nickname?: string | null;
+};
+
+export type SwapRosterSlot = {
+  id: number;
+  slot_date: string;
+  label?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  template_code?: string | null;
+  template_name?: string | null;
+  variant_label?: string | null;
+};
+
+export type SwapRosterAssignment = {
+  roster_slot_id: number;
+  team_member_id: number;
+};
+
+export type SwapRosterSlice = {
+  team_members: SwapRosterMember[];
+  slots: SwapRosterSlot[];
+  assignments: SwapRosterAssignment[];
+};
+
+const STATUS_LABELS: Record<ShiftSwapStatus, TranslationKey> = {
+  draft: "shiftSwapStatusDraft",
+  open: "shiftSwapStatusOpen",
+  claimed: "shiftSwapStatusClaimed",
+  targeted: "shiftSwapStatusTargeted",
+  accepted: "shiftSwapStatusAccepted",
+  approved: "shiftSwapStatusApproved",
+  applied: "shiftSwapStatusApplied",
+  withdrawn: "shiftSwapStatusWithdrawn",
+  rejected: "shiftSwapStatusRejected",
+  expired: "shiftSwapStatusExpired"
+};
+
+const KIND_LABELS: Record<ShiftSwapKind, TranslationKey> = {
+  giveaway: "shiftSwapKindGiveaway",
+  direct: "shiftSwapKindDirect"
+};
+
+const CONFLICT_LABELS: Record<string, TranslationKey> = {
+  SHIFT_SWAP_ILLEGAL: "shiftSwapErrorIllegal",
+  SHIFT_SWAP_INELIGIBLE: "shiftSwapErrorIneligible",
+  SHIFT_SWAP_CONFLICT: "shiftSwapErrorConflict",
+  SHIFT_SWAP_INVALID_TRANSITION: "shiftSwapErrorInvalidTransition",
+  SHIFT_SWAP_EXPIRED: "shiftSwapErrorExpired",
+  SHIFT_SWAP_NOT_OWNER: "shiftSwapErrorNotOwner",
+  SHIFT_SWAP_ALREADY_OPEN: "shiftSwapErrorAlreadyOpen",
+  SHIFT_SWAP_NO_ELIGIBLE_CLAIMANT: "shiftSwapErrorNoEligibleClaimant",
+  SHIFT_SWAP_NOT_VISIBLE: "shiftSwapErrorNotVisible"
+};
+
+const FINDING_LABELS: Record<string, TranslationKey> = {
+  WORKTIME_MAX_DUTIES: "shiftSwapFindingWorktimeMaxDuties",
+  WORKTIME_MAX_DAILY: "shiftSwapFindingWorktimeMaxDaily",
+  WORKTIME_MIN_REST: "shiftSwapFindingWorktimeMinRest",
+  WORKTIME_REST_COMPENSATION_PENDING: "shiftSwapFindingWorktimeRestCompensation",
+  WORKTIME_REST_AFTER_LONG_DUTY: "shiftSwapFindingWorktimeRestAfterLongDuty",
+  WORKTIME_WEEKLY_AVERAGE: "shiftSwapFindingWorktimeWeeklyAverage",
+  WORKTIME_WEEKLY_AVERAGE_OPT_OUT: "shiftSwapFindingWorktimeWeeklyAverageOptOut",
+  WORKTIME_CONSECUTIVE_DAYS: "shiftSwapFindingWorktimeConsecutiveDays",
+  WORKTIME_DOCUMENTATION_GAP: "shiftSwapFindingWorktimeDocumentationGap"
+};
+
+export function shiftSwapStatusLabel(locale: Locale, status: string): string {
+  return t(locale, STATUS_LABELS[status as ShiftSwapStatus] ?? "shiftSwapStatusOpen");
+}
+
+export function shiftSwapKindLabel(locale: Locale, kind: string): string {
+  return t(locale, KIND_LABELS[kind as ShiftSwapKind] ?? "shiftSwapKindGiveaway");
+}
+
+export function shiftSwapReasonLabel(locale: Locale, code: string): string {
+  const key = CONFLICT_LABELS[code];
+  return key ? t(locale, key) : code;
+}
+
+export function utcTodayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export type SwapPortalVariant = "planner" | "team_member";
+
+export type SwapAvailabilityReason =
+  | "no_shift_group"
+  | "no_team_member_link"
+  | "plan_not_open"
+  | "slot_in_past"
+  | "slot_not_on_roster";
+
+export type SwapAvailabilityInput = {
+  variant: SwapPortalVariant;
+  capabilities: { team_member_portal: boolean };
+  teamMemberId: number | null;
+  shiftGroupId: string | null;
+  periodId: string | null;
+  groupStatus: string | null | undefined;
+  slotDate?: string | null;
+  slotOnRoster?: boolean;
+};
+
+export type SwapAvailability = {
+  showMemberPortalLink: boolean;
+} & ({ available: true } | { available: false; reason: SwapAvailabilityReason });
+
+export type SwapOfferContext = {
+  variant: SwapPortalVariant;
+  capabilities: { team_member_portal: boolean };
+  teamMemberId: number | null;
+  shiftGroupId: string | null;
+  periodId: string | null;
+  groupStatus: string | null | undefined;
+  rosterSlotIds?: ReadonlySet<number>;
+  onOffer: (slotId: number) => void;
+};
+
+export type SwapOfferControl = "enabled" | "disabled" | "hidden";
+
+export type SwapAvailabilitySurface = "marketplace" | "queue" | "offer";
+
+const SWAP_AVAILABILITY_MESSAGE_KEYS: Record<
+  SwapAvailabilitySurface,
+  Partial<Record<SwapAvailabilityReason, TranslationKey>>
+> = {
+  marketplace: {
+    no_shift_group: "shiftSwapMarketplaceNeedsGroup",
+    no_team_member_link: "shiftSwapNeedsTeamMemberLink",
+    plan_not_open: "shiftSwapPlanDraft"
+  },
+  queue: {
+    no_shift_group: "shiftSwapQueueNeedsSelection",
+    no_team_member_link: "shiftSwapNeedsTeamMemberLink"
+  },
+  offer: {
+    plan_not_open: "shiftSwapPlanDraft"
+  }
+};
+
+export function swapAvailability(input: SwapAvailabilityInput): SwapAvailability {
+  const showMemberPortalLink = input.variant === "planner" && input.capabilities.team_member_portal;
+  if (!input.periodId || !input.shiftGroupId) {
+    return { available: false, reason: "no_shift_group", showMemberPortalLink };
+  }
+  if (input.teamMemberId == null) {
+    return { available: false, reason: "no_team_member_link", showMemberPortalLink };
+  }
+  if (input.groupStatus !== "preliminary" && input.groupStatus !== "published") {
+    return { available: false, reason: "plan_not_open", showMemberPortalLink };
+  }
+  if (input.slotDate != null && input.slotDate !== "" && input.slotDate < utcTodayIso()) {
+    return { available: false, reason: "slot_in_past", showMemberPortalLink };
+  }
+  if (input.slotOnRoster === false) {
+    return { available: false, reason: "slot_not_on_roster", showMemberPortalLink };
+  }
+  return { available: true, showMemberPortalLink };
+}
+
+export function swapAvailabilityMessageKey(
+  surface: SwapAvailabilitySurface,
+  reason: SwapAvailabilityReason
+): TranslationKey | null {
+  return SWAP_AVAILABILITY_MESSAGE_KEYS[surface][reason] ?? null;
+}
+
+export function swapOfferControl(result: SwapAvailability): SwapOfferControl {
+  if (result.available) {
+    return "enabled";
+  }
+  if (result.reason === "plan_not_open") {
+    return "disabled";
+  }
+  return "hidden";
+}
+
+export function memberPlanningHref(periodId: string | null, shiftGroupId: string | null): string {
+  const params = new URLSearchParams();
+  if (periodId) {
+    params.set("period", periodId);
+  }
+  if (shiftGroupId) {
+    params.set("shiftGroup", shiftGroupId);
+  }
+  const query = params.toString();
+  return query ? `/my-planning?${query}` : "/my-planning";
+}
+
+export function swapDutyUrgency(daysUntilDuty: number): SwapDutyUrgency {
+  if (daysUntilDuty <= 0) {
+    return "overdue";
+  }
+  if (daysUntilDuty <= 2) {
+    return "soon";
+  }
+  if (daysUntilDuty <= 7) {
+    return "week";
+  }
+  return "later";
+}
+
+export function swapDutyUrgencyClassName(urgency: SwapDutyUrgency): string {
+  if (urgency === "overdue") {
+    return "ring-2 ring-rose-400 bg-rose-50";
+  }
+  if (urgency === "soon") {
+    return "ring-2 ring-amber-300 bg-amber-50";
+  }
+  if (urgency === "week") {
+    return "ring-1 ring-amber-200 bg-white";
+  }
+  return "ring-1 ring-slate-200 bg-white";
+}
+
+export function swapDutyUrgencyLabelKey(urgency: SwapDutyUrgency): TranslationKey {
+  if (urgency === "overdue") {
+    return "shiftSwapUrgencyOverdue";
+  }
+  if (urgency === "soon") {
+    return "shiftSwapUrgencySoon";
+  }
+  if (urgency === "week") {
+    return "shiftSwapUrgencyWeek";
+  }
+  return "shiftSwapUrgencyLater";
+}
+
+export function swapMemberName(
+  roster: SwapRosterSlice | null | undefined,
+  memberId: number | null | undefined
+): string {
+  if (memberId == null) {
+    return "—";
+  }
+  const member = roster?.team_members.find((row) => row.id === memberId);
+  if (!member) {
+    return `#${memberId}`;
+  }
+  return teamMemberPlanningDisplayName(member);
+}
+
+export function swapSlotSummary(locale: Locale, slot: SwapRosterSlot | undefined, timeZone?: string): string {
+  if (!slot) {
+    return "—";
+  }
+  const name = slot.template_name || slot.label || slot.template_code || `#${slot.id}`;
+  const labeled = slot.variant_label ? `${name} · ${slot.variant_label}` : name;
+  const when = formatPlanningDate(locale, slot.slot_date);
+  const time = formatShiftTimeRange(slot.starts_at ?? null, slot.ends_at ?? null, timeZone);
+  return time ? `${when} · ${labeled} · ${time}` : `${when} · ${labeled}`;
+}
+
+export function swapSlotById(
+  roster: SwapRosterSlice | null | undefined,
+  slotId: number | null | undefined
+): SwapRosterSlot | undefined {
+  if (slotId == null) {
+    return undefined;
+  }
+  return roster?.slots.find((row) => row.id === slotId);
+}
+
+export function assigneeForSlot(roster: SwapRosterSlice | null | undefined, slotId: number): number | null {
+  return roster?.assignments.find((row) => row.roster_slot_id === slotId)?.team_member_id ?? null;
+}
+
+export function slotsAssignedToMember(roster: SwapRosterSlice | null | undefined, memberId: number): SwapRosterSlot[] {
+  if (!roster) {
+    return [];
+  }
+  const ids = new Set(
+    roster.assignments.filter((row) => row.team_member_id === memberId).map((row) => row.roster_slot_id)
+  );
+  return roster.slots.filter((slot) => ids.has(slot.id) && slot.slot_date >= utcTodayIso());
+}
+
+function uniqueParts(parts: string[]): string {
+  return [...new Set(parts.filter((part) => part.trim()))].join(" — ");
+}
+
+export function shiftSwapFindingText(locale: Locale, finding: unknown): string {
+  const view = readSwapFinding(finding);
+  const mapped = FINDING_LABELS[view.code];
+  const label = mapped ? t(locale, mapped) : view.code;
+  if (view.message && view.message !== label) {
+    return `${label}: ${view.message}`;
+  }
+  return label;
+}
+
+export function shiftSwapErrorText(locale: Locale, error: unknown): string {
+  if (!(error instanceof ApiError)) {
+    return t(locale, "apiUnavailable");
+  }
+  const detail = error.detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const row = detail as { code?: string; message?: string; findings?: unknown[] };
+    const parts: string[] = [];
+    if (typeof row.code === "string" && row.code in CONFLICT_LABELS) {
+      parts.push(t(locale, CONFLICT_LABELS[row.code]));
+    }
+    if (Array.isArray(row.findings)) {
+      for (const finding of row.findings) {
+        parts.push(shiftSwapFindingText(locale, finding));
+      }
+    } else if (typeof row.message === "string" && row.message.trim()) {
+      parts.push(row.message);
+    }
+    const combined = uniqueParts(parts);
+    if (combined) {
+      return combined;
+    }
+  }
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  return error.message;
+}
+

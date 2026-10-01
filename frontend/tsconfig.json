@@ -16,7 +16,11 @@
     "plugins": [{ "name": "next" }],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@shift-planner/api-client": ["../packages/api-client/src/index.ts"],
+      "@shift-planner/api-client/schema": ["../packages/api-client/schema.d.ts"],
+      "@shift-planner/i18n": ["../packages/i18n/src/index.ts"],
+      "@shift-planner/domain": ["../packages/domain/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

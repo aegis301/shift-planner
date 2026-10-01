@@ -50,7 +50,7 @@ Point the `dev-tunnel` ingress at `http://localhost:18130` (frontend) and, if ne
 
 ## GitHub Actions
 
-- **CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and merge-queue groups (backend Ruff + pytest, frontend lint, typecheck, build, and a `container-smoke` job that boots `postgres`, `backend`, and `frontend` from `docker-compose.prod.yml`). Pull request jobs merge the latest base branch before those checks. [.github/workflows/refresh-pr-ci.yml](../.github/workflows/refresh-pr-ci.yml) re-runs open same-repo PR checks after each `main` push.
+- **CI:** [.github/workflows/ci.yml](../.github/workflows/ci.yml) runs on pushes to `main`, pull requests, and merge-queue groups (backend Ruff + pytest, root `npm ci`, frontend and package tests, and a `container-smoke` job that boots `postgres`, `backend`, and `frontend` from `docker-compose.prod.yml`). The frontend image build context is the repository root so `packages/` is available to the Next.js workspace. Pull request jobs merge the latest base branch before those checks. [.github/workflows/refresh-pr-ci.yml](../.github/workflows/refresh-pr-ci.yml) re-runs open same-repo PR checks after each `main` push.
 - **Deploy:** [.github/workflows/deploy.yml](../.github/workflows/deploy.yml) runs on `workflow_dispatch` and automatically after the **CI** workflow finishes successfully for `main`. Configure repository secrets:
 
 | Secret | Required | Description |

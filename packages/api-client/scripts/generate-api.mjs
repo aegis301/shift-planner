@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 
 import { stampSchema } from "./stamp-schema.mjs";
 
-const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = path.resolve(frontendRoot, "..");
-const openapiPath = path.join(frontendRoot, "lib/api/openapi.json");
-const schemaPath = path.join(frontendRoot, "lib/api/schema.d.ts");
+const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(packageRoot, "../..");
+const openapiPath = path.join(packageRoot, "openapi.json");
+const schemaPath = path.join(packageRoot, "schema.d.ts");
 
 function exportOpenApi(destination) {
   const backend = path.join(repoRoot, "backend");
@@ -40,7 +40,7 @@ fs.mkdirSync(path.dirname(outOpenApi), { recursive: true });
 fs.mkdirSync(path.dirname(outSchema), { recursive: true });
 exportOpenApi(outOpenApi);
 execFileSync("npx", ["openapi-typescript", outOpenApi, "-o", outSchema], {
-  cwd: frontendRoot,
+  cwd: packageRoot,
   stdio: "inherit"
 });
 stampSchema(outSchema);

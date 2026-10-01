@@ -5,7 +5,7 @@ import {
   isoDateRangesOverlap,
   isoDateRangeStatus,
   monthDateBounds
-} from "@/lib/planningDates";
+} from "./planningDates";
 
 describe("monthDateBounds", () => {
   it("covers a 31-day month and a non-leap February", () => {

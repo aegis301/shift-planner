@@ -147,7 +147,7 @@ Team members (`TeamMember` rows) can belong to multiple shift groups through **d
 
 Organizations define wishes-matrix day statuses via `planning_day_status_definitions` (`GET|POST|PATCH|DELETE /api/v1/planning-day-status-definitions`; reads for any signed-in member, writes admin-only). Each row has stable `code` (stored on `planning_cells.status`), single org-defined `label`, `color_preset`, `blocks_roster_assignment`, and `is_active`. Lists sort alphabetically by `label` (then `code`). New orgs and the migration seed the former defaults (`urlaub`, `forschung`, `lehre`, `frei`). Admin UI: **Team** → **Tagesstatus** (`/organization/team/day-statuses`). Matrix and roster payloads include `day_status_definitions` for the picker and legend.
 
-**Org-defined display names:** `ShiftGroup`, `ShiftTemplate`, and planning day status definitions each store one user-entered display field (`name` or `label`). The UI locale switch (DE/EN) applies to system strings in `frontend/lib/i18n.ts` only, not to org content.
+**Org-defined display names:** `ShiftGroup`, `ShiftTemplate`, and planning day status definitions each store one user-entered display field (`name` or `label`). The UI locale switch (DE/EN) applies to system strings in `packages/i18n` (`de.json` and `en.json`) only, not to org content. `frontend/lib/i18n.ts` re-exports that package.
 
 ## Matrix Planning Rule
 The active planning workflow uses two monthly matrices:
@@ -211,7 +211,7 @@ issues follows these rules without being reminded:
 
 ## Internationalization
 
-Every user-visible frontend string must exist in both German and English dictionaries. Do not hardcode UI copy inside components unless it is a non-visible test fixture.
+Every user-visible frontend string must exist in both German and English dictionaries in `packages/i18n/de.json` and `packages/i18n/en.json`. The package checks key parity at compile time (`true satisfies`) and in Vitest. Do not hardcode UI copy inside components unless it is a non-visible test fixture. Pure date, shift, and swap helpers live in `packages/domain` and must not import React, Next.js, React Native, or touch `window`.
 
 ## Documentation Discipline
 
@@ -231,7 +231,7 @@ Any implementation that changes setup, behavior, architecture, API shape, MCP ca
 - Solver and related regression tests use `python -m app.scripts.seed_solver_fixture` (`comfortable` / `tight` / `infeasible` / `arbzg`) rather than hand-built months.
 - MCP changes should test resources/tools, authorization for mutations, and parity with backend services.
 - Frontend logic (formatting, grid selection, keyboard handling, query hooks) gets Vitest unit tests: `cd frontend && npm run test` (watch with `npm run test:watch`). User-visible workbench flows get Playwright tests: `npm run test:e2e` against Compose after `python -m app.scripts.seed_e2e` (see README). A frontend refactor that claims to preserve behaviour starts from the Playwright golden screenshots.
-- Frontend changes should keep TypeScript, linting, and i18n key coverage passing. German and English dictionaries in `frontend/lib/i18n.ts` must have the same keys (`true satisfies` parity check).
+- Frontend changes should keep TypeScript, linting, and i18n key coverage passing. German and English dictionaries in `packages/i18n` must have the same keys (`true satisfies` parity check and `packages/i18n/src/i18n.test.ts`). Install JavaScript dependencies from the repository root with `npm ci`.
 - Pull request CI merges the latest base branch before tests so combined `main` + PR is what is checked. Enable **Require branches to be up to date before merging** (or a merge queue) on `main` so GitHub cannot merge a PR whose last green run predates newer `main` commits.
 - Docker startup should remain the baseline development path.
 
@@ -291,8 +291,10 @@ at every width.
 - Server state goes through TanStack Query with the query keys in `frontend/lib/queryKeys.ts`. Do
   not add `useEffect` fetches or `*ReloadToken` counters. Planning workspace reads and the session
   query live in `frontend/lib/queries/`. Switching organization clears the cache.
-- API payload types come from `frontend/lib/api/schema.d.ts`. Regenerate with
-  `cd frontend && npm run api:generate` (exports `python -m app.scripts.export_openapi`, then
-  `openapi-typescript`). Aliases live in `frontend/lib/api/types.ts`. `npm run api:check` fails
-  when the committed schema drifts. New fetches use `apiClient` from `frontend/lib/api/client.ts`.
-  Do not hand-write a type that mirrors a backend schema.
+- API payload types come from `packages/api-client/schema.d.ts`. Regenerate with
+  `npm run api:generate` (exports `python -m app.scripts.export_openapi`, then
+  `openapi-typescript`). Aliases live in `packages/api-client/src/types.ts`. `frontend/lib/api/`
+  re-exports them. `npm run api:check` fails when the committed schema drifts. New fetches use
+  `apiClient` from `frontend/lib/api/client.ts` (cookie auth). Mobile clients use
+  `createApiClient` with bearer auth from `@shift-planner/api-client`. Do not hand-write a type
+  that mirrors a backend schema.
