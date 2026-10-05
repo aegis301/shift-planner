@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Grid } from "@/components/grid/Grid";
 import {
@@ -49,9 +49,11 @@ import {
 import { useUnresolvedShiftSwaps } from "@/lib/queries/activity";
 import {
   columnHeader,
+  maxStackSize,
   rosterGridColumns,
+  rowHeightForStack,
   slotsForColumn,
-  stepWithinStack,
+  stackIndexAfterMove,
   type RosterColumnSlot,
   type RosterGridColumn,
   type RosterView
@@ -122,13 +124,18 @@ export function RosterGrid({
   const [message, setMessage] = useState("");
   const [stackIndex, setStackIndex] = useState(0);
   const stackIndexRef = useRef(0);
+  const stackEntryRef = useRef<number | null>(null);
   const lastCopy = useRef<{ tsv: string; json: string } | null>(null);
   const headerLabels = { day: t(locale, "rosterViewDay"), night: t(locale, "rosterViewNight") };
   const columns = useMemo(
     () => (matrix ? rosterGridColumns(matrix.slots, matrix.shift_templates ?? [], view, timeZone) : []),
     [matrix, timeZone, view]
   );
-  const days = matrix?.days ?? [];
+  const days = useMemo(() => matrix?.days ?? [], [matrix?.days]);
+  const stackRowHeight = useCallback(
+    (row: number) => rowHeightForStack(maxStackSize(matrix?.slots ?? [], columns, days[row]?.date ?? "", timeZone)),
+    [columns, days, matrix?.slots, timeZone]
+  );
   const userId = me && "id" in me ? me.id : null;
   const userEmail = me && "email" in me ? me.email : null;
 
@@ -339,8 +346,8 @@ export function RosterGrid({
         cornerLabel={t(locale, "date")}
         editable={!readOnly}
         editing={editor !== null}
+        getRowSize={view === "variant" ? undefined : stackRowHeight}
         label={t(locale, "rosterGridLabel")}
-        rowHeight={view === "variant" ? undefined : 72}
         renderCell={(row, col) => (
           <RosterGridCell
             active={selection.active.row === row && selection.active.col === col}
@@ -371,18 +378,26 @@ export function RosterGrid({
         rowCount={days.length}
         selection={selection}
         onBeforeVerticalMove={(rowDelta) => {
-          const slots = slotsAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone);
-          const step = stepWithinStack(stackIndexRef.current, rowDelta, slots.length);
-          if (step.leave) {
-            return false;
+          const fromSlots = slotsAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone);
+          const toSlots = slotsAt(matrix, columns, days, selection.active.row + rowDelta, selection.active.col, timeZone);
+          const step = stackIndexAfterMove({
+            fromIndex: stackIndexRef.current,
+            rowDelta,
+            fromCount: fromSlots.length,
+            toCount: toSlots.length
+          });
+          if (step.stay) {
+            stackEntryRef.current = null;
+            stackIndexRef.current = step.index;
+            setStackIndex(step.index);
+            const slot = fromSlots[step.index];
+            if (slot) {
+              onSelectSlot?.(slot.id);
+            }
+            return true;
           }
-          stackIndexRef.current = step.index;
-          setStackIndex(step.index);
-          const slot = slots[step.index];
-          if (slot) {
-            onSelectSlot?.(slot.id);
-          }
-          return true;
+          stackEntryRef.current = step.index;
+          return false;
         }}
         onCommand={(command) => {
           if (command.type === "edit") {
@@ -456,13 +471,16 @@ export function RosterGrid({
         }}
         onSelectionChange={(next) => {
           const moved = next.active.row !== selection.active.row || next.active.col !== selection.active.col;
+          const entered = stackEntryRef.current;
+          stackEntryRef.current = null;
+          const index = moved ? (entered ?? 0) : stackIndexRef.current;
           if (moved) {
-            stackIndexRef.current = 0;
-            setStackIndex(0);
+            stackIndexRef.current = index;
+            setStackIndex(index);
           }
           setEditor(null);
           setSelection(next);
-          const slot = slotAt(matrix, columns, days, next.active.row, next.active.col, timeZone, moved ? 0 : stackIndexRef.current);
+          const slot = slotAt(matrix, columns, days, next.active.row, next.active.col, timeZone, index);
           if (slot) {
             onSelectSlot?.(slot.id);
           }

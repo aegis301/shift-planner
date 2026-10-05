@@ -52,7 +52,8 @@ export function Grid({
   onBeforeVerticalMove,
   editable = true,
   editing = false,
-  rowHeight
+  rowHeight,
+  getRowSize
 }: {
   label: string;
   rowCount: number;
@@ -67,6 +68,7 @@ export function Grid({
   editable?: boolean;
   editing?: boolean;
   rowHeight?: number;
+  getRowSize?: (row: number) => number;
 }) {
   const density = useDensity();
   const resolvedRowHeight = rowHeight ?? (density === "compact" ? 36 : 52);
@@ -97,7 +99,7 @@ export function Grid({
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => resolvedRowHeight,
+    estimateSize: (index) => getRowSize?.(index) ?? resolvedRowHeight,
     overscan: 8
   });
   const columnVirtualizer = useVirtualizer({
@@ -107,6 +109,12 @@ export function Grid({
     estimateSize: () => COLUMN_WIDTH,
     overscan: 4
   });
+
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+  useEffect(() => {
+    rowVirtualizerRef.current.measure();
+  }, [getRowSize, resolvedRowHeight, rowCount]);
 
   useEffect(() => {
     rowVirtualizer.scrollToIndex(selection.active.row, { align: "auto" });
@@ -243,7 +251,7 @@ export function Grid({
                     aria-haspopup={editable ? "listbox" : undefined}
                     aria-selected={selected}
                     className={cn(
-                      "absolute top-0 flex h-full items-center overflow-hidden border-b border-r border-default px-[var(--space-cell-x)] text-left text-[length:var(--font-size-cell)]",
+                      "absolute top-0 flex h-full items-start overflow-visible border-b border-r border-default px-[var(--space-cell-x)] text-left text-[length:var(--font-size-cell)]",
                       selected && "bg-severity-info",
                       active && "outline outline-2 outline-offset-[-2px] outline-[var(--color-accent)]"
                     )}

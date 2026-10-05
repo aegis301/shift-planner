@@ -160,6 +160,40 @@ export function stepWithinStack(index: number, delta: number, count: number): { 
   return { index: next, leave: false };
 }
 
+export function maxStackSize(
+  slots: RosterColumnSlot[],
+  columns: RosterGridColumn[],
+  date: string,
+  timeZone: string = DEFAULT_TIME_ZONE
+): number {
+  let max = 1;
+  for (const column of columns) {
+    max = Math.max(max, slotsForColumn(slots, date, column, timeZone).length);
+  }
+  return max;
+}
+
+export function rowHeightForStack(stackSize: number, base = 52, chip = 32): number {
+  const count = Math.max(1, stackSize);
+  return base + Math.max(0, count - 1) * chip;
+}
+
+export function stackIndexAfterMove(args: {
+  fromIndex: number;
+  rowDelta: number;
+  fromCount: number;
+  toCount: number;
+}): { stay: boolean; index: number } {
+  const step = stepWithinStack(args.fromIndex, args.rowDelta, args.fromCount);
+  if (!step.leave) {
+    return { stay: true, index: step.index };
+  }
+  if (args.rowDelta < 0 && args.toCount > 0) {
+    return { stay: false, index: args.toCount - 1 };
+  }
+  return { stay: false, index: 0 };
+}
+
 function bandOrder(band: RosterColumnBand): number {
   if (band === "day") {
     return 0;

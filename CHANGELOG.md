@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-10-05
-- **Roster views:** The planning context bar and `?rosterView=` choose template, day/night, or variant columns. Template is the default and stacks a day's slots in one column. Day/night adds day and night columns only for a template that has both. Variant keeps one column per variant. The command palette lists the three views.
+- **Roster views:** The planning context bar and `?rosterView=` choose template, day/night, or variant columns. Template is the default and stacks a day's slots in one column. Day/night adds day and night columns only for a template that has both. Variant keeps one column per variant. The command palette lists the three views. A row grows with that day's tallest stack so every chip stays visible, and Arrow Up into a cell lands on its last slot.
 
 ## 2026-09-30
 - **JavaScript workspace:** npm workspaces install from the repository root. `@shift-planner/api-client` holds the generated OpenAPI types, `ApiError`, and `createApiClient` (cookie or bearer). `@shift-planner/i18n` holds the German and English dictionaries. `@shift-planner/domain` holds the pure date, shift, duty, and swap helpers and refuses React, Next, React Native, and `window`. The web app re-exports those packages and behaves the same. Frontend images build from the repo root.
