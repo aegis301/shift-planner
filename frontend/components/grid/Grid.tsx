@@ -49,8 +49,11 @@ export function Grid({
   selection,
   onSelectionChange,
   onCommand,
+  onBeforeVerticalMove,
   editable = true,
-  editing = false
+  editing = false,
+  rowHeight,
+  getRowSize
 }: {
   label: string;
   rowCount: number;
@@ -61,11 +64,14 @@ export function Grid({
   selection: GridSelection;
   onSelectionChange: (selection: GridSelection) => void;
   onCommand: (command: GridCommand) => void;
+  onBeforeVerticalMove?: (rowDelta: number) => boolean;
   editable?: boolean;
   editing?: boolean;
+  rowHeight?: number;
+  getRowSize?: (row: number) => number;
 }) {
   const density = useDensity();
-  const rowHeight = density === "compact" ? 36 : 52;
+  const resolvedRowHeight = rowHeight ?? (density === "compact" ? 36 : 52);
   const parentRef = useRef<HTMLDivElement>(null);
   const focusAfterKey = useRef(false);
   const bounds = { rows: rowCount, cols: columns.length };
@@ -93,7 +99,7 @@ export function Grid({
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => rowHeight,
+    estimateSize: (index) => getRowSize?.(index) ?? resolvedRowHeight,
     overscan: 8
   });
   const columnVirtualizer = useVirtualizer({
@@ -103,6 +109,12 @@ export function Grid({
     estimateSize: () => COLUMN_WIDTH,
     overscan: 4
   });
+
+  const rowVirtualizerRef = useRef(rowVirtualizer);
+  rowVirtualizerRef.current = rowVirtualizer;
+  useEffect(() => {
+    rowVirtualizerRef.current.measure();
+  }, [getRowSize, resolvedRowHeight, rowCount]);
 
   useEffect(() => {
     rowVirtualizer.scrollToIndex(selection.active.row, { align: "auto" });
@@ -138,6 +150,15 @@ export function Grid({
     }
     event.preventDefault();
     event.stopPropagation();
+    if (
+      command.type === "move" &&
+      command.colDelta === 0 &&
+      (command.rowDelta === 1 || command.rowDelta === -1) &&
+      !command.extend &&
+      onBeforeVerticalMove?.(command.rowDelta)
+    ) {
+      return;
+    }
     if (command.type === "move" || command.type === "edge") {
       applySelection(selectionAfterCommand(selection, command, bounds));
       return;
@@ -230,7 +251,7 @@ export function Grid({
                     aria-haspopup={editable ? "listbox" : undefined}
                     aria-selected={selected}
                     className={cn(
-                      "absolute top-0 flex h-full items-center overflow-hidden border-b border-r border-default px-[var(--space-cell-x)] text-left text-[length:var(--font-size-cell)]",
+                      "absolute top-0 flex h-full items-start overflow-visible border-b border-r border-default px-[var(--space-cell-x)] text-left text-[length:var(--font-size-cell)]",
                       selected && "bg-severity-info",
                       active && "outline outline-2 outline-offset-[-2px] outline-[var(--color-accent)]"
                     )}
