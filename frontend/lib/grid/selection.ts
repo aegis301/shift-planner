@@ -20,6 +20,13 @@ export function clampCell(cell: CellCoord, bounds: GridBounds): CellCoord {
   };
 }
 
+export function selectionOverlayClass(selected: boolean): string {
+  if (!selected) {
+    return "";
+  }
+  return "pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-sky-800";
+}
+
 export function selectionAt(cell: CellCoord, bounds: GridBounds): GridSelection {
   const next = clampCell(cell, bounds);
   return { active: next, anchor: next };

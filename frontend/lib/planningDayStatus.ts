@@ -21,20 +21,36 @@ export const PLANNING_DAY_STATUS_COLOR_PRESETS: PlanningDayStatusColorPreset[] =
   "teal"
 ];
 
-const BADGE_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
-  rose: "bg-rose-100 text-rose-800 ring-rose-200",
-  violet: "bg-violet-100 text-violet-800 ring-violet-200",
-  amber: "bg-amber-100 text-amber-800 ring-amber-200",
-  slate: "bg-slate-100 text-slate-700 ring-slate-200",
-  emerald: "bg-emerald-100 text-emerald-800 ring-emerald-200",
-  sky: "bg-sky-100 text-sky-800 ring-sky-200",
-  cyan: "bg-cyan-100 text-cyan-800 ring-cyan-200",
-  orange: "bg-orange-100 text-orange-800 ring-orange-200",
-  lime: "bg-lime-100 text-lime-800 ring-lime-200",
-  fuchsia: "bg-fuchsia-100 text-fuchsia-800 ring-fuchsia-200",
-  zinc: "bg-zinc-100 text-zinc-800 ring-zinc-200",
-  indigo: "bg-indigo-100 text-indigo-800 ring-indigo-200",
-  teal: "bg-teal-100 text-teal-800 ring-teal-200"
+const FILL_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
+  rose: "bg-rose-100 text-rose-800",
+  violet: "bg-violet-100 text-violet-800",
+  amber: "bg-amber-100 text-amber-800",
+  slate: "bg-slate-100 text-slate-700",
+  emerald: "bg-emerald-100 text-emerald-800",
+  sky: "bg-sky-100 text-sky-800",
+  cyan: "bg-cyan-100 text-cyan-800",
+  orange: "bg-orange-100 text-orange-800",
+  lime: "bg-lime-100 text-lime-800",
+  fuchsia: "bg-fuchsia-100 text-fuchsia-800",
+  zinc: "bg-zinc-100 text-zinc-800",
+  indigo: "bg-indigo-100 text-indigo-800",
+  teal: "bg-teal-100 text-teal-800"
+};
+
+const RING_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
+  rose: "ring-rose-200",
+  violet: "ring-violet-200",
+  amber: "ring-amber-200",
+  slate: "ring-slate-200",
+  emerald: "ring-emerald-200",
+  sky: "ring-sky-200",
+  cyan: "ring-cyan-200",
+  orange: "ring-orange-200",
+  lime: "ring-lime-200",
+  fuchsia: "ring-fuchsia-200",
+  zinc: "ring-zinc-200",
+  indigo: "ring-indigo-200",
+  teal: "ring-teal-200"
 };
 
 const SELECT_BY_PRESET: Record<PlanningDayStatusColorPreset, string> = {
@@ -73,8 +89,12 @@ export function planningDayStatusLabel(definition: PlanningDayStatusDefinition, 
   return definition.label;
 }
 
+export function planningDayStatusFillClass(preset: PlanningDayStatusColorPreset): string {
+  return FILL_BY_PRESET[preset] ?? FILL_BY_PRESET.slate;
+}
+
 export function planningDayStatusBadgeClass(preset: PlanningDayStatusColorPreset): string {
-  return BADGE_BY_PRESET[preset] ?? BADGE_BY_PRESET.slate;
+  return `${planningDayStatusFillClass(preset)} ${RING_BY_PRESET[preset] ?? RING_BY_PRESET.slate}`;
 }
 
 export function planningDayStatusSolidClass(preset: PlanningDayStatusColorPreset): string {
@@ -120,6 +140,16 @@ export function planningDayStatusByCode(
   return new Map(definitions.map((row) => [row.code, row]));
 }
 
+export function definitionForStoredStatus(
+  code: string | null | undefined,
+  definitions: PlanningDayStatusDefinition[]
+): PlanningDayStatusDefinition | undefined {
+  if (!code) {
+    return undefined;
+  }
+  return planningDayStatusByCode(definitions).get(code);
+}
+
 export function labelForPlanningDayStatusCode(
   code: string,
   definitions: PlanningDayStatusDefinition[],
@@ -134,7 +164,7 @@ export function badgeClassForPlanningDayStatusCode(
   definitions: PlanningDayStatusDefinition[]
 ): string {
   const row = planningDayStatusByCode(definitions).get(code);
-  return row ? planningDayStatusBadgeClass(row.color_preset) : BADGE_BY_PRESET.slate;
+  return row ? planningDayStatusBadgeClass(row.color_preset) : planningDayStatusBadgeClass("slate");
 }
 
 export function rosterBlocksForPlanningDayStatusCode(

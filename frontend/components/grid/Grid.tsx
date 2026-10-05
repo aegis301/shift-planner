@@ -11,6 +11,7 @@ import {
   selectColumn,
   selectRow,
   selectionAt,
+  selectionOverlayClass,
   type GridSelection
 } from "@/lib/grid/selection";
 
@@ -272,6 +273,7 @@ export function Grid({
                     }}
                   >
                     {renderCell(virtualRow.index, virtualColumn.index)}
+                    {selected ? <span aria-hidden className={selectionOverlayClass(true)} /> : null}
                   </button>
                 );
               })}

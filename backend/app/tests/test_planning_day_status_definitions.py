@@ -3,9 +3,10 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.models import Organization, PlanningDayStatusDefinition
+from app.models import Organization, PlanningDayStatusDefinition, PlanningPeriod
 from app.models.base import Base
 from app.schemas import PlanningDayStatusDefinitionCreate
+from app.services.matrix import get_planning_matrix
 from app.services.planning_day_status_definitions import (
     assert_valid_planning_cell_status,
     cell_status_blocks_roster_assignment,
@@ -81,6 +82,24 @@ def test_non_blocking_status_allows_roster(status_db) -> None:
 def test_unknown_status_blocks_roster(status_db) -> None:
     ensure_default_planning_day_statuses(status_db, organization_id=1)
     assert cell_status_blocks_roster_assignment(status_db, organization_id=1, status="unknown_code")
+
+
+def test_matrix_includes_an_inactive_status(status_db) -> None:
+    ensure_default_planning_day_statuses(status_db, organization_id=1)
+    row = status_db.scalars(
+        select(PlanningDayStatusDefinition).where(
+            PlanningDayStatusDefinition.organization_id == 1,
+            PlanningDayStatusDefinition.code == "urlaub",
+        )
+    ).one()
+    row.is_active = False
+    period = PlanningPeriod(organization_id=1, year=2026, month=10, status="draft")
+    status_db.add(period)
+    status_db.commit()
+    matrix = get_planning_matrix(status_db, period.id, organization_id=1)
+    stored = next(item for item in matrix.day_status_definitions if item.code == "urlaub")
+    assert stored.is_active is False
+    assert stored.blocks_roster_assignment is True
 
 
 def test_inactive_status_still_blocks_when_flag_set(status_db) -> None:

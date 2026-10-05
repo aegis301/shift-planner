@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { IntentChip } from "@/components/planning/WishesCell";
 import { useWishesHistory } from "@/components/planning/WishesHistory";
 import { t, type Locale } from "@/lib/i18n";
 import {
@@ -11,6 +12,7 @@ import {
 import type { WishesBundle } from "@/lib/queries/planning";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 import { saveWishesIntent, saveWishesNote } from "@/lib/wishesEdit";
+import { wishesMonthOverview } from "@/lib/wishesMonth";
 
 type Matrix = WishesBundle["matrix"];
 
@@ -23,7 +25,8 @@ export function WishesCellPanel({
   memberId,
   day,
   readOnly,
-  onChanged
+  onChanged,
+  onSelectDay
 }: {
   locale: Locale;
   periodId: string;
@@ -34,6 +37,7 @@ export function WishesCellPanel({
   day: string;
   readOnly: boolean;
   onChanged: () => void;
+  onSelectDay: (day: string) => void;
 }) {
   const history = useWishesHistory();
   const member = matrix.team_members.find((row) => String(row.id) === memberId);
@@ -152,6 +156,7 @@ export function WishesCellPanel({
           );
         })}
       </section>
+      <WishesMonthOverview locale={locale} matrix={matrix} memberId={Number(memberId)} onSelectDay={onSelectDay} />
       {member ? (
         <WishesMemberNotes
           locale={locale}
@@ -165,6 +170,47 @@ export function WishesCellPanel({
         />
       ) : null}
     </div>
+  );
+}
+
+export function WishesMonthOverview({
+  locale,
+  matrix,
+  memberId,
+  onSelectDay
+}: {
+  locale: Locale;
+  matrix: Matrix;
+  memberId: number;
+  onSelectDay: (day: string) => void;
+}) {
+  const rows = useMemo(
+    () => wishesMonthOverview(memberId, matrix.cells, matrix.shift_intents ?? [], matrix.shift_templates ?? []),
+    [matrix.cells, matrix.shift_intents, matrix.shift_templates, memberId]
+  );
+  return (
+    <section className="grid gap-2">
+      <h4 className="font-semibold text-ink">{t(locale, "wishesMonthTitle")}</h4>
+      {rows.length === 0 ? <p className="text-sm text-muted">{t(locale, "wishesMonthEmpty")}</p> : null}
+      {rows.map((row) => (
+        <button
+          key={row.kind === "comment" ? `comment-${row.date}` : `${row.kind}-${row.date}-${row.templateId}`}
+          className="rounded-token-md border border-default px-2 py-2 text-left"
+          type="button"
+          onClick={() => onSelectDay(row.date)}
+        >
+          <span className="font-medium text-ink">{row.date}</span>
+          {row.kind === "comment" ? (
+            <span className="block text-ink">{row.text}</span>
+          ) : (
+            <span className="mt-1 flex min-w-0 items-center gap-1">
+              <span className="truncate">{row.templateName}</span>
+              <IntentChip kind={row.kind} locale={locale} />
+            </span>
+          )}
+        </button>
+      ))}
+    </section>
   );
 }
 

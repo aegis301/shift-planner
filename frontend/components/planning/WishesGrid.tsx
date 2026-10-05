@@ -11,6 +11,7 @@ import { rangeOf, selectionAt, type GridSelection } from "@/lib/grid/selection";
 import { t, type Locale } from "@/lib/i18n";
 import {
   activePlanningDayStatusDefinitions,
+  definitionForStoredStatus,
   planningDayStatusByCode,
   planningDayStatusLabel
 } from "@/lib/planningDayStatus";
@@ -34,6 +35,8 @@ export function WishesGrid({
   versionId = null,
   readOnly = false,
   readOnlyReason = "",
+  selectedDay = "",
+  selectedMemberId = "",
   onSelectCell
 }: {
   periodId: string;
@@ -41,6 +44,8 @@ export function WishesGrid({
   versionId?: number | null;
   readOnly?: boolean;
   readOnlyReason?: string;
+  selectedDay?: string;
+  selectedMemberId?: string;
   onSelectCell?: (date: string, teamMemberId: number) => void;
 }) {
   const { locale } = useLocale();
@@ -64,13 +69,30 @@ export function WishesGrid({
 
   const memberRows = matrix?.team_members;
   const noteRows = wishesQuery.data?.notes;
-  const members = memberRows ?? [];
-  const days = matrix?.days ?? [];
-  const definitions = useMemo(
-    () => activePlanningDayStatusDefinitions(matrix?.day_status_definitions ?? []),
-    [matrix?.day_status_definitions]
-  );
-  const statusByCode = useMemo(() => planningDayStatusByCode(definitions), [definitions]);
+  const members = useMemo(() => memberRows ?? [], [memberRows]);
+  const days = useMemo(() => matrix?.days ?? [], [matrix?.days]);
+
+  useEffect(() => {
+    const row = selectedDay ? days.findIndex((day) => day.date === selectedDay) : -1;
+    const col = selectedMemberId ? members.findIndex((member) => String(member.id) === selectedMemberId) : -1;
+    if (row < 0 || col < 0) {
+      return;
+    }
+    let moved = false;
+    setSelection((current) => {
+      if (current.active.row === row && current.active.col === col) {
+        return current;
+      }
+      moved = true;
+      return selectionAt({ row, col }, { rows: days.length, cols: members.length });
+    });
+    if (moved) {
+      setEditorFilter(null);
+    }
+  }, [days, members, selectedDay, selectedMemberId]);
+  const storedDefinitions = useMemo(() => matrix?.day_status_definitions ?? [], [matrix?.day_status_definitions]);
+  const definitions = useMemo(() => activePlanningDayStatusDefinitions(storedDefinitions), [storedDefinitions]);
+  const statusByCode = useMemo(() => planningDayStatusByCode(storedDefinitions), [storedDefinitions]);
   const cellIndex = useMemo(() => {
     const index = new Map<string, Matrix["cells"][number]>();
     for (const cell of matrix?.cells ?? []) {
@@ -203,7 +225,7 @@ export function WishesGrid({
           continue;
         }
         const resolved = source.raw
-          ? resolveStatusToken(source.status ?? "", definitions)
+          ? resolveStatusToken(source.status ?? "", storedDefinitions)
           : source.status
             ? { status: source.status }
             : { clear: true as const };
@@ -281,14 +303,17 @@ export function WishesGrid({
         label={t(locale, "wishesGridLabel")}
         renderCell={(row, col) => {
           const state = stateAt(row, col);
-          const definition = state?.status ? statusByCode.get(state.status) : undefined;
+          const definition = definitionForStoredStatus(state?.status, storedDefinitions);
           const intents = state ? intentIndex.get(cellKey(state.teamMemberId, state.date)) : undefined;
           return (
             <WishesCellView
+              blocking={definition?.blocks_roster_assignment === true}
               colorPreset={definition?.color_preset ?? null}
               comment={state?.comment ?? ""}
+              date={state?.date ?? days[row]?.date ?? ""}
               label={definition ? planningDayStatusLabel(definition, locale) : ""}
               locale={locale}
+              memberId={state?.teamMemberId ?? members[col]?.id ?? 0}
               noGoCount={intents?.noGo ?? 0}
               wishCount={intents?.wish ?? 0}
             />

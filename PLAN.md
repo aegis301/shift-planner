@@ -8,7 +8,7 @@ Refine the unified `/planning` workflow with shared month state, wishes, final r
 2. Run Alembic migrations against Postgres after pulling `202609220001` (`shift_swap_requests`). `202609210003` adds `organizations.solver_objective_weights`. `202609210002` adds `solver_runs` plus the org solver time-budget ceiling.
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
-5. The planner roster uses the shared grid (`frontend/components/grid/`) with one column per shift variant and position, so two shifts on the same weekend or holiday stay separate. The selected month's period roster can be refreshed from current shift-group membership. The wishes matrix uses the same grid (#118).
+5. The planner roster uses the shared grid (`frontend/components/grid/`). `?rosterView=` chooses template (default), day/night, or variant columns. The wishes matrix uses the same grid: the cell is filled with the day-status color, wish and no-go are filled chips, and the inspector lists that member's month. The selected month's period roster can be refreshed from current shift-group membership.
 6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 through #121 have landed. #122 is the Expo member app. #123 can use `Organization.timezone`. Bearer device sessions, `/api/v1/me`, and the shared `@shift-planner/*` packages are the basis for the native app.
 
 ## Roadmap

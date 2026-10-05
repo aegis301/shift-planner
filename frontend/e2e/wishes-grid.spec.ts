@@ -122,6 +122,28 @@ test.describe("wishes grid", () => {
     await expect(page.getByText("geänderte Zellen wurden übersprungen")).toBeVisible();
   });
 
+  test("shows a cell comment in the inspector", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    const matrixResponse = await request.get(`/api/v1/matrix/${target.periodId}?shift_group_id=${target.shiftGroupId}`);
+    expect(matrixResponse.ok()).toBeTruthy();
+    const matrix = (await matrixResponse.json()) as { team_members: { id: number }[]; days: { date: string }[] };
+    const member = matrix.team_members[0];
+    const day = matrix.days[4]?.date ?? matrix.days[0]?.date;
+    expect(member?.id).toBeTruthy();
+    expect(day).toBeTruthy();
+    const comment = "Inspector comment from the wishes cell";
+    const saved = await request.put(`/api/v1/matrix/${target.periodId}/cells/bulk?shift_group_id=${target.shiftGroupId}`, {
+      data: {
+        cells: [{ team_member_id: member.id, cell_date: day, status: "frei", comment }]
+      }
+    });
+    expect(saved.ok()).toBeTruthy();
+    await page.goto(planningPath(target));
+    const grid = page.getByRole("grid", { name: "Wünsche" });
+    await grid.locator(`[data-wishes-member="${member.id}"][data-wishes-date="${day}"]`).click();
+    await expect(page.locator("aside:not(#app-sidebar)")).toContainText(comment);
+  });
+
   test("keeps a published group read-only", async ({ page, request }) => {
     const target = await planningTarget(request);
     const groupQuery = `shift_group_id=${target.shiftGroupId}`;

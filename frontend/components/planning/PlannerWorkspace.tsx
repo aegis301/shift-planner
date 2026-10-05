@@ -602,6 +602,8 @@ function PlannerWorkspaceContent() {
           readOnlyReason={wishesReadOnlyReason}
           shiftGroupId={shiftGroupId || undefined}
           versionId={viewingVersionId}
+          selectedDay={selection.day}
+          selectedMemberId={selection.member}
           onSelectCell={(date, memberId) =>
             patchSelection({ day: date, member: String(memberId), slot: null, finding: null, tab: "wishes" })
           }
@@ -1400,6 +1402,7 @@ function PlannerWorkspaceContent() {
           wishesNotes={wishesQuery.data?.notes ?? []}
           wishesReadOnly={wishesReadOnly}
           onWishesChanged={() => void handleWishesChanged()}
+          onSelectDay={(day) => patchSelection({ day, slot: null, finding: null, tab: "wishes" })}
           onSelectMember={(memberId) => patchSelection({ member: memberId, slot: null, finding: null })}
           onSelectSlot={(slotId) => patchSelection({ slot: slotId, tab: "roster", member: null, day: null, finding: null })}
         />

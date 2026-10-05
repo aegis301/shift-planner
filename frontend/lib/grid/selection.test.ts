@@ -3,6 +3,7 @@ import {
   cellSelected,
   cellsInSelection,
   moveActive,
+  selectionOverlayClass,
   rangeOf,
   selectAll,
   selectColumn,
@@ -13,6 +14,14 @@ import {
 const bounds = { rows: 10, cols: 4 };
 
 describe("grid selection", () => {
+  it("draws the selection above an opaque cell fill", () => {
+    expect(selectionOverlayClass(false)).toBe("");
+    const overlay = selectionOverlayClass(true);
+    expect(overlay).toContain("ring-inset");
+    expect(overlay).toContain("z-10");
+    expect(overlay).toContain("pointer-events-none");
+  });
+
   it("moves the active cell and collapses the range", () => {
     const next = moveActive(selectionAt({ row: 1, col: 1 }, bounds), 1, 0, bounds, false, false);
     expect(next.active).toEqual({ row: 2, col: 1 });
