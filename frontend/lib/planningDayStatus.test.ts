@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { planningDayStatusBadgeClass, planningDayStatusFillClass, PLANNING_DAY_STATUS_COLOR_PRESETS } from "@/lib/planningDayStatus";
+import {
+  activePlanningDayStatusDefinitions,
+  definitionForStoredStatus,
+  planningDayStatusBadgeClass,
+  planningDayStatusFillClass,
+  PLANNING_DAY_STATUS_COLOR_PRESETS,
+  type PlanningDayStatusDefinition
+} from "@/lib/planningDayStatus";
 
 const FILL_HEX: Record<(typeof PLANNING_DAY_STATUS_COLOR_PRESETS)[number], [string, string]> = {
   rose: ["#ffe4e6", "#9f1239"],
@@ -17,6 +24,31 @@ const FILL_HEX: Record<(typeof PLANNING_DAY_STATUS_COLOR_PRESETS)[number], [stri
   teal: ["#ccfbf1", "#115e59"]
 };
 
+describe("stored day status", () => {
+  it("resolves an inactive blocking status that is still on a cell", () => {
+    const inactive = statusDefinition({
+      code: "urlaub",
+      label: "Urlaub",
+      color_preset: "rose",
+      blocks_roster_assignment: true,
+      is_active: false
+    });
+    const active = statusDefinition({
+      code: "frei",
+      label: "Frei",
+      color_preset: "slate",
+      blocks_roster_assignment: false,
+      is_active: true
+    });
+    const stored = definitionForStoredStatus("urlaub", [inactive, active]);
+    expect(stored?.is_active).toBe(false);
+    expect(stored?.blocks_roster_assignment).toBe(true);
+    expect(stored ? planningDayStatusFillClass(stored.color_preset) : "").toContain("bg-rose-100");
+    expect(activePlanningDayStatusDefinitions([inactive, active]).map((row) => row.code)).toEqual(["frei"]);
+    expect(definitionForStoredStatus(null, [inactive])).toBeUndefined();
+  });
+});
+
 describe("planning day status fill", () => {
   it("keeps dark text on the light preset background at 4.5:1 or better", () => {
     for (const preset of PLANNING_DAY_STATUS_COLOR_PRESETS) {
@@ -28,6 +60,17 @@ describe("planning day status fill", () => {
     }
   });
 });
+
+function statusDefinition(row: Pick<PlanningDayStatusDefinition, "code" | "label" | "color_preset" | "blocks_roster_assignment" | "is_active">): PlanningDayStatusDefinition {
+  return {
+    id: row.code.length,
+    organization_id: 1,
+    display_order: 0,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+    ...row
+  };
+}
 
 function contrast(background: string, foreground: string): number {
   const lighter = Math.max(luminance(background), luminance(foreground));

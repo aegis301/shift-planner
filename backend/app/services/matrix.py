@@ -197,7 +197,7 @@ def get_planning_matrix(
     day_status_definitions = [
         PlanningDayStatusDefinitionRead.model_validate(row)
         for row in list_planning_day_status_definitions(
-            db, organization_id=organization_id, active_only=True
+            db, organization_id=organization_id, active_only=False
         )
     ]
     return PlanningMatrixRead(

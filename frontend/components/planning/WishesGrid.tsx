@@ -11,6 +11,7 @@ import { rangeOf, selectionAt, type GridSelection } from "@/lib/grid/selection";
 import { t, type Locale } from "@/lib/i18n";
 import {
   activePlanningDayStatusDefinitions,
+  definitionForStoredStatus,
   planningDayStatusByCode,
   planningDayStatusLabel
 } from "@/lib/planningDayStatus";
@@ -89,11 +90,9 @@ export function WishesGrid({
       setEditorFilter(null);
     }
   }, [days, members, selectedDay, selectedMemberId]);
-  const definitions = useMemo(
-    () => activePlanningDayStatusDefinitions(matrix?.day_status_definitions ?? []),
-    [matrix?.day_status_definitions]
-  );
-  const statusByCode = useMemo(() => planningDayStatusByCode(definitions), [definitions]);
+  const storedDefinitions = useMemo(() => matrix?.day_status_definitions ?? [], [matrix?.day_status_definitions]);
+  const definitions = useMemo(() => activePlanningDayStatusDefinitions(storedDefinitions), [storedDefinitions]);
+  const statusByCode = useMemo(() => planningDayStatusByCode(storedDefinitions), [storedDefinitions]);
   const cellIndex = useMemo(() => {
     const index = new Map<string, Matrix["cells"][number]>();
     for (const cell of matrix?.cells ?? []) {
@@ -226,7 +225,7 @@ export function WishesGrid({
           continue;
         }
         const resolved = source.raw
-          ? resolveStatusToken(source.status ?? "", definitions)
+          ? resolveStatusToken(source.status ?? "", storedDefinitions)
           : source.status
             ? { status: source.status }
             : { clear: true as const };
@@ -304,7 +303,7 @@ export function WishesGrid({
         label={t(locale, "wishesGridLabel")}
         renderCell={(row, col) => {
           const state = stateAt(row, col);
-          const definition = state?.status ? statusByCode.get(state.status) : undefined;
+          const definition = definitionForStoredStatus(state?.status, storedDefinitions);
           const intents = state ? intentIndex.get(cellKey(state.teamMemberId, state.date)) : undefined;
           return (
             <WishesCellView

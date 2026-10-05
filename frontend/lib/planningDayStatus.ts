@@ -140,6 +140,16 @@ export function planningDayStatusByCode(
   return new Map(definitions.map((row) => [row.code, row]));
 }
 
+export function definitionForStoredStatus(
+  code: string | null | undefined,
+  definitions: PlanningDayStatusDefinition[]
+): PlanningDayStatusDefinition | undefined {
+  if (!code) {
+    return undefined;
+  }
+  return planningDayStatusByCode(definitions).get(code);
+}
+
 export function labelForPlanningDayStatusCode(
   code: string,
   definitions: PlanningDayStatusDefinition[],
