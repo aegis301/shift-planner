@@ -141,7 +141,7 @@ test.describe("wishes grid", () => {
     await page.goto(planningPath(target));
     const grid = page.getByRole("grid", { name: "Wünsche" });
     await grid.locator(`[data-wishes-member="${member.id}"][data-wishes-date="${day}"]`).click();
-    await expect(page.getByRole("complementary")).toContainText(comment);
+    await expect(page.locator("aside:not(#app-sidebar)")).toContainText(comment);
   });
 
   test("keeps a published group read-only", async ({ page, request }) => {
