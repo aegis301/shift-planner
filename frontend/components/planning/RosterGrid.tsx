@@ -47,7 +47,15 @@ import {
   type RosterChangeWrite
 } from "@/lib/queries/rosterEdit";
 import { useUnresolvedShiftSwaps } from "@/lib/queries/activity";
-import { columnHeader, rosterGridColumns, slotForColumn, type RosterGridColumn } from "@/lib/rosterColumns";
+import {
+  columnHeader,
+  rosterGridColumns,
+  slotsForColumn,
+  stepWithinStack,
+  type RosterColumnSlot,
+  type RosterGridColumn,
+  type RosterView
+} from "@/lib/rosterColumns";
 import { formatShiftTimeRange } from "@/lib/shiftDisplay";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 
@@ -73,7 +81,8 @@ export function RosterGrid({
   duplicateMemberDayKeys,
   fairnessAccounts = null,
   onSelectSlot,
-  onNotice
+  onNotice,
+  view = "template"
 }: {
   periodId: string;
   shiftGroupId?: string;
@@ -84,6 +93,7 @@ export function RosterGrid({
   fairnessAccounts?: FairnessAccountsRead | null;
   onSelectSlot?: (slotId: number) => void;
   onNotice?: (notice: RosterChangeNotice | null) => void;
+  view?: RosterView;
 }) {
   const { locale } = useLocale();
   const { me } = useSession();
@@ -110,8 +120,14 @@ export function RosterGrid({
   const [stacks, setStacks] = useState<UndoStacks | null>(null);
   const [editor, setEditor] = useState<{ filter: string; manualOverride: boolean } | null>(null);
   const [message, setMessage] = useState("");
+  const [stackIndex, setStackIndex] = useState(0);
+  const stackIndexRef = useRef(0);
   const lastCopy = useRef<{ tsv: string; json: string } | null>(null);
-  const columns = useMemo(() => (matrix ? rosterGridColumns(matrix.slots, matrix.shift_templates ?? []) : []), [matrix]);
+  const headerLabels = { day: t(locale, "rosterViewDay"), night: t(locale, "rosterViewNight") };
+  const columns = useMemo(
+    () => (matrix ? rosterGridColumns(matrix.slots, matrix.shift_templates ?? [], view, timeZone) : []),
+    [matrix, timeZone, view]
+  );
   const days = matrix?.days ?? [];
   const userId = me && "id" in me ? me.id : null;
   const userEmail = me && "email" in me ? me.email : null;
@@ -171,7 +187,7 @@ export function RosterGrid({
   }
 
   async function saveOne(memberId: number | "", manualOverride: boolean) {
-    const slot = slotAt(matrix, columns, days, selection.active.row, selection.active.col);
+    const slot = slotAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone, stackIndexRef.current);
     if (!slot || readOnly) {
       return;
     }
@@ -201,7 +217,7 @@ export function RosterGrid({
     const items: RosterChangeWrite[] = [];
     for (let row = range.rowStart; row <= range.rowEnd; row += 1) {
       for (let col = range.colStart; col <= range.colEnd; col += 1) {
-        const slot = slotAt(matrix, columns, days, row, col);
+        const slot = slotAt(matrix, columns, days, row, col, timeZone, stackIndexRef.current);
         if (!slot) {
           continue;
         }
@@ -222,7 +238,7 @@ export function RosterGrid({
       const labelRow: (string | null)[] = [];
       const idRow: { memberId: number | null }[] = [];
       for (let col = range.colStart; col <= range.colEnd; col += 1) {
-        const slot = slotAt(matrix, columns, days, row, col);
+        const slot = slotAt(matrix, columns, days, row, col, timeZone, stackIndexRef.current);
         const assignment = slot ? matrix.assignments.find((rowItem) => rowItem.roster_slot_id === slot.id) : undefined;
         const member = assignment ? matrix.team_members.find((item) => item.id === assignment.team_member_id) : undefined;
         labelRow.push(member ? teamMemberPlanningDisplayName(member) : "");
@@ -257,7 +273,7 @@ export function RosterGrid({
       for (let colOffset = 0; colOffset < width; colOffset += 1) {
         const row = range.rowStart + rowOffset;
         const col = range.colStart + colOffset;
-        const slot = slotAt(matrix, columns, days, row, col);
+        const slot = slotAt(matrix, columns, days, row, col, timeZone, stackIndexRef.current);
         if (!slot) {
           continue;
         }
@@ -313,19 +329,22 @@ export function RosterGrid({
     return null;
   }
 
-  const activeSlot = slotAt(matrix, columns, days, selection.active.row, selection.active.col);
+  const activeSlot = slotAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone, stackIndexRef.current);
 
   return (
     <div className="grid gap-2">
       {message ? <p className="text-sm text-muted">{message}</p> : null}
       <Grid
-        columns={columns.map((column) => ({ id: column.key, header: columnHeader(column), group: column.name }))}
+        columns={columns.map((column) => ({ id: column.key, header: columnHeader(column, headerLabels), group: column.name }))}
         cornerLabel={t(locale, "date")}
         editable={!readOnly}
         editing={editor !== null}
         label={t(locale, "rosterGridLabel")}
+        rowHeight={view === "variant" ? undefined : 72}
         renderCell={(row, col) => (
           <RosterGridCell
+            active={selection.active.row === row && selection.active.col === col}
+            activeSlotId={slotAt(matrix, columns, days, row, col, timeZone, stackIndex)?.id ?? null}
             column={columns[col]}
             locale={locale}
             matrix={matrix}
@@ -334,19 +353,45 @@ export function RosterGrid({
             swapSlotIds={swapSlotIds}
             timeZone={timeZone}
             warnings={validationWarnings}
+            onActivate={(slotId) => {
+              const slots = slotsAt(matrix, columns, days, row, col, timeZone);
+              const index = Math.max(0, slots.findIndex((slot) => slot.id === slotId));
+              stackIndexRef.current = index;
+              setStackIndex(index);
+              setSelection(selectionAt({ row, col }, { rows: days.length, cols: columns.length }));
+              if (!readOnly) {
+                const assignment = matrix.assignments.find((item) => item.roster_slot_id === slotId);
+                setEditor({ filter: "", manualOverride: assignment?.manual_override === true });
+              }
+              onSelectSlot?.(slotId);
+            }}
           />
         )}
         renderRowHeader={(row) => <DayHeader date={days[row]?.date ?? ""} locale={locale} slots={matrix.slots} />}
         rowCount={days.length}
         selection={selection}
+        onBeforeVerticalMove={(rowDelta) => {
+          const slots = slotsAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone);
+          const step = stepWithinStack(stackIndexRef.current, rowDelta, slots.length);
+          if (step.leave) {
+            return false;
+          }
+          stackIndexRef.current = step.index;
+          setStackIndex(step.index);
+          const slot = slots[step.index];
+          if (slot) {
+            onSelectSlot?.(slot.id);
+          }
+          return true;
+        }}
         onCommand={(command) => {
           if (command.type === "edit") {
             const row = command.row ?? selection.active.row;
             const col = command.col ?? selection.active.col;
-            if (readOnly || !slotAt(matrix, columns, days, row, col)) {
+            if (readOnly || !slotAt(matrix, columns, days, row, col, timeZone, stackIndexRef.current)) {
               return;
             }
-            const assignment = assignmentFor(matrix, { active: { row, col }, anchor: { row, col } }, columns, days);
+            const assignment = assignmentFor(matrix, { active: { row, col }, anchor: { row, col } }, columns, days, timeZone, stackIndexRef.current);
             setEditor({ filter: command.filter, manualOverride: assignment?.manual_override === true });
             return;
           }
@@ -378,9 +423,9 @@ export function RosterGrid({
             const items: RosterChangeWrite[] = [];
             for (let row = range.rowStart + 1; row <= range.rowEnd; row += 1) {
               for (let col = range.colStart; col <= range.colEnd; col += 1) {
-                const slot = slotAt(matrix, columns, days, row, col);
+                const slot = slotAt(matrix, columns, days, row, col, timeZone, stackIndexRef.current);
                 if (slot) {
-                  items.push({ rosterSlotId: slot.id, teamMemberId: memberAt(matrix, columns, days, range.rowStart, col) });
+                  items.push({ rosterSlotId: slot.id, teamMemberId: memberAt(matrix, columns, days, range.rowStart, col, timeZone, stackIndexRef.current) });
                 }
               }
             }
@@ -392,9 +437,9 @@ export function RosterGrid({
             const items: RosterChangeWrite[] = [];
             for (let row = range.rowStart; row <= range.rowEnd; row += 1) {
               for (let col = range.colStart + 1; col <= range.colEnd; col += 1) {
-                const slot = slotAt(matrix, columns, days, row, col);
+                const slot = slotAt(matrix, columns, days, row, col, timeZone, stackIndexRef.current);
                 if (slot) {
-                  items.push({ rosterSlotId: slot.id, teamMemberId: memberAt(matrix, columns, days, row, range.colStart) });
+                  items.push({ rosterSlotId: slot.id, teamMemberId: memberAt(matrix, columns, days, row, range.colStart, timeZone, stackIndexRef.current) });
                 }
               }
             }
@@ -410,9 +455,14 @@ export function RosterGrid({
           }
         }}
         onSelectionChange={(next) => {
+          const moved = next.active.row !== selection.active.row || next.active.col !== selection.active.col;
+          if (moved) {
+            stackIndexRef.current = 0;
+            setStackIndex(0);
+          }
           setEditor(null);
           setSelection(next);
-          const slot = slotAt(matrix, columns, days, next.active.row, next.active.col);
+          const slot = slotAt(matrix, columns, days, next.active.row, next.active.col, timeZone, moved ? 0 : stackIndexRef.current);
           if (slot) {
             onSelectSlot?.(slot.id);
           }
@@ -464,7 +514,10 @@ function RosterGridCell({
   swapSlotIds,
   duplicateMemberDayKeys,
   locale,
-  timeZone
+  timeZone,
+  active,
+  activeSlotId,
+  onActivate
 }: {
   matrix: RosterMatrix;
   slotDate: string;
@@ -474,14 +527,58 @@ function RosterGridCell({
   duplicateMemberDayKeys?: ReadonlySet<string>;
   locale: Locale;
   timeZone: string;
+  active: boolean;
+  activeSlotId: number | null;
+  onActivate: (slotId: number) => void;
 }) {
   if (!column) {
     return null;
   }
-  const slot = slotForColumn(matrix.slots, slotDate, column);
-  if (!slot) {
+  const slots = slotsForColumn(matrix.slots, slotDate, column, timeZone);
+  if (slots.length === 0) {
     return <span className="text-muted">{t(locale, "emptyValue")}</span>;
   }
+  return (
+    <span className="flex min-w-0 flex-col gap-1">
+      {slots.map((slot) => (
+        <SlotChip
+          key={slot.id}
+          active={active && slot.id === activeSlotId}
+          duplicateMemberDayKeys={duplicateMemberDayKeys}
+          locale={locale}
+          matrix={matrix}
+          slot={slot}
+          swapSlotIds={swapSlotIds}
+          timeZone={timeZone}
+          warnings={warnings}
+          onActivate={onActivate}
+        />
+      ))}
+    </span>
+  );
+}
+
+function SlotChip({
+  matrix,
+  slot,
+  warnings,
+  swapSlotIds,
+  duplicateMemberDayKeys,
+  locale,
+  timeZone,
+  active,
+  onActivate
+}: {
+  matrix: RosterMatrix;
+  slot: RosterColumnSlot;
+  warnings: WarningHint[];
+  swapSlotIds: Set<number>;
+  duplicateMemberDayKeys?: ReadonlySet<string>;
+  locale: Locale;
+  timeZone: string;
+  active: boolean;
+  onActivate: (slotId: number) => void;
+}) {
   const assignment = matrix.assignments.find((row) => row.roster_slot_id === slot.id);
   const member = assignment ? matrix.team_members.find((row) => row.id === assignment.team_member_id) : undefined;
   const definitions = matrix.day_status_definitions ?? [];
@@ -502,9 +599,13 @@ function RosterGridCell({
   const tone = blocking ? "error" : severity;
   return (
     <span
-      className={`flex min-w-0 items-center gap-1 ${tone === "error" ? "bg-severity-error" : tone === "warning" ? "bg-severity-warning" : tone === "info" ? "bg-severity-info" : ""}`}
+      className={`flex min-w-0 items-center gap-1 rounded-sm ${tone === "error" ? "bg-severity-error" : tone === "warning" ? "bg-severity-warning" : tone === "info" ? "bg-severity-info" : ""} ${active ? "ring-1 ring-ink" : ""}`}
       data-roster-slot={slot.id}
       title={formatShiftTimeRange(slot.starts_at ?? null, slot.ends_at ?? null, timeZone)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onActivate(slot.id);
+      }}
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${statusRow ? planningDayStatusSolidClass(statusRow.color_preset) : "bg-slate-300"}`} />
       <span className="truncate font-medium text-ink">{member ? teamMemberPlanningDisplayName(member) : t(locale, "emptyValue")}</span>
@@ -654,25 +755,63 @@ function MemberPicker({
   );
 }
 
-function slotAt(matrix: RosterMatrix | null, columns: RosterGridColumn[], days: { date: string }[], row: number, col: number) {
+function slotsAt(
+  matrix: RosterMatrix | null,
+  columns: RosterGridColumn[],
+  days: { date: string }[],
+  row: number,
+  col: number,
+  timeZone: string
+) {
   const column = columns[col];
   const date = days[row]?.date;
   if (!matrix || !column || !date) {
-    return null;
+    return [];
   }
-  return slotForColumn(matrix.slots, date, column);
+  return slotsForColumn(matrix.slots, date, column, timeZone);
 }
 
-function memberAt(matrix: RosterMatrix, columns: RosterGridColumn[], days: { date: string }[], row: number, col: number): number | null {
-  const slot = slotAt(matrix, columns, days, row, col);
+function slotAt(
+  matrix: RosterMatrix | null,
+  columns: RosterGridColumn[],
+  days: { date: string }[],
+  row: number,
+  col: number,
+  timeZone: string,
+  stackIndex: number
+) {
+  const slots = slotsAt(matrix, columns, days, row, col, timeZone);
+  if (slots.length === 0) {
+    return null;
+  }
+  return slots[Math.min(Math.max(stackIndex, 0), slots.length - 1)] ?? null;
+}
+
+function memberAt(
+  matrix: RosterMatrix,
+  columns: RosterGridColumn[],
+  days: { date: string }[],
+  row: number,
+  col: number,
+  timeZone: string,
+  stackIndex: number
+): number | null {
+  const slot = slotAt(matrix, columns, days, row, col, timeZone, stackIndex);
   if (!slot) {
     return null;
   }
   return matrix.assignments.find((item) => item.roster_slot_id === slot.id)?.team_member_id ?? null;
 }
 
-function assignmentFor(matrix: RosterMatrix, selection: GridSelection, columns: RosterGridColumn[], days: { date: string }[]) {
-  const slot = slotAt(matrix, columns, days, selection.active.row, selection.active.col);
+function assignmentFor(
+  matrix: RosterMatrix,
+  selection: GridSelection,
+  columns: RosterGridColumn[],
+  days: { date: string }[],
+  timeZone: string,
+  stackIndex: number
+) {
+  const slot = slotAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone, stackIndex);
   return slot ? matrix.assignments.find((item) => item.roster_slot_id === slot.id) : undefined;
 }
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-05
+- **Roster views:** The planning context bar and `?rosterView=` choose template, day/night, or variant columns. Template is the default and stacks a day's slots in one column. Day/night adds day and night columns only for a template that has both. Variant keeps one column per variant. The command palette lists the three views.
+
 ## 2026-09-30
 - **JavaScript workspace:** npm workspaces install from the repository root. `@shift-planner/api-client` holds the generated OpenAPI types, `ApiError`, and `createApiClient` (cookie or bearer). `@shift-planner/i18n` holds the German and English dictionaries. `@shift-planner/domain` holds the pure date, shift, duty, and swap helpers and refuses React, Next, React Native, and `window`. The web app re-exports those packages and behaves the same. Frontend images build from the repo root.
 - **Member API:** `/api/v1/me` returns only the signed-in member's home, duties, wishes, swaps, and hours. Direct swaps include the counterparty slot. Claim is offered only to members the eligibility service accepts. Wishes stay inside the caller's active shift group, and clearing a wish requires the period roster. Home, offer eligibility, and the calendar window use the organization's time zone. Wishes writes refuse another member (`not_self`) and a published group (`published`). `POST /me/calendar-token` rotates `team_members.calendar_token`; `GET /me/calendar.ics?token=` is the calendar subscription and lists only that member's duties. The web member area uses these routes. The colleague roster on `/my-planning` still uses `team_member_portal=true` on the planner roster route. There is no MCP surface for `/me`, because MCP has no person. Alembic `202609300002`.

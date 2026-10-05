@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { PlanningPeriodStatusMenu, type PlanningPeriodStatusAction } from "@/components/PlanningPeriodStatusMenu";
 import { inputClass } from "@/components/Card";
 import { t, type Locale } from "@/lib/i18n";
+import type { RosterView } from "@/lib/rosterColumns";
 
 type Option = { id: string; label: string };
 
@@ -19,6 +20,8 @@ export function ContextBar({
   onStatus,
   versionLabel = null,
   statusReason = null,
+  rosterView,
+  onRosterView,
   actions
 }: {
   locale: Locale;
@@ -34,6 +37,8 @@ export function ContextBar({
   onStatus?: (action: PlanningPeriodStatusAction) => void;
   versionLabel?: string | null;
   statusReason?: string | null;
+  rosterView?: RosterView;
+  onRosterView?: (view: RosterView) => void;
   actions?: ReactNode;
 }) {
   return (
@@ -71,6 +76,21 @@ export function ContextBar({
             status={status}
           />
         </div>
+      ) : null}
+      {onRosterView ? (
+        <label className="grid gap-1 text-xs font-medium text-slate-600">
+          {t(locale, "rosterViewLabel")}
+          <select
+            aria-label={t(locale, "rosterViewLabel")}
+            className={`${inputClass} h-10 min-w-36`}
+            value={rosterView ?? "template"}
+            onChange={(event) => onRosterView(event.target.value as RosterView)}
+          >
+            <option value="template">{t(locale, "rosterViewTemplate")}</option>
+            <option value="day-night">{t(locale, "rosterViewDayNight")}</option>
+            <option value="variant">{t(locale, "rosterViewVariant")}</option>
+          </select>
+        </label>
       ) : null}
       {versionLabel ? <p className="mb-2 text-sm font-medium text-slate-700">{versionLabel}</p> : null}
       {statusReason ? <p className="mb-2 text-sm font-medium text-amber-900">{statusReason}</p> : null}

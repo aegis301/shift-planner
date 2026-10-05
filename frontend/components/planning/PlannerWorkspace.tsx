@@ -59,6 +59,7 @@ import { invalidateQueryKeys, rosterAssignmentKeys, statusTransitionKeys, wishes
 import { writeRosterBundle } from "@/lib/queries/rosterEdit";
 import { useRosterAssignmentMutation } from "@/lib/queries/rosterEdit";
 import { buildPaletteCommands } from "@/lib/paletteCommands";
+import { parseRosterView } from "@/lib/rosterColumns";
 import { isTypingTarget } from "@/lib/shortcuts";
 import { readWorkbenchSelection, selectionQuery } from "@/lib/workbenchSelection";
 import { ComplianceReportPanel } from "@/components/ComplianceReportPanel";
@@ -290,6 +291,14 @@ function PlannerWorkspaceContent() {
       : null;
   const assignSlot = useRosterAssignmentMutation(planningScope);
   const selection = readWorkbenchSelection(searchParams);
+  const rosterView = parseRosterView(searchParams.get("rosterView"));
+
+  function updateRosterView(next: ReturnType<typeof parseRosterView>) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("rosterView", next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
 
   function patchSelection(patch: Parameters<typeof selectionQuery>[1]) {
     const qs = selectionQuery(searchParams, patch);
@@ -619,6 +628,7 @@ function PlannerWorkspaceContent() {
           periodId={periodId}
           readOnly={!plannerPlanningEditable || viewingVersionId != null}
           shiftGroupId={shiftGroupId || undefined}
+          view={rosterView}
           versionId={viewingVersionId}
           validationWarnings={warnings}
           duplicateMemberDayKeys={duplicateMemberDayKeys}
@@ -746,7 +756,10 @@ function PlannerWorkspaceContent() {
       needGroup: t(locale, "paletteReasonNeedGroup"),
       needPeriod: t(locale, "paletteReasonNeedPeriod"),
       sync: t(locale, "refreshRosterFromTemplates"),
-      regenerate: t(locale, "regenerateRoster")
+      regenerate: t(locale, "regenerateRoster"),
+      rosterViewTemplate: t(locale, "rosterViewTemplate"),
+      rosterViewDayNight: t(locale, "rosterViewDayNight"),
+      rosterViewVariant: t(locale, "rosterViewVariant")
     },
     periods: (periods ?? []).map((period) => ({ id: String(period.id), label: monthLabel(period) })),
     groups: shiftGroups.map((group) => ({ id: String(group.id), label: `${group.name} (${group.code})` })),
@@ -765,6 +778,7 @@ function PlannerWorkspaceContent() {
     selectDay: (id) => patchSelection({ day: id, slot: null, member: null, finding: null }),
     sync: () => setSyncRosterConfirmOpen(true),
     regenerate: () => setDestructiveAction("regenerate-roster"),
+    selectRosterView: updateRosterView,
     publish: () => setDestructiveAction("status-published"),
     preliminary: () => setDestructiveAction("status-preliminary"),
     draft: () => setDestructiveAction("status-draft"),
@@ -798,6 +812,8 @@ function PlannerWorkspaceContent() {
             : null
         }
         statusReason={wishesReadOnlyReason || null}
+        rosterView={rosterView}
+        onRosterView={updateRosterView}
       />
       <Card>
         <div className="grid gap-3">

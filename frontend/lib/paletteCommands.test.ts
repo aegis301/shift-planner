@@ -22,7 +22,10 @@ function context(overrides: Partial<PaletteContext> = {}): PaletteContext {
       needGroup: "Choose a shift group first",
       needPeriod: "Choose a month first",
       sync: "Sync roster",
-      regenerate: "Regenerate roster"
+      regenerate: "Regenerate roster",
+      rosterViewTemplate: "Template",
+      rosterViewDayNight: "Day/night",
+      rosterViewVariant: "Variant"
     },
     periods: [],
     groups: [],
@@ -41,6 +44,7 @@ function context(overrides: Partial<PaletteContext> = {}): PaletteContext {
     selectDay: () => undefined,
     sync: () => undefined,
     regenerate: () => undefined,
+    selectRosterView: () => undefined,
     ...overrides
   };
 }
@@ -78,7 +82,17 @@ describe("palette commands", () => {
       })
     );
     expect(commands.map((row) => row.id)).toEqual(
-      expect.arrayContaining(["period-4", "group-2", "member-9", "day-2026-10-03", "sync", "regenerate"])
+      expect.arrayContaining([
+        "period-4",
+        "group-2",
+        "member-9",
+        "day-2026-10-03",
+        "sync",
+        "regenerate",
+        "roster-view-template",
+        "roster-view-day-night",
+        "roster-view-variant"
+      ])
     );
   });
 });

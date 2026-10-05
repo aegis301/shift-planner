@@ -258,13 +258,17 @@ type), and design new planner features desktop-first already.
 - Prefer density: compact tables, tabular numbers, several panes on screen at once.
 - Detail belongs in a persistent inspector panel on the right, not in a modal. Keep modals for
   destructive confirmations and short forms.
-- Period, shift group and plan status live in a context bar and in the URL (`?period=`,
-  `?shiftGroup=`, `?tab=`, `?slot=`, `?member=`, `?day=`). Every workbench view is linkable.
+- Period, shift group, roster view, and plan status live in a context bar and in the URL
+  (`?period=`, `?shiftGroup=`, `?rosterView=`, `?tab=`, `?slot=`, `?member=`, `?day=`).
+  Every workbench view is linkable.
 - Every primary action is reachable from the keyboard and from the command palette
   (`Ctrl/Cmd+K`). Density is `localStorage` key `shift-planner-density` on `data-density`.
 - The roster matrix uses the shared grid in `frontend/components/grid/` (TanStack Table and
-  Virtual): one column per template position, arrow-key navigation, range selection, copy and
-  paste, undo and redo. Bulk roster writes go through roster change sets. The wishes matrix
+  Virtual). `?rosterView=template` (the default) is one column per template and position, with
+  that day's slots stacked. `day-night` adds day and night columns only when a template has
+  both. `variant` is one column per template, variant, and position. Arrow keys, range
+  selection, copy, paste, undo, and redo target the active slot. Bulk roster writes go through
+  roster change sets. The wishes matrix
   uses the same grid: day rows, member columns, and client-side undo with
   `expected_updated_at`. Do not add another hand-built roster or wishes table.
 

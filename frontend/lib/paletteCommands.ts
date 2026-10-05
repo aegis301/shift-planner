@@ -28,6 +28,9 @@ export type PaletteContext = {
     needPeriod: string;
     sync: string;
     regenerate: string;
+    rosterViewTemplate: string;
+    rosterViewDayNight: string;
+    rosterViewVariant: string;
   };
   periods: PaletteChoice[];
   groups: PaletteChoice[];
@@ -46,6 +49,7 @@ export type PaletteContext = {
   selectDay: (id: string) => void;
   sync: () => void;
   regenerate: () => void;
+  selectRosterView: (view: "template" | "day-night" | "variant") => void;
 };
 
 function reason(ok: boolean, message: string): string | null {
@@ -126,6 +130,24 @@ export function buildPaletteCommands(context: PaletteContext): PaletteCommand[] 
       label: context.labels.export,
       disabledReason: reason(context.hasPeriod && (context.isAdmin || context.hasShiftGroup), context.hasPeriod ? context.labels.needGroup : context.labels.needPeriod),
       run: context.export
+    },
+    {
+      id: "roster-view-template",
+      label: context.labels.rosterViewTemplate,
+      disabledReason: null,
+      run: () => context.selectRosterView("template")
+    },
+    {
+      id: "roster-view-day-night",
+      label: context.labels.rosterViewDayNight,
+      disabledReason: null,
+      run: () => context.selectRosterView("day-night")
+    },
+    {
+      id: "roster-view-variant",
+      label: context.labels.rosterViewVariant,
+      disabledReason: null,
+      run: () => context.selectRosterView("variant")
     },
     {
       id: "delete-period",

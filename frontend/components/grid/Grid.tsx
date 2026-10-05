@@ -49,8 +49,10 @@ export function Grid({
   selection,
   onSelectionChange,
   onCommand,
+  onBeforeVerticalMove,
   editable = true,
-  editing = false
+  editing = false,
+  rowHeight
 }: {
   label: string;
   rowCount: number;
@@ -61,11 +63,13 @@ export function Grid({
   selection: GridSelection;
   onSelectionChange: (selection: GridSelection) => void;
   onCommand: (command: GridCommand) => void;
+  onBeforeVerticalMove?: (rowDelta: number) => boolean;
   editable?: boolean;
   editing?: boolean;
+  rowHeight?: number;
 }) {
   const density = useDensity();
-  const rowHeight = density === "compact" ? 36 : 52;
+  const resolvedRowHeight = rowHeight ?? (density === "compact" ? 36 : 52);
   const parentRef = useRef<HTMLDivElement>(null);
   const focusAfterKey = useRef(false);
   const bounds = { rows: rowCount, cols: columns.length };
@@ -93,7 +97,7 @@ export function Grid({
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => rowHeight,
+    estimateSize: () => resolvedRowHeight,
     overscan: 8
   });
   const columnVirtualizer = useVirtualizer({
@@ -138,6 +142,15 @@ export function Grid({
     }
     event.preventDefault();
     event.stopPropagation();
+    if (
+      command.type === "move" &&
+      command.colDelta === 0 &&
+      (command.rowDelta === 1 || command.rowDelta === -1) &&
+      !command.extend &&
+      onBeforeVerticalMove?.(command.rowDelta)
+    ) {
+      return;
+    }
     if (command.type === "move" || command.type === "edge") {
       applySelection(selectionAfterCommand(selection, command, bounds));
       return;

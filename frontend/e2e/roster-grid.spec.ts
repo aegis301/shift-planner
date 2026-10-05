@@ -174,6 +174,24 @@ test.describe("roster grid", () => {
     expect(elapsed).toBeLessThan(2000);
   });
 
+  test("template view keeps one column and edits the clicked slot", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    await page.goto(planningPath(target));
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    const view = page.getByLabel("Dienstplanansicht");
+    await view.selectOption("variant");
+    await expect(page.getByRole("columnheader", { name: "bd24 weekday #1" })).toBeVisible();
+    await view.selectOption("template");
+    await expect(page).toHaveURL(/rosterView=template/);
+    await expect(page.getByRole("columnheader", { name: "bd24 weekday #1" })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: "bd24 #1" })).toHaveCount(1);
+    const slot = page.locator("[data-roster-slot]").first();
+    const slotId = await slot.getAttribute("data-roster-slot");
+    await slot.click();
+    await expect(page.getByRole("listbox")).toBeVisible();
+    await expect(page.getByText(slotId ?? "", { exact: true })).toBeVisible();
+  });
+
   test("exposes grid semantics", async ({ page, request }) => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));
