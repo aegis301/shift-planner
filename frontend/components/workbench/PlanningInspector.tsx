@@ -13,8 +13,11 @@ import {
 import { workloadRowForMember } from "@/lib/rosterWorkload";
 import type { RosterMatrix } from "@/components/RosterMatrixEditor";
 import type { RosterChangeNotice } from "@/components/planning/RosterGrid";
-import { WishesCellPanel, WishesMemberNotes } from "@/components/planning/WishesInspectorPanels";
+import { IntentChip } from "@/components/planning/WishesCell";
+import { WishesCellPanel, WishesMemberNotes, WishesMonthOverview } from "@/components/planning/WishesInspectorPanels";
+import { planningDayStatusBadgeClass, planningDayStatusByCode, planningDayStatusLabel } from "@/lib/planningDayStatus";
 import type { WishesBundle } from "@/lib/queries/planning";
+import { wishesMonthOverview, type WishesMonthCell, type WishesMonthIntent, type WishesMonthTemplate } from "@/lib/wishesMonth";
 
 type Warning = {
   code: string;
@@ -44,7 +47,8 @@ export function PlanningInspector({
   onWishesChanged,
   onAssign,
   onSelectMember,
-  onSelectSlot
+  onSelectSlot,
+  onSelectDay
 }: {
   locale: Locale;
   periodId: string;
@@ -66,6 +70,7 @@ export function PlanningInspector({
   onAssign: (memberId: number) => void;
   onSelectMember: (memberId: string) => void;
   onSelectSlot: (slotId: string) => void;
+  onSelectDay: (day: string) => void;
 }) {
   const candidates = useQuery({
     queryKey: ["slot-candidates", periodId, slotId, shiftGroupId],
@@ -135,6 +140,7 @@ export function PlanningInspector({
         <CandidateGroup locale={locale} title={t(locale, "candidatesWarning")} rows={candidates.data.candidates.filter((row) => row.status === "warning")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
         <CandidateGroup locale={locale} title={t(locale, "candidatesBlocked")} rows={candidates.data.candidates.filter((row) => row.status === "blocked")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
         <CandidateGroup locale={locale} title={t(locale, "candidatesIneligible")} rows={candidates.data.candidates.filter((row) => row.status === "ineligible")} dimension={dimension} fairnessIndex={fairnessIndex} canAssign={canAssign} onAssign={onAssign} />
+        <AssigneeDayWishes locale={locale} roster={roster} slotId={slotId} wishes={wishes} />
         <section>
           <h4 className="font-semibold text-ink">{t(locale, "inspectorHistory")}</h4>
           <ul className="mt-1 grid gap-1 text-xs text-slate-600">
@@ -172,6 +178,7 @@ export function PlanningInspector({
           readOnly={wishesReadOnly}
           shiftGroupId={shiftGroupId}
           onChanged={onWishesChanged}
+          onSelectDay={onSelectDay}
         />
       </div>
     );
@@ -192,16 +199,19 @@ export function PlanningInspector({
           </dl>
         ) : null}
         {wishes && onWishesChanged ? (
-          <WishesMemberNotes
-            locale={locale}
-            matrix={wishes}
-            memberId={Number(memberId)}
-            notes={wishesNotes}
-            periodId={periodId}
-            readOnly={wishesReadOnly}
-            shiftGroupId={shiftGroupId}
-            onChanged={onWishesChanged}
-          />
+          <>
+            <WishesMonthOverview locale={locale} matrix={wishes} memberId={Number(memberId)} onSelectDay={onSelectDay} />
+            <WishesMemberNotes
+              locale={locale}
+              matrix={wishes}
+              memberId={Number(memberId)}
+              notes={wishesNotes}
+              periodId={periodId}
+              readOnly={wishesReadOnly}
+              shiftGroupId={shiftGroupId}
+              onChanged={onWishesChanged}
+            />
+          </>
         ) : null}
       </div>
     );
@@ -226,6 +236,55 @@ export function PlanningInspector({
     return notice;
   }
   return <p className="text-sm text-slate-600">{t(locale, "inspectorEmpty")}</p>;
+}
+
+function AssigneeDayWishes({
+  locale,
+  roster,
+  wishes,
+  slotId
+}: {
+  locale: Locale;
+  roster: RosterMatrix | null;
+  wishes: WishesBundle["matrix"] | null;
+  slotId: string;
+}) {
+  const slot = roster?.slots.find((row) => String(row.id) === slotId);
+  const assignment = roster?.assignments.find((row) => String(row.roster_slot_id) === slotId);
+  if (!slot || !assignment) {
+    return null;
+  }
+  const cells: (WishesMonthCell & { status?: string | null })[] = wishes?.cells ?? roster?.planning_cells ?? [];
+  const intents: WishesMonthIntent[] = wishes?.shift_intents ?? roster?.shift_intents ?? [];
+  const templates: WishesMonthTemplate[] = wishes?.shift_templates ?? roster?.shift_templates ?? [];
+  const definitions = wishes?.day_status_definitions ?? roster?.day_status_definitions ?? [];
+  const cell = cells.find((row) => row.team_member_id === assignment.team_member_id && row.cell_date === slot.slot_date);
+  const definition = cell?.status ? planningDayStatusByCode(definitions).get(cell.status) : undefined;
+  const comment = cell?.comment?.trim() ?? "";
+  const dayIntents = wishesMonthOverview(assignment.team_member_id, [], intents, templates).filter((row) => row.date === slot.slot_date);
+  return (
+    <section className="grid gap-2">
+      <h4 className="font-semibold text-ink">{t(locale, "wishesAssigneeDay")}</h4>
+      {definition ? (
+        <p>
+          <span className={`rounded-token-sm px-1 ring-1 ${planningDayStatusBadgeClass(definition.color_preset)}`}>
+            {planningDayStatusLabel(definition, locale)}
+          </span>
+        </p>
+      ) : (
+        <p className="text-muted">{t(locale, "wishesNoStatus")}</p>
+      )}
+      <p className="text-ink">{comment || t(locale, "emptyValue")}</p>
+      {dayIntents.map((row) =>
+        row.kind === "comment" ? null : (
+          <p key={`${row.kind}-${row.templateId}`} className="flex min-w-0 items-center gap-1">
+            <span className="truncate">{row.templateName}</span>
+            <IntentChip kind={row.kind} locale={locale} />
+          </p>
+        )
+      )}
+    </section>
+  );
 }
 
 function ChangeSetNotice({ locale, notice }: { locale: Locale; notice: RosterChangeNotice }) {

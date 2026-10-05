@@ -34,6 +34,8 @@ export function WishesGrid({
   versionId = null,
   readOnly = false,
   readOnlyReason = "",
+  selectedDay = "",
+  selectedMemberId = "",
   onSelectCell
 }: {
   periodId: string;
@@ -41,6 +43,8 @@ export function WishesGrid({
   versionId?: number | null;
   readOnly?: boolean;
   readOnlyReason?: string;
+  selectedDay?: string;
+  selectedMemberId?: string;
   onSelectCell?: (date: string, teamMemberId: number) => void;
 }) {
   const { locale } = useLocale();
@@ -64,8 +68,27 @@ export function WishesGrid({
 
   const memberRows = matrix?.team_members;
   const noteRows = wishesQuery.data?.notes;
-  const members = memberRows ?? [];
-  const days = matrix?.days ?? [];
+  const members = useMemo(() => memberRows ?? [], [memberRows]);
+  const days = useMemo(() => matrix?.days ?? [], [matrix?.days]);
+
+  useEffect(() => {
+    const row = selectedDay ? days.findIndex((day) => day.date === selectedDay) : -1;
+    const col = selectedMemberId ? members.findIndex((member) => String(member.id) === selectedMemberId) : -1;
+    if (row < 0 || col < 0) {
+      return;
+    }
+    let moved = false;
+    setSelection((current) => {
+      if (current.active.row === row && current.active.col === col) {
+        return current;
+      }
+      moved = true;
+      return selectionAt({ row, col }, { rows: days.length, cols: members.length });
+    });
+    if (moved) {
+      setEditorFilter(null);
+    }
+  }, [days, members, selectedDay, selectedMemberId]);
   const definitions = useMemo(
     () => activePlanningDayStatusDefinitions(matrix?.day_status_definitions ?? []),
     [matrix?.day_status_definitions]
@@ -285,10 +308,13 @@ export function WishesGrid({
           const intents = state ? intentIndex.get(cellKey(state.teamMemberId, state.date)) : undefined;
           return (
             <WishesCellView
+              blocking={definition?.blocks_roster_assignment === true}
               colorPreset={definition?.color_preset ?? null}
               comment={state?.comment ?? ""}
+              date={state?.date ?? days[row]?.date ?? ""}
               label={definition ? planningDayStatusLabel(definition, locale) : ""}
               locale={locale}
+              memberId={state?.teamMemberId ?? members[col]?.id ?? 0}
               noGoCount={intents?.noGo ?? 0}
               wishCount={intents?.wish ?? 0}
             />

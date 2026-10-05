@@ -58,6 +58,7 @@ import {
   type RosterGridColumn,
   type RosterView
 } from "@/lib/rosterColumns";
+import { IntentChip } from "@/components/planning/WishesCell";
 import { formatShiftTimeRange } from "@/lib/shiftDisplay";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 
@@ -627,8 +628,8 @@ function SlotChip({
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${statusRow ? planningDayStatusSolidClass(statusRow.color_preset) : "bg-slate-300"}`} />
       <span className="truncate font-medium text-ink">{member ? teamMemberPlanningDisplayName(member) : t(locale, "emptyValue")}</span>
-      {intent?.kind === "wish" ? <span className="text-info">{t(locale, "wishShort")}</span> : null}
-      {intent?.kind === "no_go" && !assignment?.manual_override ? <span className="text-danger">{t(locale, "noGoShort")}</span> : null}
+      {intent?.kind === "wish" ? <IntentChip kind="wish" locale={locale} /> : null}
+      {intent?.kind === "no_go" && !assignment?.manual_override ? <IntentChip kind="no_go" locale={locale} /> : null}
       {blocking ? <span className="text-danger">{t(locale, "conflict")}</span> : null}
       {assignment && duplicateMemberDayKeys?.has(`${assignment.team_member_id}:${slot.slot_date}`) ? (
         <span className="text-warning">{t(locale, "rosterDuplicateDayInline")}</span>
