@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import OrganizationHoliday
@@ -66,6 +67,15 @@ def _date_taken(db: Session, *, organization_id: int, holiday_date: date, exclud
     return db.scalar(stmt) is not None
 
 
+def _flush_or_duplicate(db: Session) -> None:
+    # The pre-check cannot see a concurrent insert of the same date; the unique constraint can.
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ValueError(DUPLICATE_DATE_MESSAGE) from exc
+
+
 def _clean_label(raw: str) -> str:
     label = raw.strip()
     if not label:
@@ -86,7 +96,7 @@ def create_organization_holiday(
         raise ValueError(DUPLICATE_DATE_MESSAGE)
     row = OrganizationHoliday(organization_id=organization_id, holiday_date=payload.holiday_date, label=label)
     db.add(row)
-    db.flush()
+    _flush_or_duplicate(db)
     record_audit(
         db,
         actor=actor,
@@ -119,6 +129,7 @@ def update_organization_holiday(
         if _date_taken(db, organization_id=organization_id, holiday_date=payload.holiday_date, exclude_id=row.id):
             raise ValueError(DUPLICATE_DATE_MESSAGE)
         row.holiday_date = payload.holiday_date
+        _flush_or_duplicate(db)
     record_audit(
         db,
         actor=actor,

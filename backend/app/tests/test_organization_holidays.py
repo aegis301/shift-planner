@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -302,3 +303,39 @@ def test_fairness_and_workload_count_organization_holidays():
     )
     assert rows[0].total == 2
     assert rows[0].weekend_holiday_shifts == 1
+
+
+def test_concurrent_duplicate_date_is_a_validation_error(monkeypatch):
+    from app.schemas import OrganizationHolidayCreate, OrganizationHolidayUpdate
+    from app.services import organization_holidays as service
+
+    db = _session()
+    db.add(OrganizationHoliday(organization_id=1, holiday_date=CONGRESS_DAY, label="First"))
+    db.commit()
+    other = service.create_organization_holiday(
+        db,
+        OrganizationHolidayCreate(holiday_date=date(2026, 9, 16), label="Second"),
+        organization_id=1,
+        actor="test",
+        source="test",
+    )
+    # Simulate the race: the pre-check misses the row another request just committed.
+    monkeypatch.setattr(service, "_date_taken", lambda *args, **kwargs: False)
+    with pytest.raises(ValueError, match="already"):
+        service.create_organization_holiday(
+            db,
+            OrganizationHolidayCreate(holiday_date=CONGRESS_DAY, label="Race"),
+            organization_id=1,
+            actor="test",
+            source="test",
+        )
+    with pytest.raises(ValueError, match="already"):
+        service.update_organization_holiday(
+            db,
+            other.id,
+            OrganizationHolidayUpdate(holiday_date=CONGRESS_DAY),
+            organization_id=1,
+            actor="test",
+            source="test",
+        )
+    assert sorted(service.organization_holiday_dates(db, organization_id=1)) == [CONGRESS_DAY, date(2026, 9, 16)]
