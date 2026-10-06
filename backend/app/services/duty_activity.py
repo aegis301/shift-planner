@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -17,6 +17,7 @@ from app.schemas import DutyActivityCreate, DutyActivityReason, DutyActivityUpda
 from app.services.audit import record_audit
 from app.services.contract_groups import list_contract_groups
 from app.services.holidays import classify_day
+from app.services.organization_holidays import organization_holiday_dates
 from app.services.shift_groups import _stint_active_on
 from app.services.time_entries import time_entry_to_read
 from app.services.work_time_valuation import (
@@ -245,6 +246,7 @@ def _episode_minutes_values(
     started_at: datetime,
     ended_at: datetime,
     duration: int,
+    organization_holidays: frozenset[date] = frozenset(),
 ) -> tuple[int, int, bool]:
     template = slot.shift_template
     if kind == KIND_IN_DUTY_ACTIVITY:
@@ -258,7 +260,7 @@ def _episode_minutes_values(
     )
     category = getattr(template, "category", None) if template is not None else None
     if category == RUFDIENST:
-        day_class = slot.day_class or classify_day(slot.slot_date)
+        day_class = classify_day(slot.slot_date, organization_holidays)
         statutory = statutory_work_minutes(
             slot=slot,
             contract_group=group,
@@ -323,6 +325,9 @@ def record_duty_activity(
         started_at=started_at,
         ended_at=ended_at,
         duration=duration,
+        organization_holidays=organization_holiday_dates(
+            db, organization_id=organization_id, start_date=slot.slot_date, end_date=slot.slot_date
+        ),
     )
     category = slot.shift_template.category if slot.shift_template is not None else None
     row = TimeEntry(
@@ -400,6 +405,9 @@ def update_duty_activity(
         started_at=started_at,
         ended_at=ended_at if ended_at is not None else started_at,
         duration=duration,
+        organization_holidays=organization_holiday_dates(
+            db, organization_id=organization_id, start_date=slot.slot_date, end_date=slot.slot_date
+        ),
     )
     row.ended_at = ended_at
     row.duration_minutes = duration

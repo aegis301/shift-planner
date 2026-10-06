@@ -156,10 +156,19 @@ def _pool_for_month(
     return members
 
 
-def _day_matches_filter(day: date, day_filter: FairnessDayFilter, night: bool, is_night: bool) -> bool:
+def _day_matches_filter(
+    day: date,
+    day_filter: FairnessDayFilter,
+    night: bool,
+    is_night: bool,
+    organization_holidays: frozenset[date] = frozenset(),
+) -> bool:
     if night and not is_night:
         return False
-    return not (day_filter == "weekend_holiday" and classify_day(day) not in ("weekend", "holiday"))
+    return not (
+        day_filter == "weekend_holiday"
+        and classify_day(day, organization_holidays) not in ("weekend", "holiday")
+    )
 
 
 def _duty_value(counts: DutyDayCounts, dimension: FairnessDimension) -> float:
@@ -190,7 +199,9 @@ def _dimension_actual_for_month(
     total = 0.0
     if dimension.metric == "statutory_minutes":
         for day in _iter_days(start, end):
-            if not _day_matches_filter(day, dimension.day_filter, dimension.night, False):
+            if not _day_matches_filter(
+                day, dimension.day_filter, dimension.night, False, state.organization_holiday_dates
+            ):
                 continue
             stored = state.statutory_minutes_by_member_date.get((member_id, day))
             if stored is not None:

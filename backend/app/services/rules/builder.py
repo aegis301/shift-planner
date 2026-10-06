@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.holidays import classify_day
 from app.services.org_time import DEFAULT_TIMEZONE, is_night_duty, organization_timezone
+from app.services.organization_holidays import organization_holiday_dates
 from app.services.rules.registry import max_lookback, max_roster_lookback, resolve_active_rules
 from app.services.rules.state import (
     DutyDayCounts,
@@ -370,6 +371,7 @@ def _load_duty_count_totals(
     start_date: date,
     end_date: date,
     tz: str = DEFAULT_TIMEZONE,
+    organization_holidays: frozenset[date] = frozenset(),
 ) -> dict[tuple[int, date], DutyDayCounts]:
     if not team_member_ids or end_date < start_date:
         return {}
@@ -406,7 +408,7 @@ def _load_duty_count_totals(
         bucket["total"] = int(bucket["total"]) + 1
         cat = str(category) if category is not None else ""
         _bump_category(bucket["by_category"], cat or None)
-        if classify_day(entry_date) in ("weekend", "holiday"):
+        if classify_day(entry_date, organization_holidays) in ("weekend", "holiday"):
             bucket["weekend_holiday"] = int(bucket["weekend_holiday"]) + 1
             _bump_category(bucket["weekend_holiday_by_category"], cat or None)
         if _is_night_duty(entry_date, started_at, ended_at, tz):
@@ -532,6 +534,13 @@ def build_plan_state(
     for member_id, rows in patterns_grouped.items():
         patterns_grouped[member_id] = sorted(rows, key=lambda item: (item.display_order, item.id))
 
+    holiday_dates = organization_holiday_dates(
+        db,
+        organization_id=organization_id,
+        start_date=min(load_start, effective_history_start),
+        end_date=max(load_end, history_end),
+    )
+
     property_maps: dict[int, dict[int, object]] = {}
     for row in property_values:
         property_maps.setdefault(row.team_member_id, {})[row.property_definition_id] = row.value
@@ -597,12 +606,14 @@ def build_plan_state(
                 start_date=effective_history_start,
                 end_date=history_end,
                 tz=tz,
+                organization_holidays=holiday_dates,
             )
             if load_history_aggregates
             else {}
         ),
         period_roster_member_ids=frozen_mapping(period_roster_member_ids),
         timezone=tz,
+        organization_holiday_dates=holiday_dates,
         work_time_consents_by_member_id=frozen_mapping(
             load_work_time_consents_for_members(
                 db,

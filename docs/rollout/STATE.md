@@ -15,7 +15,7 @@ Companion documents:
   prompt. `created-issues.json` maps file prefix to GitHub issue number.
 - `docs/rollout/solver-spike-findings.md` — the CP-SAT spike. Issue #75 is built on it.
 
-Last updated: 2026-09-30.
+Last updated: 2026-10-06.
 
 ## What this rollout is
 
@@ -71,6 +71,7 @@ Shipped:
 - Planner unresolved swap pool: `open` and `targeted` requests by duty date, with withdraw (`#100`)
 - Organization IANA time zone and roster slot instants (`#109`). A 24 h wall-clock duty across the autumn clock change is 25 statutory hours and can exceed the 24 h extended daily cap; the solver fixture leaves that history slot unassigned.
 - Frontend test harness: Vitest, Playwright smoke flows against `seed_e2e`, and golden screenshots (`#110`)
+- Organization holidays: dates an organization treats as a holiday on top of the NRW calendar, used by slot generation, holiday credit, fairness and workload (`#147`)
 
 In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 
@@ -86,7 +87,8 @@ In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long
 | 6 | #78 | Swap marketplace UI and planner approval queue | shipped |
 | 7 | #99 | Swap UI states that explain why the exchange is unavailable | shipped |
 | 8 | *(fix)* | Swap legality sees duties in other shift groups | shipped |
-| 9 | #100 | Planner view of unresolved giveaways and unanswered proposals | this change |
+| 9 | #100 | Planner view of unresolved giveaways and unanswered proposals | shipped |
+| 10 | #147 | Organization holidays ("treat as holiday") | this change |
 
 Backlog, not part of the rollout: #34, #44, #51, #52, #53, #54.
 

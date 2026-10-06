@@ -11,6 +11,7 @@ from app.api.v1 import (
     matrix,
     me,
     organization_admin,
+    organization_holidays,
     organizations_public,
     planning,
     planning_day_status_definitions,
@@ -35,6 +36,7 @@ api_router.include_router(team_members.router)
 api_router.include_router(team_member_property_definitions.router)
 api_router.include_router(team_member_property_matrix.router)
 api_router.include_router(planning_day_status_definitions.router)
+api_router.include_router(organization_holidays.router)
 api_router.include_router(contract_groups.router)
 api_router.include_router(employment_periods.router)
 api_router.include_router(time_entries.router)

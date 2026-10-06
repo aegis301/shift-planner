@@ -25,6 +25,7 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.contract_groups import list_contract_groups
 from app.services.holidays import classify_day
+from app.services.organization_holidays import organization_holiday_dates
 from app.services.shift_groups import _stint_active_on
 from app.services.work_time_valuation import statutory_work_minutes, tariff_credit_minutes
 
@@ -119,11 +120,12 @@ def _desired_from_assignment(
     slot: RosterSlot,
     organization_id: int,
     group: ContractGroup | None,
+    organization_holidays: frozenset[date] = frozenset(),
 ) -> dict[str, Any]:
     category = slot.shift_template.category if slot.shift_template is not None else None
     started_at = slot.starts_at
     ended_at = slot.ends_at
-    day_class = classify_day(slot.slot_date)
+    day_class = classify_day(slot.slot_date, organization_holidays)
     template = slot.shift_template
     if template is not None:
         statutory = statutory_work_minutes(
@@ -291,12 +293,15 @@ def derive_entries(
     )
     cells = list(db.scalars(cell_stmt))
 
+    holiday_dates = organization_holiday_dates(
+        db, organization_id=organization_id, start_date=start_date, end_date=end_date
+    )
     desired_rows: list[dict[str, Any]] = []
     for assignment in assignments:
         slot = assignment.roster_slot
         member = member_by_id.get(assignment.team_member_id)
         group = _contract_group_on(member, slot.slot_date, groups) if member is not None else None
-        desired_rows.append(_desired_from_assignment(assignment, slot, organization_id, group))
+        desired_rows.append(_desired_from_assignment(assignment, slot, organization_id, group, holiday_dates))
     for cell in cells:
         member = member_by_id.get(cell.team_member_id)
         group = _contract_group_on(member, cell.cell_date, groups) if member is not None else None

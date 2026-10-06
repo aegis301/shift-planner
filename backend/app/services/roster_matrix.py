@@ -254,13 +254,21 @@ def ensure_roster_slots_for_period(db: Session, planning_period_id: int, organiz
     if not generated_slots:
         return []
 
-    existing = {
-        (slot.slot_date, slot.shift_variant_id, slot.position)
-        for slot in db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id))
-    }
+    existing_slots = list(db.scalars(select(RosterSlot).where(RosterSlot.planning_period_id == planning_period_id)))
+    existing = {(slot.slot_date, slot.shift_variant_id, slot.position) for slot in existing_slots}
+    existing_day_classes: dict[tuple[date, int | None], set[str | None]] = {}
+    for slot in existing_slots:
+        if slot.source == "template":
+            existing_day_classes.setdefault((slot.slot_date, slot.shift_template_id), set()).add(slot.day_class)
     for generated in generated_slots:
         key = (generated.slot_date, generated.variant_id, generated.position)
         if key in existing:
+            continue
+        # The date was reclassified (an organization holiday was added or removed) after the
+        # month was generated. Adding the new variant here would duplicate the day; sync swaps
+        # the slots and clears what no longer applies.
+        known_classes = existing_day_classes.get((generated.slot_date, generated.template_id))
+        if known_classes and generated.day_class not in known_classes:
             continue
         db.add(
             RosterSlot(

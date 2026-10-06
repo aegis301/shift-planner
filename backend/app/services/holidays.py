@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import date, timedelta
 
 
@@ -36,8 +37,13 @@ def get_nrw_holidays(year: int) -> set[date]:
     }
 
 
-def classify_day(day: date) -> str:
-    if day in get_nrw_holidays(day.year):
+def classify_day(day: date, extra_holidays: Collection[date] = ()) -> str:
+    """Classify a date as ``holiday``, ``weekend`` or ``weekday``.
+
+    ``extra_holidays`` are the organization's own holidays (``organization_holidays``), which
+    count exactly like a statutory NRW holiday. Load them with ``organization_holiday_dates``.
+    """
+    if day in extra_holidays or day in get_nrw_holidays(day.year):
         return "holiday"
     if day.weekday() >= 5:
         return "weekend"

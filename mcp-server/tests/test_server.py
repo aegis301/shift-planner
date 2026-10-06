@@ -669,3 +669,63 @@ def test_refresh_period_roster_tool_uses_service(monkeypatch):
         refresh_period_roster_tool(
             token="change-me-mcp-token", planning_period_id=8, shift_group_id=3
         )
+
+
+def test_organization_holiday_resource_and_tools(monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.models.base import Base
+    from app.services.organizations import create_organization_record
+    from mcp_app.server import (
+        create_organization_holiday_tool,
+        delete_organization_holiday_tool,
+        organization_holidays_resource,
+        update_organization_holiday_tool,
+    )
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)()
+    org = create_organization_record(session, name="Clinic", slug="clinic-holidays")
+    session.commit()
+
+    class DbContext:
+        def __enter__(self):
+            return session
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+    monkeypatch.setattr(server, "db_session", lambda: DbContext())
+    monkeypatch.setattr(server, "mcp_organization_id", lambda: org.id)
+
+    with pytest.raises(PermissionError):
+        create_organization_holiday_tool(token="wrong-token", holiday_date=date(2026, 9, 15), label="X")
+    with pytest.raises(PermissionError):
+        update_organization_holiday_tool(token="wrong-token", holiday_id=1, label="X")
+    with pytest.raises(PermissionError):
+        delete_organization_holiday_tool(token="wrong-token", holiday_id=1)
+
+    created = create_organization_holiday_tool(
+        token="change-me-mcp-token", holiday_date=date(2026, 9, 15), label="Kongress"
+    )
+    assert created["holiday_date"] == "2026-09-15"
+    with pytest.raises(ValueError, match="already"):
+        create_organization_holiday_tool(
+            token="change-me-mcp-token", holiday_date=date(2026, 9, 15), label="Again"
+        )
+    renamed = update_organization_holiday_tool(
+        token="change-me-mcp-token", holiday_id=created["id"], label="DAC Kongress"
+    )
+    assert renamed["label"] == "DAC Kongress"
+    assert [row["label"] for row in organization_holidays_resource()] == ["DAC Kongress"]
+    assert delete_organization_holiday_tool(token="change-me-mcp-token", holiday_id=created["id"]) == {
+        "deleted": True
+    }
+    assert organization_holidays_resource() == []

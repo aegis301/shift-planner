@@ -11,6 +11,7 @@ export const queryKeys = {
   planningPeriods: (organizationId: number) => ["planning-periods", organizationId] as const,
   shiftGroups: (organizationId: number) => ["shift-groups", organizationId] as const,
   dayStatuses: (organizationId: number) => ["day-statuses", organizationId] as const,
+  organizationHolidays: (organizationId: number) => ["organization-holidays", organizationId] as const,
   wishesMatrix: (organizationId: number, periodId: string, shiftGroupId: string, teamMemberPortal: boolean) =>
     ["wishes-matrix", organizationId, periodId, shiftGroupId, teamMemberPortal] as const,
   wishesMatrixVersion: (organizationId: number, periodId: string, versionId: number) =>

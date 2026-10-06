@@ -105,6 +105,27 @@ describe("buildMemberWorkloadRows", () => {
     expect(unassigned).toBe(0);
   });
 
+  it("counts a weekday slot synced as an organization holiday", () => {
+    const { rows } = buildMemberWorkloadRows(
+      matrix({
+        slots: [
+          {
+            id: 1,
+            shift_template_id: 10,
+            category: "bereitschaftsdienst",
+            slot_date: "2026-10-06",
+            starts_at: null,
+            ends_at: null,
+            day_class: "holiday"
+          }
+        ],
+        assignments: [{ roster_slot_id: 1, team_member_id: 7 }]
+      }),
+      []
+    );
+    expect(rows.find((row) => row.memberId === 7)?.weekendHolidayShifts).toBe(1);
+  });
+
   it("counts unassigned slots and skips assignments that have no category", () => {
     const { rows, unassigned } = buildMemberWorkloadRows(
       matrix({

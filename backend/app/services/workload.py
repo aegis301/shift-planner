@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
 
@@ -14,6 +15,7 @@ class WorkloadSlotSlice:
     slot_date: date
     starts_at: object | None
     ends_at: object | None
+    organization_holiday: bool = False
 
 
 @dataclass
@@ -45,8 +47,8 @@ class MemberWorkloadRow:
     conflicts: int
 
 
-def slot_touches_weekend_or_nrw_holiday(slot_date: date) -> bool:
-    return classify_day(slot_date) in ("weekend", "holiday")
+def slot_touches_weekend_or_nrw_holiday(slot_date: date, organization_holidays: Collection[date] = ()) -> bool:
+    return classify_day(slot_date, organization_holidays) in ("weekend", "holiday")
 
 
 def member_display_name(*, first_name: str, last_name: str, nickname: str | None) -> str:
@@ -68,6 +70,7 @@ def slices_from_plan_state(state: PlanState) -> tuple[list[WorkloadSlotSlice], l
                 slot_date=slot.slot_date,
                 starts_at=slot.starts_at,
                 ends_at=slot.ends_at,
+                organization_holiday=slot.slot_date in state.organization_holiday_dates,
             )
         )
     slot_ids = {slot.id for slot in slots}
@@ -132,7 +135,7 @@ def build_member_workload_rows(
         if row is None or slot is None or slot.category is None:
             continue
         row.total += 1
-        if slot_touches_weekend_or_nrw_holiday(slot.slot_date):
+        if slot.organization_holiday or slot_touches_weekend_or_nrw_holiday(slot.slot_date):
             row.weekend_holiday_shifts += 1
         category = slot.category
         if category == "bereitschaftsdienst":

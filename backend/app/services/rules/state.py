@@ -70,6 +70,7 @@ class PlanState:
     period_roster_member_ids: Mapping[tuple[int, int, int], frozenset[int]]
     work_time_consents_by_member_id: Mapping[int, tuple[object, ...]]
     timezone: str = "Europe/Berlin"
+    organization_holiday_dates: frozenset[date] = frozenset()
 
 
 def empty_indexed_state(

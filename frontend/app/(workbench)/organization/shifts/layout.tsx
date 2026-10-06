@@ -39,6 +39,11 @@ export default function ShiftManagementLayout({ children }: { children: React.Re
             labelKey: "shiftTypes",
             isActive: (p) => p.startsWith(`${SHIFTS_BASE}/types`),
           },
+          {
+            href: `${SHIFTS_BASE}/holidays`,
+            labelKey: "organizationHolidaysTab",
+            isActive: (p) => p.startsWith(`${SHIFTS_BASE}/holidays`),
+          },
         ]}
       />
       {children}

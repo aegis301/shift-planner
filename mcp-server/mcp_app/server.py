@@ -19,6 +19,9 @@ from app.schemas import (
     DutyActivityUpdate,
     EmploymentPeriodWrite,
     FairnessPolicyUpdate,
+    OrganizationHolidayCreate,
+    OrganizationHolidayRead,
+    OrganizationHolidayUpdate,
     OrganizationReadForAdmin,
     PlanningCellBulkUpsert,
     PlanningCellUpsert,
@@ -105,6 +108,12 @@ from app.services.member_planning_patterns import (
     pattern_to_read,
     read_organization_member_pattern_policy,
     replace_team_member_planning_patterns,
+)
+from app.services.organization_holidays import (
+    create_organization_holiday,
+    delete_organization_holiday,
+    list_organization_holidays,
+    update_organization_holiday,
 )
 from app.services.organizations import update_organization_settings
 from app.services.plan_versions import list_plan_versions, manual_save_plan_version
@@ -314,6 +323,59 @@ def update_organization_settings_tool(
             source="mcp",
         )
         return OrganizationReadForAdmin.model_validate(updated).model_dump(mode="json")
+
+
+@mcp.resource("shift-planner://organization-holidays")
+def organization_holidays_resource() -> list[dict[str, Any]]:
+    """List dates the MCP target organization treats as holidays on top of the NRW calendar."""
+    with db_session() as db:
+        return [
+            OrganizationHolidayRead.model_validate(row).model_dump(mode="json")
+            for row in list_organization_holidays(db, organization_id=mcp_organization_id())
+        ]
+
+
+@mcp.tool
+def create_organization_holiday_tool(token: str, holiday_date: date, label: str) -> dict[str, Any]:
+    """Treat a date as a holiday for slot generation, holiday credit, and fairness. Existing months
+    pick it up after a roster sync. Requires MCP admin token."""
+    require_token(token)
+    payload = OrganizationHolidayCreate(holiday_date=holiday_date, label=label)
+    with db_session() as db:
+        row = create_organization_holiday(
+            db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return OrganizationHolidayRead.model_validate(row).model_dump(mode="json")
+
+
+@mcp.tool
+def update_organization_holiday_tool(
+    token: str,
+    holiday_id: int,
+    holiday_date: date | None = None,
+    label: str | None = None,
+) -> dict[str, Any]:
+    """Move or rename an organization holiday. Requires MCP admin token."""
+    require_token(token)
+    payload = OrganizationHolidayUpdate(holiday_date=holiday_date, label=label)
+    with db_session() as db:
+        row = update_organization_holiday(
+            db, holiday_id, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        if row is None:
+            raise ValueError("Organization holiday not found")
+        return OrganizationHolidayRead.model_validate(row).model_dump(mode="json")
+
+
+@mcp.tool
+def delete_organization_holiday_tool(token: str, holiday_id: int) -> dict[str, bool]:
+    """Delete an organization holiday. Requires MCP admin token."""
+    require_token(token)
+    with db_session() as db:
+        deleted = delete_organization_holiday(
+            db, holiday_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
+        )
+        return {"deleted": deleted}
 
 
 @mcp.resource("shift-planner://team-members")

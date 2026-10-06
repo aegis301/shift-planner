@@ -9,6 +9,7 @@ export type RosterWorkloadMatrixSlice = {
     slot_date: string;
     starts_at?: string | null;
     ends_at?: string | null;
+    day_class?: string | null;
   }[];
   assignments: { roster_slot_id: number; team_member_id: number }[];
   team_members: {
@@ -109,11 +110,13 @@ export function buildMemberWorkloadRows(
     memberStats.total += 1;
     if (
       slot &&
-      slotTouchesWeekendOrNrwHoliday({
+      // A synced organization holiday arrives as day_class "holiday"; the NRW calendar does not know it.
+      (slot.day_class === "holiday" ||
+        slotTouchesWeekendOrNrwHoliday({
         slot_date: slot.slot_date,
         starts_at: slot.starts_at ?? null,
         ends_at: slot.ends_at ?? null
-      })
+        }))
     ) {
       memberStats.weekendHolidayShifts += 1;
     }
