@@ -449,6 +449,22 @@ class PlanningDayStatusDefinition(Base):
     )
 
 
+class OrganizationHoliday(Base):
+    """A date the organization treats as a holiday on top of the NRW calendar."""
+
+    __tablename__ = "organization_holidays"
+    __table_args__ = (UniqueConstraint("organization_id", "holiday_date", name="uq_organization_holidays_org_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    holiday_date: Mapped[date] = mapped_column(Date)
+    label: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TeamMemberPlanningPattern(Base):
     __tablename__ = "team_member_planning_patterns"
 

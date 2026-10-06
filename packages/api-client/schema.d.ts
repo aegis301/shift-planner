@@ -1120,6 +1120,42 @@ export interface paths {
         patch: operations["organization_patch_organization_settings"];
         trace?: never;
     };
+    "/api/v1/organization-holidays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Organization Holidays */
+        get: operations["organization_holidays_get_organization_holidays"];
+        put?: never;
+        /** Post Organization Holiday */
+        post: operations["organization_holidays_post_organization_holiday"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organization-holidays/{holiday_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Organization Holiday Endpoint */
+        delete: operations["organization_holidays_delete_organization_holiday_endpoint"];
+        options?: never;
+        head?: never;
+        /** Patch Organization Holiday */
+        patch: operations["organization_holidays_patch_organization_holiday"];
+        trace?: never;
+    };
     "/api/v1/organization/duty-activity-access-policy": {
         parameters: {
             query?: never;
@@ -4005,6 +4041,47 @@ export interface components {
             plan_tier: string;
             /** Slug */
             slug: string;
+        };
+        /** OrganizationHolidayCreate */
+        OrganizationHolidayCreate: {
+            /**
+             * Holiday Date
+             * Format: date
+             */
+            holiday_date: string;
+            /** Label */
+            label: string;
+        };
+        /** OrganizationHolidayRead */
+        OrganizationHolidayRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Holiday Date
+             * Format: date
+             */
+            holiday_date: string;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Organization Id */
+            organization_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** OrganizationHolidayUpdate */
+        OrganizationHolidayUpdate: {
+            /** Holiday Date */
+            holiday_date?: string | null;
+            /** Label */
+            label?: string | null;
         };
         /** OrganizationInviteAcceptInput */
         OrganizationInviteAcceptInput: {
@@ -9892,6 +9969,153 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganizationReadForAdmin"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    organization_holidays_get_organization_holidays: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationHolidayRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    organization_holidays_post_organization_holiday: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationHolidayCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationHolidayRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    organization_holidays_delete_organization_holiday_endpoint: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                holiday_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedFlagRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    organization_holidays_patch_organization_holiday: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                holiday_id: number;
+            };
+            cookie?: {
+                shift_planner_session?: string | null;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationHolidayUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationHolidayRead"];
                 };
             };
             /** @description Validation Error */

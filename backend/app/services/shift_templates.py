@@ -18,6 +18,7 @@ from app.schemas import (
 from app.services.audit import record_audit
 from app.services.holidays import classify_day
 from app.services.org_time import organization_timezone, slot_bounds
+from app.services.organization_holidays import organization_holiday_dates
 from app.services.team_member_property_requirements import (
     TeamMemberPropertyRequirementError,
     validate_property_requirement_expr,
@@ -389,17 +390,27 @@ def generate_slots_for_month(db: Session, *, year: int, month: int, organization
     tz = organization_timezone(db, organization_id)
     templates = list_shift_templates(db, organization_id=organization_id, active_only=True)
     days_in_month = calendar.monthrange(year, month)[1]
+    max_offset = max(
+        (variant.end_day_offset for template in templates for variant in template.variants),
+        default=0,
+    )
+    holiday_dates = organization_holiday_dates(
+        db,
+        organization_id=organization_id,
+        start_date=date(year, month, 1),
+        end_date=date(year, month, days_in_month) + timedelta(days=max(0, max_offset)),
+    )
     generated: list[GeneratedSlot] = []
     for day_number in range(1, days_in_month + 1):
         slot_date = date(year, month, day_number)
-        start_class = classify_day(slot_date)
+        start_class = classify_day(slot_date, holiday_dates)
         for template in templates:
             active_variants = [variant for variant in template.variants if variant.is_active]
             has_start_holiday_variant = any(variant.start_day_class == "holiday" for variant in active_variants)
             has_end_holiday_variant = any(variant.end_day_class == "holiday" for variant in active_variants)
             for variant in active_variants:
                 end_date = slot_date + timedelta(days=variant.end_day_offset)
-                end_class = classify_day(end_date)
+                end_class = classify_day(end_date, holiday_dates)
                 if not _variant_applies(
                     variant,
                     slot_date,

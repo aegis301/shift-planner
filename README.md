@@ -147,7 +147,7 @@ Wishes matrix **day statuses** are configured per organization (`GET|POST|PATCH|
 
 Team member month notes now store only month-specific summaries. Permanent preference text is stored on `team_members.planning_preferences` and reused in `/profile` and the matrix note modal.
 
-Shift templates are configured under Shift Types. A template has one or more variants that define applicability (`weekday`, `weekend`, `holiday`, or `any`), start/end times, overnight offsets, and required count. Holidays use the North Rhine-Westphalia German holiday calendar and behave like weekend rules unless explicit holiday variants exist.
+Shift templates are configured under Shift Types. A template has one or more variants that define applicability (`weekday`, `weekend`, `holiday`, or `any`), start/end times, overnight offsets, and required count. Holidays use the North Rhine-Westphalia German holiday calendar and behave like weekend rules unless explicit holiday variants exist. Admins add organization holidays (conferences, clinic-wide training days) under **Shifts** → **Holidays** (`GET|POST|PATCH|DELETE /api/v1/organization-holidays`; MCP `shift-planner://organization-holidays` plus token-gated `create_organization_holiday_tool`, `update_organization_holiday_tool`, `delete_organization_holiday_tool`). Those dates count as holidays everywhere the NRW calendar does. A month generated before the holiday was added picks it up with **Sync roster**.
 
 Templates and variants can each define constraints with per-rule **`severity`**: `info`, `warning`, or `error` (`error` blocks roster assignment; the others do not). Requests may still send legacy **`enforcement`** (`warning` / `block`); it is normalized to severity. Current rule types:
 

@@ -1197,5 +1197,20 @@
   "shiftSwapFindingWorktimeWeeklyAverage": "Wöchentlicher Durchschnitt überschritten",
   "shiftSwapFindingWorktimeWeeklyAverageOptOut": "Wöchentlicher Durchschnitt (Opt-out) überschritten",
   "shiftSwapFindingWorktimeConsecutiveDays": "Zu viele aufeinanderfolgende Arbeitstage",
-  "shiftSwapFindingWorktimeDocumentationGap": "Dokumentationslücke"
+  "shiftSwapFindingWorktimeDocumentationGap": "Dokumentationslücke",
+  "organizationHolidaysTab": "Klinikfeiertage",
+  "organizationHolidaysTitle": "Klinikfeiertage",
+  "organizationHolidaysIntro": "Tage, die wie ein Feiertag behandelt werden, zum Beispiel Kongresse oder klinikweite Fortbildungstage. Sie nutzen Feiertagsvarianten, den Feiertagszuschlag und zählen in der Fairness als Wochenend-/Feiertagsdienst.",
+  "organizationHolidaysSyncHint": "Für bereits angelegte Monate den Dienstplan synchronisieren, damit die Dienste des Tages ersetzt werden. Zuweisungen auf entfallenden Diensten werden dabei entfernt.",
+  "organizationHolidaysDate": "Datum",
+  "organizationHolidaysLabel": "Bezeichnung",
+  "organizationHolidaysLabelPlaceholder": "z. B. DAC Kongress",
+  "organizationHolidaysAdd": "Hinzufügen",
+  "organizationHolidaysRename": "Umbenennen",
+  "organizationHolidaysDelete": "Löschen",
+  "organizationHolidaysCancel": "Abbrechen",
+  "organizationHolidaysActions": "Aktionen",
+  "organizationHolidaysEmpty": "Noch keine Klinikfeiertage.",
+  "organizationHolidaysLoadError": "Klinikfeiertage konnten nicht geladen werden.",
+  "organizationHolidaysSaveError": "Speichern fehlgeschlagen."
 }

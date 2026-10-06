@@ -33,6 +33,7 @@ export type MonthCategorySeries = Schemas["MonthCategorySeries"];
 export type MonthTemplateSeries = Schemas["MonthTemplateSeries"];
 export type OkFlagRead = Schemas["OkFlagRead"];
 export type OrganizationBrief = Schemas["OrganizationBrief"];
+export type OrganizationHolidayRead = Schemas["OrganizationHolidayRead"];
 export type OrganizationStaffDirectoryRow = Schemas["OrganizationStaffDirectoryRow"];
 export type PlanVersionListRead = Schemas["PlanVersionListRead"];
 export type PlanVersionRead = Schemas["PlanVersionRead"];

@@ -56,10 +56,14 @@ def _scale(minutes: int, factor: Decimal) -> int:
 
 
 def _slot_is_holiday(slot: Any, day_class: str) -> bool:
+    # Callers pass a day class resolved against the organization holidays; the NRW calendar
+    # check covers callers that pass a coarse class such as "any".
+    if day_class == "holiday":
+        return True
     slot_date = getattr(slot, "slot_date", None)
     if isinstance(slot_date, date):
         return classify_day(slot_date) == "holiday"
-    return day_class == "holiday"
+    return False
 
 
 def resolve_valuation_rule(*, contract_group: Any, template: Any) -> ContractCategoryRule:

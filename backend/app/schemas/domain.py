@@ -1511,6 +1511,27 @@ class TeamMemberPropertyMatrixSearch(BaseModel):
     filters: list[TeamMemberPropertyMatrixFilter] = Field(default_factory=list, max_length=20)
 
 
+class OrganizationHolidayCreate(BaseModel):
+    holiday_date: date_type
+    label: str = Field(min_length=1, max_length=128)
+
+
+class OrganizationHolidayUpdate(BaseModel):
+    holiday_date: date_type | None = None
+    label: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class OrganizationHolidayRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    organization_id: int
+    holiday_date: date_type
+    label: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class PlanningDayStatusDefinitionCreate(BaseModel):
     code: str = Field(min_length=1, max_length=32)
     label: str = Field(min_length=1, max_length=64)

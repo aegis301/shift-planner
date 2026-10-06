@@ -1197,5 +1197,20 @@
   "shiftSwapFindingWorktimeWeeklyAverage": "Weekly average exceeded",
   "shiftSwapFindingWorktimeWeeklyAverageOptOut": "Weekly average (opt-out) exceeded",
   "shiftSwapFindingWorktimeConsecutiveDays": "Too many consecutive working days",
-  "shiftSwapFindingWorktimeDocumentationGap": "Documentation gap"
+  "shiftSwapFindingWorktimeDocumentationGap": "Documentation gap",
+  "organizationHolidaysTab": "Holidays",
+  "organizationHolidaysTitle": "Organization holidays",
+  "organizationHolidaysIntro": "Days treated like a public holiday, for example conferences or clinic-wide training days. They use holiday variants and the holiday credit bonus, and count as weekend/holiday duties for fairness.",
+  "organizationHolidaysSyncHint": "For months that already exist, sync the roster so the day's slots are replaced. Assignments on slots that no longer apply are cleared.",
+  "organizationHolidaysDate": "Date",
+  "organizationHolidaysLabel": "Label",
+  "organizationHolidaysLabelPlaceholder": "e.g. DAC congress",
+  "organizationHolidaysAdd": "Add",
+  "organizationHolidaysRename": "Rename",
+  "organizationHolidaysDelete": "Delete",
+  "organizationHolidaysCancel": "Cancel",
+  "organizationHolidaysActions": "Actions",
+  "organizationHolidaysEmpty": "No organization holidays yet.",
+  "organizationHolidaysLoadError": "Could not load organization holidays.",
+  "organizationHolidaysSaveError": "Could not save."
 }

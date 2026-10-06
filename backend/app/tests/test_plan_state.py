@@ -13,6 +13,7 @@ from app.models import (
     ContractGroup,
     EmploymentPeriod,
     Organization,
+    OrganizationHoliday,
     PlanningPeriod,
     PlanningPeriodShiftGroupMember,
     RosterSlot,
@@ -498,6 +499,46 @@ def test_history_duty_counts_come_from_roster_time_entries_not_slots(plan_db):
     assert day.night == 0
     assert state.period_roster_member_ids[(2026, 1, group.id)] == frozenset({member.id})
     assert state.period_roster_member_ids[(2026, 3, group.id)] == frozenset({member.id})
+
+
+def test_organization_holiday_counts_as_weekend_holiday_duty(plan_db):
+    db, _engine = plan_db
+    template, variant = _add_template(db)
+    mar = _add_period(db, 2026, 3)
+    group = ShiftGroup(organization_id=1, code="sg_hol", name="SG holiday")
+    db.add(group)
+    db.flush()
+    db.add(ShiftGroupShiftTemplate(shift_group_id=group.id, shift_template_id=template.id))
+    member = _add_member(db, email="holiday-duty@example.com")
+    db.add(PlanningPeriodShiftGroupMember(planning_period_id=mar.id, shift_group_id=group.id, team_member_id=member.id))
+    _add_slot(db, period=mar, template=template, variant=variant, slot_date=date(2026, 3, 4))
+    for day in (date(2026, 3, 4), date(2026, 3, 5)):
+        db.add(
+            TimeEntry(
+                organization_id=1,
+                team_member_id=member.id,
+                entry_date=day,
+                kind="work",
+                source="roster",
+                shift_template_category="bereitschaftsdienst",
+                started_at=datetime.combine(day, time(8, 0), tzinfo=UTC),
+                ended_at=datetime.combine(day, time(16, 0), tzinfo=UTC),
+                statutory_minutes=480,
+            )
+        )
+    db.add(OrganizationHoliday(organization_id=1, holiday_date=date(2026, 3, 4), label="Kongress"))
+    db.commit()
+    state = build_plan_state(
+        db,
+        organization_id=1,
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 3, 31),
+        shift_group_id=group.id,
+        history_start=date(2026, 1, 1),
+    )
+    assert state.organization_holiday_dates == frozenset({date(2026, 3, 4)})
+    assert state.duty_counts_by_member_date[(member.id, date(2026, 3, 4))].weekend_holiday == 1
+    assert state.duty_counts_by_member_date[(member.id, date(2026, 3, 5))].weekend_holiday == 0
 
 
 def test_no_existing_module_imports_rules_package():
