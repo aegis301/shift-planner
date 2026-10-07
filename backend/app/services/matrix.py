@@ -812,6 +812,17 @@ def save_team_member_period_note(
     return note
 
 
+def _lock_member_for_intent_write(db: Session, team_member_id: int) -> None:
+    """Serialize a member's intent writes so `all` and band rows cannot both be committed.
+
+    The rows being normalized may not exist yet, so the lock goes on the team member row.
+    """
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return
+    db.execute(select(TeamMember.id).where(TeamMember.id == team_member_id).with_for_update()).all()
+
+
 def _intent_audit_details(planning_period_id: int, row: PlanningShiftIntent) -> dict[str, object]:
     return {
         "planning_period_id": planning_period_id,
@@ -882,6 +893,7 @@ def bulk_upsert_planning_shift_intents(
                 raise ValueError("Shift template has no shift on this date")
             if item.band != "all" and (item.band not in day_bands or len(day_bands) < 2):
                 raise ValueError("Shift template has no separate day and night shifts on this date")
+        _lock_member_for_intent_write(db, item.team_member_id)
         rows = list(
             db.scalars(
                 select(PlanningShiftIntent).where(
