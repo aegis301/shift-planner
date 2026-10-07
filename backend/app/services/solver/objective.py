@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from app.services.member_planning_patterns import evaluate_member_planning_patterns
+from app.services.shift_intent_bands import intent_band, roster_slot_band
 from app.services.solver.model import SolverCpSatContext
 
 
@@ -47,6 +48,25 @@ def _fair_share(ctx: SolverCpSatContext) -> dict[int, int]:
     for member_id, weight in weights.items():
         shares[member_id] = (n_slots * weight + total_weight - 1) // total_weight
     return shares
+
+
+def wished_slot_members(state, slots, iter_candidates) -> list[tuple[int, int]]:
+    """(slot id, member id) pairs a wish covers, honouring the wish's day/night band."""
+    wish_keys = {
+        (intent.team_member_id, intent.cell_date, intent.shift_template_id, intent_band(intent))
+        for intent in state.shift_intents
+        if intent.kind == "wish"
+    }
+    out: list[tuple[int, int]] = []
+    for slot in slots:
+        if slot.shift_template_id is None:
+            continue
+        band = roster_slot_band(slot, state.timezone)
+        for member_id in iter_candidates(slot.id):
+            key = (member_id, slot.slot_date, slot.shift_template_id)
+            if (*key, "all") in wish_keys or (*key, band) in wish_keys:
+                out.append((slot.id, member_id))
+    return out
 
 
 def apply_objective(ctx: SolverCpSatContext) -> None:
@@ -94,20 +114,10 @@ def apply_objective(ctx: SolverCpSatContext) -> None:
         )
 
     wish_vars = []
-    wish_keys = {
-        (intent.team_member_id, intent.cell_date, intent.shift_template_id)
-        for intent in ctx.state.shift_intents
-        if intent.kind == "wish"
-    }
-    for slot in ctx.target_slots:
-        if slot.shift_template_id is None:
-            continue
-        for member_id in ctx.iter_candidates(slot.id):
-            if (member_id, slot.slot_date, slot.shift_template_id) not in wish_keys:
-                continue
-            var = ctx.var(slot.id, member_id)
-            if var is not None:
-                wish_vars.append(var)
+    for slot_id, member_id in wished_slot_members(ctx.state, ctx.target_slots, ctx.iter_candidates):
+        var = ctx.var(slot_id, member_id)
+        if var is not None:
+            wish_vars.append(var)
     if wish_vars:
         ctx.add_linear_term(
             "wish",

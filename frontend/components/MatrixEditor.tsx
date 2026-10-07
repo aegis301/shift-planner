@@ -21,23 +21,27 @@ import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale } from "@/components/LocaleProvider";
 import { queryKeys } from "@/lib/queryKeys";
 import { usePlanningOrganizationId, useWishesMatrix } from "@/lib/queries/planning";
+import {
+  anyShiftNoGoWrites,
+  bandWrite,
+  dayTemplateOptions,
+  effectiveKind,
+  isAnyShiftNoGo,
+  type DayTemplateOption,
+  type DayTemplateSlot,
+  type IntentBand,
+  type IntentWrite
+} from "@/lib/wishesDay";
 
 type PlanningShiftIntentKind = "wish" | "no_go";
 
 const ANY_SHIFT_INTENT_KEY = "__any_shift__";
-const ANY_SHIFT_TEMPLATE_ID = 0;
 
-type SaveMatrixIntentFn = (
-  memberId: number,
-  cellDate: string,
-  templateId: number,
-  kind: PlanningShiftIntentKind | null,
-  intentShiftGroupId?: number
-) => Promise<void>;
+type SaveMatrixIntentFn = (writes: IntentWrite[]) => Promise<void>;
 
-type TemplateSlotDay = { cell_date: string; shift_template_id: number; shift_group_id?: number | null };
+type TemplateSlotDay = DayTemplateSlot;
 
-type IntentTemplateRow = { templateId: number; shiftGroupId: number };
+type IntentTemplateRow = { templateId: number; shiftGroupId: number; band: IntentBand; name: string };
 
 type MatrixShiftTemplate = {
   id: number;
@@ -79,6 +83,7 @@ type MatrixShiftIntent = {
   cell_date: string;
   shift_group_id: number;
   shift_template_id: number;
+  band?: IntentBand | null;
   kind: PlanningShiftIntentKind;
   source: string;
 };
@@ -127,40 +132,26 @@ function normalizePlanningStatus(value: string | undefined, definitions: Plannin
   return planningDayStatusByCode(definitions).has(value) ? value : "";
 }
 
-function intentTemplateRowsForGroup(matrix: PlanningMatrix, shiftGroupId?: string): IntentTemplateRow[] {
-  const templates = matrix.shift_templates ?? [];
-  const byId = new Map(templates.map((item) => [item.id, item]));
+function dayOptionsForCell(matrix: PlanningMatrix, cellDate: string, shiftGroupId?: string): DayTemplateOption[] {
   const parsedGroupId = shiftGroupId ? Number(shiftGroupId) : Number.NaN;
-  if (!Number.isNaN(parsedGroupId) && shiftGroupId) {
-    return templates
-      .filter((item) => item.is_active)
-      .map((item) => ({ templateId: item.id, shiftGroupId: parsedGroupId }))
-      .sort((a, b) => {
-        const nameA = byId.get(a.templateId)?.name ?? "";
-        const nameB = byId.get(b.templateId)?.name ?? "";
-        return (
-          nameA.localeCompare(nameB, undefined, { sensitivity: "base" }) || a.templateId - b.templateId
-        );
-      });
-  }
-  const seen = new Set<string>();
-  const out: IntentTemplateRow[] = [];
-  for (const row of matrix.template_slot_days ?? []) {
-    if (row.shift_group_id == null) {
-      continue;
-    }
-    const key = `${row.shift_template_id}:${row.shift_group_id}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    out.push({ templateId: row.shift_template_id, shiftGroupId: row.shift_group_id });
-  }
-  return out.sort((a, b) => {
-    const nameA = byId.get(a.templateId)?.name ?? "";
-    const nameB = byId.get(b.templateId)?.name ?? "";
-    return nameA.localeCompare(nameB, undefined, { sensitivity: "base" }) || a.templateId - b.templateId;
-  });
+  return dayTemplateOptions(
+    matrix.template_slot_days ?? [],
+    matrix.shift_templates ?? [],
+    cellDate,
+    Number.isNaN(parsedGroupId) ? undefined : parsedGroupId
+  );
+}
+
+/** One row per shift that runs on `cellDate`; a template with day and night shifts gets one row per band. */
+function intentTemplateRowsForDay(matrix: PlanningMatrix, cellDate: string, shiftGroupId?: string): IntentTemplateRow[] {
+  return dayOptionsForCell(matrix, cellDate, shiftGroupId).flatMap((option) =>
+    (option.split ? (["day", "night"] as const) : (["all"] as const)).map((band) => ({
+      templateId: option.templateId,
+      shiftGroupId: option.shiftGroupId,
+      band,
+      name: option.name
+    }))
+  );
 }
 
 function splitMonthIntoWeeks(days: MatrixDay[]): MatrixDay[][] {
@@ -500,56 +491,15 @@ export function MatrixEditor({
   }
 
   const saveIntent = useCallback<SaveMatrixIntentFn>(
-    async (memberId, cellDate, templateId, kind, intentShiftGroupId) => {
-      const intentRows =
-        templateId === ANY_SHIFT_TEMPLATE_ID && matrix
-          ? intentTemplateRowsForGroup(matrix, shiftGroupId)
-          : null;
-      if (intentRows) {
-        if (intentRows.length === 0) {
-          return;
-        }
-        setSavingCells((count) => count + 1);
-        try {
-          await apiFetch(teamMemberPortal ? memberWishesPath(activePeriodId, "intents", shiftGroupId) : `/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
-            method: "PUT",
-            body: JSON.stringify({
-              intents: intentRows.map((row) => ({
-                team_member_id: memberId,
-                cell_date: cellDate,
-                shift_group_id: row.shiftGroupId,
-                shift_template_id: row.templateId,
-                kind
-              }))
-            })
-          });
-          setMessage(t(locale, "autosaved"));
-          await loadMatrix();
-          await onChanged?.();
-        } finally {
-          setSavingCells((count) => Math.max(0, count - 1));
-        }
-        return;
-      }
-      const gid = intentShiftGroupId ?? (shiftGroupId ? Number(shiftGroupId) : undefined);
-      if (gid == null || Number.isNaN(gid)) {
+    async (writes) => {
+      if (writes.length === 0) {
         return;
       }
       setSavingCells((count) => count + 1);
       try {
         await apiFetch(teamMemberPortal ? memberWishesPath(activePeriodId, "intents", shiftGroupId) : `/api/v1/matrix/${activePeriodId}/shift-intents/bulk${groupQuery}`, {
           method: "PUT",
-          body: JSON.stringify({
-            intents: [
-              {
-                team_member_id: memberId,
-                cell_date: cellDate,
-                shift_group_id: gid,
-                shift_template_id: templateId,
-                kind
-              }
-            ]
-          })
+          body: JSON.stringify({ intents: writes })
         });
         setMessage(t(locale, "autosaved"));
         await loadMatrix();
@@ -558,7 +508,7 @@ export function MatrixEditor({
         setSavingCells((count) => Math.max(0, count - 1));
       }
     },
-    [activePeriodId, groupQuery, loadMatrix, locale, matrix, onChanged, shiftGroupId, teamMemberPortal]
+    [activePeriodId, groupQuery, loadMatrix, locale, onChanged, shiftGroupId, teamMemberPortal]
   );
 
   async function persistNote(memberId: number, monthlyCommentOnly = false) {
@@ -1922,85 +1872,55 @@ function MatrixCell({
   }`;
   const controlClass = `${controlSizeClass} border border-slate-200 bg-white`;
 
-  const intentMap = useMemo(() => {
-    const map = new Map<string, PlanningShiftIntentKind>();
-    for (const row of matrix.shift_intents ?? []) {
-      if (row.team_member_id !== memberId || row.cell_date !== cellDate) {
-        continue;
-      }
-      map.set(`${cellDate}:${memberId}:${row.shift_template_id}:${row.shift_group_id}`, row.kind);
-    }
-    return map;
-  }, [matrix.shift_intents, memberId, cellDate]);
-
-  const intentRows = useMemo(
-    () => intentTemplateRowsForGroup(matrix, shiftGroupId),
-    [matrix, shiftGroupId]
-  );
+  const dayOptions = useMemo(() => dayOptionsForCell(matrix, cellDate, shiftGroupId), [matrix, cellDate, shiftGroupId]);
+  const intentRows = useMemo(() => intentTemplateRowsForDay(matrix, cellDate, shiftGroupId), [matrix, cellDate, shiftGroupId]);
 
   const intentOptions = useMemo(() => {
     const templateIdCounts = new Map<number, number>();
     for (const row of intentRows) {
-      templateIdCounts.set(row.templateId, (templateIdCounts.get(row.templateId) ?? 0) + 1);
+      if (row.band !== "night") {
+        templateIdCounts.set(row.templateId, (templateIdCounts.get(row.templateId) ?? 0) + 1);
+      }
     }
-    return intentRows.map(({ templateId, shiftGroupId: gid }) => {
-      const base = templateLabel(matrix, templateId, locale);
-      const groupSuffix = (templateIdCounts.get(templateId) ?? 0) > 1 ? ` · #${gid}` : "";
+    return intentRows.map((row) => {
+      const base = templateLabel(matrix, row.templateId, locale);
+      const groupSuffix = (templateIdCounts.get(row.templateId) ?? 0) > 1 ? ` · #${row.shiftGroupId}` : "";
+      const bandSuffix = row.band === "all" ? "" : ` · ${t(locale, row.band === "day" ? "rosterViewDay" : "rosterViewNight")}`;
       return {
-        key: `${templateId}-${gid}`,
-        templateId,
-        shiftGroupId: gid,
-        label: `${base}${groupSuffix}`
+        ...row,
+        key: `${row.templateId}-${row.shiftGroupId}-${row.band}`,
+        label: `${base}${bandSuffix}${groupSuffix}`
       };
     });
   }, [intentRows, locale, matrix]);
 
-  const [selectedIntentKey, setSelectedIntentKey] = useState("");
-  const showIntents = Boolean(matrix.shift_templates?.length && intentOptions.length);
+  const [selectedIntentKey, setSelectedIntentKey] = useState(ANY_SHIFT_INTENT_KEY);
+  const showIntents = intentOptions.length > 0;
   const isAnyShiftSelected = selectedIntentKey === ANY_SHIFT_INTENT_KEY;
   const selectedIntent = intentOptions.find((row) => row.key === selectedIntentKey);
-  const anyShiftKind = useMemo(() => {
-    if (!isAnyShiftSelected || intentRows.length === 0) {
-      return undefined;
-    }
-    const kinds = intentRows.map((row) =>
-      intentMap.get(`${cellDate}:${memberId}:${row.templateId}:${row.shiftGroupId}`)
-    );
-    return kinds.every((kind) => kind === "no_go") ? "no_go" : "";
-  }, [cellDate, intentMap, intentRows, isAnyShiftSelected, memberId]);
+  const intents = matrix.shift_intents ?? [];
   const selectedIntentKind = isAnyShiftSelected
-    ? anyShiftKind
+    ? isAnyShiftNoGo(intents, dayOptions, memberId, cellDate)
+      ? "no_go"
+      : ""
     : selectedIntent
-      ? intentMap.get(`${cellDate}:${memberId}:${selectedIntent.templateId}:${selectedIntent.shiftGroupId}`)
+      ? (effectiveKind(intents, memberId, cellDate, selectedIntent, selectedIntent.band) ?? undefined)
       : undefined;
 
   const applyIntentKind = (kind: PlanningShiftIntentKind | null) => {
     if (isAnyShiftSelected) {
-      void onSaveIntent(memberId, cellDate, ANY_SHIFT_TEMPLATE_ID, kind);
+      void onSaveIntent(anyShiftNoGoWrites(dayOptions, memberId, cellDate, kind === "no_go"));
       return;
     }
     if (!selectedIntent) {
       return;
     }
-    void onSaveIntent(
-      memberId,
-      cellDate,
-      selectedIntent.templateId,
-      kind,
-      selectedIntent.shiftGroupId
-    );
+    void onSaveIntent([bandWrite(intents, memberId, cellDate, selectedIntent, selectedIntent.band, kind)]);
   };
 
   useEffect(() => {
-    if (intentOptions.length === 0) {
-      setSelectedIntentKey("");
-      return;
-    }
-    if (
-      selectedIntentKey !== ANY_SHIFT_INTENT_KEY &&
-      !intentOptions.some((row) => row.key === selectedIntentKey)
-    ) {
-      setSelectedIntentKey(intentOptions[0].key);
+    if (selectedIntentKey !== ANY_SHIFT_INTENT_KEY && !intentOptions.some((row) => row.key === selectedIntentKey)) {
+      setSelectedIntentKey(ANY_SHIFT_INTENT_KEY);
     }
   }, [intentOptions, selectedIntentKey]);
 
@@ -2135,7 +2055,7 @@ function MatrixCell({
           <MessageSquarePlus aria-hidden size={dense ? 14 : 16} />
         </button>
       )}
-      {showIntents && (selectedIntent || isAnyShiftSelected) ? (
+      {showIntents ? (
         <div className={`grid ${dense ? "gap-1 pt-0.5" : "gap-1.5 pt-1"}`}>
           <select
             className={controlClass}

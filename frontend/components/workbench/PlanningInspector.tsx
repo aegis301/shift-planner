@@ -277,8 +277,9 @@ function AssigneeDayWishes({
       <p className="text-ink">{comment || t(locale, "emptyValue")}</p>
       {dayIntents.map((row) =>
         row.kind === "comment" ? null : (
-          <p key={`${row.kind}-${row.templateId}`} className="flex min-w-0 items-center gap-1">
+          <p key={`${row.kind}-${row.templateId}-${row.band}`} className="flex min-w-0 items-center gap-1">
             <span className="truncate">{row.templateName}</span>
+            {row.band !== "all" ? <span className="text-muted">{t(locale, row.band === "day" ? "rosterViewDay" : "rosterViewNight")}</span> : null}
             <IntentChip kind={row.kind} locale={locale} />
           </p>
         )

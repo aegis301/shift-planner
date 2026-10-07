@@ -424,6 +424,7 @@ def snapshot_plan_version(
                 team_member_id=intent.team_member_id,
                 cell_date=intent.cell_date,
                 shift_template_id=intent.shift_template_id,
+                band=intent.band or "all",
                 kind=intent.kind,
                 source=intent.source,
             )
@@ -752,6 +753,7 @@ def get_plan_version_matrix(
                 cell_date=intent.cell_date,
                 shift_group_id=shift_group_id,
                 shift_template_id=intent.shift_template_id,
+                band=intent.band or "all",
                 kind=intent.kind,
                 source=intent.source,
                 created_at=version.created_at,
@@ -899,6 +901,7 @@ def get_plan_version_roster(
                 cell_date=intent.cell_date,
                 shift_group_id=shift_group_id,
                 shift_template_id=intent.shift_template_id,
+                band=intent.band or "all",
                 kind=intent.kind,
                 source=intent.source,
                 created_at=version.created_at,

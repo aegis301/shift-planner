@@ -24,6 +24,7 @@ from app.services.audit import record_audit
 from app.services.constraints import find_blocking_constraint
 from app.services.employment_periods import employment_percentage_on
 from app.services.matrix import list_planning_cells, list_planning_shift_intents
+from app.services.org_time import timezone_for_slot
 from app.services.planning import can_edit_planning_data, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     ensure_default_planning_day_statuses,
@@ -41,6 +42,7 @@ from app.services.shift_groups import (
     shift_template_ids_in_shift_group,
     team_member_may_cover_template,
 )
+from app.services.shift_intent_bands import intent_matches_slot, roster_slot_band
 from app.services.shift_templates import (
     GeneratedSlot,
     generate_slots_for_month,
@@ -479,21 +481,22 @@ def _read_slot(slot: RosterSlot) -> RosterSlotRead:
 def _team_member_has_template_no_go(
     db: Session,
     *,
-    planning_period_id: int,
+    slot: RosterSlot,
     team_member_id: int,
-    slot_date: date,
-    shift_template_id: int | None,
 ) -> bool:
-    if shift_template_id is None:
+    if slot.shift_template_id is None:
         return False
-    for intent in list_planning_shift_intents(db, planning_period_id=planning_period_id):
+    band = roster_slot_band(slot, timezone_for_slot(db, slot))
+    for intent in list_planning_shift_intents(db, planning_period_id=slot.planning_period_id):
         if intent.kind != "no_go":
             continue
-        if intent.team_member_id != team_member_id:
-            continue
-        if intent.cell_date != slot_date:
-            continue
-        if intent.shift_template_id == shift_template_id:
+        if intent_matches_slot(
+            intent,
+            team_member_id=team_member_id,
+            slot_date=slot.slot_date,
+            shift_template_id=slot.shift_template_id,
+            band=band,
+        ):
             return True
     return False
 
@@ -603,10 +606,8 @@ def upsert_roster_slot_assignment(
     if enforce_preflight:
         if not payload.manual_override and _team_member_has_template_no_go(
             db,
-            planning_period_id=slot.planning_period_id,
-            team_member_id=payload.team_member_id,
-            slot_date=slot.slot_date,
-            shift_template_id=slot.shift_template_id,
+            slot=slot,
+            team_member_id=payload.team_member_id
         ):
             raise ValueError("Team member marked this shift template as a no-go on that day")
         preflight_warnings = _preflight_assignment_warnings(

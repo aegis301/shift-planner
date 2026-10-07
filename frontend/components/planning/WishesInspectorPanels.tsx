@@ -11,7 +11,18 @@ import {
 } from "@/lib/planningDayStatus";
 import type { WishesBundle } from "@/lib/queries/planning";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
-import { saveWishesIntent, saveWishesNote } from "@/lib/wishesEdit";
+import {
+  anyShiftNoGoWrites,
+  bandWrite,
+  dayTemplateOptions,
+  effectiveKind,
+  isAnyShiftNoGo,
+  type DayTemplateOption,
+  type IntentBand,
+  type IntentKind,
+  type IntentWrite
+} from "@/lib/wishesDay";
+import { saveWishesIntents, saveWishesNote } from "@/lib/wishesEdit";
 import { wishesMonthOverview } from "@/lib/wishesMonth";
 
 type Matrix = WishesBundle["matrix"];
@@ -43,15 +54,13 @@ export function WishesCellPanel({
   const member = matrix.team_members.find((row) => String(row.id) === memberId);
   const cell = matrix.cells.find((row) => String(row.team_member_id) === memberId && row.cell_date === day);
   const definition = cell?.status ? planningDayStatusByCode(matrix.day_status_definitions ?? []).get(cell.status) : undefined;
-  const templates = useMemo(() => {
-    const groupId = Number(shiftGroupId);
-    return (matrix.shift_templates ?? [])
-      .filter((row) => row.is_active)
-      .slice()
-      .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" }) || left.id - right.id)
-      .map((row) => ({ id: row.id, name: row.name, shiftGroupId: groupId }));
-  }, [matrix.shift_templates, shiftGroupId]);
-  const intents = (matrix.shift_intents ?? []).filter((row) => String(row.team_member_id) === memberId && row.cell_date === day);
+  const options = useMemo(
+    () => dayTemplateOptions(matrix.template_slot_days ?? [], matrix.shift_templates ?? [], day, Number(shiftGroupId)),
+    [matrix.template_slot_days, matrix.shift_templates, day, shiftGroupId]
+  );
+  const intents = matrix.shift_intents ?? [];
+  const memberNumber = Number(memberId);
+  const anyShiftNoGo = isAnyShiftNoGo(intents, options, memberNumber, day);
   const [comment, setComment] = useState(cell?.comment ?? "");
   useEffect(() => {
     setComment(cell?.comment ?? "");
@@ -83,19 +92,16 @@ export function WishesCellPanel({
     );
   }
 
-  async function saveIntent(templateId: number, groupId: number, kind: "wish" | "no_go" | null) {
-    if (readOnly || !member || !Number.isFinite(groupId)) {
+  async function writeIntents(writes: IntentWrite[]) {
+    if (readOnly || !member || !shiftGroupId) {
       return;
     }
-    await saveWishesIntent({
-      periodId,
-      teamMemberId: member.id,
-      date: day,
-      shiftGroupId: groupId,
-      shiftTemplateId: templateId,
-      kind
-    });
+    await saveWishesIntents({ periodId, intents: writes });
     onChanged();
+  }
+
+  function saveBand(option: DayTemplateOption, band: IntentBand, kind: IntentKind | null) {
+    void writeIntents([bandWrite(intents, memberNumber, day, option, band, kind)]);
   }
 
   return (
@@ -134,27 +140,31 @@ export function WishesCellPanel({
       </label>
       <section className="grid gap-2">
         <h4 className="font-semibold text-ink">{t(locale, "wishesIntentTitle")}</h4>
-        {templates.map((template) => {
-          const intent = intents.find((row) => row.shift_template_id === template.id && row.shift_group_id === template.shiftGroupId);
-          return (
-            <label key={`${template.id}-${template.shiftGroupId}`} className="grid gap-1">
-              <span>{template.name}</span>
-              <select
-                className="h-9 rounded-token-md border border-default bg-surface px-2"
-                disabled={readOnly || !shiftGroupId}
-                value={intent?.kind ?? ""}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  void saveIntent(template.id, template.shiftGroupId, value === "wish" || value === "no_go" ? value : null);
-                }}
-              >
-                <option value="">{t(locale, "wishesIntentNone")}</option>
-                <option value="wish">{t(locale, "wishShort")}</option>
-                <option value="no_go">{t(locale, "noGoShort")}</option>
-              </select>
-            </label>
-          );
-        })}
+        {options.length === 0 ? <p className="text-muted">{t(locale, "wishesNoShiftThatDay")}</p> : null}
+        {options.length > 0 && !readOnly ? (
+          <button
+            className={`h-9 rounded-token-md border px-2 text-left font-semibold ${
+              anyShiftNoGo ? "border-default bg-surface text-ink" : "border-rose-800 bg-rose-800 text-white"
+            }`}
+            disabled={!shiftGroupId}
+            type="button"
+            onClick={() => void writeIntents(anyShiftNoGoWrites(options, memberNumber, day, !anyShiftNoGo))}
+          >
+            {t(locale, anyShiftNoGo ? "wishesAnyShiftNoGoClear" : "wishesAnyShiftNoGo")}
+          </button>
+        ) : null}
+        {options.flatMap((option) =>
+          (option.split ? (["day", "night"] as const) : (["all"] as const)).map((band) => (
+            <IntentPicker
+              key={`${option.templateId}-${option.shiftGroupId}-${band}`}
+              disabled={readOnly || !shiftGroupId}
+              label={band === "all" ? option.name : `${option.name} · ${t(locale, band === "day" ? "rosterViewDay" : "rosterViewNight")}`}
+              locale={locale}
+              value={effectiveKind(intents, memberNumber, day, option, band)}
+              onChange={(kind) => saveBand(option, band, kind)}
+            />
+          ))
+        )}
       </section>
       <WishesMonthOverview locale={locale} matrix={matrix} memberId={Number(memberId)} onSelectDay={onSelectDay} />
       {member ? (
@@ -170,6 +180,39 @@ export function WishesCellPanel({
         />
       ) : null}
     </div>
+  );
+}
+
+function IntentPicker({
+  label,
+  value,
+  disabled,
+  locale,
+  onChange
+}: {
+  label: string;
+  value: IntentKind | null;
+  disabled: boolean;
+  locale: Locale;
+  onChange: (kind: IntentKind | null) => void;
+}) {
+  return (
+    <label className="grid gap-1">
+      <span>{label}</span>
+      <select
+        className="h-9 rounded-token-md border border-default bg-surface px-2"
+        disabled={disabled}
+        value={value ?? ""}
+        onChange={(event) => {
+          const next = event.target.value;
+          onChange(next === "wish" || next === "no_go" ? next : null);
+        }}
+      >
+        <option value="">{t(locale, "wishesIntentNone")}</option>
+        <option value="wish">{t(locale, "wishShort")}</option>
+        <option value="no_go">{t(locale, "noGoShort")}</option>
+      </select>
+    </label>
   );
 }
 
@@ -194,7 +237,7 @@ export function WishesMonthOverview({
       {rows.length === 0 ? <p className="text-sm text-muted">{t(locale, "wishesMonthEmpty")}</p> : null}
       {rows.map((row) => (
         <button
-          key={row.kind === "comment" ? `comment-${row.date}` : `${row.kind}-${row.date}-${row.templateId}`}
+          key={row.kind === "comment" ? `comment-${row.date}` : `${row.kind}-${row.date}-${row.templateId}-${row.band}`}
           className="rounded-token-md border border-default px-2 py-2 text-left"
           type="button"
           onClick={() => onSelectDay(row.date)}
@@ -205,6 +248,7 @@ export function WishesMonthOverview({
           ) : (
             <span className="mt-1 flex min-w-0 items-center gap-1">
               <span className="truncate">{row.templateName}</span>
+              {row.band !== "all" ? <span className="text-muted">{t(locale, row.band === "day" ? "rosterViewDay" : "rosterViewNight")}</span> : null}
               <IntentChip kind={row.kind} locale={locale} />
             </span>
           )}

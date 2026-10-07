@@ -49,6 +49,7 @@ import {
 import { useUnresolvedShiftSwaps } from "@/lib/queries/activity";
 import {
   columnHeader,
+  isNightRosterSlot,
   maxStackSize,
   rosterGridColumns,
   rowHeightForStack,
@@ -59,6 +60,7 @@ import {
   type RosterView
 } from "@/lib/rosterColumns";
 import { IntentChip } from "@/components/planning/WishesCell";
+import { intentBandCoversSlot } from "@/lib/wishesDay";
 import { formatShiftTimeRange } from "@/lib/shiftDisplay";
 import { teamMemberPlanningDisplayName } from "@/lib/teamMemberDisplay";
 
@@ -611,7 +613,8 @@ function SlotChip({
         (row) =>
           row.cell_date === slot.slot_date &&
           row.team_member_id === assignment.team_member_id &&
-          row.shift_template_id === slot.shift_template_id
+          row.shift_template_id === slot.shift_template_id &&
+          intentBandCoversSlot(row.band, isNightRosterSlot(slot, timeZone))
       )
     : undefined;
   const severity = severityFor(slot.id, slot.slot_date, assignment?.team_member_id ?? null, warnings);

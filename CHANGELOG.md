@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-07
+- **Day/night wishes:** A wish or no-go can target the day or the night shift of a template that runs both on that date (`planning_shift_intents.band`: `all`, `day`, `night`; migration `202610070001`, existing rows become `all`). A night no-go blocks only the night slot in validation, assignment preflight and the solver mask, and a night wish only counts toward the solver's wish term on night slots. Plan version snapshots keep the band.
+- **Only shifts that exist:** Wishes and no-gos are rejected for a template that has no slot on that date. The planner inspector and the member editor only offer the shifts that run on the selected day.
+- **No-go for every shift:** The planner inspector has a one-click no-go for every shift of the day, and "Any shift" is the default choice in the member editor. Both only cover the shifts that run that day.
+
 ## 2026-10-06
 - **Organization holidays:** Admins mark dates the clinic treats as a holiday (conferences, training days) under **Shifts** → **Holidays** (`GET|POST|PATCH|DELETE /api/v1/organization-holidays`). `classify_day` counts them like an NRW holiday, so slot generation picks holiday variants (or the weekend fallback), roster-derived time entries and Rufdienst call-outs get the holiday credit bonus, and fairness `weekend_holiday` and workload count those duties. Existing months change only on **Sync roster**; reading the roster no longer adds a second variant to a day whose class changed. MCP: `shift-planner://organization-holidays` and token-gated create/update/delete tools. Alembic `202610060001`.
 

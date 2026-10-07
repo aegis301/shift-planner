@@ -3840,6 +3840,16 @@ export interface components {
              * Format: date
              */
             cell_date: string;
+            /**
+             * Has Day
+             * @default false
+             */
+            has_day: boolean;
+            /**
+             * Has Night
+             * @default false
+             */
+            has_night: boolean;
             /** Shift Group Id */
             shift_group_id?: number | null;
             /** Shift Template Id */
@@ -4653,6 +4663,12 @@ export interface components {
         /** PlanningShiftIntentRead */
         PlanningShiftIntentRead: {
             /**
+             * Band
+             * @default all
+             * @enum {string}
+             */
+            band: "all" | "day" | "night";
+            /**
              * Cell Date
              * Format: date
              */
@@ -4687,6 +4703,12 @@ export interface components {
         };
         /** PlanningShiftIntentUpsert */
         PlanningShiftIntentUpsert: {
+            /**
+             * Band
+             * @default all
+             * @enum {string}
+             */
+            band: "all" | "day" | "night";
             /**
              * Cell Date
              * Format: date

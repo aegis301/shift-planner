@@ -1332,7 +1332,11 @@ def bulk_upsert_planning_shift_intents_tool(
     planning_period_id: int,
     intents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Create, update, or clear per-shift-group wish/no-go rows (kind null clears). Requires MCP admin token."""
+    """Create, update, or clear per-shift-group wish/no-go rows (kind null clears). Requires MCP admin token.
+
+    Optional `band` is `all` (default), `day` or `night`. A wish or no-go needs the template to run on
+    that date, and `day`/`night` needs it to run in both bands that date.
+    """
     require_token(token)
     intent_rows: list[PlanningShiftIntentUpsert] = []
     for row in intents:
@@ -1344,6 +1348,7 @@ def bulk_upsert_planning_shift_intents_tool(
                 cell_date=date.fromisoformat(str(row["cell_date"])),
                 shift_group_id=int(row["shift_group_id"]),
                 shift_template_id=int(row["shift_template_id"]),
+                band=str(row.get("band") or "all"),  # type: ignore[arg-type]
                 kind=kind,  # type: ignore[arg-type]
             )
         )

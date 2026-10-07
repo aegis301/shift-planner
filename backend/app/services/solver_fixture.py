@@ -972,11 +972,16 @@ def _write_target_month(
     if "frueh" in templates:
         template_codes.append("frueh")
     template_ids = [templates[code].id for code in template_codes]
+    # Draw the template first so the random stream stays the same, then drop a pick for a
+    # template with no slot that day: it never matched a slot and the API now rejects it.
+    running = {
+        (slot.slot_date, slot.shift_template_id) for slot in list_roster_slots(db, planning_period_id=period_id)
+    }
     intents: list[PlanningShiftIntentUpsert] = []
     for member_id, day in no_go_keys:
         template_id = rng.choice(template_ids)
         group_id = _intent_group_id(group_map, member_id)
-        if group_id is None:
+        if group_id is None or (day, template_id) not in running:
             continue
         intents.append(
             PlanningShiftIntentUpsert(
@@ -990,7 +995,7 @@ def _write_target_month(
     for member_id, day in wish_keys:
         template_id = rng.choice(template_ids)
         group_id = _intent_group_id(group_map, member_id)
-        if group_id is None:
+        if group_id is None or (day, template_id) not in running:
             continue
         intents.append(
             PlanningShiftIntentUpsert(

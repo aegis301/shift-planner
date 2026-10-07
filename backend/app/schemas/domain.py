@@ -26,6 +26,7 @@ PlanningDayStatusColorPreset = Literal[
 ]
 
 PlanningShiftIntentKind = Literal["wish", "no_go"]
+PlanningShiftIntentBand = Literal["all", "day", "night"]
 
 
 class UserShiftGroupBrief(BaseModel):
@@ -1875,6 +1876,8 @@ class MatrixTemplateSlotDay(BaseModel):
     cell_date: date_type
     shift_template_id: int
     shift_group_id: int | None = None
+    has_day: bool = False
+    has_night: bool = False
 
 
 class PlanningShiftIntentUpsert(BaseModel):
@@ -1882,6 +1885,7 @@ class PlanningShiftIntentUpsert(BaseModel):
     cell_date: date_type
     shift_group_id: int
     shift_template_id: int
+    band: PlanningShiftIntentBand = "all"
     kind: PlanningShiftIntentKind | None = None
 
 
@@ -1898,6 +1902,7 @@ class PlanningShiftIntentRead(BaseModel):
     cell_date: date_type
     shift_group_id: int
     shift_template_id: int
+    band: PlanningShiftIntentBand = "all"
     kind: PlanningShiftIntentKind
     source: str
     created_at: datetime

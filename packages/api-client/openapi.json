@@ -2998,6 +2998,16 @@
             "title": "Cell Date",
             "type": "string"
           },
+          "has_day": {
+            "default": false,
+            "title": "Has Day",
+            "type": "boolean"
+          },
+          "has_night": {
+            "default": false,
+            "title": "Has Night",
+            "type": "boolean"
+          },
           "shift_group_id": {
             "anyOf": [
               {
@@ -5525,6 +5535,16 @@
       },
       "PlanningShiftIntentRead": {
         "properties": {
+          "band": {
+            "default": "all",
+            "enum": [
+              "all",
+              "day",
+              "night"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
           "cell_date": {
             "format": "date",
             "title": "Cell Date",
@@ -5590,6 +5610,16 @@
       },
       "PlanningShiftIntentUpsert": {
         "properties": {
+          "band": {
+            "default": "all",
+            "enum": [
+              "all",
+              "day",
+              "night"
+            ],
+            "title": "Band",
+            "type": "string"
+          },
           "cell_date": {
             "format": "date",
             "title": "Cell Date",
