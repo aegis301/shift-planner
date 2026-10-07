@@ -34,9 +34,9 @@ describe("wishes month overview", () => {
     );
     expect(rows).toEqual([
       { kind: "comment", date: "2026-10-03", text: "Late train" },
-      { kind: "wish", date: "2026-10-03", templateId: 8, templateName: "Bereit" },
-      { kind: "no_go", date: "2026-10-03", templateId: 9, templateName: "Ruf" },
-      { kind: "wish", date: "2026-10-11", templateId: 8, templateName: "Bereit" }
+      { kind: "wish", date: "2026-10-03", templateId: 8, templateName: "Bereit", band: "all" },
+      { kind: "no_go", date: "2026-10-03", templateId: 9, templateName: "Ruf", band: "all" },
+      { kind: "wish", date: "2026-10-11", templateId: 8, templateName: "Bereit", band: "all" }
     ]);
   });
 });

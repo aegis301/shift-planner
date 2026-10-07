@@ -50,6 +50,7 @@ import { useLocale } from "@/components/LocaleProvider";
 import { queryKeys } from "@/lib/queryKeys";
 import { usePlanningOrganizationId, useRosterMatrix } from "@/lib/queries/planning";
 import { useRosterAssignmentMutation } from "@/lib/queries/rosterEdit";
+import { isNightRosterSlot } from "@/lib/rosterColumns";
 import {
   swapAvailability,
   swapAvailabilityMessageKey,
@@ -109,6 +110,18 @@ function teamMemberMatchesQuery(member: RosterMatrixTeamMember, query: string): 
     member.last_name.toLowerCase().includes(q) ||
     member.email.toLowerCase().includes(q)
   );
+}
+
+function slotIntentKind(
+  intentMap: Map<string, ShiftIntentKind>,
+  slot: RosterSlot,
+  memberId: number,
+  templateId: number,
+  timeZone: string
+): ShiftIntentKind | undefined {
+  const band = isNightRosterSlot(slot, timeZone) ? "night" : "day";
+  const prefix = `${slot.slot_date}:${memberId}:${templateId}`;
+  return intentMap.get(`${prefix}:${band}`) ?? intentMap.get(`${prefix}:all`);
 }
 
 function formatTimeRange(slot: RosterSlot, timeZone: string) {
@@ -340,7 +353,7 @@ export function RosterMatrixEditor({
   const intentMap = useMemo(() => {
     const map = new Map<string, ShiftIntentKind>();
     matrix?.shift_intents?.forEach((row) => {
-      map.set(`${row.cell_date}:${row.team_member_id}:${row.shift_template_id}`, row.kind);
+      map.set(`${row.cell_date}:${row.team_member_id}:${row.shift_template_id}:${row.band ?? "all"}`, row.kind);
     });
     return map;
   }, [matrix]);
@@ -1019,7 +1032,7 @@ function RosterCell({
   const selectedMember = members.find((member) => member.id === memberId);
   const selectedNoGo =
     memberId && templateId
-      ? intentMap.get(`${slot.slot_date}:${memberId}:${templateId}`) === "no_go"
+      ? slotIntentKind(intentMap, slot, memberId, templateId, timeZone) === "no_go"
       : false;
   const highlightNoGo = selectedNoGo && !manualOverride;
   const assigneeId = assignment?.team_member_id ?? null;
@@ -1139,8 +1152,7 @@ function RosterCell({
             const st = cell?.status;
             const stRow = st ? planningDayStatusByCode(dayStatusDefinitions).get(st) : undefined;
             const dotClass = stRow ? planningDayStatusSolidClass(stRow.color_preset) : "bg-slate-300";
-            const intentKey = templateId ? `${slot.slot_date}:${member.id}:${templateId}` : "";
-            const intentKind = intentKey ? intentMap.get(intentKey) : undefined;
+            const intentKind = templateId ? slotIntentKind(intentMap, slot, member.id, templateId, timeZone) : undefined;
             const memberBlocked = memberHasBlockingOverlap(member);
             const assignedThisTemplate = templateAssignmentCountByMemberId.get(member.id) ?? 0;
             const fairnessValue =

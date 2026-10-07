@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from app.models import RosterSlotAssignment
 from app.schemas.domain import ValidationWarning
 from app.services.rules.state import PlanState
+from app.services.shift_intent_bands import intent_band, intent_matches_slot, roster_slot_band
 
 
 def ordered_assignments(state: PlanState) -> list[RosterSlotAssignment]:
@@ -56,12 +57,15 @@ class TemplateNoGoConflictRule:
             template_id = slot.shift_template_id
             if template_id is None:
                 continue
+            band = roster_slot_band(slot, state.timezone)
             for intent in no_gos:
-                if intent.team_member_id != assignment.team_member_id:
-                    continue
-                if intent.cell_date != slot.slot_date:
-                    continue
-                if intent.shift_template_id != template_id:
+                if not intent_matches_slot(
+                    intent,
+                    team_member_id=assignment.team_member_id,
+                    slot_date=slot.slot_date,
+                    shift_template_id=template_id,
+                    band=band,
+                ):
                     continue
                 warnings.append(
                     ValidationWarning(
@@ -87,15 +91,17 @@ class TemplateNoGoConflictRule:
         if model.phase != "mask":
             return
         no_gos = {
-            (intent.team_member_id, intent.cell_date, intent.shift_template_id)
+            (intent.team_member_id, intent.cell_date, intent.shift_template_id, intent_band(intent))
             for intent in state.shift_intents
             if intent.kind == "no_go"
         }
         for slot in model.target_slots:
             if slot.shift_template_id is None:
                 continue
+            band = roster_slot_band(slot, state.timezone)
             for member_id in list(model.iter_candidates(slot.id)):
-                if (member_id, slot.slot_date, slot.shift_template_id) in no_gos:
+                key = (member_id, slot.slot_date, slot.shift_template_id)
+                if (*key, "all") in no_gos or (*key, band) in no_gos:
                     model.exclude(slot.id, member_id, self.code)
 
 

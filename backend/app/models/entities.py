@@ -678,6 +678,7 @@ class PlanVersionShiftIntent(Base):
             "team_member_id",
             "cell_date",
             "shift_template_id",
+            "band",
             name="uq_plan_version_shift_intent",
         ),
     )
@@ -687,6 +688,7 @@ class PlanVersionShiftIntent(Base):
     team_member_id: Mapped[int] = mapped_column(Integer)
     cell_date: Mapped[date] = mapped_column(Date)
     shift_template_id: Mapped[int] = mapped_column(Integer)
+    band: Mapped[str] = mapped_column(String(10), default="all", server_default="all")
     kind: Mapped[str] = mapped_column(String(20))
     source: Mapped[str] = mapped_column(String(50), default="manual")
 
@@ -838,6 +840,7 @@ class PlanningShiftIntent(Base):
             "cell_date",
             "shift_group_id",
             "shift_template_id",
+            "band",
             name="uq_planning_shift_intent",
         ),
     )
@@ -848,6 +851,7 @@ class PlanningShiftIntent(Base):
     cell_date: Mapped[date] = mapped_column(Date)
     shift_group_id: Mapped[int] = mapped_column(ForeignKey("shift_groups.id", ondelete="CASCADE"))
     shift_template_id: Mapped[int] = mapped_column(ForeignKey("shift_templates.id", ondelete="CASCADE"))
+    band: Mapped[str] = mapped_column(String(10), default="all", server_default="all")
     kind: Mapped[str] = mapped_column(String(20))
     source: Mapped[str] = mapped_column(String(50), default="manual")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

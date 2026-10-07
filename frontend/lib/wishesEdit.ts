@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api/client";
+import type { IntentWrite } from "@/lib/wishesDay";
 import { cellKey, type WishesCellWrite } from "@/lib/wishesUndo";
 
 export type WishesWriteResult = {
@@ -71,27 +72,13 @@ export async function applyWishesWrites(args: {
   return { conflicts, updatedAt, error: null };
 }
 
-export async function saveWishesIntent(args: {
-  periodId: string;
-  teamMemberId: number;
-  date: string;
-  shiftGroupId: number;
-  shiftTemplateId: number;
-  kind: "wish" | "no_go" | null;
-}): Promise<void> {
+export async function saveWishesIntents(args: { periodId: string; intents: IntentWrite[] }): Promise<void> {
+  if (args.intents.length === 0) {
+    return;
+  }
   await apiClient.PUT("/api/v1/matrix/{planning_period_id}/shift-intents/bulk", {
     params: { path: { planning_period_id: Number(args.periodId) } },
-    body: {
-      intents: [
-        {
-          team_member_id: args.teamMemberId,
-          cell_date: args.date,
-          shift_group_id: args.shiftGroupId,
-          shift_template_id: args.shiftTemplateId,
-          kind: args.kind
-        }
-      ]
-    }
+    body: { intents: args.intents }
   });
 }
 

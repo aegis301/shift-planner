@@ -21,6 +21,7 @@ from app.services.shift_groups import (
     shift_group_ids_for_template,
     team_member_may_cover_template,
 )
+from app.services.shift_intent_bands import intent_band, roster_slot_band
 from app.services.solver.model import eligible_members_for_slots
 from app.services.team_members import team_member_planning_display_name
 from app.services.tenancy import require_planning_period_in_org
@@ -85,7 +86,9 @@ def list_slot_candidates(
             for warning in evaluate_plan_state(overlaid, db=db)
             if _warning_targets_slot(warning, slot_id=slot.id, team_member_id=member_id)
         ]
-        wish, no_go = _intent_flags(state.shift_intents, member_id=member_id, slot=slot, shift_group_id=shift_group_id)
+        wish, no_go = _intent_flags(
+            state.shift_intents, member_id=member_id, slot=slot, shift_group_id=shift_group_id, tz=state.timezone
+        )
         day_status = _day_status(state, member_id=member_id, slot=slot, shift_group_id=shift_group_id)
         refused = _assignment_would_refuse(
             db,
@@ -141,15 +144,20 @@ def list_slot_candidates(
     )
 
 
-def _intent_flags(intents, *, member_id: int, slot: RosterSlot, shift_group_id: int) -> tuple[bool, bool]:
+def _intent_flags(
+    intents, *, member_id: int, slot: RosterSlot, shift_group_id: int, tz: str
+) -> tuple[bool, bool]:
     wish = False
     no_go = False
+    band = roster_slot_band(slot, tz)
     for intent in intents:
         if intent.team_member_id != member_id or intent.cell_date != slot.slot_date:
             continue
         if intent.shift_group_id != shift_group_id:
             continue
         if slot.shift_template_id is not None and intent.shift_template_id != slot.shift_template_id:
+            continue
+        if intent_band(intent) not in ("all", band):
             continue
         if intent.kind == "wish":
             wish = True
@@ -188,10 +196,8 @@ def _assignment_would_refuse(
             return True
     if no_go or _team_member_has_template_no_go(
         db,
-        planning_period_id=slot.planning_period_id,
-        team_member_id=team_member_id,
-        slot_date=slot.slot_date,
-        shift_template_id=slot.shift_template_id,
+        slot=slot,
+        team_member_id=team_member_id
     ):
         return True
     overlap = next((warning for warning in findings if warning.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"), None)

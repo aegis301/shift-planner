@@ -33,6 +33,7 @@ from app.services.audit import record_audit
 from app.services.authz import team_member_shift_group_ids
 from app.services.employment_periods import employment_percentage_on
 from app.services.member_planning_patterns import merge_recurring_pattern_cell_target
+from app.services.org_time import organization_timezone
 from app.services.planning import is_shift_group_planning_open, shift_group_planning_status_read
 from app.services.planning_day_status_definitions import (
     assert_valid_planning_cell_status,
@@ -50,7 +51,19 @@ from app.services.shift_groups import (
     require_shift_group,
     shift_template_ids_in_shift_group,
 )
+from app.services.shift_intent_bands import slot_band
 from app.services.shift_templates import generate_slots_for_month, list_shift_templates
+
+
+def template_bands_for_month(
+    db: Session, *, year: int, month: int, organization_id: int
+) -> dict[tuple[date, int], set[str]]:
+    """Which day/night bands each template generates slots in, per date of the month."""
+    tz = organization_timezone(db, organization_id)
+    out: dict[tuple[date, int], set[str]] = {}
+    for slot in generate_slots_for_month(db, year=year, month=month, organization_id=organization_id):
+        out.setdefault((slot.slot_date, slot.template_id), set()).add(slot_band(slot.starts_at, slot.ends_at, tz))
+    return out
 
 
 def _cell_date_in_period(period: PlanningPeriod, cell_date: date) -> bool:
@@ -93,6 +106,7 @@ def list_planning_shift_intents(db: Session, *, planning_period_id: int) -> list
             PlanningShiftIntent.cell_date,
             PlanningShiftIntent.team_member_id,
             PlanningShiftIntent.shift_template_id,
+            PlanningShiftIntent.band,
         )
     )
     return list(db.scalars(stmt))
@@ -154,13 +168,19 @@ def get_planning_matrix(
             for tid in sorted(group_template_ids)
             if tid in by_id
         ]
-        slot_pairs: set[tuple[date, int]] = set()
-        for slot in generate_slots_for_month(db, year=period.year, month=period.month, organization_id=organization_id):
-            if slot.template_id in group_template_ids:
-                slot_pairs.add((slot.slot_date, slot.template_id))
+        bands = template_bands_for_month(
+            db, year=period.year, month=period.month, organization_id=organization_id
+        )
         template_slot_days = [
-            MatrixTemplateSlotDay(cell_date=d, shift_template_id=tid, shift_group_id=shift_group_id)
-            for d, tid in sorted(slot_pairs)
+            MatrixTemplateSlotDay(
+                cell_date=d,
+                shift_template_id=tid,
+                shift_group_id=shift_group_id,
+                has_day="day" in day_bands,
+                has_night="night" in day_bands,
+            )
+            for (d, tid), day_bands in sorted(bands.items())
+            if tid in group_template_ids
         ]
     else:
         union_templates = list_shift_template_ids_with_any_group(db, organization_id)
@@ -171,21 +191,26 @@ def get_planning_matrix(
             for tid in sorted(union_templates)
             if tid in by_id
         ]
-        slot_triples: set[tuple[date, int, int]] = set()
         active_groups = list_shift_groups(db, organization_id=organization_id, active_only=True)
         allowed_team_member_ids = {m.id for m in team_members}
+        bands = template_bands_for_month(
+            db, year=period.year, month=period.month, organization_id=organization_id
+        )
+        triples: list[tuple[date, int, int, set[str]]] = []
         for group in active_groups:
             g_templates = shift_template_ids_in_shift_group(db, group.id)
-            if not g_templates:
-                continue
-            for slot in generate_slots_for_month(
-                db, year=period.year, month=period.month, organization_id=organization_id
-            ):
-                if slot.template_id in g_templates:
-                    slot_triples.add((slot.slot_date, slot.template_id, group.id))
+            for (d, tid), day_bands in bands.items():
+                if tid in g_templates:
+                    triples.append((d, tid, group.id, day_bands))
         template_slot_days = [
-            MatrixTemplateSlotDay(cell_date=d, shift_template_id=tid, shift_group_id=gid)
-            for d, tid, gid in sorted(slot_triples)
+            MatrixTemplateSlotDay(
+                cell_date=d,
+                shift_template_id=tid,
+                shift_group_id=gid,
+                has_day="day" in day_bands,
+                has_night="night" in day_bands,
+            )
+            for d, tid, gid, day_bands in sorted(triples, key=lambda row: row[:3])
         ]
         active_gids = {group.id for group in active_groups}
         shift_intents_out = [
@@ -787,6 +812,28 @@ def save_team_member_period_note(
     return note
 
 
+def _lock_member_for_intent_write(db: Session, team_member_id: int) -> None:
+    """Serialize a member's intent writes so `all` and band rows cannot both be committed.
+
+    The rows being normalized may not exist yet, so the lock goes on the team member row.
+    """
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name == "sqlite":
+        return
+    db.execute(select(TeamMember.id).where(TeamMember.id == team_member_id).with_for_update()).all()
+
+
+def _intent_audit_details(planning_period_id: int, row: PlanningShiftIntent) -> dict[str, object]:
+    return {
+        "planning_period_id": planning_period_id,
+        "team_member_id": row.team_member_id,
+        "cell_date": row.cell_date.isoformat(),
+        "shift_template_id": row.shift_template_id,
+        "band": row.band,
+        "kind": row.kind,
+    }
+
+
 def bulk_upsert_planning_shift_intents(
     db: Session,
     planning_period_id: int,
@@ -796,8 +843,34 @@ def bulk_upsert_planning_shift_intents(
     actor: str,
     source: str,
 ) -> list[PlanningShiftIntent]:
+    """Write wishes and no-gos.
+
+    A wish or no-go needs the template to run on that date. A `day` or `night` band needs the
+    template to run in both bands that date. `all` and a specific band never coexist for one
+    member, date, group and template: writing `all` replaces the band rows, and writing one
+    band over an `all` row keeps the other band at the previous kind.
+    """
     period = _require_period_org(db, planning_period_id, organization_id)
-    out: list[PlanningShiftIntent] = []
+    template_bands: dict[tuple[date, int], set[str]] | None = None
+    out: dict[int, PlanningShiftIntent] = {}
+
+    def audit(action: str, row: PlanningShiftIntent) -> None:
+        record_audit(
+            db,
+            actor=actor,
+            source=source,
+            action=action,
+            entity_type="planning_shift_intent",
+            entity_id=row.id,
+            details=_intent_audit_details(planning_period_id, row),
+        )
+
+    def remove(row: PlanningShiftIntent) -> None:
+        audit("delete", row)
+        out.pop(row.id, None)
+        db.delete(row)
+        db.flush()
+
     for item in payload.intents:
         if not _cell_date_in_period(period, item.cell_date):
             raise ValueError("Cell date is outside the planning period month")
@@ -810,31 +883,48 @@ def bulk_upsert_planning_shift_intents(
         allowed_templates = shift_template_ids_in_shift_group(db, item.shift_group_id)
         if item.shift_template_id not in allowed_templates:
             raise ValueError("Shift template is not linked to this shift group")
-        existing = db.scalar(
-            select(PlanningShiftIntent).where(
-                PlanningShiftIntent.planning_period_id == planning_period_id,
-                PlanningShiftIntent.team_member_id == item.team_member_id,
-                PlanningShiftIntent.cell_date == item.cell_date,
-                PlanningShiftIntent.shift_group_id == item.shift_group_id,
-                PlanningShiftIntent.shift_template_id == item.shift_template_id,
+        if item.kind is not None:
+            if template_bands is None:
+                template_bands = template_bands_for_month(
+                    db, year=period.year, month=period.month, organization_id=organization_id
+                )
+            day_bands = template_bands.get((item.cell_date, item.shift_template_id), set())
+            if not day_bands:
+                raise ValueError("Shift template has no shift on this date")
+            if item.band != "all" and (item.band not in day_bands or len(day_bands) < 2):
+                raise ValueError("Shift template has no separate day and night shifts on this date")
+        _lock_member_for_intent_write(db, item.team_member_id)
+        rows = list(
+            db.scalars(
+                select(PlanningShiftIntent).where(
+                    PlanningShiftIntent.planning_period_id == planning_period_id,
+                    PlanningShiftIntent.team_member_id == item.team_member_id,
+                    PlanningShiftIntent.cell_date == item.cell_date,
+                    PlanningShiftIntent.shift_group_id == item.shift_group_id,
+                    PlanningShiftIntent.shift_template_id == item.shift_template_id,
+                )
             )
         )
+        by_band = {row.band or "all": row for row in rows}
+        if item.band == "all":
+            for band in ("day", "night"):
+                if band in by_band:
+                    remove(by_band.pop(band))
+        else:
+            other = "night" if item.band == "day" else "day"
+            whole = by_band.pop("all", None)
+            if whole is not None:
+                if other in by_band:
+                    remove(whole)
+                else:
+                    whole.band = other
+                    db.flush()
+                    audit("update", whole)
+                    out[whole.id] = whole
+        existing = by_band.get(item.band)
         if item.kind is None:
             if existing is not None:
-                record_audit(
-                    db,
-                    actor=actor,
-                    source=source,
-                    action="delete",
-                    entity_type="planning_shift_intent",
-                    entity_id=existing.id,
-                    details={
-                        "planning_period_id": planning_period_id,
-                        "team_member_id": item.team_member_id,
-                        "cell_date": item.cell_date.isoformat(),
-                    },
-                )
-                db.delete(existing)
+                remove(existing)
             continue
         if existing is None:
             row = PlanningShiftIntent(
@@ -843,49 +933,25 @@ def bulk_upsert_planning_shift_intents(
                 cell_date=item.cell_date,
                 shift_group_id=item.shift_group_id,
                 shift_template_id=item.shift_template_id,
+                band=item.band,
                 kind=item.kind,
                 source=source,
             )
             db.add(row)
             db.flush()
-            record_audit(
-                db,
-                actor=actor,
-                source=source,
-                action="create",
-                entity_type="planning_shift_intent",
-                entity_id=row.id,
-                details={
-                    "planning_period_id": planning_period_id,
-                    "team_member_id": item.team_member_id,
-                    "cell_date": item.cell_date.isoformat(),
-                    "shift_template_id": item.shift_template_id,
-                    "kind": item.kind,
-                },
-            )
-            out.append(row)
+            audit("create", row)
+            out[row.id] = row
         else:
             existing.kind = item.kind
             existing.source = source
             db.flush()
-            record_audit(
-                db,
-                actor=actor,
-                source=source,
-                action="update",
-                entity_type="planning_shift_intent",
-                entity_id=existing.id,
-                details={
-                    "planning_period_id": planning_period_id,
-                    "team_member_id": item.team_member_id,
-                    "kind": item.kind,
-                },
-            )
-            out.append(existing)
+            audit("update", existing)
+            out[existing.id] = existing
     db.commit()
-    for row in out:
+    rows_out = list(out.values())
+    for row in rows_out:
         db.refresh(row)
-    return out
+    return rows_out
 
 
 RECURRING_PATTERN_CELL_SOURCE = "recurring_pattern"

@@ -362,10 +362,8 @@ def _precheck(
             return "NOT_ON_ROSTER"
     if not item.manual_override and _team_member_has_template_no_go(
         db,
-        planning_period_id=slot.planning_period_id,
-        team_member_id=item.team_member_id,
-        slot_date=slot.slot_date,
-        shift_template_id=slot.shift_template_id,
+        slot=slot,
+        team_member_id=item.team_member_id
     ):
         return "TEMPLATE_NO_GO"
     return None
