@@ -1,8 +1,8 @@
 """Organization holidays: dates an organization treats as holidays on top of the NRW calendar.
 
 Every holiday-aware calculation passes ``organization_holiday_dates`` to ``classify_day``.
-Adding or removing a holiday does not rewrite existing roster slots: the planner syncs the
-affected month, which regenerates slots against the updated calendar.
+Creating, moving or deleting a holiday re-plans the affected days of existing planning months
+in the same transaction (``holiday_roster_replan``); published shift groups are left alone.
 """
 
 from __future__ import annotations
@@ -14,7 +14,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import OrganizationHoliday
-from app.schemas import OrganizationHolidayCreate, OrganizationHolidayUpdate
+from app.schemas import (
+    OrganizationHolidayCreate,
+    OrganizationHolidayRosterSyncRead,
+    OrganizationHolidayUpdate,
+)
 from app.services.audit import record_audit
 
 DUPLICATE_DATE_MESSAGE = "This date is already an organization holiday"
@@ -76,6 +80,17 @@ def _flush_or_duplicate(db: Session) -> None:
         raise ValueError(DUPLICATE_DATE_MESSAGE) from exc
 
 
+def _replan(
+    db: Session, *, organization_id: int, changed_dates: set[date], actor: str, source: str
+) -> OrganizationHolidayRosterSyncRead:
+    # Imported here: slot generation imports this module for ``organization_holiday_dates``.
+    from app.services.holiday_roster_replan import replan_rosters_for_holiday_change
+
+    return replan_rosters_for_holiday_change(
+        db, organization_id=organization_id, changed_dates=changed_dates, actor=actor, source=source
+    )
+
+
 def _clean_label(raw: str) -> str:
     label = raw.strip()
     if not label:
@@ -90,7 +105,7 @@ def create_organization_holiday(
     organization_id: int,
     actor: str,
     source: str,
-) -> OrganizationHoliday:
+) -> tuple[OrganizationHoliday, OrganizationHolidayRosterSyncRead]:
     label = _clean_label(payload.label)
     if _date_taken(db, organization_id=organization_id, holiday_date=payload.holiday_date):
         raise ValueError(DUPLICATE_DATE_MESSAGE)
@@ -106,9 +121,12 @@ def create_organization_holiday(
         entity_id=row.id,
         details={"holiday_date": row.holiday_date.isoformat(), "label": row.label},
     )
+    roster_sync = _replan(
+        db, organization_id=organization_id, changed_dates={row.holiday_date}, actor=actor, source=source
+    )
     db.commit()
     db.refresh(row)
-    return row
+    return row, roster_sync
 
 
 def update_organization_holiday(
@@ -119,15 +137,17 @@ def update_organization_holiday(
     organization_id: int,
     actor: str,
     source: str,
-) -> OrganizationHoliday | None:
+) -> tuple[OrganizationHoliday, OrganizationHolidayRosterSyncRead] | None:
     row = get_organization_holiday(db, holiday_id, organization_id=organization_id)
     if row is None:
         return None
+    changed_dates: set[date] = set()
     if payload.label is not None:
         row.label = _clean_label(payload.label)
     if payload.holiday_date is not None and payload.holiday_date != row.holiday_date:
         if _date_taken(db, organization_id=organization_id, holiday_date=payload.holiday_date, exclude_id=row.id):
             raise ValueError(DUPLICATE_DATE_MESSAGE)
+        changed_dates = {row.holiday_date, payload.holiday_date}
         row.holiday_date = payload.holiday_date
         _flush_or_duplicate(db)
     record_audit(
@@ -139,9 +159,12 @@ def update_organization_holiday(
         entity_id=row.id,
         details={"holiday_date": row.holiday_date.isoformat(), "label": row.label},
     )
+    roster_sync = _replan(
+        db, organization_id=organization_id, changed_dates=changed_dates, actor=actor, source=source
+    )
     db.commit()
     db.refresh(row)
-    return row
+    return row, roster_sync
 
 
 def delete_organization_holiday(
@@ -151,10 +174,12 @@ def delete_organization_holiday(
     organization_id: int,
     actor: str,
     source: str,
-) -> bool:
+) -> OrganizationHolidayRosterSyncRead | None:
+    """Delete the holiday and re-plan its day. Returns None when it does not exist."""
     row = get_organization_holiday(db, holiday_id, organization_id=organization_id)
     if row is None:
-        return False
+        return None
+    holiday_date = row.holiday_date
     record_audit(
         db,
         actor=actor,
@@ -165,5 +190,8 @@ def delete_organization_holiday(
         details={"holiday_date": row.holiday_date.isoformat(), "label": row.label},
     )
     db.delete(row)
+    roster_sync = _replan(
+        db, organization_id=organization_id, changed_dates={holiday_date}, actor=actor, source=source
+    )
     db.commit()
-    return True
+    return roster_sync

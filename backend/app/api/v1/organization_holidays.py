@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
 from app.db.session import get_db
-from app.models import User
+from app.models import OrganizationHoliday, User
 from app.schemas import (
-    DeletedFlagRead,
     OrganizationHolidayCreate,
+    OrganizationHolidayDeleteRead,
     OrganizationHolidayRead,
+    OrganizationHolidayRosterSyncRead,
     OrganizationHolidayUpdate,
+    OrganizationHolidayWriteRead,
 )
 from app.services.organization_holidays import (
     create_organization_holiday,
@@ -35,30 +37,40 @@ def get_organization_holidays(
     return [OrganizationHolidayRead.model_validate(row) for row in rows]
 
 
-@router.post("", response_model=OrganizationHolidayRead, status_code=status.HTTP_201_CREATED)
+def _write_read(
+    row: OrganizationHoliday, roster_sync: OrganizationHolidayRosterSyncRead
+) -> OrganizationHolidayWriteRead:
+    return OrganizationHolidayWriteRead(
+        **OrganizationHolidayRead.model_validate(row).model_dump(), roster_sync=roster_sync
+    )
+
+
+@router.post("", response_model=OrganizationHolidayWriteRead, status_code=status.HTTP_201_CREATED)
 def post_organization_holiday(
     payload: OrganizationHolidayCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> OrganizationHolidayRead:
+) -> OrganizationHolidayWriteRead:
+    """Create the holiday and re-plan that day in existing, unpublished planning months."""
     try:
-        row = create_organization_holiday(
+        row, roster_sync = create_organization_holiday(
             db, payload, organization_id=user.organization_id, actor=user.email, source="rest"
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return OrganizationHolidayRead.model_validate(row)
+    return _write_read(row, roster_sync)
 
 
-@router.patch("/{holiday_id}", response_model=OrganizationHolidayRead)
+@router.patch("/{holiday_id}", response_model=OrganizationHolidayWriteRead)
 def patch_organization_holiday(
     holiday_id: int,
     payload: OrganizationHolidayUpdate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> OrganizationHolidayRead:
+) -> OrganizationHolidayWriteRead:
+    """Rename or move the holiday. Moving re-plans both the old and the new day."""
     try:
-        row = update_organization_holiday(
+        result = update_organization_holiday(
             db,
             holiday_id,
             payload,
@@ -68,20 +80,21 @@ def patch_organization_holiday(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if row is None:
+    if result is None:
         raise HTTPException(status_code=404, detail="Organization holiday not found")
-    return OrganizationHolidayRead.model_validate(row)
+    return _write_read(*result)
 
 
-@router.delete("/{holiday_id}", response_model=DeletedFlagRead)
+@router.delete("/{holiday_id}", response_model=OrganizationHolidayDeleteRead)
 def delete_organization_holiday_endpoint(
     holiday_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_admin),
-) -> DeletedFlagRead:
-    deleted = delete_organization_holiday(
+) -> OrganizationHolidayDeleteRead:
+    """Delete the holiday and re-plan that day in existing, unpublished planning months."""
+    roster_sync = delete_organization_holiday(
         db, holiday_id, organization_id=user.organization_id, actor=user.email, source="rest"
     )
-    if not deleted:
+    if roster_sync is None:
         raise HTTPException(status_code=404, detail="Organization holiday not found")
-    return DeletedFlagRead(deleted=True)
+    return OrganizationHolidayDeleteRead(deleted=True, roster_sync=roster_sync)

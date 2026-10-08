@@ -148,14 +148,34 @@ def test_organization_holiday_dates_are_scoped_to_the_organization():
     ) == frozenset()
 
 
-def test_generated_slots_use_holiday_variant_and_sync_moves_existing_month(client: TestClient):
+def _day_slots(client: TestClient, period_id: int, day: date) -> list[dict]:
+    slots = client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"]
+    return [slot for slot in slots if slot["slot_date"] == day.isoformat()]
+
+
+def _member(client: TestClient, email: str) -> int:
+    return client.post(
+        "/api/v1/team-members",
+        json={"first_name": "Hol", "last_name": email.split("@")[0], "email": email, "employment_percentage": 100},
+    ).json()["id"]
+
+
+def _assign(client: TestClient, slot_id: int, member_id: int) -> None:
+    response = client.put(
+        "/api/v1/roster-matrix/assignments",
+        json={"roster_slot_id": slot_id, "team_member_id": member_id},
+    )
+    assert response.status_code == 200, response.text
+
+
+def _assignee(client: TestClient, period_id: int, slot_id: int) -> int | None:
+    assignments = client.get(f"/api/v1/roster-matrix/{period_id}").json()["assignments"]
+    return next((row["team_member_id"] for row in assignments if row["roster_slot_id"] == slot_id), None)
+
+
+def test_preview_uses_holiday_variant(client: TestClient):
     login(client)
     _bd_template_with_holiday_variant(client)
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
-    before = client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"]
-    congress_before = [slot for slot in before if slot["slot_date"] == CONGRESS_DAY.isoformat()]
-    assert [slot["day_class"] for slot in congress_before] == ["weekday"]
-
     client.post(
         "/api/v1/organization-holidays",
         json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "DAC Kongress"},
@@ -164,27 +184,193 @@ def test_generated_slots_use_holiday_variant_and_sync_moves_existing_month(clien
     congress_preview = [slot for slot in preview if slot["slot_date"] == CONGRESS_DAY.isoformat()]
     assert [(slot["day_class"], slot["variant_label"]) for slot in congress_preview] == [("holiday", "Feiertag")]
 
-    # Existing rosters are not rewritten until the planner syncs.
-    unchanged = client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"]
-    assert [slot["day_class"] for slot in unchanged if slot["slot_date"] == CONGRESS_DAY.isoformat()] == [
-        "weekday"
-    ]
-    sync = client.post(f"/api/v1/planning-periods/{period_id}/sync-roster")
-    assert sync.status_code == 200, sync.text
-    assert sync.json()["sync"]["added_count"] == 1
-    assert sync.json()["sync"]["removed_count"] == 1
-    after = [slot for slot in sync.json()["matrix"]["slots"] if slot["slot_date"] == CONGRESS_DAY.isoformat()]
-    assert [slot["day_class"] for slot in after] == ["holiday"]
+
+def test_adding_and_deleting_a_holiday_replans_existing_month_and_keeps_assignee(client: TestClient):
+    login(client)
+    _bd_template_with_holiday_variant(client)
+    member_id = _member(client, "keep@example.com")
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    [weekday_slot] = _day_slots(client, period_id, CONGRESS_DAY)
+    assert weekday_slot["day_class"] == "weekday"
+    _assign(client, weekday_slot["id"], member_id)
+    untouched_before = {
+        slot["id"]: slot for slot in client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"]
+    }
+
+    created = client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "DAC Kongress"},
+    )
+    assert created.status_code == 201, created.text
+    sync = created.json()["roster_sync"]
+    assert sync["planning_period_ids"] == [period_id]
+    assert sync["slots_updated"] == 1
+    assert sync["assignments_kept"] == 1
+    assert sync["assignments_cleared"] == 0
+    assert sync["slots_added"] == sync["slots_removed"] == 0
+    [holiday_slot] = _day_slots(client, period_id, CONGRESS_DAY)
+    assert holiday_slot["id"] == weekday_slot["id"]
+    assert holiday_slot["day_class"] == "holiday"
+    assert holiday_slot["variant_label"] == "Feiertag"
+    assert _assignee(client, period_id, holiday_slot["id"]) == member_id
+
+    # Every other day is exactly as before.
+    for slot in client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"]:
+        if slot["slot_date"] != CONGRESS_DAY.isoformat():
+            assert slot == untouched_before[slot["id"]]
+
+    deleted = client.delete(f"/api/v1/organization-holidays/{created.json()['id']}")
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["roster_sync"]["assignments_kept"] == 1
+    [restored] = _day_slots(client, period_id, CONGRESS_DAY)
+    assert (restored["id"], restored["day_class"], restored["variant_label"]) == (
+        weekday_slot["id"],
+        "weekday",
+        "Werktag",
+    )
+    assert _assignee(client, period_id, restored["id"]) == member_id
+
+
+def test_moving_a_holiday_replans_old_and_new_day(client: TestClient):
+    login(client)
+    _bd_template_with_holiday_variant(client)
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    assert _day_slots(client, period_id, CONGRESS_DAY)
+    created = client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    ).json()
+    next_day = CONGRESS_DAY + timedelta(days=1)
+    moved = client.patch(f"/api/v1/organization-holidays/{created['id']}", json={"holiday_date": next_day.isoformat()})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["roster_sync"]["slots_updated"] == 2
+    assert [slot["day_class"] for slot in _day_slots(client, period_id, CONGRESS_DAY)] == ["weekday"]
+    assert [slot["day_class"] for slot in _day_slots(client, period_id, next_day)] == ["holiday"]
+
+    renamed = client.patch(f"/api/v1/organization-holidays/{created['id']}", json={"label": "Renamed"})
+    assert renamed.json()["roster_sync"]["planning_period_ids"] == []
+
+
+def test_replan_clears_positions_without_counterpart(client: TestClient):
+    login(client)
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "TWO", "name": "Two", "category": "other"},
+    ).json()
+    for label, day_class, count in (("Werktag", "weekday", 2), ("Wochenende", "weekend", 1), ("Feiertag", "holiday", 1)):
+        client.post(
+            f"/api/v1/shift-templates/{template['id']}/variants",
+            json={
+                "label": label,
+                "start_day_class": day_class,
+                "starts_at": "08:00:00",
+                "ends_at": "16:00:00",
+                "required_count": count,
+            },
+        )
+    first, second = _member(client, "first@example.com"), _member(client, "second@example.com")
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    slots = sorted(_day_slots(client, period_id, CONGRESS_DAY), key=lambda slot: slot["position"])
+    _assign(client, slots[0]["id"], first)
+    _assign(client, slots[1]["id"], second)
+
+    sync = client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    ).json()["roster_sync"]
+    assert (sync["assignments_kept"], sync["assignments_cleared"], sync["slots_removed"]) == (1, 1, 1)
+    [kept] = _day_slots(client, period_id, CONGRESS_DAY)
+    assert (kept["id"], kept["position"], kept["day_class"]) == (slots[0]["id"], 1, "holiday")
+    assert _assignee(client, period_id, kept["id"]) == first
 
     holiday_id = client.get("/api/v1/organization-holidays").json()[0]["id"]
-    assert client.delete(f"/api/v1/organization-holidays/{holiday_id}").status_code == 200
-    reread = client.get(f"/api/v1/roster-matrix/{period_id}").json()["slots"]
-    assert [slot["day_class"] for slot in reread if slot["slot_date"] == CONGRESS_DAY.isoformat()] == [
-        "holiday"
+    back = client.delete(f"/api/v1/organization-holidays/{holiday_id}").json()["roster_sync"]
+    assert (back["slots_updated"], back["slots_added"]) == (1, 1)
+    assert sorted(slot["position"] for slot in _day_slots(client, period_id, CONGRESS_DAY)) == [1, 2]
+
+
+def test_replan_covers_overnight_slots_ending_on_the_holiday(client: TestClient):
+    login(client)
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "NIGHT", "name": "Night", "category": "bereitschaftsdienst"},
+    ).json()
+    for label, end_class in (("Nacht vor Werktag", "weekday"), ("Nacht vor Feiertag", "holiday")):
+        client.post(
+            f"/api/v1/shift-templates/{template['id']}/variants",
+            json={
+                "label": label,
+                "start_day_class": "weekday",
+                "end_day_class": end_class,
+                "starts_at": "20:00:00",
+                "ends_at": "08:00:00",
+                "end_day_offset": 1,
+            },
+        )
+    member_id = _member(client, "night@example.com")
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    eve = CONGRESS_DAY - timedelta(days=1)
+    [eve_slot] = _day_slots(client, period_id, eve)
+    assert eve_slot["variant_label"] == "Nacht vor Werktag"
+    _assign(client, eve_slot["id"], member_id)
+
+    client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    )
+    [eve_after] = _day_slots(client, period_id, eve)
+    assert (eve_after["id"], eve_after["variant_label"]) == (eve_slot["id"], "Nacht vor Feiertag")
+    assert _assignee(client, period_id, eve_after["id"]) == member_id
+
+
+def test_replan_leaves_published_groups_alone_and_reports_them(client: TestClient):
+    login(client)
+    template = _bd_template_with_holiday_variant(client)
+    client.put("/api/v1/shift-groups/1/shift-templates", json={"shift_template_ids": [template["id"]]})
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    [before] = _day_slots(client, period_id, CONGRESS_DAY)
+    assert client.post(f"/api/v1/planning-periods/{period_id}/publish?shift_group_id=1").status_code == 200
+
+    sync = client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    ).json()["roster_sync"]
+    assert sync["slots_updated"] == 0
+    assert [(row["planning_period_id"], row["shift_group_id"], row["shift_group_name"]) for row in sync["skipped_published"]] == [
+        (period_id, 1, "Default SG")
     ]
-    resync = client.post(f"/api/v1/planning-periods/{period_id}/sync-roster").json()
-    restored = [slot for slot in resync["matrix"]["slots"] if slot["slot_date"] == CONGRESS_DAY.isoformat()]
-    assert [slot["day_class"] for slot in restored] == ["weekday"]
+    assert _day_slots(client, period_id, CONGRESS_DAY) == [before]
+
+
+def test_replan_skips_a_month_whose_roster_was_never_generated(client: TestClient):
+    login(client)
+    _bd_template_with_holiday_variant(client)
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    sync = client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    ).json()["roster_sync"]
+    assert sync["planning_period_ids"] == []
+    assert [slot["day_class"] for slot in _day_slots(client, period_id, CONGRESS_DAY)] == ["holiday"]
+
+
+def test_replan_does_not_apply_unsynced_template_changes_to_other_days(client: TestClient):
+    login(client)
+    template = _bd_template_with_holiday_variant(client)
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    weekday_variant = next(
+        variant for variant in client.get("/api/v1/shift-templates").json()[0]["variants"] if variant["label"] == "Werktag"
+    )
+    client.patch(f"/api/v1/shift-templates/variants/{weekday_variant['id']}", json={"starts_at": "07:00:00"})
+    other_day = date(2026, 9, 22)
+    [before] = _day_slots(client, period_id, other_day)
+
+    client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    )
+    assert _day_slots(client, period_id, other_day) == [before]
+    assert template["id"] == before["shift_template_id"]
 
 
 def test_holiday_without_holiday_variant_falls_back_to_weekend(client: TestClient):
@@ -312,7 +498,7 @@ def test_concurrent_duplicate_date_is_a_validation_error(monkeypatch):
     db = _session()
     db.add(OrganizationHoliday(organization_id=1, holiday_date=CONGRESS_DAY, label="First"))
     db.commit()
-    other = service.create_organization_holiday(
+    other, _sync = service.create_organization_holiday(
         db,
         OrganizationHolidayCreate(holiday_date=date(2026, 9, 16), label="Second"),
         organization_id=1,
@@ -339,3 +525,74 @@ def test_concurrent_duplicate_date_is_a_validation_error(monkeypatch):
             source="test",
         )
     assert sorted(service.organization_holiday_dates(db, organization_id=1)) == [CONGRESS_DAY, date(2026, 9, 16)]
+
+
+def test_replan_revalues_time_entries_both_ways():
+    from app.schemas import OrganizationHolidayCreate
+    from app.services.organization_holidays import (
+        create_organization_holiday,
+        delete_organization_holiday,
+    )
+    from app.services.roster_matrix import ensure_roster_slots_for_period
+
+    db = _session()
+    group = ContractGroup(
+        organization_id=1,
+        name="Standard",
+        weekly_hours_at_100=Decimal("40"),
+        vacation_days_at_100=Decimal("30"),
+        regular_week_pattern=[],
+        category_rules=[STUFE_I_WITH_BONUS.model_dump(mode="json")],
+        status_mappings=[],
+    )
+    member = TeamMember(organization_id=1, first_name="Pat", last_name="Revalue", email="revalue@example.com")
+    template = ShiftTemplate(organization_id=1, code="BD", name="BD", category="bereitschaftsdienst")
+    db.add_all([group, member, template])
+    db.flush()
+    db.add(
+        EmploymentPeriod(
+            team_member_id=member.id,
+            contract_group_id=group.id,
+            employment_percentage=100,
+            start_date=date(2000, 1, 1),
+        )
+    )
+    for label, day_class in (("Werktag", "weekday"), ("Wochenende", "weekend"), ("Feiertag", "holiday")):
+        db.add(
+            ShiftVariant(
+                shift_template_id=template.id,
+                label=label,
+                start_day_class=day_class,
+                starts_at=time(8, 0),
+                ends_at=time(8, 0),
+                end_day_offset=1,
+                required_count=1,
+            )
+        )
+    period = PlanningPeriod(organization_id=1, year=2026, month=9, status="draft")
+    db.add(period)
+    db.commit()
+    slots = ensure_roster_slots_for_period(db, period.id, 1)
+    db.commit()
+    [slot] = [row for row in slots if row.slot_date == CONGRESS_DAY]
+    db.add(RosterSlotAssignment(roster_slot_id=slot.id, team_member_id=member.id))
+    db.commit()
+    window = {"start_date": date(2026, 9, 1), "end_date": date(2026, 9, 30)}
+    derive_entries(db, organization_id=1, member_ids=[member.id], **window)
+
+    def entry():
+        [row] = list_time_entries(db, organization_id=1, team_member_id=member.id, **window)
+        return row.roster_slot_id, row.statutory_minutes, row.credited_minutes
+
+    assert entry() == (slot.id, 1440, 864)
+    holiday, sync = create_organization_holiday(
+        db,
+        OrganizationHolidayCreate(holiday_date=CONGRESS_DAY, label="Kongress"),
+        organization_id=1,
+        actor="test",
+        source="test",
+    )
+    assert sync.assignments_kept == 1
+    assert entry() == (slot.id, 1440, 1224)
+    delete_organization_holiday(db, holiday.id, organization_id=1, actor="test", source="test")
+    assert entry() == (slot.id, 1440, 864)

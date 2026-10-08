@@ -1533,6 +1533,35 @@ class OrganizationHolidayRead(BaseModel):
     updated_at: datetime
 
 
+class OrganizationHolidaySkippedGroup(BaseModel):
+    planning_period_id: int
+    year: int
+    month: int
+    shift_group_id: int
+    shift_group_name: str
+
+
+class OrganizationHolidayRosterSyncRead(BaseModel):
+    """What changing an organization holiday did to existing planning months."""
+
+    planning_period_ids: list[int] = Field(default_factory=list)
+    slots_updated: int = 0
+    slots_added: int = 0
+    slots_removed: int = 0
+    assignments_kept: int = 0
+    assignments_cleared: int = 0
+    skipped_published: list[OrganizationHolidaySkippedGroup] = Field(default_factory=list)
+
+
+class OrganizationHolidayWriteRead(OrganizationHolidayRead):
+    roster_sync: OrganizationHolidayRosterSyncRead
+
+
+class OrganizationHolidayDeleteRead(BaseModel):
+    deleted: bool
+    roster_sync: OrganizationHolidayRosterSyncRead
+
+
 class PlanningDayStatusDefinitionCreate(BaseModel):
     code: str = Field(min_length=1, max_length=32)
     label: str = Field(min_length=1, max_length=64)

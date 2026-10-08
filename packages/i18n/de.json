@@ -1204,7 +1204,7 @@
   "organizationHolidaysTab": "Klinikfeiertage",
   "organizationHolidaysTitle": "Klinikfeiertage",
   "organizationHolidaysIntro": "Tage, die wie ein Feiertag behandelt werden, zum Beispiel Kongresse oder klinikweite Fortbildungstage. Sie nutzen Feiertagsvarianten, den Feiertagszuschlag und zählen in der Fairness als Wochenend-/Feiertagsdienst.",
-  "organizationHolidaysSyncHint": "Für bereits angelegte Monate den Dienstplan synchronisieren, damit die Dienste des Tages ersetzt werden. Zuweisungen auf entfallenden Diensten werden dabei entfernt.",
+  "organizationHolidaysSyncHint": "Existierende, nicht veröffentlichte Monate werden für den Tag sofort angepasst. Zuweisungen bleiben erhalten, solange es den Dienst am Tag weiterhin gibt. Veröffentlichte Dienstgruppen bleiben unverändert.",
   "organizationHolidaysDate": "Datum",
   "organizationHolidaysLabel": "Bezeichnung",
   "organizationHolidaysLabelPlaceholder": "z. B. DAC Kongress",
@@ -1215,5 +1215,8 @@
   "organizationHolidaysActions": "Aktionen",
   "organizationHolidaysEmpty": "Noch keine Klinikfeiertage.",
   "organizationHolidaysLoadError": "Klinikfeiertage konnten nicht geladen werden.",
-  "organizationHolidaysSaveError": "Speichern fehlgeschlagen."
+  "organizationHolidaysSaveError": "Speichern fehlgeschlagen.",
+  "organizationHolidaysRosterUpdated": "Bestehende Dienstpläne angepasst: {{slots}} Dienste geändert, {{kept}} Zuweisungen übernommen, {{cleared}} entfernt.",
+  "organizationHolidaysRosterUnchanged": "Keine bestehenden Dienstpläne betroffen.",
+  "organizationHolidaysSkippedPublished": "Nicht angepasst, weil veröffentlicht: {{groups}}. Zum Anpassen den Plan wieder öffnen und den Dienstplan synchronisieren."
 }

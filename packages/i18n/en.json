@@ -1204,7 +1204,7 @@
   "organizationHolidaysTab": "Holidays",
   "organizationHolidaysTitle": "Organization holidays",
   "organizationHolidaysIntro": "Days treated like a public holiday, for example conferences or clinic-wide training days. They use holiday variants and the holiday credit bonus, and count as weekend/holiday duties for fairness.",
-  "organizationHolidaysSyncHint": "For months that already exist, sync the roster so the day's slots are replaced. Assignments on slots that no longer apply are cleared.",
+  "organizationHolidaysSyncHint": "Existing unpublished months are updated for that day right away. Assignments stay as long as the shift still exists on that day. Published shift groups are left unchanged.",
   "organizationHolidaysDate": "Date",
   "organizationHolidaysLabel": "Label",
   "organizationHolidaysLabelPlaceholder": "e.g. DAC congress",
@@ -1215,5 +1215,8 @@
   "organizationHolidaysActions": "Actions",
   "organizationHolidaysEmpty": "No organization holidays yet.",
   "organizationHolidaysLoadError": "Could not load organization holidays.",
-  "organizationHolidaysSaveError": "Could not save."
+  "organizationHolidaysSaveError": "Could not save.",
+  "organizationHolidaysRosterUpdated": "Existing rosters updated: {{slots}} shifts changed, {{kept}} assignments kept, {{cleared}} removed.",
+  "organizationHolidaysRosterUnchanged": "No existing rosters affected.",
+  "organizationHolidaysSkippedPublished": "Not updated because published: {{groups}}. Reopen the plan and sync the roster to apply it."
 }

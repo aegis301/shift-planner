@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-08
+- **Holidays update existing rosters:** Creating, moving or deleting an organization holiday now re-plans that day (and overnight shifts ending on it) in every existing planning month right away. Assignees stay on their shift when it switches to the holiday variant or back; only positions that no longer exist are cleared. Time entries for those shifts are re-valued, so the holiday credit bonus is added or removed. Published shift groups are left unchanged and named in the response. REST and MCP responses carry a `roster_sync` summary, and the Holidays tab shows it.
+
 ## 2026-10-07
 - **Day/night wishes:** A wish or no-go can target the day or the night shift of a template that runs both on that date (`planning_shift_intents.band`: `all`, `day`, `night`; migration `202610070001`, existing rows become `all`). A night no-go blocks only the night slot in validation, assignment preflight and the solver mask, and a night wish only counts toward the solver's wish term on night slots. Plan version snapshots keep the band.
 - **Only shifts that exist:** Wishes and no-gos are rejected for a template that has no slot on that date. The planner inspector and the member editor only offer the shifts that run on the selected day.

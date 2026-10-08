@@ -725,7 +725,11 @@ def test_organization_holiday_resource_and_tools(monkeypatch):
     )
     assert renamed["label"] == "DAC Kongress"
     assert [row["label"] for row in organization_holidays_resource()] == ["DAC Kongress"]
+    assert created["roster_sync"]["slots_updated"] == 0
+    deleted = delete_organization_holiday_tool(token="change-me-mcp-token", holiday_id=created["id"])
+    assert deleted["deleted"] is True
+    assert deleted["roster_sync"]["skipped_published"] == []
     assert delete_organization_holiday_tool(token="change-me-mcp-token", holiday_id=created["id"]) == {
-        "deleted": True
+        "deleted": False
     }
     assert organization_holidays_resource() == []

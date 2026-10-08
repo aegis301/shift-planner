@@ -3705,6 +3705,23 @@
         "title": "OrganizationHolidayCreate",
         "type": "object"
       },
+      "OrganizationHolidayDeleteRead": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "roster_sync": {
+            "$ref": "#/components/schemas/OrganizationHolidayRosterSyncRead"
+          }
+        },
+        "required": [
+          "deleted",
+          "roster_sync"
+        ],
+        "title": "OrganizationHolidayDeleteRead",
+        "type": "object"
+      },
       "OrganizationHolidayRead": {
         "properties": {
           "created_at": {
@@ -3746,6 +3763,85 @@
         "title": "OrganizationHolidayRead",
         "type": "object"
       },
+      "OrganizationHolidayRosterSyncRead": {
+        "description": "What changing an organization holiday did to existing planning months.",
+        "properties": {
+          "assignments_cleared": {
+            "default": 0,
+            "title": "Assignments Cleared",
+            "type": "integer"
+          },
+          "assignments_kept": {
+            "default": 0,
+            "title": "Assignments Kept",
+            "type": "integer"
+          },
+          "planning_period_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Planning Period Ids",
+            "type": "array"
+          },
+          "skipped_published": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizationHolidaySkippedGroup"
+            },
+            "title": "Skipped Published",
+            "type": "array"
+          },
+          "slots_added": {
+            "default": 0,
+            "title": "Slots Added",
+            "type": "integer"
+          },
+          "slots_removed": {
+            "default": 0,
+            "title": "Slots Removed",
+            "type": "integer"
+          },
+          "slots_updated": {
+            "default": 0,
+            "title": "Slots Updated",
+            "type": "integer"
+          }
+        },
+        "title": "OrganizationHolidayRosterSyncRead",
+        "type": "object"
+      },
+      "OrganizationHolidaySkippedGroup": {
+        "properties": {
+          "month": {
+            "title": "Month",
+            "type": "integer"
+          },
+          "planning_period_id": {
+            "title": "Planning Period Id",
+            "type": "integer"
+          },
+          "shift_group_id": {
+            "title": "Shift Group Id",
+            "type": "integer"
+          },
+          "shift_group_name": {
+            "title": "Shift Group Name",
+            "type": "string"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "planning_period_id",
+          "year",
+          "month",
+          "shift_group_id",
+          "shift_group_name"
+        ],
+        "title": "OrganizationHolidaySkippedGroup",
+        "type": "object"
+      },
       "OrganizationHolidayUpdate": {
         "properties": {
           "holiday_date": {
@@ -3775,6 +3871,51 @@
           }
         },
         "title": "OrganizationHolidayUpdate",
+        "type": "object"
+      },
+      "OrganizationHolidayWriteRead": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "holiday_date": {
+            "format": "date",
+            "title": "Holiday Date",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "integer"
+          },
+          "roster_sync": {
+            "$ref": "#/components/schemas/OrganizationHolidayRosterSyncRead"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "holiday_date",
+          "label",
+          "created_at",
+          "updated_at",
+          "roster_sync"
+        ],
+        "title": "OrganizationHolidayWriteRead",
         "type": "object"
       },
       "OrganizationInviteAcceptInput": {
@@ -19042,6 +19183,7 @@
         ]
       },
       "post": {
+        "description": "Create the holiday and re-plan that day in existing, unpublished planning months.",
         "operationId": "organization_holidays_post_organization_holiday",
         "parameters": [
           {
@@ -19092,7 +19234,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrganizationHolidayRead"
+                  "$ref": "#/components/schemas/OrganizationHolidayWriteRead"
                 }
               }
             },
@@ -19117,6 +19259,7 @@
     },
     "/api/v1/organization-holidays/{holiday_id}": {
       "delete": {
+        "description": "Delete the holiday and re-plan that day in existing, unpublished planning months.",
         "operationId": "organization_holidays_delete_organization_holiday_endpoint",
         "parameters": [
           {
@@ -19166,7 +19309,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeletedFlagRead"
+                  "$ref": "#/components/schemas/OrganizationHolidayDeleteRead"
                 }
               }
             },
@@ -19189,6 +19332,7 @@
         ]
       },
       "patch": {
+        "description": "Rename or move the holiday. Moving re-plans both the old and the new day.",
         "operationId": "organization_holidays_patch_organization_holiday",
         "parameters": [
           {
@@ -19248,7 +19392,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrganizationHolidayRead"
+                  "$ref": "#/components/schemas/OrganizationHolidayWriteRead"
                 }
               }
             },
