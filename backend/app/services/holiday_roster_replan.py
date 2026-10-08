@@ -95,6 +95,22 @@ def _differs(slot: RosterSlot, generated: GeneratedSlot) -> bool:
     )
 
 
+def _keep_assignment(
+    db: Session,
+    slot: RosterSlot,
+    result: OrganizationHolidayRosterSyncRead,
+    touched_member_ids: set[int],
+    touched_dates: set[date],
+) -> None:
+    """Count the assignee of a reclassified slot as kept and queue their hours for re-valuation."""
+    assignment = db.scalar(select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot.id))
+    if assignment is None:
+        return
+    result.assignments_kept += 1
+    touched_member_ids.add(assignment.team_member_id)
+    touched_dates.add(slot.slot_date)
+
+
 def _sort_key(item: RosterSlot | GeneratedSlot) -> tuple:
     return (item.starts_at is None, _instant(item.starts_at))
 
@@ -188,6 +204,7 @@ def replan_rosters_for_holiday_change(
                 continue
             if slot.day_class != generated.day_class:
                 reclassified_slot_ids.add(slot.id)
+                _keep_assignment(db, slot, result, touched_member_ids, touched_dates)
             _apply_generated_to_slot(slot, generated)
             result.slots_updated += 1
         unmatched_desired = [
@@ -212,13 +229,7 @@ def replan_rosters_for_holiday_change(
                 _apply_generated_to_slot(old, new)
                 result.slots_updated += 1
                 reclassified_slot_ids.add(old.id)
-                assignment = db.scalar(
-                    select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == old.id)
-                )
-                if assignment is not None:
-                    result.assignments_kept += 1
-                    touched_member_ids.add(assignment.team_member_id)
-                    touched_dates.add(old.slot_date)
+                _keep_assignment(db, old, result, touched_member_ids, touched_dates)
             removed.extend(olds[len(news) :])
             added.extend(news[len(olds) :])
 
@@ -249,16 +260,6 @@ def replan_rosters_for_holiday_change(
                 )
             )
             result.slots_added += 1
-
-        # Day-class-only changes on matched slots also move valuation.
-        for slot in existing:
-            if slot.id in reclassified_slot_ids:
-                assignment = db.scalar(
-                    select(RosterSlotAssignment).where(RosterSlotAssignment.roster_slot_id == slot.id)
-                )
-                if assignment is not None:
-                    touched_member_ids.add(assignment.team_member_id)
-                    touched_dates.add(slot.slot_date)
 
         result.planning_period_ids.append(period.id)
         record_audit(

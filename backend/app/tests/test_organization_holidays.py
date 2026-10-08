@@ -342,6 +342,31 @@ def test_replan_leaves_published_groups_alone_and_reports_them(client: TestClien
     assert _day_slots(client, period_id, CONGRESS_DAY) == [before]
 
 
+def test_same_variant_reclassified_counts_the_kept_assignee(client: TestClient):
+    login(client)
+    template = client.post(
+        "/api/v1/shift-templates",
+        json={"code": "ANY", "name": "Any day", "category": "other"},
+    ).json()
+    client.post(
+        f"/api/v1/shift-templates/{template['id']}/variants",
+        json={"label": "Täglich", "start_day_class": "any", "starts_at": "08:00:00", "ends_at": "16:00:00"},
+    )
+    member_id = _member(client, "anyday@example.com")
+    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 9}).json()["id"]
+    [slot] = _day_slots(client, period_id, CONGRESS_DAY)
+    _assign(client, slot["id"], member_id)
+
+    sync = client.post(
+        "/api/v1/organization-holidays",
+        json={"holiday_date": CONGRESS_DAY.isoformat(), "label": "Kongress"},
+    ).json()["roster_sync"]
+    assert (sync["slots_updated"], sync["assignments_kept"], sync["assignments_cleared"]) == (1, 1, 0)
+    [after] = _day_slots(client, period_id, CONGRESS_DAY)
+    assert (after["id"], after["day_class"]) == (slot["id"], "holiday")
+    assert _assignee(client, period_id, after["id"]) == member_id
+
+
 def test_replan_skips_a_month_whose_roster_was_never_generated(client: TestClient):
     login(client)
     _bd_template_with_holiday_variant(client)
