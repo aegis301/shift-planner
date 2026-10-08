@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import date, datetime
 from typing import Any
 
@@ -197,7 +198,7 @@ def _desired_from_cell(
     }
 
 
-def _apply_derived(row: TimeEntry, desired: dict[str, Any]) -> None:
+def _apply_derived(row: TimeEntry, desired: dict[str, Any], *, revalue: bool = False) -> None:
     corrected = set(row.corrected_fields or [])
     row.derived_snapshot = _snapshot(desired)
     row.source = desired["source"]
@@ -209,7 +210,7 @@ def _apply_derived(row: TimeEntry, desired: dict[str, Any]) -> None:
     for field in _APPLY_FIELDS:
         if field in corrected:
             continue
-        if field in _STICKY_VALUATION_FIELDS and row.id is not None:
+        if field in _STICKY_VALUATION_FIELDS and row.id is not None and not revalue:
             continue
         setattr(row, field, desired[field])
 
@@ -248,7 +249,14 @@ def derive_entries(
     end_date: date,
     member_ids: list[int] | None = None,
     commit: bool = True,
+    revalue_slot_ids: Collection[int] = (),
 ) -> list[TimeEntry]:
+    """Reconcile derived entries for the window.
+
+    Statutory and credited minutes are fixed at first derivation. ``revalue_slot_ids`` lifts
+    that for roster entries of those slots, for callers that reclassified the slot's day (an
+    organization holiday was added or removed). Manually corrected fields still win.
+    """
     if end_date < start_date:
         raise ValueError("end_date must be on or after start_date")
     member_stmt = select(TeamMember).options(joinedload(TeamMember.employment_periods)).where(
@@ -336,7 +344,7 @@ def derive_entries(
                 corrected_fields=[],
             )
             db.add(row)
-        _apply_derived(row, desired)
+        _apply_derived(row, desired, revalue=desired.get("roster_slot_id") in revalue_slot_ids)
 
     for row in existing:
         if _match_key(row) not in desired_keys:

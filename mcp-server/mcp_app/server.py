@@ -337,15 +337,19 @@ def organization_holidays_resource() -> list[dict[str, Any]]:
 
 @mcp.tool
 def create_organization_holiday_tool(token: str, holiday_date: date, label: str) -> dict[str, Any]:
-    """Treat a date as a holiday for slot generation, holiday credit, and fairness. Existing months
-    pick it up after a roster sync. Requires MCP admin token."""
+    """Treat a date as a holiday for slot generation, holiday credit, and fairness. Existing
+    unpublished months are re-planned for that day and assignees kept; `roster_sync` summarizes
+    it and lists skipped published shift groups. Requires MCP admin token."""
     require_token(token)
     payload = OrganizationHolidayCreate(holiday_date=holiday_date, label=label)
     with db_session() as db:
-        row = create_organization_holiday(
+        row, roster_sync = create_organization_holiday(
             db, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
         )
-        return OrganizationHolidayRead.model_validate(row).model_dump(mode="json")
+        return {
+            **OrganizationHolidayRead.model_validate(row).model_dump(mode="json"),
+            "roster_sync": roster_sync.model_dump(mode="json"),
+        }
 
 
 @mcp.tool
@@ -355,27 +359,35 @@ def update_organization_holiday_tool(
     holiday_date: date | None = None,
     label: str | None = None,
 ) -> dict[str, Any]:
-    """Move or rename an organization holiday. Requires MCP admin token."""
+    """Move or rename an organization holiday. Moving re-plans the old and the new day in existing
+    unpublished months. Requires MCP admin token."""
     require_token(token)
     payload = OrganizationHolidayUpdate(holiday_date=holiday_date, label=label)
     with db_session() as db:
-        row = update_organization_holiday(
+        result = update_organization_holiday(
             db, holiday_id, payload, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
         )
-        if row is None:
+        if result is None:
             raise ValueError("Organization holiday not found")
-        return OrganizationHolidayRead.model_validate(row).model_dump(mode="json")
+        row, roster_sync = result
+        return {
+            **OrganizationHolidayRead.model_validate(row).model_dump(mode="json"),
+            "roster_sync": roster_sync.model_dump(mode="json"),
+        }
 
 
 @mcp.tool
-def delete_organization_holiday_tool(token: str, holiday_id: int) -> dict[str, bool]:
-    """Delete an organization holiday. Requires MCP admin token."""
+def delete_organization_holiday_tool(token: str, holiday_id: int) -> dict[str, Any]:
+    """Delete an organization holiday and re-plan that day in existing unpublished months.
+    Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
-        deleted = delete_organization_holiday(
+        roster_sync = delete_organization_holiday(
             db, holiday_id, organization_id=mcp_organization_id(), actor="mcp", source="mcp"
         )
-        return {"deleted": deleted}
+        if roster_sync is None:
+            return {"deleted": False}
+        return {"deleted": True, "roster_sync": roster_sync.model_dump(mode="json")}
 
 
 @mcp.resource("shift-planner://team-members")

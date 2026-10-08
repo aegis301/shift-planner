@@ -7,9 +7,15 @@ import { Card, Field, inputClass } from "@/components/Card";
 import { useLocale, useSession } from "@/components/LocaleProvider";
 import { ApiError, apiFetch } from "@/lib/api";
 import { apiClient } from "@/lib/api/client";
-import type { OrganizationHolidayRead as OrganizationHoliday } from "@/lib/api/types";
+import type {
+  OrganizationHolidayDeleteRead,
+  OrganizationHolidayRosterSyncRead,
+  OrganizationHolidayWriteRead
+} from "@/lib/api/types";
 import { t } from "@/lib/i18n";
 import { isUserSession } from "@/lib/membershipRouting";
+import { rosterSyncSummary } from "@/lib/organizationHolidays";
+import { invalidateQueryKeys, organizationHolidayRosterKeys } from "@/lib/queries/invalidation";
 import { readData } from "@/lib/queries/read";
 import { queryKeys } from "@/lib/queryKeys";
 
@@ -40,6 +46,7 @@ export function OrganizationHolidaysPanel() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [message, setMessage] = useState("");
+  const [syncLines, setSyncLines] = useState<string[]>([]);
 
   const holidays = useQuery({
     queryKey,
@@ -47,44 +54,50 @@ export function OrganizationHolidaysPanel() {
     queryFn: async () => readData(await apiClient.GET("/api/v1/organization-holidays"))
   });
 
-  async function refresh() {
+  async function refresh(sync?: OrganizationHolidayRosterSyncRead) {
+    setSyncLines(sync ? rosterSyncSummary(locale, sync) : []);
     await queryClient.invalidateQueries({ queryKey });
+    if (sync && organizationId != null) {
+      await invalidateQueryKeys(queryClient, organizationHolidayRosterKeys(organizationId));
+    }
   }
 
   const create = useMutation({
     mutationFn: (body: { holiday_date: string; label: string }) =>
-      apiFetch<OrganizationHoliday>("/api/v1/organization-holidays", {
+      apiFetch<OrganizationHolidayWriteRead>("/api/v1/organization-holidays", {
         method: "POST",
         body: JSON.stringify(body)
       }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setHolidayDate("");
       setLabel("");
       setMessage("");
-      await refresh();
+      await refresh(result.roster_sync);
     },
     onError: (error) => setMessage(errorMessage(locale, error))
   });
 
   const rename = useMutation({
     mutationFn: (args: { id: number; label: string }) =>
-      apiFetch<OrganizationHoliday>(`/api/v1/organization-holidays/${args.id}`, {
+      apiFetch<OrganizationHolidayWriteRead>(`/api/v1/organization-holidays/${args.id}`, {
         method: "PATCH",
         body: JSON.stringify({ label: args.label })
       }),
     onSuccess: async () => {
       setEditingId(null);
       setMessage("");
+      // A rename never touches rosters.
       await refresh();
     },
     onError: (error) => setMessage(errorMessage(locale, error))
   });
 
   const remove = useMutation({
-    mutationFn: (id: number) => apiFetch<void>(`/api/v1/organization-holidays/${id}`, { method: "DELETE" }),
-    onSuccess: async () => {
+    mutationFn: (id: number) =>
+      apiFetch<OrganizationHolidayDeleteRead>(`/api/v1/organization-holidays/${id}`, { method: "DELETE" }),
+    onSuccess: async (result) => {
       setMessage("");
-      await refresh();
+      await refresh(result.roster_sync);
     },
     onError: (error) => setMessage(errorMessage(locale, error))
   });
@@ -137,6 +150,13 @@ export function OrganizationHolidaysPanel() {
         </button>
       </form>
 
+      {syncLines.length > 0 ? (
+        <div role="status" className="mt-3 space-y-1 text-sm text-ink">
+          {syncLines.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      ) : null}
       {message ? (
         <p role="alert" className="mt-3 text-sm text-danger">
           {message}

@@ -71,7 +71,7 @@ Shipped:
 - Planner unresolved swap pool: `open` and `targeted` requests by duty date, with withdraw (`#100`)
 - Organization IANA time zone and roster slot instants (`#109`). A 24 h wall-clock duty across the autumn clock change is 25 statutory hours and can exceed the 24 h extended daily cap; the solver fixture leaves that history slot unassigned.
 - Frontend test harness: Vitest, Playwright smoke flows against `seed_e2e`, and golden screenshots (`#110`)
-- Organization holidays: dates an organization treats as a holiday on top of the NRW calendar, used by slot generation, holiday credit, fairness and workload (`#147`)
+- Organization holidays: dates an organization treats as a holiday on top of the NRW calendar, used by slot generation, holiday credit, fairness and workload (`#147`); changes re-plan existing unpublished months and keep assignees (`#151`)
 - Day/night wishes and no-gos, wishes only for shifts that run that day, and a no-go for every shift of a day (`#149`)
 
 In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
@@ -90,6 +90,7 @@ In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long
 | 8 | *(fix)* | Swap legality sees duties in other shift groups | shipped |
 | 9 | #100 | Planner view of unresolved giveaways and unanswered proposals | shipped |
 | 10 | #147 | Organization holidays ("treat as holiday") | shipped |
+| 11 | #151 | Organization holidays update existing rosters | this change |
 | 11 | #149 | Day/night wishes, existing shifts only, no-go for every shift | this change |
 
 Backlog, not part of the rollout: #34, #44, #51, #52, #53, #54.

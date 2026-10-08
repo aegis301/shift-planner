@@ -27,6 +27,17 @@ export function statusTransitionKeys(scope: PlanningScope): QueryKey[] {
   ];
 }
 
+/** Every month and group of roster-derived data; an organization holiday can change any of them. */
+export function organizationHolidayRosterKeys(organizationId: number): QueryKey[] {
+  return [
+    ["roster-matrix", organizationId],
+    ["validation", organizationId],
+    ["fairness", organizationId],
+    ["roster-change-sets", organizationId],
+    ["compliance-report", organizationId]
+  ];
+}
+
 export async function invalidateQueryKeys(client: QueryClient, keys: QueryKey[]): Promise<void> {
   await Promise.all(keys.map((queryKey) => client.invalidateQueries({ queryKey })));
 }

@@ -1130,7 +1130,10 @@ export interface paths {
         /** Get Organization Holidays */
         get: operations["organization_holidays_get_organization_holidays"];
         put?: never;
-        /** Post Organization Holiday */
+        /**
+         * Post Organization Holiday
+         * @description Create the holiday and re-plan that day in existing, unpublished planning months.
+         */
         post: operations["organization_holidays_post_organization_holiday"];
         delete?: never;
         options?: never;
@@ -1148,11 +1151,17 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Organization Holiday Endpoint */
+        /**
+         * Delete Organization Holiday Endpoint
+         * @description Delete the holiday and re-plan that day in existing, unpublished planning months.
+         */
         delete: operations["organization_holidays_delete_organization_holiday_endpoint"];
         options?: never;
         head?: never;
-        /** Patch Organization Holiday */
+        /**
+         * Patch Organization Holiday
+         * @description Rename or move the holiday. Moving re-plans both the old and the new day.
+         */
         patch: operations["organization_holidays_patch_organization_holiday"];
         trace?: never;
     };
@@ -4062,6 +4071,12 @@ export interface components {
             /** Label */
             label: string;
         };
+        /** OrganizationHolidayDeleteRead */
+        OrganizationHolidayDeleteRead: {
+            /** Deleted */
+            deleted: boolean;
+            roster_sync: components["schemas"]["OrganizationHolidayRosterSyncRead"];
+        };
         /** OrganizationHolidayRead */
         OrganizationHolidayRead: {
             /**
@@ -4086,12 +4101,85 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * OrganizationHolidayRosterSyncRead
+         * @description What changing an organization holiday did to existing planning months.
+         */
+        OrganizationHolidayRosterSyncRead: {
+            /**
+             * Assignments Cleared
+             * @default 0
+             */
+            assignments_cleared: number;
+            /**
+             * Assignments Kept
+             * @default 0
+             */
+            assignments_kept: number;
+            /** Planning Period Ids */
+            planning_period_ids?: number[];
+            /** Skipped Published */
+            skipped_published?: components["schemas"]["OrganizationHolidaySkippedGroup"][];
+            /**
+             * Slots Added
+             * @default 0
+             */
+            slots_added: number;
+            /**
+             * Slots Removed
+             * @default 0
+             */
+            slots_removed: number;
+            /**
+             * Slots Updated
+             * @default 0
+             */
+            slots_updated: number;
+        };
+        /** OrganizationHolidaySkippedGroup */
+        OrganizationHolidaySkippedGroup: {
+            /** Month */
+            month: number;
+            /** Planning Period Id */
+            planning_period_id: number;
+            /** Shift Group Id */
+            shift_group_id: number;
+            /** Shift Group Name */
+            shift_group_name: string;
+            /** Year */
+            year: number;
+        };
         /** OrganizationHolidayUpdate */
         OrganizationHolidayUpdate: {
             /** Holiday Date */
             holiday_date?: string | null;
             /** Label */
             label?: string | null;
+        };
+        /** OrganizationHolidayWriteRead */
+        OrganizationHolidayWriteRead: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Holiday Date
+             * Format: date
+             */
+            holiday_date: string;
+            /** Id */
+            id: number;
+            /** Label */
+            label: string;
+            /** Organization Id */
+            organization_id: number;
+            roster_sync: components["schemas"]["OrganizationHolidayRosterSyncRead"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** OrganizationInviteAcceptInput */
         OrganizationInviteAcceptInput: {
@@ -10063,7 +10151,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrganizationHolidayRead"];
+                    "application/json": components["schemas"]["OrganizationHolidayWriteRead"];
                 };
             };
             /** @description Validation Error */
@@ -10098,7 +10186,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DeletedFlagRead"];
+                    "application/json": components["schemas"]["OrganizationHolidayDeleteRead"];
                 };
             };
             /** @description Validation Error */
@@ -10137,7 +10225,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OrganizationHolidayRead"];
+                    "application/json": components["schemas"]["OrganizationHolidayWriteRead"];
                 };
             };
             /** @description Validation Error */
