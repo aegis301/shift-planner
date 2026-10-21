@@ -908,6 +908,8 @@
   "orgStaffDetailLinkedLoginSection": "Linked login",
   "teamTabAccess": "Team & access",
   "adminSectionTabsLabel": "Section navigation",
+  "navOrganizationManagement": "Organization management",
+  "organizationManagementPlaceholder": "Organization-wide settings will be collected here. Existing admin pages stay where they are for now.",
   "navTeamManagement": "Team management",
   "navShiftManagement": "Shift management",
   "navToggleSidebarHide": "Collapse sidebar (icons only)",

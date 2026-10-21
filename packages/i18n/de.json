@@ -908,6 +908,8 @@
   "orgStaffDetailLinkedLoginSection": "Verknüpftes Login",
   "teamTabAccess": "Team & Zugänge",
   "adminSectionTabsLabel": "Bereichsnavigation",
+  "navOrganizationManagement": "Organisationsverwaltung",
+  "organizationManagementPlaceholder": "Organisationsweite Einstellungen werden hier gebündelt. Bestehende Admin-Seiten bleiben vorerst an ihrem bisherigen Ort.",
   "navTeamManagement": "Teamverwaltung",
   "navShiftManagement": "Dienstverwaltung",
   "navToggleSidebarHide": "Sidebar einklappen (nur Symbole)",
