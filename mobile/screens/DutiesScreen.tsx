@@ -15,7 +15,7 @@ export function useDutyWindow(): { from: string; to: string } {
   return useMemo(() => windowAround(today), [today]);
 }
 
-export function DutiesScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number) => void }) {
+export function DutiesScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number, slotDate: string) => void }) {
   const { session } = useAuth();
   const { locale, t } = useLocale();
   const theme = useTheme();
@@ -50,7 +50,7 @@ export function DutiesScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number
             <Row
               accessibilityLabel={`${dutyTitle(item)}, ${detail}`}
               detail={detail}
-              onPress={() => onOpenDuty(item.roster_slot_id)}
+              onPress={() => onOpenDuty(item.roster_slot_id, item.slot_date)}
               title={dutyTitle(item)}
             />
           );

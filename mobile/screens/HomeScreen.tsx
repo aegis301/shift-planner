@@ -6,7 +6,7 @@ import { dutyTitle, formatDutyDate, formatDutyTimes } from "@/lib/duties";
 import { useLocale } from "@/lib/locale";
 import { useMemberHome } from "@/lib/queries";
 
-export function HomeScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number) => void }) {
+export function HomeScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number, slotDate: string) => void }) {
   const { session } = useAuth();
   const { locale, t } = useLocale();
   const home = useMemberHome();
@@ -33,7 +33,7 @@ export function HomeScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number) 
             key={duty.roster_slot_id}
             accessibilityLabel={`${dutyTitle(duty)}, ${detail}`}
             detail={detail}
-            onPress={() => onOpenDuty(duty.roster_slot_id)}
+            onPress={() => onOpenDuty(duty.roster_slot_id, duty.slot_date)}
             title={dutyTitle(duty)}
           />
         );

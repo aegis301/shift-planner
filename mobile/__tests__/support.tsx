@@ -5,9 +5,9 @@ import * as SecureStore from "expo-secure-store";
 import { AuthProvider } from "@/lib/auth";
 import { LocaleProvider } from "@/lib/locale";
 
-export type Route = { method: string; path: string; status?: number; body?: unknown };
+export type Route = { method: string; path: string; query?: Record<string, string>; status?: number; body?: unknown };
 
-export type Call = { method: string; path: string; authorization: string | null; body: unknown };
+export type Call = { method: string; path: string; query: Record<string, string>; authorization: string | null; body: unknown };
 
 export function mockApi(routes: Route[]): Call[] {
   const calls: Call[] = [];
@@ -15,13 +15,23 @@ export function mockApi(routes: Route[]): Call[] {
     const request = input instanceof Request ? input : new Request(String(input), init);
     const url = new URL(request.url);
     const text = request.method === "GET" ? "" : await request.clone().text();
+    const query = Object.fromEntries(url.searchParams);
     calls.push({
       method: request.method,
       path: url.pathname,
+      query,
       authorization: request.headers.get("Authorization"),
       body: text ? JSON.parse(text) : null
     });
-    const route = routes.find((row) => row.method === request.method && row.path === url.pathname);
+    const route = routes.find((row) => {
+      if (row.method !== request.method || row.path !== url.pathname) {
+        return false;
+      }
+      if (!row.query) {
+        return true;
+      }
+      return Object.entries(row.query).every(([key, value]) => url.searchParams.get(key) === value);
+    });
     if (!route) {
       return new Response(JSON.stringify({ detail: "not mocked" }), { status: 404 });
     }

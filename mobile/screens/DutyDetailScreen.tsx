@@ -13,10 +13,11 @@ const PLAN_STATUS_LABELS: Record<string, TranslationKey> = {
   published: "periodStatusPublished"
 };
 
-export function DutyDetailScreen({ rosterSlotId }: { rosterSlotId: number }) {
+export function DutyDetailScreen({ rosterSlotId, slotDate }: { rosterSlotId: number; slotDate?: string }) {
   const { session } = useAuth();
   const { locale, t } = useLocale();
-  const duties = useMemberDuties(useDutyWindow());
+  const listWindow = useDutyWindow();
+  const duties = useMemberDuties(slotDate ? { from: slotDate, to: slotDate } : listWindow);
   const duty = duties.data?.find((row) => row.roster_slot_id === rosterSlotId);
   const timeZone = sessionTimeZone(session);
 

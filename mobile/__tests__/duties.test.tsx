@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react-native";
 import { addDays, dutyWindow, formatDutyTimes, groupDutiesByWeek, weekStartOf } from "@/lib/duties";
 import { DutiesScreen } from "@/screens/DutiesScreen";
+import { DutyDetailScreen } from "@/screens/DutyDetailScreen";
 import { HomeScreen } from "@/screens/HomeScreen";
 import { memberSession, mockApi, renderApp, storeRefreshToken, tokenPair } from "./support";
 
@@ -95,5 +96,20 @@ describe("duties", () => {
     expect(screen.getByText("Giveaway")).toBeTruthy();
     expect(screen.getByText("Open")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("Wishes for 11/2026 are open.")).toBeTruthy());
+  });
+
+  it("loads a home duty that is past the sixty-day duties window", async () => {
+    await storeRefreshToken();
+    const later = duty(9, "2027-10-20", "2027-10-20T06:00:00Z", "2027-10-20T14:00:00Z", "Spät");
+    const calls = mockApi([
+      { method: "POST", path: "/api/v1/auth/token/refresh", body: tokenPair(memberSession()) },
+      { method: "GET", path: "/api/v1/me/duties", query: { from: later.slot_date, to: later.slot_date }, body: [later] },
+      { method: "GET", path: "/api/v1/me/duties", body: [] }
+    ]);
+    renderApp(<DutyDetailScreen rosterSlotId={later.roster_slot_id} slotDate={later.slot_date} />);
+    expect(await screen.findByText("Wed 20/10")).toBeTruthy();
+    expect(screen.getAllByText("Spät")).toHaveLength(2);
+    expect(screen.queryByText("This duty is no longer in your roster.")).toBeNull();
+    expect(calls.some((call) => call.path === "/api/v1/me/duties" && call.query.from === later.slot_date && call.query.to === later.slot_date)).toBe(true);
   });
 });
