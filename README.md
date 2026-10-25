@@ -73,7 +73,7 @@ If your machine already runs Postgres on port `5432`, keep `POSTGRES_HOST_PORT=5
 
 ## Frontend Development
 
-The JavaScript app is an npm workspace. Install from the repository root. `frontend/` stays the Next.js app. Shared code lives in `packages/api-client`, `packages/i18n`, and `packages/domain`.
+The JavaScript app is an npm workspace. Install from the repository root. `frontend/` stays the Next.js app and `mobile/` is the Expo member app. Shared code lives in `packages/api-client`, `packages/i18n`, and `packages/domain`.
 
 ```bash
 npm ci
@@ -96,7 +96,11 @@ Planning screens read server state through TanStack Query (`frontend/lib/queryKe
 
 `GET /api/v1/roster-matrix/{planning_period_id}/slots/{roster_slot_id}/candidates?shift_group_id=` lists every period-roster member for that slot with status `ok`, `warning`, `blocked`, or `ineligible`. `blocked` is the same refusal as assigning that member. The service builds `PlanState` once per request. MCP `get_slot_candidates_tool` returns the same payload.
 
-`npm run api:generate` writes `packages/api-client/openapi.json` and `packages/api-client/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails if `packages/api-client/` drifts. Friendly names are in `packages/api-client/src/types.ts`, re-exported from `frontend/lib/api/types.ts`. The web `apiClient` uses cookie auth. `createApiClient` in `@shift-planner/api-client` also accepts a bearer auth strategy. `ApiError` is shared.
+`npm run api:generate` writes `packages/api-client/openapi.json` and `packages/api-client/schema.d.ts` from the FastAPI app (`python -m app.scripts.export_openapi` in `backend/`, or `docker compose exec` when that interpreter cannot import the app). Run it after a backend schema change and commit both files. `npm run api:check` regenerates them in a temp directory and diffs. CI uploads the backend export and fails if `packages/api-client/` drifts. Friendly names are in `packages/api-client/src/types.ts`, re-exported from `frontend/lib/api/types.ts`. The web `apiClient` uses cookie auth. `createApiClient` in `@shift-planner/api-client` also accepts a bearer auth strategy, which refreshes once on a 401 and shares one refresh between concurrent requests, and a `none` strategy for the sign-in and refresh calls. `ApiError` is shared.
+
+### Member app (Expo)
+
+`mobile/` is the native member app: sign in, home, my duties, duty detail, and settings. It uses only `/api/v1/me` and the bearer auth endpoints. Point it at the local Compose backend with `EXPO_PUBLIC_API_BASE_URL` (`http://<LAN IP>:18180` for a phone, `http://localhost:18180` for the iOS simulator, `http://10.0.2.2:18180` for the Android emulator) and run `cd mobile && npx expo start`. `npm run typecheck|lint|test --workspace mobile` are the checks the CI `mobile` job runs. Setup, sign-in outcomes, tests, and EAS profiles are in [`mobile/README.md`](mobile/README.md). The bundle identifier and Android package name in `mobile/app.config.ts` are placeholders until the owner picks them.
 
 ### End-to-end tests
 

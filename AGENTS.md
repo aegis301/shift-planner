@@ -54,7 +54,7 @@ Two invariants that are easy to break and expensive to unbreak:
 ## Architecture
 
 - Backend: Python, FastAPI, SQLAlchemy, Alembic, Postgres.
-- Frontend: Next.js App Router, TypeScript, Tailwind CSS. The planner workbench is desktop-first and the member companion is mobile-first (PWA-ready); see **Style** and [ADR 0001](docs/decisions/0001-desktop-first-workbench.md). A native member app (Expo) is planned as a second client of the same REST API.
+- Frontend: Next.js App Router, TypeScript, Tailwind CSS. The planner workbench is desktop-first and the member companion is mobile-first (PWA-ready); see **Style** and [ADR 0001](docs/decisions/0001-desktop-first-workbench.md). The native member app (Expo) lives in `mobile/` as a second client of the same REST API; see **Member app**.
 - MCP: FastMCP from the start. MCP tools and resources must reuse the same backend service layer as REST endpoints. MCP targeting uses **`MCP_ORGANIZATION_ID`** when set, otherwise the default organization id (see `README.md`); it is not tied to a browser user’s active membership.
 - Runtime: Docker Compose for local development with Postgres, backend, **solver-worker**, frontend, and MCP services. Production-oriented stack and Cloudflare/GitHub Actions notes live in [deploy/README.md](deploy/README.md) and [docker-compose.prod.yml](docker-compose.prod.yml).
 
@@ -138,6 +138,19 @@ Team members (`TeamMember` rows) can belong to multiple shift groups through **d
 **MCP exception:** `/me` is per person, and the MCP server has no person. There are no MCP tools or resources for `/me`. Admins still reach the underlying matrices, swaps, and ledgers through the existing resources. Mutating those tools still require `MCP_ADMIN_TOKEN`.
 
 **`team_member_portal=true` is deprecated** for new member clients. The web member area uses `/api/v1/me`. The flag stays on the planner matrix and roster routes. `/my-planning` still sends it on `GET /api/v1/roster-matrix/{id}` so a dual-role user sees the published colleague roster rather than the planner draft. `/me` returns only the caller's slots, so that roster read has no member-API replacement yet. Removing the flag is a follow-up.
+
+## Member app
+
+`mobile/` (`@shift-planner/mobile`) is the Expo member app: Expo SDK 57, Expo Router, React Native 0.86, React 19, TanStack Query, and `jest-expo` with React Native Testing Library. It is a workspace member, installed with `npm ci` from the root.
+
+- **Member features only.** No planner or admin screen, ever (ADR 0001). Tabs are Home, Duties, and Settings. Wishes and swaps (#124), offline duty activity (#123), and push (#125) are later issues.
+- **No business logic.** Data comes from `/api/v1/me/...` and the auth endpoints (`POST /auth/token`, `/token/refresh`, `/token/revoke`, `/auth/me/active-organization`). If a screen needs data those endpoints do not return, add it to the backend. Grouping and formatting for display are fine; rules, eligibility, and time accounting are not.
+- **Auth.** The refresh token is in `expo-secure-store`; the access token is in memory. `createApiClient` with the `bearer` strategy refreshes once on a 401, single-flight per client, and signs out when the refresh fails. Sign-in and refresh use the `none` strategy so a wrong password is not treated as an expired token. Sign-out revokes the device session and clears secure storage and the query cache. The session outcome (`mobile/lib/session.ts`) is `member` (team-member portal with a linked member), `no-member` (planner or admin without a linked member), or `onboarding` (account session or applicant); the last two show a link to the web app and sign-out.
+- **Strings** come from `@shift-planner/i18n` (`mobile*` keys) in both languages. The locale defaults to German when the device language is German, otherwise English, and Settings can override it. Every interactive element has an accessibility label from the dictionaries. Touch targets are at least 44 pt (`mobile/theme.ts`), and the theme follows the system light or dark appearance.
+- **Times** are formatted in `organization_timezone` with `@shift-planner/domain`, never in the device zone. Jest runs with the device zone set to `Pacific/Honolulu`.
+- **React copies.** The web app uses React 18, so React, React Native, and the Expo modules install under `mobile/node_modules`. `metro.config.js` and `jest.config.js` resolve `react` and `react-native` from `mobile/`. List an Expo module the app needs as a direct dependency at the SDK's version; a module nested under `expo/node_modules` is invisible to `jest-expo` and autolinking.
+- **Config.** `EXPO_PUBLIC_API_BASE_URL` (no production default) and `EXPO_PUBLIC_WEB_BASE_URL`. The display name, bundle identifier, and Android package in `app.config.ts` are placeholders until the owner decides them. `eas.json` has `development`, `preview`, and `production` profiles and no submission.
+- **Checks.** `npm run typecheck|lint|test --workspace mobile`, run by the CI `mobile` job. No native builds in CI. The frontend Docker images ignore `mobile/`.
 
 ## Dashboard
 
@@ -276,9 +289,8 @@ type), and design new planner features desktop-first already.
 dashboard tab.
 
 - Design at 375 px first. Touch targets at least 44 px. One primary action per screen.
-- Anything a member needs must also work in the planned native app, so member business logic
-  stays in the backend and member screens consume the member API (`/api/v1/me/...`, #120)
-  once it exists.
+- Anything a member needs must also work in the native app (`mobile/`), so member business logic
+  stays in the backend and member screens consume the member API (`/api/v1/me/...`, #120).
 - Member and planner pages may share presentational components but never a page component or a
   `variant` switch. `/planning` renders `PlannerWorkspace`; `/my-planning` renders `MemberPlanning`.
   Team-member-only users land on `/my`.
