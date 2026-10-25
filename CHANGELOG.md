@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-25
+- **Member app scaffold:** `mobile/` is the Expo member app (SDK 57, Expo Router) and a member of the npm workspace. A member signs in with email and password, and the app keeps the refresh token in secure storage and the access token in memory. A planner or admin without a linked team member sees a screen that links to the web app, and an account without membership or an applicant sees a link to web onboarding. Home shows the next duties, swap requests waiting for the member, and the open wishes month from `/api/v1/me/home`. Duties lists `/api/v1/me/duties` from seven days back to sixty days ahead, grouped by week, with pull to refresh, and a duty detail. Times are in the organization's time zone. Settings switches language and organization, shows the account and app version, and signs out, which revokes the device session. The bearer client in `@shift-planner/api-client` now shares one refresh between concurrent 401 responses, and a `none` auth strategy serves the sign-in and refresh calls. A CI `mobile` job runs typecheck, lint, and Jest. The bundle identifier and Android package name are placeholders.
+
 ## 2026-10-08
 - **Holidays update existing rosters:** Creating, moving or deleting an organization holiday now re-plans that day (and overnight shifts ending on it) in every existing planning month right away. Assignees stay on their shift when it switches to the holiday variant or back; only positions that no longer exist are cleared. Time entries for those shifts are re-valued, so the holiday credit bonus is added or removed. Published shift groups are left unchanged and named in the response. REST and MCP responses carry a `roster_sync` summary, and the Holidays tab shows it.
 
