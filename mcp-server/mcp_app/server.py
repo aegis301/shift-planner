@@ -823,9 +823,8 @@ def create_team_member_tool(
     email: str,
     employment_percentage: int = 100,
     notes: str | None = None,
-    shift_group_ids: list[int] | None = None,
 ) -> dict[str, Any]:
-    """Create a team member row. Requires MCP admin token."""
+    """Create a team member row. Shift-group membership is set with `set_shift_group_memberships_tool`. Requires MCP admin token."""
     require_token(token)
     with db_session() as db:
         member = create_team_member(
@@ -836,7 +835,6 @@ def create_team_member_tool(
                 email=email,
                 employment_percentage=employment_percentage,
                 notes=notes,
-                shift_group_ids=list(shift_group_ids or []),
             ),
             organization_id=mcp_organization_id(),
             actor="mcp",

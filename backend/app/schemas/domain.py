@@ -449,8 +449,17 @@ class TeamMemberUpdate(BaseModel):
     notes: str | None = None
     planning_preferences: str | None = None
     is_active: bool | None = None
-    shift_group_ids: list[int] | None = None
     user_id: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_shift_group_ids(cls, data: object) -> object:
+        if isinstance(data, dict) and "shift_group_ids" in data:
+            raise ValueError(
+                "shift_group_ids is not accepted on a team member update; "
+                "edit membership with PUT /api/v1/shift-groups/{id}/memberships"
+            )
+        return data
 
     @field_validator("nickname", mode="before")
     @classmethod
@@ -2051,10 +2060,26 @@ class ValidationWarning(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+SlotCandidateRefusalCode = Literal[
+    "not_on_period_roster",
+    "not_in_covering_group",
+    "no_go",
+    "unavailable_day_status",
+    "blocking_rule",
+]
+
+
+class SlotCandidateRefusalRead(BaseModel):
+    code: SlotCandidateRefusalCode
+    rule_code: str | None = None
+    message: str | None = None
+
+
 class SlotCandidateRead(BaseModel):
     team_member_id: int
     display_name: str
     status: Literal["ok", "warning", "blocked", "ineligible"]
+    refusal: SlotCandidateRefusalRead | None = None
     findings: list[ValidationWarning] = Field(default_factory=list)
     wish: bool = False
     no_go: bool = False

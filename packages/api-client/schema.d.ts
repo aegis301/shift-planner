@@ -5707,6 +5707,7 @@ export interface components {
              * @default false
              */
             no_go: boolean;
+            refusal?: components["schemas"]["SlotCandidateRefusalRead"] | null;
             /**
              * Status
              * @enum {string}
@@ -5719,6 +5720,18 @@ export interface components {
              * @default false
              */
             wish: boolean;
+        };
+        /** SlotCandidateRefusalRead */
+        SlotCandidateRefusalRead: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "not_on_period_roster" | "not_in_covering_group" | "no_go" | "unavailable_day_status" | "blocking_rule";
+            /** Message */
+            message?: string | null;
+            /** Rule Code */
+            rule_code?: string | null;
         };
         /** SlotCandidateSwapRead */
         SlotCandidateSwapRead: {
@@ -6383,8 +6396,6 @@ export interface components {
             notes?: string | null;
             /** Planning Preferences */
             planning_preferences?: string | null;
-            /** Shift Group Ids */
-            shift_group_ids?: number[] | null;
             /** User Id */
             user_id?: number | null;
         };

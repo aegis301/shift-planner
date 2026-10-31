@@ -23,9 +23,12 @@ def _seed_period_with_assignment(client: TestClient) -> tuple[int, int]:
             "last_name": "Member",
             "email": "version-member@example.com",
             "employment_percentage": 100,
-            "shift_group_ids": [1],
         },
     ).json()["id"]
+    client.put(
+        "/api/v1/shift-groups/1/memberships",
+        json={"memberships": [{"team_member_id": team_member_id, "start_date": "2026-01-01", "end_date": None}]},
+    )
     template = client.post(
         "/api/v1/shift-templates",
         json={"code": "VER", "name": "Versiondienst", "category": "other"},

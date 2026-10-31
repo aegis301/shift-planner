@@ -192,6 +192,21 @@ test.describe("roster grid", () => {
     await expect(page.getByText(slotId ?? "", { exact: true })).toBeVisible();
   });
 
+  test("shows the workload table next to the roster grid, not on Analysis", async ({ page, request }) => {
+    const target = await planningTarget(request);
+    await page.goto(planningPath(target));
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    const grid = page.getByRole("grid", { name: "Dienstplan" });
+    const column = page.getByTestId("roster-workload-column");
+    await expect(grid).toBeVisible();
+    await expect(column.getByRole("heading", { name: /Arbeitslast/ })).toBeVisible();
+    const gridBox = await grid.boundingBox();
+    const columnBox = await column.boundingBox();
+    expect(gridBox && columnBox && columnBox.x > gridBox.x).toBeTruthy();
+    await page.getByRole("button", { name: "Analyse", exact: true }).click();
+    await expect(page.getByRole("heading", { name: /Arbeitslast/ })).toHaveCount(0);
+  });
+
   test("exposes grid semantics", async ({ page, request }) => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));

@@ -23,7 +23,7 @@ from app.services.org_limits import assert_org_allows_team_member_user_link
 from app.services.shift_groups import (
     _membership_read,
     _stint_active_on,
-    replace_team_member_shift_groups,
+    seed_team_member_shift_group_stints,
 )
 from app.services.tenancy import get_organization
 
@@ -149,7 +149,7 @@ def create_team_member(
         raise
     db.refresh(member)
     if payload.shift_group_ids:
-        replace_team_member_shift_groups(
+        seed_team_member_shift_group_stints(
             db, member.id, payload.shift_group_ids, actor=actor, source=source, transactional=transactional
         )
     db.refresh(member, attribute_names=["shift_group_links", "employment_periods"])
@@ -163,7 +163,6 @@ def update_team_member(
     if member is None or member.organization_id != organization_id:
         return None
     raw = payload.model_dump(exclude_unset=True)
-    group_ids = raw.pop("shift_group_ids", None)
     user_id_raw = raw.pop("user_id", _MISSING)
     employment_percentage = raw.pop("employment_percentage", _MISSING)
     for key, value in raw.items():
@@ -180,9 +179,6 @@ def update_team_member(
     record_audit(db, actor=actor, source=source, action="update", entity_type="team_member", entity_id=member.id)
     db.commit()
     db.refresh(member)
-    if group_ids is not None:
-        replace_team_member_shift_groups(db, team_member_id, group_ids, actor=actor, source=source)
-        db.refresh(member, attribute_names=["shift_group_links"])
     return member
 
 

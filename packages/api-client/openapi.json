@@ -692,7 +692,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -718,7 +717,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -733,7 +731,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -773,7 +770,6 @@
           "credit_factor": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -793,12 +789,10 @@
           },
           "holiday_credit_bonus": {
             "default": "0",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Holiday Credit Bonus",
             "type": "string"
           },
           "statutory_factor": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Statutory Factor",
             "type": "string"
           }
@@ -858,7 +852,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -872,7 +865,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -932,12 +924,10 @@
             "type": "array"
           },
           "vacation_days_at_100": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Vacation Days At 100",
             "type": "string"
           },
           "weekly_hours_at_100": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Weekly Hours At 100",
             "type": "string"
           }
@@ -1044,7 +1034,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -1061,7 +1050,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -1909,12 +1897,10 @@
             "title": "Shift Template Id"
           },
           "utilization_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Utilization Percent",
             "type": "string"
           },
           "utilization_ratio": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Utilization Ratio",
             "type": "string"
           },
@@ -1937,7 +1923,6 @@
       "DutyUtilizationCoverage": {
         "properties": {
           "coverage_ratio": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Coverage Ratio",
             "type": "string"
           },
@@ -2017,12 +2002,10 @@
             "type": "array"
           },
           "utilization_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Utilization Percent",
             "type": "string"
           },
           "utilization_ratio": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Utilization Ratio",
             "type": "string"
           },
@@ -2094,12 +2077,10 @@
             "type": "string"
           },
           "utilization_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Utilization Percent",
             "type": "string"
           },
           "utilization_ratio": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Utilization Ratio",
             "type": "string"
           },
@@ -2648,14 +2629,12 @@
             "type": "integer"
           },
           "vacation_days_consumed": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Vacation Days Consumed",
             "type": "string"
           },
           "vacation_days_remaining": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -8554,6 +8533,16 @@
             "title": "No Go",
             "type": "boolean"
           },
+          "refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlotCandidateRefusalRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "enum": [
               "ok",
@@ -8580,6 +8569,48 @@
           "status"
         ],
         "title": "SlotCandidateRead",
+        "type": "object"
+      },
+      "SlotCandidateRefusalRead": {
+        "properties": {
+          "code": {
+            "enum": [
+              "not_on_period_roster",
+              "not_in_covering_group",
+              "no_go",
+              "unavailable_day_status",
+              "blocking_rule"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "rule_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Code"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SlotCandidateRefusalRead",
         "type": "object"
       },
       "SlotCandidateSwapRead": {
@@ -10525,20 +10556,6 @@
             ],
             "title": "Planning Preferences"
           },
-          "shift_group_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shift Group Ids"
-          },
           "user_id": {
             "anyOf": [
               {
@@ -10573,7 +10590,6 @@
             "type": "integer"
           },
           "sick_days_used_ytd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Sick Days Used Ytd",
             "type": "string"
           },
@@ -10582,7 +10598,6 @@
             "type": "integer"
           },
           "vacation_days_remaining": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Vacation Days Remaining",
             "type": "string"
           }
@@ -10622,7 +10637,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -10635,7 +10649,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -11921,12 +11934,10 @@
             "type": "string"
           },
           "vacation_days_at_100": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Vacation Days At 100",
             "type": "string"
           },
           "weekly_hours_at_100": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Weekly Hours At 100",
             "type": "string"
           }
@@ -11970,7 +11981,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12014,7 +12024,6 @@
             "type": "string"
           },
           "threshold_hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Threshold Hours",
             "type": "string"
           },
@@ -12042,7 +12051,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12071,7 +12079,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12094,7 +12101,6 @@
       "WorkTimeRuleDutyUtilizationBands-Output": {
         "properties": {
           "on_call_max_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "On Call Max Percent",
             "type": "string"
           },
@@ -12114,7 +12120,6 @@
             "type": "string"
           },
           "stufe_i_max_percent": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Stufe I Max Percent",
             "type": "string"
           },
@@ -12178,7 +12183,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12192,7 +12196,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12206,7 +12209,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12245,17 +12247,14 @@
       "WorkTimeRuleMaxDailyWorkingTime-Output": {
         "properties": {
           "base_hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Base Hours",
             "type": "string"
           },
           "extended_hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Extended Hours",
             "type": "string"
           },
           "extension_requires_duty_hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Extension Requires Duty Hours",
             "type": "string"
           },
@@ -12383,7 +12382,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12397,7 +12395,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -12454,14 +12451,12 @@
             "type": "integer"
           },
           "hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Hours",
             "type": "string"
           },
           "reducible_to_hours": {
             "anyOf": [
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               },
               {
@@ -12508,7 +12503,6 @@
                   "type": "number"
                 },
                 {
-                  "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                   "type": "string"
                 }
               ]
@@ -12555,7 +12549,6 @@
         "properties": {
           "hours_by_tier": {
             "additionalProperties": {
-              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
               "type": "string"
             },
             "title": "Hours By Tier",
@@ -12606,7 +12599,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12635,7 +12627,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -12658,7 +12649,6 @@
       "WorkTimeRuleRestAfterLongDuty-Output": {
         "properties": {
           "mandatory_rest_hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Mandatory Rest Hours",
             "type": "string"
           },
@@ -12678,7 +12668,6 @@
             "type": "string"
           },
           "trigger_hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Trigger Hours",
             "type": "string"
           },
@@ -13097,7 +13086,6 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
                 "type": "string"
               }
             ],
@@ -13146,7 +13134,6 @@
       "WorkTimeRuleWeeklyAverageCap-Output": {
         "properties": {
           "hours": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Hours",
             "type": "string"
           },

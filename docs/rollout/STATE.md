@@ -73,6 +73,7 @@ Shipped:
 - Frontend test harness: Vitest, Playwright smoke flows against `seed_e2e`, and golden screenshots (`#110`)
 - Organization holidays: dates an organization treats as a holiday on top of the NRW calendar, used by slot generation, holiday credit, fairness and workload (`#147`); changes re-plan existing unpublished months and keep assignees (`#151`)
 - Day/night wishes and no-gos, wishes only for shifts that run that day, and a no-go for every shift of a day (`#149`)
+- Hot-fix: workload table beside the roster grid, shift-group coverage checked on the slot date with a refusal reason per blocked candidate, and the shift-group page as the only membership editor
 
 In flight: write the Tier B encodings issue (`min_rest_period`, `rest_after_long_duty`, `weekly_average_cap`). The infeasible fixture with `--rng-seed 1` / 2026-10 now leaves `bd24` unstaffable on **2026-10-01** and **2026-10-21** (`eligible_member_ids_for_slot`); the spike note recorded 2026-10-25 as the second hole.
 

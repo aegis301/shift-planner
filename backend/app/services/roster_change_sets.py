@@ -347,7 +347,9 @@ def _precheck(
         return None
     if db.get(TeamMember, item.team_member_id) is None:
         return "NOT_ON_ROSTER"
-    if not team_member_may_cover_template(db, team_member_id=item.team_member_id, shift_template_id=slot.shift_template_id):
+    if not team_member_may_cover_template(
+        db, team_member_id=item.team_member_id, shift_template_id=slot.shift_template_id, on_date=slot.slot_date
+    ):
         return "CANNOT_COVER_TEMPLATE"
     group_ids = shift_group_ids_for_template(db, slot.shift_template_id) if slot.shift_template_id is not None else set()
     if group_ids:
