@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-31
+- **Workload beside the roster:** The month's workload table now sits in a sticky column next to the roster grid in both the tabbed and the stacked layout, and stacks under the grid below 1280 px. The Analysis tab no longer shows it.
+- **Group coverage on the duty date:** Whether a person may cover a template is checked against their shift-group stints on the slot date instead of today, in slot candidates, single-cell assignment, change sets, and the solver mask. People whose stint starts later than today, or ended before today, are no longer blocked on every day of a month they are rostered for.
+- **Why a candidate is blocked:** Blocked and ineligible slot candidates return a `refusal` reason (not on the month roster, not in a covering group on that date, no-go, unavailable day status, or a blocking rule with its code), and the planning inspector shows it next to the name.
+- **One membership editor:** Shift-group membership is edited only on the shift-group page. The team-member editor shows the periods read-only with a link there, the create form has no group checkboxes, and `PATCH /api/v1/team-members/{id}` rejects `shift_group_ids` with `422`. `PUT .../team-members` wraps `PUT .../memberships`, and MCP `create_team_member_tool` drops `shift_group_ids`.
+
 ## 2026-10-08
 - **Holidays update existing rosters:** Creating, moving or deleting an organization holiday now re-plans that day (and overnight shifts ending on it) in every existing planning month right away. Assignees stay on their shift when it switches to the holiday variant or back; only positions that no longer exist are cleared. Time entries for those shifts are re-valued, so the holiday credit bonus is added or removed. Published shift groups are left unchanged and named in the response. REST and MCP responses carry a `roster_sync` summary, and the Holidays tab shows it.
 

@@ -626,18 +626,33 @@ function PlannerWorkspaceContent() {
       {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
-        <RosterGrid
-          periodId={periodId}
-          readOnly={!plannerPlanningEditable || viewingVersionId != null}
-          shiftGroupId={shiftGroupId || undefined}
-          view={rosterView}
-          versionId={viewingVersionId}
-          validationWarnings={warnings}
-          duplicateMemberDayKeys={duplicateMemberDayKeys}
-          fairnessAccounts={fairnessAccounts}
-          onNotice={setChangeNotice}
-          onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
-        />
+        <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start" data-testid="roster-with-workload">
+          <div className="min-w-0">
+            <RosterGrid
+              periodId={periodId}
+              readOnly={!plannerPlanningEditable || viewingVersionId != null}
+              shiftGroupId={shiftGroupId || undefined}
+              view={rosterView}
+              versionId={viewingVersionId}
+              validationWarnings={warnings}
+              duplicateMemberDayKeys={duplicateMemberDayKeys}
+              fairnessAccounts={fairnessAccounts}
+              onNotice={setChangeNotice}
+              onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
+            />
+          </div>
+          <aside
+            aria-label={t(locale, "workloadMonthTitle")}
+            className="min-w-0 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-2rem)] xl:overflow-y-auto"
+            data-testid="roster-workload-column"
+          >
+            <WorkloadStats
+              rows={stats.rows}
+              unassigned={stats.unassigned}
+              periodLabel={rosterMatrix ? formatWorkloadPeriodLabel(rosterMatrix.planning_period) : ""}
+            />
+          </aside>
+        </div>
       )}
     </section>
   ) : null;
@@ -666,11 +681,6 @@ function PlannerWorkspaceContent() {
           onApplied={handleSolverApplied}
         />
       ) : null}
-      <WorkloadStats
-        rows={stats.rows}
-        unassigned={stats.unassigned}
-        periodLabel={rosterMatrix ? formatWorkloadPeriodLabel(rosterMatrix.planning_period) : ""}
-      />
       {periodId ? <ComplianceReportPanel periodId={periodId} shiftGroupId={shiftGroupId} /> : null}
     </section>
   );
@@ -1849,7 +1859,7 @@ function SortableWorkloadTh({
         type="button"
         title={t(locale, "workloadTableSortHint")}
         onClick={() => onSort(column)}
-        className={`flex w-full items-center gap-1 px-3 py-3 text-slate-700 hover:bg-slate-100/80 ${numeric ? "justify-end" : "justify-start"}`}
+        className={`flex w-full items-center gap-1 px-2 py-2 text-slate-700 hover:bg-slate-100/80 ${numeric ? "justify-end" : "justify-start"}`}
       >
         <span>{t(locale, labelKey)}</span>
         {active ? (
@@ -1905,7 +1915,7 @@ function WorkloadStats({
         </div>
         {rows.length ? (
           <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
-            <table className="min-w-full text-sm">
+            <table className="min-w-full text-xs">
               <thead className="text-left text-slate-600">
                 <tr className="border-b border-slate-200">
                   <SortableWorkloadTh
@@ -1993,15 +2003,15 @@ function WorkloadStats({
               <tbody>
                 {sortedRows.map((row) => (
                   <tr key={row.memberId} className="border-t border-slate-100">
-                    <td className="p-3 font-medium text-ink">{row.name}</td>
-                    <td className="p-3 text-right tabular-nums">{row.employmentPercentage}%</td>
-                    <td className="p-3 text-right tabular-nums">{row.total}</td>
-                    <td className="p-3 text-right tabular-nums">{row.onCallDuty}</td>
-                    <td className="p-3 text-right tabular-nums">{row.standbyDuty}</td>
-                    <td className="p-3 text-right tabular-nums">{row.lateDuty}</td>
-                    <td className="p-3 text-right tabular-nums">{row.other}</td>
-                    <td className="p-3 text-right tabular-nums">{row.weekendHolidayShifts}</td>
-                    <td className={row.conflicts ? "p-3 text-right font-semibold tabular-nums text-rose-700" : "p-3 text-right tabular-nums"}>
+                    <td className="px-2 py-1.5 font-medium text-ink">{row.name}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.employmentPercentage}%</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.total}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.onCallDuty}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.standbyDuty}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.lateDuty}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.other}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{row.weekendHolidayShifts}</td>
+                    <td className={row.conflicts ? "px-2 py-1.5 text-right font-semibold tabular-nums text-rose-700" : "px-2 py-1.5 text-right tabular-nums"}>
                       {row.conflicts}
                     </td>
                   </tr>
