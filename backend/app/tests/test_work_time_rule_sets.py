@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
 
 pytest_plugins = ("app.tests.test_api",)
@@ -54,8 +56,13 @@ def _seed_period(client: TestClient) -> int:
         },
     )
     client.put("/api/v1/shift-groups/1/shift-templates", json={"shift_template_ids": [template["id"]]})
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 11}).json()["id"]
-    slot = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()["slots"][0]
+    today = date.today()
+    period_id = client.post(
+        "/api/v1/planning-periods",
+        json={"year": today.year, "month": today.month},
+    ).json()["id"]
+    slots = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()["slots"]
+    slot = next(row for row in slots if row["slot_date"] >= today.isoformat())
     assert (
         client.put(
             "/api/v1/roster-matrix/assignments?shift_group_id=1",
