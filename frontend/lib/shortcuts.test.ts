@@ -25,7 +25,11 @@ describe("workbench shortcuts", () => {
       "grid-copy",
       "grid-paste",
       "undo",
-      "redo"
+      "redo",
+      "split-move",
+      "split-move-large",
+      "split-edges",
+      "split-toggle"
     ]);
   });
 

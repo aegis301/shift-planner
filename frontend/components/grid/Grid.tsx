@@ -188,7 +188,7 @@ export function Grid({
       aria-colcount={columns.length + 1}
       aria-label={label}
       aria-rowcount={rowCount + headerGroups.length}
-      className="max-h-[70vh] overflow-auto rounded-token-lg border border-default bg-surface"
+      className="min-h-0 flex-1 overflow-auto bg-surface"
       onKeyDown={onKeyDown}
       role="grid"
     >

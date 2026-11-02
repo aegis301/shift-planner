@@ -17,8 +17,19 @@ Shared controls for the workbench and the member area. Pages pass labels in; the
 | `Button` | `primary`, `secondary`, `ghost`, `danger`; sizes `sm` and `md`. |
 | `Badge` | `neutral`, `info`, `warning`, `error`. |
 | `Input`, `Textarea`, `Kbd` | Fields and keyboard hints. |
+| `SplitPane` | One bordered panel split into panes by draggable dividers (horizontal or vertical). The roster tab (grid, workload, inspector) and the wishes tab (grid, inspector). |
 
 Every component forwards a ref, accepts `className`, and uses the tokens below.
+
+## SplitPane
+
+`SplitPane` is custom (no dependency, no Radix). Pass a `layoutKey` and `panes`. Each pane has an `id`, `minSize`, optional `maxSize`, `defaultSize`, `collapsible`, and `collapsedBelow` (start collapsed when the viewport is narrower), and exactly one pane is `flex` and takes the remaining space. `collapsed` plus `onCollapsedChange` make a pane's collapse controlled, as the planning inspector toggle does. `label` names the pane region and `resizeLabel` names the divider that resizes it.
+
+- Panes sit edge to edge; dividers have a 6 px hit area and a 1 px `border-default` line.
+- Each divider resizes the fixed pane on the side away from the flex pane. Growing a pane takes room from the flex pane down to its minimum, then from the other fixed panes down to theirs.
+- Dividers are `role="separator"` with `aria-orientation`, `aria-valuenow`, `aria-valuemin`, `aria-valuemax`, and `aria-controls`. Arrow keys move 16 px, Shift+Arrow 64 px, Home and End jump to the minimum and maximum, Enter and double-click collapse or restore. The keys are in `lib/shortcuts.ts`.
+- Drag uses pointer capture. Sizes persist in `localStorage` under `shift-planner-split:<layoutKey>`. When the panel shrinks, fixed panes shrink and then collapse so the flex pane keeps its minimum.
+- The size math is pure and tested in `lib/splitPane.ts`.
 
 ## Tokens
 

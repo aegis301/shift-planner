@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-11-02
+- **Resizable workbench panes:** The roster tab is one bordered panel with the roster grid, the workload table, and the inspector side by side, split by draggable dividers instead of separate cards with gaps. The wishes tab puts the wishes grid and the inspector in the same panel. Dividers are keyboard-accessible separators (arrow keys 16 px, Shift+arrow 64 px, Home/End, Enter collapses or restores) and listed in the `?` help. Double-click collapses or restores a pane. Sizes are kept per layout in `localStorage`. The inspector toggle collapses its pane, the inspector width slider is gone, and below 1280 px the workload pane starts collapsed (#156).
+
 ## 2026-10-31
 - **Workload beside the roster:** The month's workload table now sits in a sticky column next to the roster grid in both the tabbed and the stacked layout, and stacks under the grid below 1280 px. The Analysis tab no longer shows it.
 - **Group coverage on the duty date:** Whether a person may cover a template is checked against their shift-group stints on the slot date instead of today, in slot candidates, single-cell assignment, change sets, and the solver mask. People whose stint starts later than today, or ended before today, are no longer blocked on every day of a month they are rostered for.
