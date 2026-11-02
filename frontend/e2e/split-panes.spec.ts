@@ -44,6 +44,33 @@ test.describe("resizable workbench panes", () => {
     await expect(inspector).toBeHidden();
   });
 
+  test("drags the workload pane past 600 px on a wide screen", async ({ page, request }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const target = await planningTarget(request);
+    await page.goto(planningPath(target));
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    await page.evaluate(() => window.localStorage.removeItem("shift-planner-split:planning-roster"));
+    await page.reload();
+    await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
+    const workload = page.locator('[data-split-pane="workload"]');
+    await expect(page.getByRole("grid", { name: "Dienstplan" })).toBeVisible();
+    await expect(workload).toBeVisible();
+    const divider = page.getByRole("separator", { name: "Breite der Arbeitslast ändern" });
+    await divider.scrollIntoViewIfNeeded();
+    const handle = await divider.boundingBox();
+    expect(handle).not.toBeNull();
+    if (!handle) {
+      return;
+    }
+    const x = handle.x + handle.width / 2;
+    const y = handle.y + Math.min(handle.height / 2, 80);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(Math.max(8, x - 800), y, { steps: 16 });
+    await page.mouse.up();
+    await expect.poll(async () => (await workload.boundingBox())?.width ?? 0).toBeGreaterThan(600);
+  });
+
   test("passes axe with the separators on the roster tab", async ({ page, request }) => {
     const target = await planningTarget(request);
     await page.goto(planningPath(target));

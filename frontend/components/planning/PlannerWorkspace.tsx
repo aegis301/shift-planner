@@ -720,7 +720,6 @@ function PlannerWorkspaceContent() {
             {
               id: "workload",
               minSize: 260,
-              maxSize: 600,
               defaultSize: 340,
               collapsible: true,
               collapsedBelow: 1280,

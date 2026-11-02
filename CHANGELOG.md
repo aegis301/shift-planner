@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-11-02
+- **Workload pane width:** The roster workload pane no longer stops at 600 px. It can grow until the roster grid is at its 480 px minimum and the inspector is at its 320 px minimum. A width already saved in the browser stays until the next drag.
 - **Resizable workbench panes:** The roster tab is one bordered panel with the roster grid, the workload table, and the inspector side by side, split by draggable dividers instead of separate cards with gaps. The wishes tab puts the wishes grid and the inspector in the same panel. Dividers are keyboard-accessible separators (arrow keys 16 px, Shift+arrow 64 px, Home/End, Enter collapses or restores) and listed in the `?` help. Double-click collapses or restores a pane. Sizes are kept per layout in `localStorage`. The inspector toggle collapses its pane, the inspector width slider is gone, and below 1280 px the workload pane starts collapsed (#156).
 
 ## 2026-10-31

@@ -145,4 +145,32 @@ describe("split pane size math", () => {
     expect(grown.sizes).toEqual({ workload: 500, inspector: 400 });
     expect(paneSizeLimit(panes, layout, "workload", 0)).toBe(600);
   });
+
+  it("grows an unbounded mid pane past 600 px until the grid and inspector minimums", () => {
+    const unbounded: SplitPaneSpec[] = [
+      { id: "grid", minSize: 480, flex: true },
+      { id: "workload", minSize: 260, defaultSize: 340, collapsible: true, collapsedBelow: 1280 },
+      { id: "inspector", minSize: 320, maxSize: 640, defaultSize: 400, collapsible: true }
+    ];
+    const container = 2400;
+    const layout = defaultSplitLayout(unbounded, container);
+    const stop = container - (unbounded.length - 1) * SPLIT_DIVIDER_SIZE - unbounded[0].minSize - unbounded[2].minSize;
+    expect(stop).toBeGreaterThan(600);
+
+    const dragged = moveDivider(unbounded, layout, 0, -(stop - (layout.sizes.workload ?? 0) + 400), container);
+    expect(dragged.sizes.workload).toBeGreaterThan(600);
+    expect(dragged.sizes.workload).toBe(stop);
+    expect(dragged.sizes.inspector).toBe(unbounded[2].minSize);
+
+    const end = splitKeyAction("End", false, "horizontal");
+    expect(end).toEqual({ kind: "max" });
+    if (!end) {
+      return;
+    }
+    const ended = applySplitKeyAction(unbounded, layout, 0, end, container);
+    expect(ended.sizes.workload).toBeGreaterThan(600);
+    expect(ended.sizes.workload).toBe(stop);
+    expect(ended.sizes.inspector).toBe(unbounded[2].minSize);
+    expect(paneSizeLimit(unbounded, layout, "workload", container)).toBe(stop);
+  });
 });
