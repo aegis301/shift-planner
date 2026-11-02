@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, Field, inputClass } from "@/components/Card";
 import { ContextBar } from "@/components/workbench/ContextBar";
-import { Inspector } from "@/components/workbench/Inspector";
+import { Inspector, inspectorAsideClassName } from "@/components/workbench/Inspector";
 import { useLocale, useSession, type MeUser } from "@/components/LocaleProvider";
 import { apiFetch } from "@/lib/api";
 import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
@@ -582,7 +582,7 @@ export function HoursLedgerPanel({ variant }: { variant: HoursLedgerVariant }) {
       </Card>
     </div>
     {variant === "planner" ? (
-      <Inspector locale={locale} open title={t(locale, "hoursNav")}>
+      <Inspector className={inspectorAsideClassName} title={t(locale, "hoursNav")}>
         {totals ? <p className="text-2xl font-semibold tabular-nums">{formatLedgerMinutes(totals.running_overtime_minutes)}</p> : <p className="text-sm text-slate-600">{t(locale, "inspectorEmpty")}</p>}
         <ul className="mt-3 grid gap-2">
           {(ledger?.entries ?? []).map((entry) => (

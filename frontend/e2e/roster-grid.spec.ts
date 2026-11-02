@@ -197,7 +197,7 @@ test.describe("roster grid", () => {
     await page.goto(planningPath(target));
     await page.getByRole("button", { name: "Finaler Dienstplan" }).click();
     const grid = page.getByRole("grid", { name: "Dienstplan" });
-    const column = page.getByTestId("roster-workload-column");
+    const column = page.locator('[data-split-pane="workload"]');
     await expect(grid).toBeVisible();
     await expect(column.getByRole("heading", { name: /Arbeitslast/ })).toBeVisible();
     const gridBox = await grid.boundingBox();

@@ -118,6 +118,7 @@ dependencies are in the ADR's **Work plan** table.
 | #119 | Bearer tokens and device sessions | shipped |
 | #120 | Member API `/api/v1/me` | shipped |
 | #121 | npm workspace and shared packages | shipped |
+| #156 | Resizable workbench panes (roster grid, workload, inspector in one panel) | this change |
 | #122 | Expo member app scaffold | open |
 | #123 | Offline duty activity capture | open |
 | #124 | Member app: wishes, swaps, hours, calendar | open |

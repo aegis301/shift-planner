@@ -28,7 +28,11 @@ export const workbenchShortcuts: ShortcutDef[] = [
   { id: "grid-copy", keys: "Ctrl/Cmd+C", labelKey: "shortcutGridCopy" },
   { id: "grid-paste", keys: "Ctrl/Cmd+V", labelKey: "shortcutGridPaste" },
   { id: "undo", keys: "Ctrl/Cmd+Z", labelKey: "shortcutUndo" },
-  { id: "redo", keys: "Ctrl/Cmd+Y", labelKey: "shortcutRedo" }
+  { id: "redo", keys: "Ctrl/Cmd+Y", labelKey: "shortcutRedo" },
+  { id: "split-move", keys: "Arrow keys", labelKey: "shortcutSplitMove" },
+  { id: "split-move-large", keys: "Shift+Arrows", labelKey: "shortcutSplitMoveLarge" },
+  { id: "split-edges", keys: "Home/End", labelKey: "shortcutSplitEdges" },
+  { id: "split-toggle", keys: "Enter", labelKey: "shortcutSplitToggle" }
 ];
 
 export function isTypingTarget(target: EventTarget | null): boolean {

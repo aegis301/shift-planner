@@ -284,14 +284,14 @@ export function WishesGrid({
   }
 
   return (
-    <div className="grid gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       {readOnlyReason ? (
-        <p className="text-sm font-medium text-amber-900" role="status">
+        <p className="px-3 pt-2 text-sm font-medium text-amber-900" role="status">
           {readOnlyReason}
         </p>
       ) : null}
       {history.notice ? (
-        <p className="text-sm text-muted" role="status">
+        <p className="px-3 pt-2 text-sm text-muted" role="status">
           {history.notice}
         </p>
       ) : null}
