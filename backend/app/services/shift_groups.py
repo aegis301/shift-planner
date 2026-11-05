@@ -70,7 +70,7 @@ def shift_group_ids_for_template(db: Session, shift_template_id: int) -> set[int
 
 
 def team_member_may_cover_template(
-    db: Session, *, team_member_id: int, shift_template_id: int | None, on_date: date | None = None
+    db: Session, *, team_member_id: int, shift_template_id: int | None, on_date: date
 ) -> bool:
     member = db.get(TeamMember, team_member_id)
     if member is None:
@@ -79,8 +79,7 @@ def team_member_may_cover_template(
         return True
     if shift_template_id not in list_shift_template_ids_with_any_group(db, member.organization_id):
         return True
-    on = on_date or date.today()
-    start_ok, end_ok = _active_stint_filter(on)
+    start_ok, end_ok = _active_stint_filter(on_date)
     stmt = (
         select(TeamMemberShiftGroup.id)
         .join(ShiftGroupShiftTemplate, ShiftGroupShiftTemplate.shift_group_id == TeamMemberShiftGroup.shift_group_id)
@@ -319,41 +318,33 @@ def replace_group_team_members(
     require_shift_group(db, shift_group_id, organization_id)
     on_date = effective_date or date.today()
     desired = set(team_member_ids)
-    current = team_member_ids_in_shift_group_for_date(db, shift_group_id, on_date)
-    for team_member_id in sorted(current - desired):
-        end_team_member_shift_group_stint(
-            db,
-            team_member_id=team_member_id,
-            shift_group_id=shift_group_id,
-            end_date=on_date,
-            actor=actor,
-            source=source,
-            transactional=False,
+    memberships: list[ShiftGroupMembershipWrite] = []
+    active_member_ids: set[int] = set()
+    for stint in list_shift_group_memberships(db, shift_group_id=shift_group_id):
+        end_date = stint.end_date
+        if _stint_active_on(stint, on_date):
+            active_member_ids.add(stint.team_member_id)
+            if stint.team_member_id not in desired:
+                end_date = on_date
+        memberships.append(
+            ShiftGroupMembershipWrite(
+                team_member_id=stint.team_member_id,
+                start_date=stint.start_date,
+                end_date=end_date,
+            )
         )
-    for team_member_id in sorted(desired - current):
-        member = db.get(TeamMember, team_member_id)
-        if member is None or member.organization_id != organization_id:
-            raise ValueError(f"Team member not found: {team_member_id}")
-        add_team_member_shift_group_stint(
-            db,
-            team_member_id=team_member_id,
-            shift_group_id=shift_group_id,
-            start_date=on_date,
-            end_date=None,
-            actor=actor,
-            source=source,
-            transactional=False,
-        )
-    record_audit(
+    memberships.extend(
+        ShiftGroupMembershipWrite(team_member_id=team_member_id, start_date=on_date, end_date=None)
+        for team_member_id in sorted(desired - active_member_ids)
+    )
+    replace_group_team_member_memberships(
         db,
+        shift_group_id,
+        memberships,
+        organization_id=organization_id,
         actor=actor,
         source=source,
-        action="replace_members",
-        entity_type="shift_group_team_members",
-        entity_id=shift_group_id,
-        details={"team_member_ids": sorted(desired), "effective_date": on_date.isoformat()},
     )
-    db.commit()
 
 
 def replace_group_team_member_memberships(
@@ -417,35 +408,21 @@ def replace_group_team_member_memberships(
     db.commit()
 
 
-def replace_team_member_shift_groups(
+def seed_team_member_shift_group_stints(
     db: Session,
     team_member_id: int,
     shift_group_ids: list[int],
     *,
     actor: str,
     source: str,
+    start_date: date | None = None,
     transactional: bool = True,
-    effective_date: date | None = None,
 ) -> None:
     member = db.get(TeamMember, team_member_id)
     if member is None:
         raise ValueError("Team member not found")
-    on_date = effective_date or date.today()
-    desired = set(shift_group_ids)
-    for gid in desired:
-        require_shift_group(db, gid, member.organization_id)
-    current = active_shift_group_ids_for_team_member(db, team_member_id, on_date)
-    for shift_group_id in sorted(current - desired):
-        end_team_member_shift_group_stint(
-            db,
-            team_member_id=team_member_id,
-            shift_group_id=shift_group_id,
-            end_date=on_date,
-            actor=actor,
-            source=source,
-            transactional=False,
-        )
-    for shift_group_id in sorted(desired - current):
+    on_date = start_date or date.today()
+    for shift_group_id in sorted(set(shift_group_ids)):
         add_team_member_shift_group_stint(
             db,
             team_member_id=team_member_id,
@@ -456,15 +433,6 @@ def replace_team_member_shift_groups(
             source=source,
             transactional=False,
         )
-    record_audit(
-        db,
-        actor=actor,
-        source=source,
-        action="replace_members",
-        entity_type="team_member_shift_groups",
-        entity_id=team_member_id,
-        details={"shift_group_ids": sorted(desired), "effective_date": on_date.isoformat()},
-    )
     if transactional:
         db.commit()
     else:

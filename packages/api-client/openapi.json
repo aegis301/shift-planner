@@ -8533,6 +8533,16 @@
             "title": "No Go",
             "type": "boolean"
           },
+          "refusal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlotCandidateRefusalRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "enum": [
               "ok",
@@ -8559,6 +8569,48 @@
           "status"
         ],
         "title": "SlotCandidateRead",
+        "type": "object"
+      },
+      "SlotCandidateRefusalRead": {
+        "properties": {
+          "code": {
+            "enum": [
+              "not_on_period_roster",
+              "not_in_covering_group",
+              "no_go",
+              "unavailable_day_status",
+              "blocking_rule"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "rule_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Code"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SlotCandidateRefusalRead",
         "type": "object"
       },
       "SlotCandidateSwapRead": {
@@ -10503,20 +10555,6 @@
               }
             ],
             "title": "Planning Preferences"
-          },
-          "shift_group_ids": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "integer"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shift Group Ids"
           },
           "user_id": {
             "anyOf": [

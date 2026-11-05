@@ -685,7 +685,7 @@ def eligible_member_ids_for_slot(
     eligible: list[int] = []
     for member in members:
         if not team_member_may_cover_template(
-            db, team_member_id=member.id, shift_template_id=slot.shift_template_id
+            db, team_member_id=member.id, shift_template_id=slot.shift_template_id, on_date=slot.slot_date
         ):
             continue
         if group_ids and member.id not in roster_ids:

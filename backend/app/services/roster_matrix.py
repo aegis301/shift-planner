@@ -590,7 +590,9 @@ def upsert_roster_slot_assignment(
     if slot is None:
         raise ValueError("Roster slot not found")
     require_planning_period_in_org(db, slot.planning_period_id, organization_id)
-    if not team_member_may_cover_template(db, team_member_id=payload.team_member_id, shift_template_id=slot.shift_template_id):
+    if not team_member_may_cover_template(
+        db, team_member_id=payload.team_member_id, shift_template_id=slot.shift_template_id, on_date=slot.slot_date
+    ):
         raise ValueError("Team member is not a member of a shift group that covers this template")
     group_ids = shift_group_ids_for_template(db, slot.shift_template_id) if slot.shift_template_id is not None else set()
     if group_ids:

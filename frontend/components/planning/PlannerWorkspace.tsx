@@ -26,11 +26,12 @@ import {
 } from "lucide-react";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { SplitPane, type SplitPaneItem } from "@/components/ui/SplitPane";
 import { PlanningPeriodStatusMenu } from "@/components/PlanningPeriodStatusMenu";
 import { PlanVersionPanel } from "@/components/PlanVersionPanel";
 import { CommandPalette } from "@/components/workbench/CommandPalette";
 import { ContextBar } from "@/components/workbench/ContextBar";
-import { Inspector } from "@/components/workbench/Inspector";
+import { Inspector, inspectorAsideClassName } from "@/components/workbench/Inspector";
 import { PlanningInspector } from "@/components/workbench/PlanningInspector";
 import { ShortcutHelp } from "@/components/workbench/ShortcutHelp";
 import { Card, Field, inputClass } from "@/components/Card";
@@ -42,7 +43,6 @@ import { RosterGrid, type RosterChangeNotice } from "@/components/planning/Roste
 import { WishesGrid } from "@/components/planning/WishesGrid";
 import { WishesHistoryProvider } from "@/components/planning/WishesHistory";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
-import { dataTableScrollShellClassName } from "@/lib/dataTableLayout";
 import { buildMemberWorkloadRows, formatWorkloadPeriodLabel, type TeamMemberWorkloadRow } from "@/lib/rosterWorkload";
 import {
   useDayStatusDefinitions,
@@ -99,6 +99,8 @@ type ValidationWarning = {
   date: string | null;
   details: Record<string, unknown>;
 };
+
+const workbenchPanelClassName = "h-[calc(100dvh-9rem)] min-h-[28rem]";
 
 type PlanningViewMode = "stacked" | "tabs";
 type PlanningTab = "wishes" | "roster" | "analysis";
@@ -587,6 +589,56 @@ function PlannerWorkspaceContent() {
     }
   }
 
+  const inspectorHost: PlanningTab = viewMode === "stacked" ? "roster" : activeTab;
+  const panelsReady = !waitingForPlannerSession && !(plannerNeedsShiftGroup && !shiftGroupId);
+  const inspectorInPanel = Boolean(periodId) && panelsReady && inspectorHost !== "analysis";
+  const inspectorBody = (
+    <PlanningInspector
+      locale={locale}
+      periodId={periodId}
+      shiftGroupId={shiftGroupId}
+      slotId={selection.slot}
+      memberId={selection.member}
+      day={selection.day}
+      findingKey={selection.finding}
+      roster={rosterMatrix}
+      warnings={warnings}
+      fairness={fairnessAccounts}
+      timeZone={userMe?.organization_timezone ?? "Europe/Berlin"}
+      canAssign={plannerPlanningEditable && viewingVersionId == null}
+      changeNotice={changeNotice}
+      onAssign={(memberId) => {
+        if (!plannerPlanningEditable || viewingVersionId != null || !selection.slot) {
+          return;
+        }
+        void assignSlot.mutateAsync({ rosterSlotId: Number(selection.slot), teamMemberId: memberId, manualOverride: false });
+      }}
+      wishes={wishesQuery.data?.matrix ?? null}
+      wishesNotes={wishesQuery.data?.notes ?? []}
+      wishesReadOnly={wishesReadOnly}
+      onWishesChanged={() => void handleWishesChanged()}
+      onSelectDay={(day) => patchSelection({ day, slot: null, finding: null, tab: "wishes" })}
+      onSelectMember={(memberId) => patchSelection({ member: memberId, slot: null, finding: null })}
+      onSelectSlot={(slotId) => patchSelection({ slot: slotId, tab: "roster", member: null, day: null, finding: null })}
+    />
+  );
+  const inspectorPane: SplitPaneItem = {
+    id: "inspector",
+    minSize: 320,
+    maxSize: 640,
+    defaultSize: 400,
+    collapsible: true,
+    collapsed: !inspectorOpen,
+    onCollapsedChange: (collapsed) => setInspectorOpen(!collapsed),
+    resizeLabel: t(locale, "splitResizeInspector"),
+    className: "overflow-hidden",
+    content: (
+      <Inspector className="h-full" title={t(locale, "inspectorSlot")}>
+        {inspectorBody}
+      </Inspector>
+    )
+  };
+
   const wishesSection = periodId ? (
     <section className="grid min-w-0 gap-3">
       <div>
@@ -596,17 +648,32 @@ function PlannerWorkspaceContent() {
       {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
-        <WishesGrid
-          periodId={periodId}
-          readOnly={wishesReadOnly}
-          readOnlyReason={wishesReadOnlyReason}
-          shiftGroupId={shiftGroupId || undefined}
-          versionId={viewingVersionId}
-          selectedDay={selection.day}
-          selectedMemberId={selection.member}
-          onSelectCell={(date, memberId) =>
-            patchSelection({ day: date, member: String(memberId), slot: null, finding: null, tab: "wishes" })
-          }
+        <SplitPane
+          className={workbenchPanelClassName}
+          layoutKey="planning-wishes"
+          panes={[
+            {
+              id: "grid",
+              minSize: 480,
+              flex: true,
+              className: "overflow-hidden",
+              content: (
+                <WishesGrid
+                  periodId={periodId}
+                  readOnly={wishesReadOnly}
+                  readOnlyReason={wishesReadOnlyReason}
+                  shiftGroupId={shiftGroupId || undefined}
+                  versionId={viewingVersionId}
+                  selectedDay={selection.day}
+                  selectedMemberId={selection.member}
+                  onSelectCell={(date, memberId) =>
+                    patchSelection({ day: date, member: String(memberId), slot: null, finding: null, tab: "wishes" })
+                  }
+                />
+              )
+            },
+            ...(inspectorHost === "wishes" ? [inspectorPane] : [])
+          ]}
         />
       )}
     </section>
@@ -626,17 +693,49 @@ function PlannerWorkspaceContent() {
       {waitingForPlannerSession ? null : plannerNeedsShiftGroup && !shiftGroupId ? (
         <p className="text-sm text-amber-800">{t(locale, "selectPlanningShiftGroup")}</p>
       ) : (
-        <RosterGrid
-          periodId={periodId}
-          readOnly={!plannerPlanningEditable || viewingVersionId != null}
-          shiftGroupId={shiftGroupId || undefined}
-          view={rosterView}
-          versionId={viewingVersionId}
-          validationWarnings={warnings}
-          duplicateMemberDayKeys={duplicateMemberDayKeys}
-          fairnessAccounts={fairnessAccounts}
-          onNotice={setChangeNotice}
-          onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
+        <SplitPane
+          className={workbenchPanelClassName}
+          layoutKey="planning-roster"
+          panes={[
+            {
+              id: "grid",
+              minSize: 480,
+              flex: true,
+              className: "overflow-hidden",
+              content: (
+                <RosterGrid
+                  periodId={periodId}
+                  readOnly={!plannerPlanningEditable || viewingVersionId != null}
+                  shiftGroupId={shiftGroupId || undefined}
+                  view={rosterView}
+                  versionId={viewingVersionId}
+                  validationWarnings={warnings}
+                  duplicateMemberDayKeys={duplicateMemberDayKeys}
+                  fairnessAccounts={fairnessAccounts}
+                  onNotice={setChangeNotice}
+                  onSelectSlot={(slotId) => patchSelection({ slot: String(slotId), tab: "roster", member: null, day: null, finding: null })}
+                />
+              )
+            },
+            {
+              id: "workload",
+              minSize: 260,
+              defaultSize: 340,
+              collapsible: true,
+              collapsedBelow: 1280,
+              label: t(locale, "workloadMonthTitle"),
+              resizeLabel: t(locale, "splitResizeWorkload"),
+              className: "overflow-hidden",
+              content: (
+                <WorkloadStats
+                  rows={stats.rows}
+                  unassigned={stats.unassigned}
+                  periodLabel={rosterMatrix ? formatWorkloadPeriodLabel(rosterMatrix.planning_period) : ""}
+                />
+              )
+            },
+            ...(inspectorHost === "roster" ? [inspectorPane] : [])
+          ]}
         />
       )}
     </section>
@@ -666,11 +765,6 @@ function PlannerWorkspaceContent() {
           onApplied={handleSolverApplied}
         />
       ) : null}
-      <WorkloadStats
-        rows={stats.rows}
-        unassigned={stats.unassigned}
-        periodLabel={rosterMatrix ? formatWorkloadPeriodLabel(rosterMatrix.planning_period) : ""}
-      />
       {periodId ? <ComplianceReportPanel periodId={periodId} shiftGroupId={shiftGroupId} /> : null}
     </section>
   );
@@ -1377,36 +1471,11 @@ function PlannerWorkspaceContent() {
         </Card>
       )}
     </div>
-      <Inspector locale={locale} open={inspectorOpen} title={t(locale, "inspectorSlot")}>
-        <PlanningInspector
-          locale={locale}
-          periodId={periodId}
-          shiftGroupId={shiftGroupId}
-          slotId={selection.slot}
-          memberId={selection.member}
-          day={selection.day}
-          findingKey={selection.finding}
-          roster={rosterMatrix}
-          warnings={warnings}
-          fairness={fairnessAccounts}
-          timeZone={userMe?.organization_timezone ?? "Europe/Berlin"}
-          canAssign={plannerPlanningEditable && viewingVersionId == null}
-          changeNotice={changeNotice}
-          onAssign={(memberId) => {
-            if (!plannerPlanningEditable || viewingVersionId != null || !selection.slot) {
-              return;
-            }
-            void assignSlot.mutateAsync({ rosterSlotId: Number(selection.slot), teamMemberId: memberId, manualOverride: false });
-          }}
-          wishes={wishesQuery.data?.matrix ?? null}
-          wishesNotes={wishesQuery.data?.notes ?? []}
-          wishesReadOnly={wishesReadOnly}
-          onWishesChanged={() => void handleWishesChanged()}
-          onSelectDay={(day) => patchSelection({ day, slot: null, finding: null, tab: "wishes" })}
-          onSelectMember={(memberId) => patchSelection({ member: memberId, slot: null, finding: null })}
-          onSelectSlot={(slotId) => patchSelection({ slot: slotId, tab: "roster", member: null, day: null, finding: null })}
-        />
-      </Inspector>
+      {inspectorOpen && !inspectorInPanel ? (
+        <Inspector className={inspectorAsideClassName} title={t(locale, "inspectorSlot")}>
+          {inspectorBody}
+        </Inspector>
+      ) : null}
       <CommandPalette locale={locale} open={paletteOpen} commands={palette} onOpenChange={setPaletteOpen} />
       <ShortcutHelp locale={locale} open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
@@ -1849,7 +1918,7 @@ function SortableWorkloadTh({
         type="button"
         title={t(locale, "workloadTableSortHint")}
         onClick={() => onSort(column)}
-        className={`flex w-full items-center gap-1 px-3 py-3 text-slate-700 hover:bg-slate-100/80 ${numeric ? "justify-end" : "justify-start"}`}
+        className={`flex w-full items-center gap-1 px-2 py-2 text-slate-700 hover:bg-slate-100/80 ${numeric ? "justify-end" : "justify-start"}`}
       >
         <span>{t(locale, labelKey)}</span>
         {active ? (
@@ -1891,129 +1960,127 @@ function WorkloadStats({
   }, []);
 
   return (
-    <Card>
-      <div className="grid gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{t(locale, "fairnessModalMonthTitle")}</p>
-            <h2 className="text-lg font-semibold text-ink">{t(locale, "workloadMonthTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">{t(locale, "unassignedSlots")}: {unassigned}</p>
-            {periodLabel ? (
-              <p className="mt-1 text-sm text-slate-500">{t(locale, "workloadMonthHelp", { period: periodLabel })}</p>
-            ) : null}
-          </div>
+    <div className="flex h-full min-h-0 flex-col gap-4 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-slate-500">{t(locale, "fairnessModalMonthTitle")}</p>
+          <h2 className="text-lg font-semibold text-ink">{t(locale, "workloadMonthTitle")}</h2>
+          <p className="mt-1 text-sm text-slate-600">{t(locale, "unassignedSlots")}: {unassigned}</p>
+          {periodLabel ? (
+            <p className="mt-1 text-sm text-slate-500">{t(locale, "workloadMonthHelp", { period: periodLabel })}</p>
+          ) : null}
         </div>
-        {rows.length ? (
-          <div className={`${dataTableScrollShellClassName} rounded-lg border border-slate-200`}>
-            <table className="min-w-full text-sm">
-              <thead className="text-left text-slate-600">
-                <tr className="border-b border-slate-200">
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="teamMembers"
-                    column="name"
-                    active={sort.col === "name"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="employment"
-                    column="employmentPercentage"
-                    active={sort.col === "employmentPercentage"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="totalShifts"
-                    column="total"
-                    active={sort.col === "total"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="onCallDutyCategory"
-                    column="onCallDuty"
-                    active={sort.col === "onCallDuty"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="standbyDutyCategory"
-                    column="standbyDuty"
-                    active={sort.col === "standbyDuty"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="lateDutyCategory"
-                    column="lateDuty"
-                    active={sort.col === "lateDuty"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="other"
-                    column="other"
-                    active={sort.col === "other"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="workloadWeekendHolidayShifts"
-                    column="weekendHolidayShifts"
-                    active={sort.col === "weekendHolidayShifts"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                  <SortableWorkloadTh
-                    locale={locale}
-                    labelKey="conflicts"
-                    column="conflicts"
-                    active={sort.col === "conflicts"}
-                    dir={sort.dir}
-                    onSort={activateSort}
-                    numeric
-                  />
-                </tr>
-              </thead>
-              <tbody>
-                {sortedRows.map((row) => (
-                  <tr key={row.memberId} className="border-t border-slate-100">
-                    <td className="p-3 font-medium text-ink">{row.name}</td>
-                    <td className="p-3 text-right tabular-nums">{row.employmentPercentage}%</td>
-                    <td className="p-3 text-right tabular-nums">{row.total}</td>
-                    <td className="p-3 text-right tabular-nums">{row.onCallDuty}</td>
-                    <td className="p-3 text-right tabular-nums">{row.standbyDuty}</td>
-                    <td className="p-3 text-right tabular-nums">{row.lateDuty}</td>
-                    <td className="p-3 text-right tabular-nums">{row.other}</td>
-                    <td className="p-3 text-right tabular-nums">{row.weekendHolidayShifts}</td>
-                    <td className={row.conflicts ? "p-3 text-right font-semibold tabular-nums text-rose-700" : "p-3 text-right tabular-nums"}>
-                      {row.conflicts}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
-        )}
       </div>
-    </Card>
+      {rows.length ? (
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200">
+          <table className="min-w-full text-xs">
+            <thead className="text-left text-slate-600">
+              <tr className="border-b border-slate-200">
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="teamMembers"
+                  column="name"
+                  active={sort.col === "name"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="employment"
+                  column="employmentPercentage"
+                  active={sort.col === "employmentPercentage"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="totalShifts"
+                  column="total"
+                  active={sort.col === "total"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="onCallDutyCategory"
+                  column="onCallDuty"
+                  active={sort.col === "onCallDuty"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="standbyDutyCategory"
+                  column="standbyDuty"
+                  active={sort.col === "standbyDuty"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="lateDutyCategory"
+                  column="lateDuty"
+                  active={sort.col === "lateDuty"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="other"
+                  column="other"
+                  active={sort.col === "other"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="workloadWeekendHolidayShifts"
+                  column="weekendHolidayShifts"
+                  active={sort.col === "weekendHolidayShifts"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+                <SortableWorkloadTh
+                  locale={locale}
+                  labelKey="conflicts"
+                  column="conflicts"
+                  active={sort.col === "conflicts"}
+                  dir={sort.dir}
+                  onSort={activateSort}
+                  numeric
+                />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map((row) => (
+                <tr key={row.memberId} className="border-t border-slate-100">
+                  <td className="px-2 py-1.5 font-medium text-ink">{row.name}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.employmentPercentage}%</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.total}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.onCallDuty}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.standbyDuty}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.lateDuty}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.other}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{row.weekendHolidayShifts}</td>
+                  <td className={row.conflicts ? "px-2 py-1.5 text-right font-semibold tabular-nums text-rose-700" : "px-2 py-1.5 text-right tabular-nums"}>
+                    {row.conflicts}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">{t(locale, "noData")}</p>
+      )}
+    </div>
   );
 }
 

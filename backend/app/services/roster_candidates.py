@@ -8,6 +8,7 @@ from app.models import AuditLog, RosterSlot, ShiftSwapRequest, TeamMember
 from app.schemas import (
     SlotCandidateHistoryRead,
     SlotCandidateRead,
+    SlotCandidateRefusalRead,
     SlotCandidatesRead,
     SlotCandidateSwapRead,
     ValidationWarning,
@@ -22,12 +23,19 @@ from app.services.shift_groups import (
     team_member_may_cover_template,
 )
 from app.services.shift_intent_bands import intent_band, roster_slot_band
-from app.services.solver.model import eligible_members_for_slots
+from app.services.solver.model import (
+    SERVICE_MASK_COVER_TEMPLATE,
+    SERVICE_MASK_PERIOD_ROSTER,
+    eligibility_mask_for_slots,
+)
 from app.services.team_members import team_member_planning_display_name
 from app.services.tenancy import require_planning_period_in_org
 from app.services.unavailable_overlap import find_blocking_unavailable_overlap
 
 logger = logging.getLogger(__name__)
+
+NO_GO_RULE_CODE = "ROSTER_TEMPLATE_NO_GO_CONFLICT"
+UNAVAILABLE_OVERLAP_RULE_CODE = "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"
 
 
 def list_slot_candidates(
@@ -66,7 +74,8 @@ def list_slot_candidates(
         start_date=slot.slot_date,
         end_date=slot.slot_date,
     )
-    eligible = eligible_members_for_slots(db, state=state, target_slots=[slot]).get(slot.id, set())
+    eligible_by_slot, exclusion_codes = eligibility_mask_for_slots(db, state=state, target_slots=[slot])
+    eligible = eligible_by_slot.get(slot.id, set())
     current = state.assignments_by_slot_id.get(slot.id)
     current_member_id = current.team_member_id if current is not None else None
     candidates: list[SlotCandidateRead] = []
@@ -90,17 +99,18 @@ def list_slot_candidates(
             state.shift_intents, member_id=member_id, slot=slot, shift_group_id=shift_group_id, tz=state.timezone
         )
         day_status = _day_status(state, member_id=member_id, slot=slot, shift_group_id=shift_group_id)
-        refused = _assignment_would_refuse(
+        refusal = _assignment_refusal(
             db,
             slot=slot,
             team_member_id=member_id,
             findings=findings,
             no_go=no_go,
         )
-        if refused:
+        if refusal is not None:
             status = "blocked"
         elif member_id not in eligible:
             status = "ineligible"
+            refusal = _mask_refusal(exclusion_codes.get((slot.id, member_id), []))
         elif any(warning.severity == "warning" for warning in findings):
             status = "warning"
         else:
@@ -110,6 +120,7 @@ def list_slot_candidates(
                 team_member_id=member_id,
                 display_name=team_member_planning_display_name(member),
                 status=status,
+                refusal=refusal,
                 findings=findings,
                 wish=wish,
                 no_go=no_go,
@@ -173,16 +184,14 @@ def _day_status(state, *, member_id: int, slot: RosterSlot, shift_group_id: int)
     return cell.status
 
 
-def _assignment_would_refuse(
+def _assignment_refusal(
     db: Session,
     *,
     slot: RosterSlot,
     team_member_id: int,
     findings: list[ValidationWarning],
     no_go: bool,
-) -> bool:
-    if not team_member_may_cover_template(db, team_member_id=team_member_id, shift_template_id=slot.shift_template_id):
-        return True
+) -> SlotCandidateRefusalRead | None:
     group_ids = shift_group_ids_for_template(db, slot.shift_template_id) if slot.shift_template_id is not None else set()
     if group_ids:
         on_roster = any(
@@ -193,17 +202,39 @@ def _assignment_would_refuse(
             for group_id in group_ids
         )
         if not on_roster:
-            return True
+            return SlotCandidateRefusalRead(code="not_on_period_roster")
+    if not team_member_may_cover_template(
+        db, team_member_id=team_member_id, shift_template_id=slot.shift_template_id, on_date=slot.slot_date
+    ):
+        return SlotCandidateRefusalRead(code="not_in_covering_group")
     if no_go or _team_member_has_template_no_go(
         db,
         slot=slot,
         team_member_id=team_member_id
     ):
-        return True
-    overlap = next((warning for warning in findings if warning.code == "ROSTER_MATRIX_UNAVAILABLE_OVERLAP"), None)
-    if find_blocking_unavailable_overlap(overlap) is not None:
-        return True
-    return find_blocking_constraint(findings) is not None
+        return SlotCandidateRefusalRead(code="no_go")
+    overlap = next((warning for warning in findings if warning.code == UNAVAILABLE_OVERLAP_RULE_CODE), None)
+    blocking_overlap = find_blocking_unavailable_overlap(overlap)
+    if blocking_overlap is not None:
+        return SlotCandidateRefusalRead(
+            code="unavailable_day_status", rule_code=blocking_overlap.code, message=blocking_overlap.message
+        )
+    blocking = find_blocking_constraint(findings)
+    if blocking is None:
+        return None
+    return SlotCandidateRefusalRead(code="blocking_rule", rule_code=blocking.code, message=blocking.message)
+
+
+def _mask_refusal(codes: list[str]) -> SlotCandidateRefusalRead:
+    if SERVICE_MASK_PERIOD_ROSTER in codes:
+        return SlotCandidateRefusalRead(code="not_on_period_roster")
+    if SERVICE_MASK_COVER_TEMPLATE in codes:
+        return SlotCandidateRefusalRead(code="not_in_covering_group")
+    if NO_GO_RULE_CODE in codes:
+        return SlotCandidateRefusalRead(code="no_go", rule_code=NO_GO_RULE_CODE)
+    if UNAVAILABLE_OVERLAP_RULE_CODE in codes:
+        return SlotCandidateRefusalRead(code="unavailable_day_status", rule_code=UNAVAILABLE_OVERLAP_RULE_CODE)
+    return SlotCandidateRefusalRead(code="blocking_rule", rule_code=codes[0] if codes else None)
 
 
 def _assignment_history(db: Session, roster_slot_id: int) -> list[SlotCandidateHistoryRead]:

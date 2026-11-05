@@ -57,6 +57,15 @@ export function useShiftGroups(enabled: boolean) {
   });
 }
 
+export function useShiftGroupsIncludingInactive(enabled: boolean) {
+  const organizationId = useOrganizationId();
+  return useQuery({
+    queryKey: queryKeys.shiftGroupsIncludingInactive(organizationId ?? 0),
+    enabled: enabled && organizationId != null,
+    queryFn: async () => readData(await apiClient.GET("/api/v1/shift-groups"))
+  });
+}
+
 export function useDayStatusDefinitions(enabled: boolean) {
   const organizationId = useOrganizationId();
   return useQuery({

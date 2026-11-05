@@ -342,8 +342,8 @@ export function RosterGrid({
   const activeSlot = slotAt(matrix, columns, days, selection.active.row, selection.active.col, timeZone, stackIndexRef.current);
 
   return (
-    <div className="grid gap-2">
-      {message ? <p className="text-sm text-muted">{message}</p> : null}
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      {message ? <p className="px-3 pt-2 text-sm text-muted">{message}</p> : null}
       <Grid
         columns={columns.map((column) => ({ id: column.key, header: columnHeader(column, headerLabels), group: column.name }))}
         cornerLabel={t(locale, "date")}

@@ -5,7 +5,7 @@ import { AlertTriangle, Info, MoreVertical, Plus, RefreshCw, Save, Trash2, X } f
 import { ApiError, apiFetch } from "@/lib/api";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import type { ShiftGroupMembershipRead, TeamMemberRecord } from "@/lib/api/types";
+import type { TeamMemberRecord } from "@/lib/api/types";
 import {
   defaultPropertyRequirementExpr,
   TeamMemberPropertyRequirementConstraintEditor,
@@ -13,10 +13,10 @@ import {
   type PropertyRequirementExpr
 } from "@/components/TeamMemberPropertyRequirementConstraintEditor";
 import { t, type Locale, type TranslationKey } from "@/lib/i18n";
-import { formatIsoDate, isoDateRangeStatus, todayIsoDate } from "@/lib/planningDates";
 import { Card, Field, inputClass } from "@/components/Card";
 import type { ContractCategoryRule } from "@/components/ContractGroupsPanel";
 import { TeamMemberPlanningPatternsEditor } from "@/components/TeamMemberPlanningPatternsEditor";
+import { TeamMemberShiftGroupCreateHint, TeamMemberShiftGroupPeriods } from "@/components/TeamMemberShiftGroupPeriods";
 import { TeamMemberPropertyValuesEditor } from "@/components/TeamMemberPropertyValuesEditor";
 import { useLocale } from "@/components/LocaleProvider";
 
@@ -130,10 +130,6 @@ type ShiftTemplateRecord = {
 };
 
 export type { TeamMemberRecord } from "@/lib/api/types";
-
-type TeamMemberShiftGroupMembership = ShiftGroupMembershipRead;
-
-type ShiftGroupOption = { id: number; code: string; name: string };
 
 const SHIFT_TEMPLATE_CATEGORIES: { value: ShiftTemplateCategory; label: TranslationKey }[] = [
   { value: "bereitschaftsdienst", label: "onCallDutyCategory" },
@@ -2127,27 +2123,6 @@ export function TeamMemberEditorModal({
 }) {
   const { locale } = useLocale();
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(() => new Set(member.shift_group_ids ?? []));
-
-  useEffect(() => {
-    setSelectedGroupIds(new Set(member.shift_group_ids ?? []));
-  }, [member]);
-
-  useEffect(() => {
-    void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
-  }, []);
-
-  const activeMembershipByGroupId = useMemo(() => {
-    const today = todayIsoDate();
-    const map = new Map<number, TeamMemberShiftGroupMembership>();
-    for (const row of member.shift_group_memberships ?? []) {
-      if (isoDateRangeStatus(row.start_date, row.end_date ?? null, today) !== "ended") {
-        map.set(row.shift_group_id, row);
-      }
-    }
-    return map;
-  }, [member.shift_group_memberships]);
 
   async function submitEditor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2166,7 +2141,6 @@ export function TeamMemberEditorModal({
         notes: form.get("notes"),
         planning_preferences: form.get("planning_preferences") || null,
         is_active: form.get("is_active") === "on",
-        shift_group_ids: [...selectedGroupIds],
         user_id
       })
     });
@@ -2257,42 +2231,7 @@ export function TeamMemberEditorModal({
             {t(locale, "isActive")}
           </label>
         </div>
-        <div className="mt-4 rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold text-ink">{t(locale, "teamMemberShiftGroups")}</p>
-          <p className="mt-1 text-xs text-slate-600">{t(locale, "teamMemberShiftGroupDatesHelp")}</p>
-          <div className="mt-2 max-h-40 space-y-2 overflow-y-auto text-sm">
-            {shiftGroups.map((group) => {
-              const membership = activeMembershipByGroupId.get(group.id);
-              return (
-                <label key={group.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedGroupIds.has(group.id)}
-                    onChange={() => {
-                      setSelectedGroupIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(group.id)) {
-                          next.delete(group.id);
-                        } else {
-                          next.add(group.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  />
-                  <span className="font-mono text-xs">{group.code}</span>
-                  <span>{group.name}</span>
-                  {membership ? (
-                    <span className="text-xs text-slate-500">
-                      {formatIsoDate(membership.start_date, locale)} –{" "}
-                      {membership.end_date ? formatIsoDate(membership.end_date, locale) : t(locale, "membershipOpenEnded")}
-                    </span>
-                  ) : null}
-                </label>
-              );
-            })}
-          </div>
-        </div>
+        <TeamMemberShiftGroupPeriods memberships={member.shift_group_memberships ?? []} />
         <AlertDialog open={isDeleteConfirmOpen} onOpenChange={(next) => { if (!next) setIsDeleteConfirmOpen(false); }}>
           <AlertDialogContent>
             <AlertDialogTitle>{t(locale, "deleteTeamMember")}</AlertDialogTitle>
@@ -2343,12 +2282,6 @@ export function TeamMemberCreateModal({
   onCreated: () => Promise<void>;
 }) {
   const { locale } = useLocale();
-  const [shiftGroups, setShiftGroups] = useState<ShiftGroupOption[]>([]);
-  const [createGroupIds, setCreateGroupIds] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    void apiFetch<ShiftGroupOption[]>("/api/v1/shift-groups?active_only=true").then(setShiftGroups).catch(() => setShiftGroups([]));
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2366,11 +2299,9 @@ export function TeamMemberCreateModal({
         employment_percentage: Number(form.get("employment_percentage")),
         notes: form.get("notes"),
         planning_preferences: form.get("planning_preferences") || null,
-        shift_group_ids: [...createGroupIds],
         user_id: createUserId,
       }),
     });
-    setCreateGroupIds(new Set());
     await onCreated();
     onClose();
   }
@@ -2425,32 +2356,7 @@ export function TeamMemberCreateModal({
             />
           </Field>
         </div>
-        <div className="mt-4 rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold text-ink">{t(locale, "teamMemberShiftGroups")}</p>
-          <div className="mt-2 max-h-36 space-y-2 overflow-y-auto text-sm">
-            {shiftGroups.map((group) => (
-              <label key={group.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={createGroupIds.has(group.id)}
-                  onChange={() => {
-                    setCreateGroupIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(group.id)) {
-                        next.delete(group.id);
-                      } else {
-                        next.add(group.id);
-                      }
-                      return next;
-                    });
-                  }}
-                />
-                <span className="font-mono text-xs">{group.code}</span>
-                {group.name}
-              </label>
-            ))}
-          </div>
-        </div>
+        <TeamMemberShiftGroupCreateHint />
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <button
             type="button"

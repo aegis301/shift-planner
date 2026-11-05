@@ -201,3 +201,44 @@ def test_planner_without_the_group_cannot_read_candidates():
         app.dependency_overrides.clear()
         db.close()
         engine.dispose()
+
+
+def test_blocked_and_ineligible_candidates_carry_a_refusal_reason():
+    db, engine = _memory_db()
+    try:
+        result = seed_solver_fixture(db, profile="tight", **SEED)
+        shift_group_id = result.shift_group_ids[0]
+        slots = db.scalars(
+            select(RosterSlot)
+            .join(ShiftGroupShiftTemplate, ShiftGroupShiftTemplate.shift_template_id == RosterSlot.shift_template_id)
+            .where(
+                RosterSlot.planning_period_id == result.target_period_id,
+                ShiftGroupShiftTemplate.shift_group_id == shift_group_id,
+            )
+            .order_by(RosterSlot.slot_date, RosterSlot.id)
+            .limit(8)
+        ).all()
+        seen_codes: set[str] = set()
+        for slot in slots:
+            payload = list_slot_candidates(
+                db, slot.id, organization_id=result.organization_id, shift_group_id=shift_group_id
+            )
+            for candidate in payload.candidates:
+                if candidate.status in {"blocked", "ineligible"}:
+                    assert candidate.refusal is not None, (slot.id, candidate.team_member_id)
+                    seen_codes.add(candidate.refusal.code)
+                    if candidate.refusal.code == "blocking_rule":
+                        assert candidate.refusal.rule_code
+                else:
+                    assert candidate.refusal is None
+        assert seen_codes
+        assert seen_codes <= {
+            "not_on_period_roster",
+            "not_in_covering_group",
+            "no_go",
+            "unavailable_day_status",
+            "blocking_rule",
+        }
+    finally:
+        db.close()
+        engine.dispose()

@@ -167,7 +167,7 @@ def service_eligible_by_slot(
     target_slots: Sequence[RosterSlot],
 ) -> tuple[dict[int, set[int]], dict[tuple[int, int], list[str]]]:
     template_groups = _template_group_ids(db, target_slots)
-    cover_ok: dict[tuple[int, int | None], bool] = {}
+    cover_ok: dict[tuple[int, int | None, date], bool] = {}
     eligible: dict[int, set[int]] = {}
     codes: dict[tuple[int, int], list[str]] = {}
     member_ids = sorted(state.members_by_id)
@@ -178,12 +178,13 @@ def service_eligible_by_slot(
             reasons: list[str] = []
             if roster_ids is not None and member_id not in roster_ids:
                 reasons.append(SERVICE_MASK_PERIOD_ROSTER)
-            cover_key = (member_id, slot.shift_template_id)
+            cover_key = (member_id, slot.shift_template_id, slot.slot_date)
             if cover_key not in cover_ok:
                 cover_ok[cover_key] = team_member_may_cover_template(
                     db,
                     team_member_id=member_id,
                     shift_template_id=slot.shift_template_id,
+                    on_date=slot.slot_date,
                 )
             if not cover_ok[cover_key]:
                 reasons.append(SERVICE_MASK_COVER_TEMPLATE)
@@ -290,6 +291,16 @@ def eligible_members_for_slots(
     state: PlanState,
     target_slots: Sequence[RosterSlot],
 ) -> dict[int, set[int]]:
+    eligible, _ = eligibility_mask_for_slots(db, state=state, target_slots=target_slots)
+    return eligible
+
+
+def eligibility_mask_for_slots(
+    db: Session,
+    *,
+    state: PlanState,
+    target_slots: Sequence[RosterSlot],
+) -> tuple[dict[int, set[int]], dict[tuple[int, int], list[str]]]:
     eligible, service_codes = service_eligible_by_slot(db, state=state, target_slots=target_slots)
     ctx = SolverCpSatContext(
         state=state,
@@ -304,7 +315,9 @@ def eligible_members_for_slots(
     rules = resolve_active_rules(state.organization_id, state.start_date, state.end_date, db=db)
     ctx.phase = "mask"
     _call_to_cpsat(rules, ctx)
-    return {slot_id: set(member_ids) for slot_id, member_ids in ctx.eligible_by_slot.items()}
+    eligible_by_slot = {slot_id: set(member_ids) for slot_id, member_ids in ctx.eligible_by_slot.items()}
+    exclusions = {key: list(codes) for key, codes in ctx.exclusion_codes.items()}
+    return eligible_by_slot, exclusions
 
 
 def planning_window(period: PlanningPeriod) -> tuple[date, date]:

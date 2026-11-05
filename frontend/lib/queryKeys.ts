@@ -10,6 +10,7 @@ export const queryKeys = {
   deviceSessions: () => ["device-sessions"] as const,
   planningPeriods: (organizationId: number) => ["planning-periods", organizationId] as const,
   shiftGroups: (organizationId: number) => ["shift-groups", organizationId] as const,
+  shiftGroupsIncludingInactive: (organizationId: number) => ["shift-groups", organizationId, "all"] as const,
   dayStatuses: (organizationId: number) => ["day-statuses", organizationId] as const,
   organizationHolidays: (organizationId: number) => ["organization-holidays", organizationId] as const,
   wishesMatrix: (organizationId: number, periodId: string, shiftGroupId: string, teamMemberPortal: boolean) =>

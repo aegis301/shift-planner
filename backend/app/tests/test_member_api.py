@@ -106,7 +106,13 @@ def _member_ids(SessionLocal) -> tuple[int, int]:
         return ada.id, bob.id
 
 
-def _prepare_month(client: TestClient, SessionLocal) -> tuple[int, int, int]:
+def _prepare_month(
+    client: TestClient,
+    SessionLocal,
+    *,
+    year: int = 2026,
+    month: int = 10,
+) -> tuple[int, int, int]:
     ada_id, bob_id = _member_ids(SessionLocal)
     _login(client, "admin@example.com", "secret")
     template = client.post(
@@ -134,7 +140,7 @@ def _prepare_month(client: TestClient, SessionLocal) -> tuple[int, int, int]:
             ]
         },
     )
-    period_id = client.post("/api/v1/planning-periods", json={"year": 2026, "month": 10}).json()["id"]
+    period_id = client.post("/api/v1/planning-periods", json={"year": year, "month": month}).json()["id"]
     roster = client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()
     slot = next(row for row in roster["slots"] if row["shift_template_id"] == template["id"])
     assigned = client.put(
@@ -482,7 +488,10 @@ def test_published_wishes_are_read_only(client):
 
 def test_calendar_token_ics_hides_colleagues(client):
     test_client, SessionLocal, _engine = client
-    period_id, _ada_id, ada_slot = _prepare_month(test_client, SessionLocal)
+    today = date.today()
+    period_id, _ada_id, ada_slot = _prepare_month(
+        test_client, SessionLocal, year=today.year, month=today.month
+    )
     _, bob_id = _member_ids(SessionLocal)
     roster = test_client.get(f"/api/v1/roster-matrix/{period_id}?shift_group_id=1").json()
     other_slot = next(row["id"] for row in roster["slots"] if row["id"] != ada_slot)

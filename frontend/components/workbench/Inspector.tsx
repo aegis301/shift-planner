@@ -1,38 +1,22 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
-import { t, type Locale } from "@/lib/i18n";
+import { cn } from "@/components/ui/cn";
+
+export const inspectorAsideClassName =
+  "sticky top-4 h-[calc(100vh-6rem)] w-[400px] shrink-0 overflow-hidden rounded-token-lg border border-default";
 
 export function Inspector({
-  locale,
-  open,
   title,
+  className,
   children
 }: {
-  locale: Locale;
-  open: boolean;
   title: string;
+  className?: string;
   children: ReactNode;
 }) {
-  const [width, setWidth] = useState(400);
-  if (!open) {
-    return null;
-  }
   return (
-    <aside
-      className="sticky top-4 flex h-[calc(100vh-6rem)] shrink-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"
-      style={{ width }}
-    >
-      <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+    <aside aria-label={title} className={cn("flex min-h-0 flex-col bg-surface", className)} data-testid="workbench-inspector">
+      <div className="flex items-center justify-between border-b border-default px-3 py-2">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        <input
-          aria-label={t(locale, "shortcutToggleInspector")}
-          className="w-16"
-          max={440}
-          min={360}
-          type="range"
-          value={width}
-          onChange={(event) => setWidth(Number(event.target.value))}
-        />
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
     </aside>

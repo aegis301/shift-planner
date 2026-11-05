@@ -11,6 +11,7 @@ import {
   relevantFairnessDimension
 } from "@/lib/fairness";
 import { workloadRowForMember } from "@/lib/rosterWorkload";
+import { slotCandidateRefusalLabel } from "@/lib/slotCandidateRefusal";
 import type { RosterMatrix } from "@/components/RosterMatrixEditor";
 import type { RosterChangeNotice } from "@/components/planning/RosterGrid";
 import { IntentChip } from "@/components/planning/WishesCell";
@@ -337,10 +338,18 @@ function CandidateGroup({
       {rows.map((row) => {
         const value = dimension ? fairnessValueForMember(fairnessIndex, row.team_member_id, dimension.id) : undefined;
         const deviation = value && dimension ? formatFairnessDeviation(value.deviation_absolute, dimension.metric, locale) : null;
+        const refusal = slotCandidateRefusalLabel(locale, row.refusal);
         return (
           <div key={row.team_member_id} className="rounded-md border border-slate-200 p-2">
             <div className="flex items-center justify-between gap-2">
-              <p className="font-medium text-ink">{row.display_name}</p>
+              <p className="min-w-0 font-medium text-ink">
+                {row.display_name}
+                {refusal ? (
+                  <span className="ml-2 text-xs font-normal text-rose-700" data-testid="candidate-refusal">
+                    {refusal}
+                  </span>
+                ) : null}
+              </p>
               {deviation ? <span className="font-mono text-xs">Δ {deviation}</span> : null}
             </div>
             <p className="text-xs text-slate-500">
