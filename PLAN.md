@@ -9,11 +9,11 @@ Refine the unified `/planning` workflow with shared month state, wishes, final r
 3. Exercise `/planning` end to end with a real planning month, including delete-month and regenerate-roster confirmation flows.
 4. Validate real hospital shift-template presets for weekday on-call, weekend day/night, holidays, and 24-hour duties.
 5. The planner roster uses the shared grid (`frontend/components/grid/`). `?rosterView=` chooses template (default), day/night, or variant columns. The wishes matrix uses the same grid: the cell is filled with the day-status color, wish and no-go are filled chips, and the inspector lists that member's month. The selected month's period roster can be refreshed from current shift-group membership.
-6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 through #121 have landed. #122 is the Expo member app. #123 can use `Organization.timezone`. Bearer device sessions, `/api/v1/me`, and the shared `@shift-planner/*` packages are the basis for the native app.
+6. Desktop-first workbench and member app per `docs/decisions/0001-desktop-first-workbench.md` (#107, issues #110 to #125). #109 through #122 have landed. The Expo member app scaffold is in `mobile/` (sign-in, home, duties, settings). Next: #123 offline duty activity capture (can use `Organization.timezone`), then #124 wishes, swaps, hours, and calendar in the app. Choose the app's bundle identifier and Android package name before the first EAS build.
 
 ## Roadmap
 - Team member self-service for wishes/no-gos.
-- Native member app (Expo): duties, wishes, swaps, offline duty activity capture, push notifications (#122 to #125).
+- Native member app (Expo): scaffold with duties shipped (#122); wishes, swaps, offline duty activity capture, push notifications (#123 to #125).
 - Nurse scheduling and role-specific rule sets.
 - OR-Tools CP-SAT roster suggestions (tier A and `/planning` generate/apply shipped; ArbZG rest/weekly-average encodings still open).
 - LLM email parser that proposes matrix cells from pasted colleague emails.

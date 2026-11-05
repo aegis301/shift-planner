@@ -34,11 +34,20 @@ function exportOpenApi(destination) {
   fs.writeFileSync(destination, json);
 }
 
+function withoutDecimalPatterns(json) {
+  return `${json
+    .split("\n")
+    .filter((line) => !(line.includes('"pattern"') && line.includes("[-+.]")))
+    .join("\n")
+    .replace(/\n*$/, "")}\n`;
+}
+
 const outOpenApi = process.argv[2] ?? openapiPath;
 const outSchema = process.argv[3] ?? schemaPath;
 fs.mkdirSync(path.dirname(outOpenApi), { recursive: true });
 fs.mkdirSync(path.dirname(outSchema), { recursive: true });
 exportOpenApi(outOpenApi);
+fs.writeFileSync(outOpenApi, withoutDecimalPatterns(fs.readFileSync(outOpenApi, "utf8")));
 execFileSync("npx", ["openapi-typescript", outOpenApi, "-o", outSchema], {
   cwd: packageRoot,
   stdio: "inherit"

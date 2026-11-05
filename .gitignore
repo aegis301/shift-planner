@@ -29,3 +29,14 @@ mcp-server/.env
 backend/scratch/
 .cursor/
 Claude outputs/
+
+# Expo member app
+mobile/.expo/
+mobile/dist/
+mobile/ios/
+mobile/android/
+mobile/*.jks
+mobile/*.p8
+mobile/*.p12
+mobile/*.key
+mobile/*.mobileprovision
