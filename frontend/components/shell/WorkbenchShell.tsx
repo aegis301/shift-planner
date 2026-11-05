@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CalendarDays, Clock, LayoutGrid, PanelLeft, PanelLeftClose, Sparkles, UsersRound } from "lucide-react";
+import {
+  Building2,
+  CalendarDays,
+  Clock,
+  LayoutGrid,
+  PanelLeft,
+  PanelLeftClose,
+  Sparkles,
+  UsersRound
+} from "lucide-react";
 import { useLocale } from "@/components/LocaleProvider";
 import { NotificationSlot } from "@/components/shell/NotificationSlot";
 import { ShellHeaderMenus, useAreaGuard, useShellSession } from "@/components/shell/shellSession";
@@ -52,6 +61,12 @@ export function WorkbenchShell({ children }: { children: React.ReactNode }) {
       items.push({ href: "/hours", key: "hoursNav", icon: Clock, match: (path) => path === "/hours" });
     }
     if (me.capabilities.admin) {
+      items.push({
+        href: "/organization/manage",
+        key: "navOrganizationManagement",
+        icon: Building2,
+        match: (path) => path.startsWith("/organization/manage")
+      });
       items.push({
         href: "/organization/team",
         key: "navTeamManagement",
