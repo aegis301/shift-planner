@@ -3,10 +3,11 @@
   "private": true,
   "workspaces": [
     "frontend",
+    "mobile",
     "packages/*"
   ],
   "scripts": {
-    "lint": "npm run lint --workspace frontend && npm run lint --workspace @shift-planner/domain",
+    "lint": "npm run lint --workspace frontend && npm run lint --workspace @shift-planner/domain && npm run lint --workspace mobile",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspace frontend",
