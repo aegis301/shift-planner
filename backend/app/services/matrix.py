@@ -1013,25 +1013,24 @@ def _apply_recurring_weekday_status_for_group(
                         "status": target,
                     },
                 )
-            elif cell.source == RECURRING_PATTERN_CELL_SOURCE:
-                if cell.status != target:
-                    cell.status = target
-                    db.flush()
-                    record_audit(
-                        db,
-                        actor=actor,
-                        source=source,
-                        action="update",
-                        entity_type="planning_cell",
-                        entity_id=cell.id,
-                        details={
-                            "planning_period_id": planning_period_id,
-                            "shift_group_id": shift_group_id,
-                            "team_member_id": team_member_id,
-                            "cell_date": cell_date.isoformat(),
-                            "status": target,
-                        },
-                    )
+            elif cell.source == RECURRING_PATTERN_CELL_SOURCE and cell.status != target:
+                cell.status = target
+                db.flush()
+                record_audit(
+                    db,
+                    actor=actor,
+                    source=source,
+                    action="update",
+                    entity_type="planning_cell",
+                    entity_id=cell.id,
+                    details={
+                        "planning_period_id": planning_period_id,
+                        "shift_group_id": shift_group_id,
+                        "team_member_id": team_member_id,
+                        "cell_date": cell_date.isoformat(),
+                        "status": target,
+                    },
+                )
         elif cell is not None and cell.source == RECURRING_PATTERN_CELL_SOURCE:
             cid = cell.id
             record_audit(
