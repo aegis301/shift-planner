@@ -58,7 +58,7 @@ describe("duties", () => {
       { method: "POST", path: "/api/v1/auth/token/refresh", body: tokenPair(memberSession()) },
       { method: "GET", path: "/api/v1/me/duties", body: duties }
     ]);
-    renderApp(<DutiesScreen onOpenDuty={jest.fn()} />);
+    await renderApp(<DutiesScreen onOpenDuty={jest.fn()} />);
     expect(await screen.findByText("Week of Mon 05/10")).toBeTruthy();
     expect(screen.getByText("Week of Mon 12/10")).toBeTruthy();
     expect(screen.getByText("Sun 11/10 · 20:00–06:00")).toBeTruthy();
@@ -91,7 +91,7 @@ describe("duties", () => {
         }
       }
     ]);
-    renderApp(<HomeScreen onOpenDuty={jest.fn()} />);
+    await renderApp(<HomeScreen onOpenDuty={jest.fn()} />);
     expect(await screen.findByText("Mon 05/10 · 08:00–16:00")).toBeTruthy();
     expect(screen.getByText("Giveaway")).toBeTruthy();
     expect(screen.getByText("Open")).toBeTruthy();
@@ -106,7 +106,7 @@ describe("duties", () => {
       { method: "GET", path: "/api/v1/me/duties", query: { from: later.slot_date, to: later.slot_date }, body: [later] },
       { method: "GET", path: "/api/v1/me/duties", body: [] }
     ]);
-    renderApp(<DutyDetailScreen rosterSlotId={later.roster_slot_id} slotDate={later.slot_date} />);
+    await renderApp(<DutyDetailScreen rosterSlotId={later.roster_slot_id} slotDate={later.slot_date} />);
     expect(await screen.findByText("Wed 20/10")).toBeTruthy();
     expect(screen.getAllByText("Spät")).toHaveLength(2);
     expect(screen.queryByText("This duty is no longer in your roster.")).toBeNull();

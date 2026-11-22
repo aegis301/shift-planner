@@ -34,16 +34,16 @@ describe("session outcomes", () => {
     ["an applicant", applicant, "/onboarding"]
   ])("routes %s after sign-in", async (_label, session, route) => {
     mockApi([{ method: "POST", path: "/api/v1/auth/token", body: tokenPair(session) }]);
-    renderApp(
+    await renderApp(
       <>
         <SignInScreen />
         <RouteProbe />
       </>
     );
     await waitFor(() => expect(screen.getByTestId("route")).toHaveTextContent("/sign-in"));
-    fireEvent.changeText(screen.getByLabelText("Email"), "someone@example.test");
-    fireEvent.changeText(screen.getByLabelText("Password"), "secret");
-    fireEvent.press(screen.getByRole("button", { name: "Sign in" }));
+    await fireEvent.changeText(screen.getByLabelText("Email"), "someone@example.test");
+    await fireEvent.changeText(screen.getByLabelText("Password"), "secret");
+    await fireEvent.press(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(screen.getByTestId("route")).toHaveTextContent(route));
   });
 
@@ -59,20 +59,20 @@ describe("session outcomes", () => {
   it("sends a planner to the web workbench", async () => {
     await storeRefreshToken();
     mockApi([{ method: "POST", path: "/api/v1/auth/token/refresh", body: tokenPair(plannerOnly) }]);
-    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
-    renderApp(<NoMemberScreen />);
+    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+    await renderApp(<NoMemberScreen />);
     expect(await screen.findByText("This app is for team members")).toBeTruthy();
-    fireEvent.press(screen.getByRole("button", { name: "Open the web app" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open the web app" }));
     expect(openURL).toHaveBeenCalledWith("http://web.test/");
   });
 
   it("sends an account without membership to web onboarding", async () => {
     await storeRefreshToken();
     mockApi([{ method: "POST", path: "/api/v1/auth/token/refresh", body: tokenPair(accountOnly) }]);
-    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
-    renderApp(<OnboardingScreen />);
+    const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined);
+    await renderApp(<OnboardingScreen />);
     expect(await screen.findByText("Finish setup in the browser")).toBeTruthy();
-    fireEvent.press(screen.getByRole("button", { name: "Open setup" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open setup" }));
     expect(openURL).toHaveBeenCalledWith("http://web.test/onboarding");
   });
 
@@ -82,14 +82,14 @@ describe("session outcomes", () => {
       { method: "POST", path: "/api/v1/auth/token/refresh", body: tokenPair(plannerOnly, "access-9") },
       { method: "POST", path: "/api/v1/auth/token/revoke", status: 204 }
     ]);
-    renderApp(
+    await renderApp(
       <>
         <NoMemberScreen />
         <RouteProbe />
       </>
     );
     await waitFor(() => expect(screen.getByTestId("route")).toHaveTextContent("/no-member"));
-    fireEvent.press(screen.getByRole("button", { name: "Sign out" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(screen.getByTestId("route")).toHaveTextContent("/sign-in"));
     const revoke = calls.find((call) => call.path === "/api/v1/auth/token/revoke");
     expect(revoke?.authorization).toBe("Bearer access-9");
@@ -115,9 +115,9 @@ describe("session outcomes", () => {
       { method: "POST", path: "/api/v1/auth/token/refresh", body: tokenPair(north) },
       { method: "POST", path: "/api/v1/auth/me/active-organization", body: south }
     ]);
-    const { queryClient } = renderApp(<SettingsScreen />);
+    const { queryClient } = await renderApp(<SettingsScreen />);
     queryClient.setQueryData(["member-home", 1], { duties: [], swap_actions: [] });
-    fireEvent.press(await screen.findByRole("button", { name: "Switch to Klinik Süd" }));
+    await fireEvent.press(await screen.findByRole("button", { name: "Switch to Klinik Süd" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Switch to Klinik Nord" })).toBeTruthy());
     const switched = calls.find((call) => call.path === "/api/v1/auth/me/active-organization");
     expect(switched?.body).toEqual({ organization_slug: "sued" });

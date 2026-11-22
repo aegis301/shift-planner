@@ -27,7 +27,7 @@ export function DutiesScreen({ onOpenDuty }: { onOpenDuty: (rosterSlotId: number
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.fill, { backgroundColor: theme.background }]}>
       <SectionList
-        ListEmptyComponent={duties.isSuccess ? <Body muted>{t("mobileDutiesEmpty")}</Body> : null}
+        ListEmptyComponent={duties.isSuccess ? <Body muted>{t("mobileDutiesEmpty")}</Body> : undefined}
         ListHeaderComponent={
           <View style={{ gap: theme.space }}>
             <Title>{t("mobileTabDuties")}</Title>

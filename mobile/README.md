@@ -1,6 +1,6 @@
 # Shift Planner member app
 
-The native member app (Expo SDK 57, Expo Router, React Native 0.86). It is a member client only:
+The native member app (Expo SDK 58, Expo Router, React Native 0.88, React 19.3). It is a member client only:
 sign in, home, my duties, duty detail, and settings. Planner and admin work stays in the web
 workbench. Wishes and swaps (#124), offline duty activity (#123), and push (#125) come later.
 
@@ -24,6 +24,9 @@ port `18180`), then start Metro with the API address the device can reach:
 cd mobile
 EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:18180 npx expo start
 ```
+
+Expo Go on a phone must match the SDK of the app. This app is on SDK 58, so use the SDK 58 build
+of Expo Go. If Expo Go refuses to open the project, the SDK numbers differ.
 
 | Where the app runs | `EXPO_PUBLIC_API_BASE_URL` |
 |---|---|
@@ -72,7 +75,9 @@ npm run lint --workspace mobile
 npm run test --workspace mobile
 ```
 
-Jest uses `jest-expo` and React Native Testing Library. The suite runs with the device zone set to
+Jest 30 runs through `jest-expo` with React Native Testing Library 14, whose `render` and
+`fireEvent` are asynchronous, so tests await them (`renderApp` in `__tests__/support.tsx` is async).
+The suite runs with the device zone set to
 `Pacific/Honolulu` (`jest.global-setup.js`) so a time shown in the organization zone cannot pass by
 accident. CI runs the same three commands in the `mobile` job. There are no native builds in CI.
 
@@ -81,11 +86,24 @@ To check that Metro resolves the workspace packages without a device:
 ```bash
 cd mobile
 EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:18180 npx expo export --platform android --output-dir /tmp/expo-export
+EXPO_PUBLIC_API_BASE_URL=http://localhost:18180 npx expo export --platform ios --output-dir /tmp/expo-export-ios
 ```
+
+## Upgrading the SDK
+
+From `mobile/`, run `npx expo install expo@^58 --fix`, then `npx expo install --check`, and commit the
+updated `package.json` files and root `package-lock.json`. Expo rewrites the Expo packages, React,
+React Native, and the native modules to the versions of that SDK. It does not touch `expo`'s range,
+`@expo/log-box`, or the dev dependencies (`jest-expo`, `babel-preset-expo`, `eslint-config-expo`,
+`@react-native/jest-preset`, `@testing-library/react-native`, `@types/react`), so set those to the
+versions in the new SDK's `bundledNativeModules.json` and peer ranges. Pin `react` and `react-dom`
+to the same version, and keep `react-native-web` at the version the SDK bundles. Regenerating the
+lockfile needs npm 11 (`npx npm@11.6.2 install` from the repository root); npm 10 only runs
+`npm ci` against it. Then run the checks below and the Metro export for both platforms.
 
 ## Workspace notes
 
-The web app uses React 18 and the app uses React 19, so npm installs React, React Native, and the
+The web app uses React 18 and the app uses React 19.3, so npm installs React, React Native, and the
 Expo modules under `mobile/node_modules`. `metro.config.js` and `jest.config.js` resolve `react`
 and `react-native` from `mobile/` so a package hoisted to the root (for example
 `@tanstack/react-query`) does not load the web copy of React. The frontend Docker images ignore

@@ -76,7 +76,7 @@ export async function storeRefreshToken(token = "refresh-1") {
   await SecureStore.setItemAsync("shift-planner.refresh-token", token);
 }
 
-export function renderApp(ui: ReactElement) {
+export async function renderApp(ui: ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
@@ -85,5 +85,6 @@ export function renderApp(ui: ReactElement) {
       </LocaleProvider>
     </QueryClientProvider>
   );
-  return { ...render(ui, { wrapper }), queryClient };
+  const result = await render(ui, { wrapper });
+  return { ...result, queryClient };
 }

@@ -141,7 +141,7 @@ Team members (`TeamMember` rows) can belong to multiple shift groups through **d
 
 ## Member app
 
-`mobile/` (`@shift-planner/mobile`) is the Expo member app: Expo SDK 57, Expo Router, React Native 0.86, React 19, TanStack Query, and `jest-expo` with React Native Testing Library. It is a workspace member, installed with `npm ci` from the root.
+`mobile/` (`@shift-planner/mobile`) is the Expo member app: Expo SDK 58, Expo Router, React Native 0.88, React 19.3, TanStack Query, and `jest-expo` (Jest 30) with React Native Testing Library 14. It is a workspace member, installed with `npm ci` from the root.
 
 - **Member features only.** No planner or admin screen, ever (ADR 0001). Tabs are Home, Duties, and Settings. Wishes and swaps (#124), offline duty activity (#123), and push (#125) are later issues.
 - **No business logic.** Data comes from `/api/v1/me/...` and the auth endpoints (`POST /auth/token`, `/token/refresh`, `/token/revoke`, `/auth/me/active-organization`). If a screen needs data those endpoints do not return, add it to the backend. Grouping and formatting for display are fine; rules, eligibility, and time accounting are not.
