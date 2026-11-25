@@ -518,26 +518,34 @@ def test_calendar_token_ics_hides_colleagues(client):
     assert test_client.get(f"/api/v1/me/calendar.ics?token={token}").status_code == 401
 
 
+def _months_ahead(today: date, offset: int) -> tuple[int, int]:
+    index = today.year * 12 + today.month - 1 + offset
+    return index // 12, index % 12 + 1
+
+
 def test_home_and_duties_query_count_does_not_grow_with_duties(client):
     test_client, SessionLocal, engine = client
     _prepare_month(test_client, SessionLocal)
     ada_id, _bob_id = _member_ids(SessionLocal)
+    today = date.today()
+    small_year, small_month = _months_ahead(today, 1)
+    large_year, large_month = _months_ahead(today, 2)
 
-    def seed(count: int, month: int) -> None:
+    def seed(count: int, year: int, month: int) -> None:
         with SessionLocal() as db:
-            period = test_client.post("/api/v1/planning-periods", json={"year": 2026, "month": month}).json()
-            from app.models import PlanningPeriod, RosterSlot, RosterSlotAssignment
-
-            period_row = db.get(PlanningPeriod, period["id"])
-            assert period_row is not None
-            start = datetime(2026, month, 1, 8, 0, tzinfo=UTC)
+            period = test_client.post(
+                "/api/v1/planning-periods", json={"year": year, "month": month}
+            ).json()
+            first_day = date(year, month, 1)
+            start = datetime(year, month, 1, 8, 0, tzinfo=UTC)
             for index in range(count):
+                offset = timedelta(days=index % 27)
                 slot = RosterSlot(
-                    planning_period_id=period_row.id,
-                    slot_date=period_row and __import__("datetime").date(2026, month, 1) + timedelta(days=index % 27),
+                    planning_period_id=period["id"],
+                    slot_date=first_day + offset,
                     position=index + 1,
-                    starts_at=start + timedelta(days=index % 27),
-                    ends_at=start + timedelta(days=index % 27, hours=8),
+                    starts_at=start + offset,
+                    ends_at=start + offset + timedelta(hours=8),
                     source="test",
                 )
                 db.add(slot)
@@ -560,18 +568,26 @@ def test_home_and_duties_query_count_does_not_grow_with_duties(client):
             event.remove(engine, "before_cursor_execute", before)
         return total["n"]
 
+    def month_window(year: int, month: int) -> tuple[date, date]:
+        following_year, following_month = _months_ahead(date(year, month, 1), 1)
+        return date(year, month, 1), date(following_year, following_month, 1) - timedelta(days=1)
+
     with SessionLocal() as db:
         user = db.scalar(select(User).join(Account).where(Account.email == "ada@example.com"))
         assert user is not None
-        seed(5, 11)
+        small_start, small_end = month_window(small_year, small_month)
+        large_start, large_end = month_window(large_year, large_month)
+        seed(5, small_year, small_month)
+        assert get_member_home(db, user=user)["duties"]
         small_home = count_queries(lambda: get_member_home(db, user=user))
         small_duties = count_queries(
-            lambda: list_member_duties(db, user=user, start=__import__("datetime").date(2026, 11, 1), end=__import__("datetime").date(2026, 11, 30))
+            lambda: list_member_duties(db, user=user, start=small_start, end=small_end)
         )
-        seed(50, 12)
+        seed(50, large_year, large_month)
+        assert list_member_duties(db, user=user, start=large_start, end=large_end)
         large_home = count_queries(lambda: get_member_home(db, user=user))
         large_duties = count_queries(
-            lambda: list_member_duties(db, user=user, start=__import__("datetime").date(2026, 12, 1), end=__import__("datetime").date(2026, 12, 31))
+            lambda: list_member_duties(db, user=user, start=large_start, end=large_end)
         )
     assert small_home == large_home
     assert small_duties == large_duties
